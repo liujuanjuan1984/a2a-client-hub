@@ -12,11 +12,7 @@ import {
   usePersonalAgentsListQuery,
   useSharedAgentsListQuery,
 } from "@/hooks/useAgentListQueries";
-import {
-  checkAgentHealth,
-  checkAgentsHealth,
-  type A2AAgentResponse,
-} from "@/lib/api/a2aAgents";
+import { checkAgentsHealth, type A2AAgentResponse } from "@/lib/api/a2aAgents";
 import { type HubA2AAgentUserResponse } from "@/lib/api/hubA2aAgentsUser";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
@@ -56,11 +52,13 @@ export function AgentListScreen() {
   const queryClient = useQueryClient();
   const user = useSessionStore((state) => state.user);
   const setActiveAgent = useAgentStore((state) => state.setActiveAgent);
+  const [activeView, setActiveView] = useState<"personal" | "shared">(
+    "personal",
+  );
   const [personalPage, setPersonalPage] = useState(1);
   const [attentionPage, setAttentionPage] = useState(1);
   const [sharedPage, setSharedPage] = useState(1);
   const [showAttention, setShowAttention] = useState(false);
-  const [checkingAgentId, setCheckingAgentId] = useState<string | null>(null);
 
   const personalQuery = usePersonalAgentsListQuery({
     page: personalPage,
@@ -94,7 +92,10 @@ export function AgentListScreen() {
     sharedQuery.isFetching;
 
   useEffect(() => {
-    const totalPages = Math.max(personalQuery.data?.pagination.pages ?? 1, 1);
+    const totalPages = personalQuery.data?.pagination.pages;
+    if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
+      return;
+    }
     setPersonalPage((value) => Math.min(value, totalPages));
   }, [personalQuery.data?.pagination.pages]);
 
@@ -103,12 +104,18 @@ export function AgentListScreen() {
       setAttentionPage(1);
       return;
     }
-    const totalPages = Math.max(attentionQuery.data?.pagination.pages ?? 1, 1);
+    const totalPages = attentionQuery.data?.pagination.pages;
+    if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
+      return;
+    }
     setAttentionPage((value) => Math.min(value, totalPages));
   }, [attentionCount, attentionQuery.data?.pagination.pages]);
 
   useEffect(() => {
-    const totalPages = Math.max(sharedQuery.data?.pagination.pages ?? 1, 1);
+    const totalPages = sharedQuery.data?.pagination.pages;
+    if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
+      return;
+    }
     setSharedPage((value) => Math.min(value, totalPages));
   }, [sharedQuery.data?.pagination.pages]);
 
@@ -135,22 +142,6 @@ export function AgentListScreen() {
       toast.error("Availability check failed", message);
     },
   });
-
-  const handleCheckAgent = async (agentId: string) => {
-    setCheckingAgentId(agentId);
-    try {
-      await checkAgentHealth(agentId, true);
-      await invalidateAgentQueries();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not check agent availability.";
-      toast.error("Availability check failed", message);
-    } finally {
-      setCheckingAgentId(null);
-    }
-  };
 
   const onRefresh = async () => {
     const results = await Promise.allSettled([
@@ -187,7 +178,10 @@ export function AgentListScreen() {
 
   const renderPersonalAgentItem = (agent: A2AAgentResponse) => {
     const badge = HEALTH_BADGE_STYLES[agent.health_status];
-    const isCheckingThisAgent = checkingAgentId === agent.id;
+    const showCheckedAt = agent.health_status !== "healthy";
+    const checkedAtLabel = agent.last_health_check_at
+      ? `Checked ${new Date(agent.last_health_check_at).toLocaleString()}`
+      : "Not checked yet";
 
     return (
       <View
@@ -208,24 +202,27 @@ export function AgentListScreen() {
               >
                 {badge.label}
               </Text>
-              <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                PERSONAL
-              </Text>
             </View>
           </View>
-          <View className="mt-3 flex-row items-center justify-between gap-3">
-            <Text className="text-xs text-slate-400" numberOfLines={1}>
-              {agent.enabled ? "Enabled" : "Disabled"}
-            </Text>
-            <Text
-              className="flex-1 text-right text-xs text-slate-500"
-              numberOfLines={1}
-            >
-              {agent.last_health_check_at
-                ? `Checked ${new Date(agent.last_health_check_at).toLocaleString()}`
-                : "Not checked yet"}
-            </Text>
-          </View>
+          {!agent.enabled || showCheckedAt ? (
+            <View className="mt-3 flex-row items-center justify-between gap-3">
+              {agent.enabled ? (
+                <View className="flex-1" />
+              ) : (
+                <Text className="text-xs text-slate-400" numberOfLines={1}>
+                  Disabled
+                </Text>
+              )}
+              {showCheckedAt ? (
+                <Text
+                  className="flex-1 text-right text-xs text-slate-500"
+                  numberOfLines={1}
+                >
+                  {checkedAtLabel}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           {agent.last_health_check_error ? (
             <Text className="mt-2 text-xs text-rose-200" numberOfLines={2}>
               {agent.last_health_check_error}
@@ -243,18 +240,6 @@ export function AgentListScreen() {
               onPress={() => {
                 blurActiveElement();
                 router.push(`/agents/${agent.id}`);
-              }}
-            />
-            <Button
-              label={isCheckingThisAgent ? "Checking..." : "Check"}
-              size="sm"
-              variant="secondary"
-              iconLeft="pulse-outline"
-              onPress={() => {
-                if (isCheckingThisAgent) {
-                  return;
-                }
-                handleCheckAgent(agent.id).catch(() => undefined);
               }}
             />
           </View>
@@ -400,11 +385,13 @@ export function AgentListScreen() {
   const healthyAgents = personalQuery.data?.items ?? [];
   const attentionAgents = attentionQuery.data?.items ?? [];
   const sharedAgents = sharedQuery.data?.items ?? [];
-  const showEmptyState =
+  const showPersonalEmptyState =
     !isFetching &&
+    activeView === "personal" &&
     healthyAgents.length === 0 &&
-    attentionCount === 0 &&
-    sharedAgents.length === 0;
+    attentionCount === 0;
+  const showSharedEmptyState =
+    !isFetching && activeView === "shared" && sharedAgents.length === 0;
 
   return (
     <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
@@ -450,111 +437,122 @@ export function AgentListScreen() {
           />
         }
       >
-        <View className="mb-5 rounded-2xl bg-surface p-4">
-          <View className="flex-row items-center justify-between gap-3">
-            <View className="flex-1">
-              <Text className="text-sm font-semibold text-white">
-                My Agents
-              </Text>
-              <Text className="mt-1 text-xs text-slate-400">
-                Healthy agents stay visible. Degraded, unavailable, and unknown
-                agents are grouped below.
-              </Text>
-            </View>
-            <Button
-              label={
-                batchHealthMutation.isPending
-                  ? "Checking..."
-                  : "Check availability"
-              }
-              size="sm"
-              variant="secondary"
-              iconLeft="pulse-outline"
-              onPress={() => {
-                if (batchHealthMutation.isPending) {
-                  return;
-                }
-                batchHealthMutation.mutate();
-              }}
-            />
-          </View>
-
-          <View className="mt-4 flex-row flex-wrap items-center gap-3">
-            <Text className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
-              Healthy {counts?.healthy ?? 0}
-            </Text>
-            <Text className="rounded-full bg-amber-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-200">
-              Degraded {counts?.degraded ?? 0}
-            </Text>
-            <Text className="rounded-full bg-rose-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-rose-200">
-              Unavailable {counts?.unavailable ?? 0}
-            </Text>
-            <Text className="rounded-full bg-slate-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-300">
-              Unknown {counts?.unknown ?? 0}
-            </Text>
-          </View>
+        <View className="mb-5 flex-row gap-2">
+          <Button
+            className="flex-1"
+            label="My"
+            size="sm"
+            variant={activeView === "personal" ? "primary" : "secondary"}
+            onPress={() => setActiveView("personal")}
+          />
+          <Button
+            className="flex-1"
+            label="Shared"
+            size="sm"
+            variant={activeView === "shared" ? "primary" : "secondary"}
+            onPress={() => setActiveView("shared")}
+          />
         </View>
 
-        {healthyAgents.map(renderPersonalAgentItem)}
+        {activeView === "personal" ? (
+          <>
+            <View className="mb-5 rounded-2xl bg-surface p-4">
+              <View className="flex-row items-center justify-end">
+                <Button
+                  label={
+                    batchHealthMutation.isPending
+                      ? "Checking..."
+                      : "Check availability"
+                  }
+                  size="sm"
+                  variant="secondary"
+                  iconLeft="pulse-outline"
+                  onPress={() => {
+                    if (batchHealthMutation.isPending) {
+                      return;
+                    }
+                    batchHealthMutation.mutate();
+                  }}
+                />
+              </View>
 
-        {renderPagination({
-          page: personalPage,
-          pages: personalQuery.data?.pagination.pages ?? 0,
-          onPrevious: () => setPersonalPage((value) => Math.max(1, value - 1)),
-          onNext: () => setPersonalPage((value) => value + 1),
-        })}
-
-        {attentionCount > 0 ? (
-          <View className="mb-6 rounded-2xl bg-surface p-4">
-            <View className="flex-row items-center justify-between gap-3">
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-white">
-                  Need attention ({attentionCount})
+              <View className="mt-4 flex-row flex-wrap items-center gap-3">
+                <Text className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                  Healthy {counts?.healthy ?? 0}
                 </Text>
-                <Text className="mt-1 text-xs text-slate-400">
-                  Includes degraded, unavailable, and not-yet-checked personal
-                  agents.
+                <Text className="rounded-full bg-amber-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-200">
+                  Degraded {counts?.degraded ?? 0}
+                </Text>
+                <Text className="rounded-full bg-rose-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-rose-200">
+                  Unavailable {counts?.unavailable ?? 0}
+                </Text>
+                <Text className="rounded-full bg-slate-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-300">
+                  Unknown {counts?.unknown ?? 0}
                 </Text>
               </View>
-              <Button
-                label={showAttention ? "Collapse" : "Expand"}
-                size="sm"
-                variant="secondary"
-                onPress={() => {
-                  setShowAttention((value) => !value);
-                }}
-              />
             </View>
 
-            {showAttention ? (
-              <View className="mt-4">
-                {attentionAgents.map(renderPersonalAgentItem)}
-                {renderPagination({
-                  page: attentionPage,
-                  pages: attentionQuery.data?.pagination.pages ?? 0,
-                  onPrevious: () =>
-                    setAttentionPage((value) => Math.max(1, value - 1)),
-                  onNext: () => setAttentionPage((value) => value + 1),
-                })}
+            {healthyAgents.map(renderPersonalAgentItem)}
+
+            {renderPagination({
+              page: personalPage,
+              pages: personalQuery.data?.pagination.pages ?? 0,
+              onPrevious: () =>
+                setPersonalPage((value) => Math.max(1, value - 1)),
+              onNext: () => setPersonalPage((value) => value + 1),
+            })}
+
+            {attentionCount > 0 ? (
+              <View className="mb-6 rounded-2xl bg-surface p-4">
+                <View className="flex-row items-center justify-between gap-3">
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-white">
+                      Need attention ({attentionCount})
+                    </Text>
+                    <Text className="mt-1 text-xs text-slate-400">
+                      Includes degraded, unavailable, and not-yet-checked
+                      personal agents.
+                    </Text>
+                  </View>
+                  <Button
+                    label={showAttention ? "Collapse" : "Expand"}
+                    size="sm"
+                    variant="secondary"
+                    onPress={() => {
+                      setShowAttention((value) => !value);
+                    }}
+                  />
+                </View>
+
+                {showAttention ? (
+                  <View className="mt-4">
+                    {attentionAgents.map(renderPersonalAgentItem)}
+                    {renderPagination({
+                      page: attentionPage,
+                      pages: attentionQuery.data?.pagination.pages ?? 0,
+                      onPrevious: () =>
+                        setAttentionPage((value) => Math.max(1, value - 1)),
+                      onNext: () => setAttentionPage((value) => value + 1),
+                    })}
+                  </View>
+                ) : null}
               </View>
             ) : null}
-          </View>
-        ) : null}
+          </>
+        ) : (
+          <>
+            {sharedAgents.map(renderSharedAgentItem)}
+            {renderPagination({
+              page: sharedPage,
+              pages: sharedQuery.data?.pagination.pages ?? 0,
+              onPrevious: () =>
+                setSharedPage((value) => Math.max(1, value - 1)),
+              onNext: () => setSharedPage((value) => value + 1),
+            })}
+          </>
+        )}
 
-        <View className="mb-4">
-          <Text className="mb-3 text-sm font-semibold text-white">
-            Shared Agents
-          </Text>
-          {sharedAgents.map(renderSharedAgentItem)}
-          {renderPagination({
-            page: sharedPage,
-            pages: sharedQuery.data?.pagination.pages ?? 0,
-            onPrevious: () => setSharedPage((value) => Math.max(1, value - 1)),
-            onNext: () => setSharedPage((value) => value + 1),
-          })}
-        </View>
-
-        {showEmptyState ? (
+        {showPersonalEmptyState ? (
           <View className="items-center rounded-2xl bg-surface p-8">
             <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-primary">
               <Text className="text-[11px] font-bold text-black">A2A</Text>
@@ -573,6 +571,20 @@ export function AgentListScreen() {
                 router.push("/agents/new");
               }}
             />
+          </View>
+        ) : null}
+
+        {showSharedEmptyState ? (
+          <View className="items-center rounded-2xl bg-surface p-8">
+            <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-primary">
+              <Text className="text-[11px] font-bold text-black">A2A</Text>
+            </View>
+            <Text className="text-base font-bold text-white">
+              No shared agents available
+            </Text>
+            <Text className="mt-2 text-center text-sm text-slate-400">
+              Shared agents published by admins will appear here.
+            </Text>
           </View>
         ) : null}
       </ScrollView>

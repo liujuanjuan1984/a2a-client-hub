@@ -1,3 +1,4 @@
+import { Text } from "react-native";
 import { act, create } from "react-test-renderer";
 
 import { AgentListScreen } from "@/screens/AgentListScreen";
@@ -6,12 +7,11 @@ const mockPush = jest.fn();
 const mockSetActiveAgent = jest.fn();
 const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 const mockBatchMutate = jest.fn();
-const mockCheckAgentHealth = jest.fn((_agentId: string, _force?: boolean) =>
-  Promise.resolve({}),
-);
 const mockBlurActiveElement = jest.fn();
+const mockSharedPageCalls: number[] = [];
 
 let mockButtons: Record<string, unknown>[] = [];
+let mockSharedPageLoading = false;
 
 jest.mock("@tanstack/react-query", () => ({
   useMutation: () => ({
@@ -91,27 +91,37 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
       refetch: jest.fn().mockResolvedValue({ error: null }),
     };
   },
-  useSharedAgentsListQuery: () => ({
-    data: {
-      items: [
-        {
-          id: "shared-1",
-          name: "Shared Agent",
-          card_url: "https://example.com/shared.json",
-          tags: [],
-        },
-      ],
-      pagination: { page: 1, size: 8, total: 1, pages: 1 },
-      meta: {},
-    },
-    isFetching: false,
-    refetch: jest.fn().mockResolvedValue({ error: null }),
-  }),
+  useSharedAgentsListQuery: ({ page }: { page: number }) => {
+    mockSharedPageCalls.push(page);
+
+    if (page === 2 && mockSharedPageLoading) {
+      return {
+        data: undefined,
+        isFetching: true,
+        refetch: jest.fn().mockResolvedValue({ error: null }),
+      };
+    }
+
+    return {
+      data: {
+        items: [
+          {
+            id: `shared-${page}`,
+            name: `Shared Agent ${page}`,
+            card_url: `https://example.com/shared-${page}.json`,
+            tags: [],
+          },
+        ],
+        pagination: { page, size: 8, total: 16, pages: 2 },
+        meta: {},
+      },
+      isFetching: false,
+      refetch: jest.fn().mockResolvedValue({ error: null }),
+    };
+  },
 }));
 
 jest.mock("@/lib/api/a2aAgents", () => ({
-  checkAgentHealth: (agentId: string, force?: boolean) =>
-    mockCheckAgentHealth(agentId, force),
   checkAgentsHealth: jest.fn(),
 }));
 
@@ -163,32 +173,28 @@ jest.mock("@/components/ui/Button", () => ({
 describe("AgentListScreen", () => {
   beforeEach(() => {
     mockButtons = [];
+    mockSharedPageCalls.length = 0;
+    mockSharedPageLoading = false;
     jest.clearAllMocks();
   });
 
   it("renders paginated sections and handles list actions", async () => {
+    let tree: ReturnType<typeof create>;
+
     await act(async () => {
-      create(<AgentListScreen />);
+      tree = create(<AgentListScreen />);
     });
 
+    expect(mockButtons.some((button) => button.label === "My")).toBe(true);
+    expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
     expect(
       mockButtons.some((button) => button.label === "Check availability"),
     ).toBe(true);
     expect(mockButtons.some((button) => button.label === "Expand")).toBe(true);
-    expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
-
-    const checkButton = mockButtons.find(
-      (button) => button.label === "Check",
-    ) as { onPress: () => Promise<void> };
-    await act(async () => {
-      await checkButton.onPress();
-    });
-
-    expect(mockCheckAgentHealth).toHaveBeenCalledWith(
-      "personal-healthy-1",
-      true,
+    expect(mockButtons.some((button) => button.label === "Details")).toBe(
+      false,
     );
-    expect(mockInvalidateQueries).toHaveBeenCalled();
+    expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
 
     const chatButton = mockButtons.find(
       (button) => button.label === "Chat",
@@ -224,5 +230,110 @@ describe("AgentListScreen", () => {
     expect(
       mockButtons.some((button) => button.label === "Attention Agent"),
     ).toBe(false);
+
+    const sharedTabButton = mockButtons.find(
+      (button) => button.label === "Shared",
+    ) as { onPress: () => void };
+    mockButtons = [];
+    await act(async () => {
+      sharedTabButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
+    expect(
+      mockButtons.some((button) => button.label === "Check availability"),
+    ).toBe(false);
+  });
+
+  it("does not reset shared pagination when the next page query is temporarily empty", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const sharedTabButton = mockButtons.find(
+      (button) => button.label === "Shared",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    await act(async () => {
+      sharedTabButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    const initialNextButton = mockButtons.find(
+      (button) => button.label === "Next",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    mockSharedPageLoading = true;
+
+    await act(async () => {
+      initialNextButton.onPress();
+    });
+
+    expect(mockSharedPageCalls).toContain(2);
+    expect(mockSharedPageCalls[mockSharedPageCalls.length - 1]).toBe(2);
+
+    mockButtons = [];
+    mockSharedPageLoading = false;
+
+    await act(async () => {
+      tree!.update(<AgentListScreen />);
+    });
+
+    expect(mockSharedPageCalls[mockSharedPageCalls.length - 1]).toBe(2);
+  });
+
+  it("keeps personal cards visually minimal by hiding enabled and personal markers", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
+    expect(textContent).not.toContain("PERSONAL");
+    expect(textContent).not.toContain("Enabled");
+    expect(textContent).not.toContain("Checked");
+    expect(textContent).not.toContain("SHARED");
+  });
+
+  it("shows shared cards only after switching to the shared tab", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    let textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
+    expect(textContent).not.toContain("SHARED");
+
+    const sharedTabButton = mockButtons.find(
+      (button) => button.label === "Shared",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    await act(async () => {
+      sharedTabButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
+    expect(textContent).toContain("SHARED");
   });
 });
