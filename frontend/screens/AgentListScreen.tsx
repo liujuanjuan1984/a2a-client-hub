@@ -94,7 +94,10 @@ export function AgentListScreen() {
     sharedQuery.isFetching;
 
   useEffect(() => {
-    const totalPages = Math.max(personalQuery.data?.pagination.pages ?? 1, 1);
+    const totalPages = personalQuery.data?.pagination.pages;
+    if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
+      return;
+    }
     setPersonalPage((value) => Math.min(value, totalPages));
   }, [personalQuery.data?.pagination.pages]);
 
@@ -103,12 +106,18 @@ export function AgentListScreen() {
       setAttentionPage(1);
       return;
     }
-    const totalPages = Math.max(attentionQuery.data?.pagination.pages ?? 1, 1);
+    const totalPages = attentionQuery.data?.pagination.pages;
+    if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
+      return;
+    }
     setAttentionPage((value) => Math.min(value, totalPages));
   }, [attentionCount, attentionQuery.data?.pagination.pages]);
 
   useEffect(() => {
-    const totalPages = Math.max(sharedQuery.data?.pagination.pages ?? 1, 1);
+    const totalPages = sharedQuery.data?.pagination.pages;
+    if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
+      return;
+    }
     setSharedPage((value) => Math.min(value, totalPages));
   }, [sharedQuery.data?.pagination.pages]);
 

@@ -10,8 +10,10 @@ const mockCheckAgentHealth = jest.fn((_agentId: string, _force?: boolean) =>
   Promise.resolve({}),
 );
 const mockBlurActiveElement = jest.fn();
+const mockSharedPageCalls: number[] = [];
 
 let mockButtons: Record<string, unknown>[] = [];
+let mockSharedPageLoading = false;
 
 jest.mock("@tanstack/react-query", () => ({
   useMutation: () => ({
@@ -91,22 +93,34 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
       refetch: jest.fn().mockResolvedValue({ error: null }),
     };
   },
-  useSharedAgentsListQuery: () => ({
-    data: {
-      items: [
-        {
-          id: "shared-1",
-          name: "Shared Agent",
-          card_url: "https://example.com/shared.json",
-          tags: [],
-        },
-      ],
-      pagination: { page: 1, size: 8, total: 1, pages: 1 },
-      meta: {},
-    },
-    isFetching: false,
-    refetch: jest.fn().mockResolvedValue({ error: null }),
-  }),
+  useSharedAgentsListQuery: ({ page }: { page: number }) => {
+    mockSharedPageCalls.push(page);
+
+    if (page === 2 && mockSharedPageLoading) {
+      return {
+        data: undefined,
+        isFetching: true,
+        refetch: jest.fn().mockResolvedValue({ error: null }),
+      };
+    }
+
+    return {
+      data: {
+        items: [
+          {
+            id: `shared-${page}`,
+            name: `Shared Agent ${page}`,
+            card_url: `https://example.com/shared-${page}.json`,
+            tags: [],
+          },
+        ],
+        pagination: { page, size: 8, total: 16, pages: 2 },
+        meta: {},
+      },
+      isFetching: false,
+      refetch: jest.fn().mockResolvedValue({ error: null }),
+    };
+  },
 }));
 
 jest.mock("@/lib/api/a2aAgents", () => ({
@@ -163,6 +177,8 @@ jest.mock("@/components/ui/Button", () => ({
 describe("AgentListScreen", () => {
   beforeEach(() => {
     mockButtons = [];
+    mockSharedPageCalls.length = 0;
+    mockSharedPageLoading = false;
     jest.clearAllMocks();
   });
 
@@ -224,5 +240,36 @@ describe("AgentListScreen", () => {
     expect(
       mockButtons.some((button) => button.label === "Attention Agent"),
     ).toBe(false);
+  });
+
+  it("does not reset shared pagination when the next page query is temporarily empty", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const initialNextButton = mockButtons.find(
+      (button) => button.label === "Next",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    mockSharedPageLoading = true;
+
+    await act(async () => {
+      initialNextButton.onPress();
+    });
+
+    expect(mockSharedPageCalls).toContain(2);
+    expect(mockSharedPageCalls[mockSharedPageCalls.length - 1]).toBe(2);
+
+    mockButtons = [];
+    mockSharedPageLoading = false;
+
+    await act(async () => {
+      tree!.update(<AgentListScreen />);
+    });
+
+    expect(mockSharedPageCalls[mockSharedPageCalls.length - 1]).toBe(2);
   });
 });
