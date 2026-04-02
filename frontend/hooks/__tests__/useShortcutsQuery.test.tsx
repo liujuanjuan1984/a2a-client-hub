@@ -37,6 +37,7 @@ describe("useShortcutsQuery", () => {
         is_default: false,
         order: 10,
         agent_id: null,
+        created_at: "2026-04-02T03:00:00Z",
       },
       {
         id: "agent-1-shortcut",
@@ -45,6 +46,7 @@ describe("useShortcutsQuery", () => {
         is_default: false,
         order: 5,
         agent_id: "agent-1",
+        created_at: "2026-04-02T04:00:00Z",
       },
       {
         id: "agent-2-shortcut",
@@ -53,6 +55,7 @@ describe("useShortcutsQuery", () => {
         is_default: false,
         order: 6,
         agent_id: "agent-2",
+        created_at: "2026-04-02T05:00:00Z",
       },
     ]);
 
@@ -64,24 +67,19 @@ describe("useShortcutsQuery", () => {
 
     const agent1Shortcuts = result.current.getShortcutsForAgent("agent-1");
 
-    // Agent 1 shortcut should be at the top
     expect(agent1Shortcuts[0].id).toBe("agent-1-shortcut");
-    // Followed by system shortcuts (custom-system-1 or default ones)
-    // We expect agent-2-shortcut NOT to be in the list
+    expect(agent1Shortcuts[1].id).toBe("custom-system-1");
     expect(
       agent1Shortcuts.find((s) => s.id === "agent-2-shortcut"),
     ).toBeUndefined();
+    expect(agent1Shortcuts.slice(2).every((s) => s.isDefault)).toBe(true);
 
-    // Verify that all items except the first one have agentId === null
-    const rest = agent1Shortcuts.slice(1);
-    expect(rest.every((s) => s.agentId === null)).toBe(true);
-
-    // Default agentId null query
     const globalShortcuts = result.current.getShortcutsForAgent(null);
-    expect(globalShortcuts.every((s) => s.agentId === null)).toBe(true);
+    expect(globalShortcuts[0].id).toBe("custom-system-1");
+    expect(globalShortcuts.slice(1).every((s) => s.isDefault)).toBe(true);
   });
 
-  it("preserves the original order within agent-specific and system shortcut groups", async () => {
+  it("sorts custom shortcuts by newest first before appending defaults", async () => {
     (listShortcuts as jest.Mock).mockResolvedValue([
       {
         id: "system-b",
@@ -90,6 +88,7 @@ describe("useShortcutsQuery", () => {
         is_default: false,
         order: 11,
         agent_id: null,
+        created_at: "2026-04-02T03:00:00Z",
       },
       {
         id: "agent-1-b",
@@ -98,6 +97,7 @@ describe("useShortcutsQuery", () => {
         is_default: false,
         order: 8,
         agent_id: "agent-1",
+        created_at: "2026-04-02T04:00:00Z",
       },
       {
         id: "agent-1-a",
@@ -106,6 +106,7 @@ describe("useShortcutsQuery", () => {
         is_default: false,
         order: 2,
         agent_id: "agent-1",
+        created_at: "2026-04-02T02:00:00Z",
       },
       {
         id: "system-a",
@@ -114,6 +115,7 @@ describe("useShortcutsQuery", () => {
         is_default: false,
         order: 1,
         agent_id: null,
+        created_at: "2026-04-02T05:00:00Z",
       },
     ]);
 
@@ -126,15 +128,15 @@ describe("useShortcutsQuery", () => {
     const agent1Shortcuts = result.current.getShortcutsForAgent("agent-1");
 
     expect(agent1Shortcuts.map((shortcut) => shortcut.id)).toEqual([
-      "agent-1-a",
       "agent-1-b",
+      "agent-1-a",
+      "system-a",
+      "system-b",
       "11111111-1111-1111-1111-111111111111",
       "22222222-2222-2222-2222-222222222222",
-      "system-a",
       "33333333-3333-3333-3333-333333333333",
       "44444444-4444-4444-4444-444444444444",
       "55555555-5555-5555-5555-555555555555",
-      "system-b",
     ]);
   });
 });

@@ -7,6 +7,7 @@ export type ShortcutItem = {
   is_default: boolean;
   order: number;
   agent_id: string | null;
+  created_at: string | null;
 };
 
 export type ShortcutListEnvelope = {
@@ -47,6 +48,10 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
       ? orderRaw
       : Number.parseInt(String(orderRaw), 10);
   const agentId = typeof item.agent_id === "string" ? item.agent_id : null;
+  const createdAt =
+    typeof item.created_at === "string" && item.created_at.trim().length > 0
+      ? item.created_at
+      : null;
 
   return {
     id,
@@ -55,6 +60,7 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
     is_default: isDefault,
     order: Number.isFinite(order) ? order : 0,
     agent_id: agentId,
+    created_at: createdAt,
   };
 };
 

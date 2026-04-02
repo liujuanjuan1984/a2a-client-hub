@@ -16,6 +16,7 @@ type Shortcut = {
   isDefault: boolean;
   order: number;
   agentId: string | null;
+  createdAt: string | null;
 };
 
 const DEFAULT_SHORTCUTS: Shortcut[] = [
@@ -26,6 +27,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     isDefault: true,
     order: 0,
     agentId: null,
+    createdAt: null,
   },
   {
     id: "22222222-2222-2222-2222-222222222222",
@@ -34,6 +36,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     isDefault: true,
     order: 1,
     agentId: null,
+    createdAt: null,
   },
   {
     id: "33333333-3333-3333-3333-333333333333",
@@ -42,6 +45,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     isDefault: true,
     order: 2,
     agentId: null,
+    createdAt: null,
   },
   {
     id: "44444444-4444-4444-4444-444444444444",
@@ -50,6 +54,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     isDefault: true,
     order: 3,
     agentId: null,
+    createdAt: null,
   },
   {
     id: "55555555-5555-5555-5555-555555555555",
@@ -58,6 +63,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     isDefault: true,
     order: 4,
     agentId: null,
+    createdAt: null,
   },
 ];
 
@@ -68,12 +74,40 @@ const toShortcut = (item: ShortcutItem): Shortcut => ({
   isDefault: item.is_default,
   order: item.order,
   agentId: item.agent_id,
+  createdAt: item.created_at,
 });
 
-const sortShortcuts = (items: Shortcut[]) =>
+const sortDefaultShortcuts = (items: Shortcut[]) =>
   [...items].sort((left, right) => {
     if (left.order !== right.order) {
       return left.order - right.order;
+    }
+    return left.title.localeCompare(right.title);
+  });
+
+const sortCustomShortcutsByNewest = (items: Shortcut[]) =>
+  [...items].sort((left, right) => {
+    const leftCreatedAt = left.createdAt
+      ? Date.parse(left.createdAt)
+      : Number.NaN;
+    const rightCreatedAt = right.createdAt
+      ? Date.parse(right.createdAt)
+      : Number.NaN;
+    const leftHasCreatedAt = Number.isFinite(leftCreatedAt);
+    const rightHasCreatedAt = Number.isFinite(rightCreatedAt);
+
+    if (
+      leftHasCreatedAt &&
+      rightHasCreatedAt &&
+      leftCreatedAt !== rightCreatedAt
+    ) {
+      return rightCreatedAt - leftCreatedAt;
+    }
+    if (leftHasCreatedAt !== rightHasCreatedAt) {
+      return leftHasCreatedAt ? -1 : 1;
+    }
+    if (left.order !== right.order) {
+      return right.order - left.order;
     }
     return left.title.localeCompare(right.title);
   });
@@ -82,7 +116,7 @@ const mergeDefaultShortcuts = (items: Shortcut[]) => {
   const merged = new Map<string, Shortcut>();
   DEFAULT_SHORTCUTS.forEach((item) => merged.set(item.id, item));
   items.forEach((item) => merged.set(item.id, item));
-  return sortShortcuts(Array.from(merged.values()));
+  return Array.from(merged.values());
 };
 
 export const useShortcutsQuery = () => {
@@ -99,14 +133,28 @@ export const useShortcutsQuery = () => {
 
   const shortcuts = query.data ?? DEFAULT_SHORTCUTS;
   const getShortcutsForAgent = (agentId: string | null) => {
-    if (!agentId) {
-      return shortcuts.filter((item) => item.agentId === null);
-    }
-    const agentSpecificShortcuts = shortcuts.filter(
-      (item) => item.agentId === agentId,
+    const defaultShortcuts = sortDefaultShortcuts(
+      shortcuts.filter((item) => item.isDefault),
     );
-    const systemShortcuts = shortcuts.filter((item) => item.agentId === null);
-    return [...agentSpecificShortcuts, ...systemShortcuts];
+    const customShortcuts = shortcuts.filter((item) => !item.isDefault);
+
+    if (!agentId) {
+      const generalCustomShortcuts = sortCustomShortcutsByNewest(
+        customShortcuts.filter((item) => item.agentId === null),
+      );
+      return [...generalCustomShortcuts, ...defaultShortcuts];
+    }
+    const agentSpecificShortcuts = sortCustomShortcutsByNewest(
+      customShortcuts.filter((item) => item.agentId === agentId),
+    );
+    const generalCustomShortcuts = sortCustomShortcutsByNewest(
+      customShortcuts.filter((item) => item.agentId === null),
+    );
+    return [
+      ...agentSpecificShortcuts,
+      ...generalCustomShortcuts,
+      ...defaultShortcuts,
+    ];
   };
 
   return {

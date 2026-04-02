@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, List
 from uuid import UUID
 
@@ -80,6 +81,7 @@ class ShortcutResponse(BaseModel):
     is_default: bool = Field(default=False)
     order: int
     agent_id: UUID | None = Field(default=None)
+    created_at: datetime | None = Field(default=None)
 
 
 class ShortcutListMeta(BaseModel):

@@ -86,6 +86,7 @@ def _default_shortcuts() -> list[ShortcutResponse]:
             is_default=True,
             order=definition.order,
             agent_id=None,
+            created_at=None,
         )
         for definition in sorted(_DEFAULT_SHORTCUTS, key=lambda item: item.order)
     ]
@@ -135,6 +136,7 @@ def _shortcut_to_payload(shortcut: ShortcutModel) -> ShortcutResponse:
         is_default=bool(shortcut.is_default),
         order=int(shortcut.sort_order),
         agent_id=cast(UUID | None, shortcut.agent_id),
+        created_at=getattr(shortcut, "created_at", None),
     )
 
 
