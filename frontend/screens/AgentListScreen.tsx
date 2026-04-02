@@ -32,23 +32,19 @@ const SHARED_PAGE_SIZE = 8;
 
 const HEALTH_BADGE_STYLES: Record<
   A2AAgentResponse["health_status"],
-  { label: string; className: string }
+  { label: string }
 > = {
   healthy: {
     label: "Healthy",
-    className: "bg-emerald-500/20 text-emerald-300",
   },
   degraded: {
     label: "Degraded",
-    className: "bg-amber-500/20 text-amber-200",
   },
   unavailable: {
     label: "Unavailable",
-    className: "bg-rose-500/20 text-rose-200",
   },
   unknown: {
     label: "Unknown",
-    className: "bg-slate-500/20 text-slate-300",
   },
 };
 
