@@ -18,6 +18,7 @@ import {
 } from "@/test-utils/queryClient";
 
 const mocks = {
+  checkAgentHealth: jest.fn(),
   createAgent: jest.fn(),
   deleteAgent: jest.fn(),
   listAgents: jest.fn(),
@@ -37,6 +38,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 }));
 
 jest.mock("@/lib/api/a2aAgents", () => ({
+  checkAgentHealth: (...args: unknown[]) => mocks.checkAgentHealth(...args),
   createAgent: (...args: unknown[]) => mocks.createAgent(...args),
   deleteAgent: (...args: unknown[]) => mocks.deleteAgent(...args),
   listAgents: (...args: unknown[]) => mocks.listAgents(...args),
@@ -382,6 +384,26 @@ describe("useAgentsCatalogQuery mutations", () => {
       created_at: "2026-02-12T00:00:00.000Z",
       updated_at: "2026-02-12T00:00:00.000Z",
     });
+    mocks.checkAgentHealth.mockResolvedValue({
+      summary: {
+        requested: 1,
+        checked: 1,
+        skipped_cooldown: 0,
+        healthy: 1,
+        degraded: 0,
+        unavailable: 0,
+        unknown: 0,
+      },
+      items: [
+        {
+          agent_id: "agent-new",
+          health_status: "healthy",
+          checked_at: "2026-02-12T00:00:05.000Z",
+          skipped_cooldown: false,
+          error: null,
+        },
+      ],
+    });
 
     const { result } = renderHook(() => useCreateAgentMutation(), {
       wrapper: createWrapper(queryClient),
@@ -404,10 +426,59 @@ describe("useAgentsCatalogQuery mutations", () => {
     const cached = queryClient.getQueryData<AgentConfig[]>(
       queryKeys.agents.catalog(),
     );
+    expect(mocks.checkAgentHealth).toHaveBeenCalledWith("agent-new", true);
     expect(cached?.[0]).toMatchObject({ id: "agent-new", source: "personal" });
     expect(cached?.[1]).toMatchObject({ id: "shared-1", source: "shared" });
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
     ).toBe(false);
+  });
+
+  it("keeps create successful when the follow-up health check fails", async () => {
+    mocks.createAgent.mockResolvedValue({
+      id: "agent-new",
+      name: "New Agent",
+      card_url: "https://example.com/new.json",
+      auth_type: "none",
+      enabled: true,
+      tags: [],
+      extra_headers: {},
+      created_at: "2026-02-12T00:00:00.000Z",
+      updated_at: "2026-02-12T00:00:00.000Z",
+    });
+    mocks.checkAgentHealth.mockRejectedValue(new Error("upstream unavailable"));
+
+    const { result } = renderHook(() => useCreateAgentMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          name: "New Agent",
+          cardUrl: "https://example.com/new.json",
+          authType: "none",
+          bearerToken: "",
+          apiKeyHeader: "X-API-Key",
+          apiKeyValue: "",
+          basicUsername: "",
+          basicPassword: "",
+          extraHeaders: [],
+        }),
+      ).resolves.toMatchObject({
+        id: "agent-new",
+      });
+    });
+
+    expect(mocks.checkAgentHealth).toHaveBeenCalledWith("agent-new", true);
+    const cached = queryClient.getQueryData<AgentConfig[]>(
+      queryKeys.agents.catalog(),
+    );
+    expect(cached).toEqual([
+      expect.objectContaining({
+        id: "agent-new",
+        source: "personal",
+      }),
+    ]);
   });
 });
