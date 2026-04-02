@@ -333,6 +333,28 @@ describe("ScheduledJobCard visuals", () => {
     expect(JSON.stringify(root.toJSON())).not.toContain("upstream timeout");
   });
 
+  it("formats next run timestamps as YYYY-MM-DD HH:mm", () => {
+    const job = {
+      id: "7aa",
+      name: "Local Time Job",
+      enabled: true,
+      next_run_at_local: "2026-04-02T20:35",
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-04-02T12:35:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByText, queryByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    expect(getByText(/Next:\s*2026-04-02 20:35/)).toBeTruthy();
+    expect(queryByText(/Next:\s*2026-04-02T20:35/)).toBeNull();
+  });
+
   it("renders execution error summary only when it exists", () => {
     const job = {
       id: "7b",

@@ -491,4 +491,37 @@ describe("AgentListScreen", () => {
 
     expect(textContent).toContain("SHARED");
   });
+
+  it("formats personal checked timestamps as YYYY-MM-DD HH:mm", async () => {
+    let tree: ReturnType<typeof create>;
+
+    jest
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({
+        timeZone: "UTC",
+      } as Intl.ResolvedDateTimeFormatOptions);
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const degradedFilterButton = mockButtons.find(
+      (button) => button.label === "Degraded 1",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    await act(async () => {
+      degradedFilterButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    const textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
+    expect(textContent).toContain("Checked 2026-03-25 10:00");
+    expect(textContent).not.toContain("AM");
+    expect(textContent).not.toContain("PM");
+  });
 });

@@ -18,6 +18,7 @@ import {
   type A2AAgentResponse,
 } from "@/lib/api/a2aAgents";
 import { type HubA2AAgentUserResponse } from "@/lib/api/hubA2aAgentsUser";
+import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
@@ -171,7 +172,7 @@ export function AgentListScreen() {
       const badge = HEALTH_BADGE_STYLES[agent.health_status];
       const showCheckedAt = agent.health_status !== "healthy";
       const checkedAtLabel = agent.last_health_check_at
-        ? `Checked ${new Date(agent.last_health_check_at).toLocaleString()}`
+        ? `Checked ${formatLocalDateTime(agent.last_health_check_at)}`
         : "Not checked yet";
 
       return (
