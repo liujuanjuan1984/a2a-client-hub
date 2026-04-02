@@ -1,4 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
+import {
+  parsePaginatedListResponse,
+  resolveNextPageWithFallback,
+} from "@/lib/api/pagination";
 
 export type A2AAuthType = "none" | "bearer" | "basic";
 export type A2AAgentHealthStatus =
@@ -132,6 +136,32 @@ export const listAgents = (
   apiRequest<A2AAgentListResponse>("/me/a2a/agents", {
     query: { page, size, health_bucket: healthBucket },
   });
+
+export const listAgentsPage = async (input?: {
+  page?: number;
+  size?: number;
+  healthBucket?: A2AAgentHealthBucket;
+}) => {
+  const page =
+    typeof input?.page === "number" && Number.isFinite(input.page)
+      ? Math.max(1, Math.floor(input.page))
+      : 1;
+  const size =
+    typeof input?.size === "number" && Number.isFinite(input.size)
+      ? Math.max(1, Math.floor(input.size))
+      : 50;
+  const healthBucket = input?.healthBucket ?? "all";
+
+  const response = await listAgents(page, size, healthBucket);
+  const parsed = parsePaginatedListResponse(response);
+
+  return {
+    items: parsed.items,
+    pagination: response.pagination,
+    meta: response.meta,
+    nextPage: resolveNextPageWithFallback({ parsed, page, size }),
+  };
+};
 
 export const createAgent = (payload: A2AAgentCreateRequest) =>
   apiRequest<A2AAgentResponse, A2AAgentCreateRequest>("/me/a2a/agents", {

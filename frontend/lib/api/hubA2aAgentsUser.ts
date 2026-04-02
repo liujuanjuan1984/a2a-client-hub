@@ -1,5 +1,9 @@
 import { type A2AAgentCardValidationResponse } from "@/lib/api/a2aAgents";
 import { apiRequest } from "@/lib/api/client";
+import {
+  parsePaginatedListResponse,
+  resolveNextPageWithFallback,
+} from "@/lib/api/pagination";
 
 export type HubA2AAgentUserResponse = {
   id: string;
@@ -74,6 +78,30 @@ export const listHubAgents = (page = 1, size = 200) =>
   apiRequest<HubA2AAgentUserListResponse>("/a2a/agents", {
     query: { page, size },
   });
+
+export const listHubAgentsPage = async (input?: {
+  page?: number;
+  size?: number;
+}) => {
+  const page =
+    typeof input?.page === "number" && Number.isFinite(input.page)
+      ? Math.max(1, Math.floor(input.page))
+      : 1;
+  const size =
+    typeof input?.size === "number" && Number.isFinite(input.size)
+      ? Math.max(1, Math.floor(input.size))
+      : 200;
+
+  const response = await listHubAgents(page, size);
+  const parsed = parsePaginatedListResponse(response);
+
+  return {
+    items: parsed.items,
+    pagination: response.pagination,
+    meta: response.meta,
+    nextPage: resolveNextPageWithFallback({ parsed, page, size }),
+  };
+};
 
 export const invokeHubAgent = (
   agentId: string,

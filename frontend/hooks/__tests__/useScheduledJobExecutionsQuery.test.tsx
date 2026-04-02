@@ -30,6 +30,7 @@ const createPaginatedResult = (): ReturnType<typeof usePaginatedList> =>
   ({
     error: null,
     isError: false,
+    pages: [],
     items: [],
     setItems: jest.fn(),
     nextPage: null,

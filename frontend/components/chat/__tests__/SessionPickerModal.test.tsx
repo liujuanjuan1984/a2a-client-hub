@@ -64,6 +64,7 @@ const buildQueryResult = (
 ): SessionsDirectoryQueryResult => ({
   error: null,
   isError: false,
+  pages: [],
   items: [],
   setItems: jest.fn(),
   nextPage: null,

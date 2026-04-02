@@ -8,12 +8,17 @@ const mockSetActiveAgent = jest.fn();
 const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 const mockBatchMutate = jest.fn();
 const mockBlurActiveElement = jest.fn();
-const mockSharedPageCalls: number[] = [];
-const mockPersonalQueryCalls: { healthBucket: string; page: number }[] = [];
+const mockPersonalLoadMore = jest.fn(async () => {});
+const mockSharedLoadMore = jest.fn(async () => {});
+const mockPersonalRefresh = jest.fn(async () => {});
+const mockSharedRefresh = jest.fn(async () => {});
+const mockPersonalQueryCalls: {
+  healthBucket: string;
+  enabled?: boolean;
+}[] = [];
+const mockSharedQueryCalls: { enabled?: boolean }[] = [];
 
 let mockButtons: Record<string, unknown>[] = [];
-let mockSharedPageLoading = false;
-let mockPersonalTotalPagesByBucket: Record<string, number> = {};
 
 const mockPersonalCounts = {
   healthy: 1,
@@ -59,66 +64,113 @@ jest.mock("expo-router", () => ({
   }),
 }));
 
+jest.mock("react-native", () => {
+  const React = jest.requireActual("react");
+  const actual = jest.requireActual("react-native");
+
+  const FlatList = ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListEmptyComponent,
+    ListFooterComponent,
+  }: any) => {
+    const children: any[] = [];
+
+    if (ListHeaderComponent) {
+      children.push(ListHeaderComponent);
+    }
+
+    if (data?.length) {
+      data.forEach((item: any, index: number) => {
+        const element = renderItem?.({ item, index });
+        if (element) {
+          children.push(element);
+        }
+      });
+    } else if (ListEmptyComponent) {
+      children.push(ListEmptyComponent);
+    }
+
+    if (ListFooterComponent) {
+      children.push(ListFooterComponent);
+    }
+
+    return React.createElement(React.Fragment, null, ...children);
+  };
+
+  const RefreshControl = () => null;
+
+  return {
+    ...actual,
+    FlatList,
+    RefreshControl,
+  };
+});
+
 jest.mock("@/hooks/useAgentListQueries", () => ({
   usePersonalAgentsListQuery: ({
     healthBucket,
-    page,
+    enabled,
   }: {
     healthBucket: string;
-    page: number;
+    enabled?: boolean;
   }) => {
-    mockPersonalQueryCalls.push({ healthBucket, page });
-    const pages = mockPersonalTotalPagesByBucket[healthBucket] ?? 1;
+    mockPersonalQueryCalls.push({ healthBucket, enabled });
+
     return {
-      data: {
-        items:
-          pages > 0 &&
-          (healthBucket === "healthy" ||
-            healthBucket === "degraded" ||
-            healthBucket === "unavailable" ||
-            healthBucket === "unknown")
-            ? [buildPersonalAgent(healthBucket)]
-            : [],
-        pagination: {
-          page,
-          size: 12,
-          total: pages > 0 ? 1 : 0,
-          pages,
-        },
-        meta: {
-          counts: mockPersonalCounts,
-        },
-      },
-      isFetching: false,
-      refetch: jest.fn().mockResolvedValue({ error: null }),
+      items:
+        healthBucket === "healthy" ||
+        healthBucket === "degraded" ||
+        healthBucket === "unavailable" ||
+        healthBucket === "unknown"
+          ? [buildPersonalAgent(healthBucket)]
+          : [],
+      counts: mockPersonalCounts,
+      pages: [],
+      error: null,
+      isError: false,
+      nextPage: 2,
+      hasMore: true,
+      loading: false,
+      refreshing: false,
+      loadingMore: false,
+      setItems: jest.fn(),
+      reset: jest.fn(),
+      loadFirstPage: jest.fn(async () => true),
+      refresh: mockPersonalRefresh,
+      loadMore: mockPersonalLoadMore,
     };
   },
-  useSharedAgentsListQuery: ({ page }: { page: number }) => {
-    mockSharedPageCalls.push(page);
-
-    if (page === 2 && mockSharedPageLoading) {
-      return {
-        data: undefined,
-        isFetching: true,
-        refetch: jest.fn().mockResolvedValue({ error: null }),
-      };
-    }
+  useSharedAgentsListQuery: ({ enabled }: { enabled?: boolean }) => {
+    mockSharedQueryCalls.push({ enabled });
 
     return {
-      data: {
-        items: [
-          {
-            id: `shared-${page}`,
-            name: `Shared Agent ${page}`,
-            card_url: `https://example.com/shared-${page}.json`,
-            tags: [],
-          },
-        ],
-        pagination: { page, size: 8, total: 16, pages: 2 },
-        meta: {},
-      },
-      isFetching: false,
-      refetch: jest.fn().mockResolvedValue({ error: null }),
+      items: [
+        {
+          id: "shared-1",
+          name: "Shared Agent 1",
+          card_url: "https://example.com/shared-1.json",
+          auth_type: "none",
+          credential_mode: "shared",
+          credential_configured: true,
+          credential_display_hint: null,
+          tags: [],
+        },
+      ],
+      pages: [],
+      error: null,
+      isError: false,
+      nextPage: 2,
+      hasMore: true,
+      loading: false,
+      refreshing: false,
+      loadingMore: false,
+      setItems: jest.fn(),
+      reset: jest.fn(),
+      loadFirstPage: jest.fn(async () => true),
+      refresh: mockSharedRefresh,
+      loadMore: mockSharedLoadMore,
     };
   },
 }));
@@ -175,19 +227,12 @@ jest.mock("@/components/ui/Button", () => ({
 describe("AgentListScreen", () => {
   beforeEach(() => {
     mockButtons = [];
-    mockSharedPageCalls.length = 0;
     mockPersonalQueryCalls.length = 0;
-    mockSharedPageLoading = false;
-    mockPersonalTotalPagesByBucket = {
-      healthy: 1,
-      degraded: 1,
-      unavailable: 1,
-      unknown: 1,
-    };
+    mockSharedQueryCalls.length = 0;
     jest.clearAllMocks();
   });
 
-  it("renders paginated sections and handles list actions", async () => {
+  it("renders personal agents with continuous loading actions", async () => {
     let tree: ReturnType<typeof create>;
 
     await act(async () => {
@@ -197,15 +242,13 @@ describe("AgentListScreen", () => {
     expect(mockButtons.some((button) => button.label === "My")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Check")).toBe(true);
-    expect(mockButtons.some((button) => button.label === "Details")).toBe(
+    expect(mockButtons.some((button) => button.label === "Load more")).toBe(
+      true,
+    );
+    expect(mockButtons.some((button) => button.label === "Previous")).toBe(
       false,
     );
-    expect(mockButtons.some((button) => button.label === "Healthy 1")).toBe(
-      true,
-    );
-    expect(mockButtons.some((button) => button.label === "Degraded 1")).toBe(
-      true,
-    );
+    expect(mockButtons.some((button) => button.label === "Next")).toBe(false);
 
     const chatButton = mockButtons.find(
       (button) => button.label === "Chat",
@@ -227,33 +270,31 @@ describe("AgentListScreen", () => {
 
     expect(mockBatchMutate).toHaveBeenCalled();
 
+    const loadMoreButton = mockButtons.find(
+      (button) => button.label === "Load more",
+    ) as { onPress: () => void };
+    await act(async () => {
+      await loadMoreButton.onPress();
+    });
+
+    expect(mockPersonalLoadMore).toHaveBeenCalled();
+
     const degradedFilterButton = mockButtons.find(
       (button) => button.label === "Degraded 1",
     ) as { onPress: () => void };
     mockButtons = [];
     await act(async () => {
       degradedFilterButton.onPress();
+      tree!.update(<AgentListScreen />);
     });
 
     expect(mockPersonalQueryCalls[mockPersonalQueryCalls.length - 1]).toEqual({
       healthBucket: "degraded",
-      page: 1,
+      enabled: true,
     });
-
-    const sharedTabButton = mockButtons.find(
-      (button) => button.label === "Shared",
-    ) as { onPress: () => void };
-    mockButtons = [];
-    await act(async () => {
-      sharedTabButton.onPress();
-      tree!.update(<AgentListScreen />);
-    });
-
-    expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
-    expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
   });
 
-  it("does not reset shared pagination when the next page query is temporarily empty", async () => {
+  it("shows shared cards and uses shared load more after switching tabs", async () => {
     let tree: ReturnType<typeof create>;
 
     await act(async () => {
@@ -270,31 +311,26 @@ describe("AgentListScreen", () => {
       tree!.update(<AgentListScreen />);
     });
 
-    const initialNextButton = mockButtons.find(
-      (button) => button.label === "Next",
+    expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
+    expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
+    expect(mockButtons.some((button) => button.label === "Load more")).toBe(
+      true,
+    );
+    expect(mockSharedQueryCalls[mockSharedQueryCalls.length - 1]).toEqual({
+      enabled: true,
+    });
+
+    const loadMoreButton = mockButtons.find(
+      (button) => button.label === "Load more",
     ) as { onPress: () => void };
-
-    mockButtons = [];
-    mockSharedPageLoading = true;
-
     await act(async () => {
-      initialNextButton.onPress();
+      await loadMoreButton.onPress();
     });
 
-    expect(mockSharedPageCalls).toContain(2);
-    expect(mockSharedPageCalls[mockSharedPageCalls.length - 1]).toBe(2);
-
-    mockButtons = [];
-    mockSharedPageLoading = false;
-
-    await act(async () => {
-      tree!.update(<AgentListScreen />);
-    });
-
-    expect(mockSharedPageCalls[mockSharedPageCalls.length - 1]).toBe(2);
+    expect(mockSharedLoadMore).toHaveBeenCalled();
   });
 
-  it("keeps personal cards visually minimal by hiding enabled and personal markers", async () => {
+  it("keeps personal cards visually minimal by hiding personal markers", async () => {
     let tree: ReturnType<typeof create>;
 
     await act(async () => {
@@ -342,29 +378,5 @@ describe("AgentListScreen", () => {
       .join(" ");
 
     expect(textContent).toContain("SHARED");
-  });
-
-  it("keeps page at 1 when the server reports zero available pages", async () => {
-    mockPersonalTotalPagesByBucket.healthy = 0;
-
-    let tree: ReturnType<typeof create>;
-
-    await act(async () => {
-      tree = create(<AgentListScreen />);
-    });
-
-    expect(mockPersonalQueryCalls).toEqual([
-      { healthBucket: "healthy", page: 1 },
-    ]);
-
-    await act(async () => {
-      tree!.update(<AgentListScreen />);
-    });
-
-    expect(mockPersonalQueryCalls).toEqual([
-      { healthBucket: "healthy", page: 1 },
-      { healthBucket: "healthy", page: 1 },
-    ]);
-    expect(mockPersonalQueryCalls.some((call) => call.page === 0)).toBe(false);
   });
 });
