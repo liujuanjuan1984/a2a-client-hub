@@ -16,7 +16,7 @@ export type HubA2AAgentUserResponse = {
   tags: string[];
 };
 
-export type HubA2AAgentUserListResponse = {
+type HubA2AAgentUserListResponse = {
   items: HubA2AAgentUserResponse[];
   pagination: {
     page: number;
@@ -27,7 +27,7 @@ export type HubA2AAgentUserListResponse = {
   meta: Record<string, unknown>;
 };
 
-export type HubA2AAgentInvokeRequest = {
+type HubA2AAgentInvokeRequest = {
   query: string;
   conversationId?: string;
   userMessageId?: string;
@@ -40,7 +40,7 @@ export type HubA2AAgentInvokeRequest = {
   };
 };
 
-export type HubA2AAgentInvokeResponse = {
+type HubA2AAgentInvokeResponse = {
   success: boolean;
   content?: string | null;
   error?: string | null;
@@ -53,13 +53,13 @@ export type HubA2AAgentInvokeResponse = {
   agent_url?: string | null;
 };
 
-export type HubWsTicketResponse = {
+type HubWsTicketResponse = {
   token: string;
   expires_at: string;
   expires_in: number;
 };
 
-export type HubA2AUserCredentialStatusResponse = {
+type HubA2AUserCredentialStatusResponse = {
   agent_id: string;
   auth_type: "none" | "bearer" | "basic";
   credential_mode: "none" | "shared" | "user";
@@ -68,7 +68,7 @@ export type HubA2AUserCredentialStatusResponse = {
   username_hint?: string | null;
 };
 
-export type HubA2AUserCredentialUpsertRequest = {
+type HubA2AUserCredentialUpsertRequest = {
   token?: string | null;
   basic_username?: string | null;
   basic_password?: string | null;

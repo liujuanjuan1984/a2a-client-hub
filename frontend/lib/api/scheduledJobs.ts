@@ -53,7 +53,7 @@ export type ScheduledJob = {
   updated_at: string;
 };
 
-export type ScheduledJobStatusSummary = {
+type ScheduledJobStatusSummary = {
   state: "idle" | "running" | "recent_failed";
   manual_intervention_recommended: boolean;
   running_started_at?: string | null;
@@ -94,11 +94,11 @@ export type ScheduledJobPayload = {
   conversation_policy: "new_each_run" | "reuse_single";
 };
 
-export type MarkScheduledJobFailedPayload = {
+type MarkScheduledJobFailedPayload = {
   reason?: string;
 };
 
-export type ScheduledJobToggleResponse = {
+type ScheduledJobToggleResponse = {
   id: string;
   schedule_timezone: string;
   enabled: boolean;

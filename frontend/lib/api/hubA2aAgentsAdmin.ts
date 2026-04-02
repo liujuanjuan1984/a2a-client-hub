@@ -25,7 +25,7 @@ export type HubA2AAgentAdminResponse = {
   updated_at: string;
 };
 
-export type HubA2AAgentAdminListResponse = {
+type HubA2AAgentAdminListResponse = {
   items: HubA2AAgentAdminResponse[];
   pagination: {
     page: number;
@@ -52,7 +52,7 @@ export type HubA2AAgentAdminCreate = {
   basic_password?: string | null;
 };
 
-export type HubA2AAgentAdminUpdate = Partial<HubA2AAgentAdminCreate>;
+type HubA2AAgentAdminUpdate = Partial<HubA2AAgentAdminCreate>;
 
 export type HubA2AAllowlistEntryResponse = {
   id: string;
@@ -64,11 +64,11 @@ export type HubA2AAllowlistEntryResponse = {
   created_at: string;
 };
 
-export type HubA2AAllowlistListResponse = {
+type HubA2AAllowlistListResponse = {
   items: HubA2AAllowlistEntryResponse[];
 };
 
-export type HubA2AAllowlistAddRequest = {
+type HubA2AAllowlistAddRequest = {
   user_id?: string | null;
   email?: string | null;
 };

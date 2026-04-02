@@ -4,7 +4,7 @@ import {
   resolveNextPageWithFallback,
 } from "@/lib/api/pagination";
 
-export type A2AAuthType = "none" | "bearer" | "basic";
+type A2AAuthType = "none" | "bearer" | "basic";
 export type A2AAgentHealthStatus =
   | "unknown"
   | "healthy"
@@ -61,7 +61,7 @@ export type A2AAgentListResponse = {
   };
 };
 
-export type A2AAgentHealthCheckResponse = {
+type A2AAgentHealthCheckResponse = {
   summary: {
     requested: number;
     checked: number;
@@ -94,7 +94,7 @@ export type A2AAgentCreateRequest = {
   extra_headers: Record<string, string>;
 };
 
-export type A2AAgentUpdateRequest = Partial<A2AAgentCreateRequest>;
+type A2AAgentUpdateRequest = Partial<A2AAgentCreateRequest>;
 
 export type A2AAgentInvokeRequest = {
   query: string;
@@ -109,7 +109,7 @@ export type A2AAgentInvokeRequest = {
   };
 };
 
-export type A2AAgentInvokeResponse = {
+type A2AAgentInvokeResponse = {
   success: boolean;
   content?: string | null;
   error?: string | null;
@@ -122,7 +122,7 @@ export type A2AAgentInvokeResponse = {
   agent_url?: string | null;
 };
 
-export type WsTicketResponse = {
+type WsTicketResponse = {
   token: string;
   expires_at: string;
   expires_in: number;

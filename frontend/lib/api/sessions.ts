@@ -22,7 +22,7 @@ export type SessionListItem = {
   created_at?: string | null;
 };
 
-export type SessionMessageBlockItem = {
+type SessionMessageBlockItem = {
   id: string;
   type: string;
   content?: string | null;
@@ -34,7 +34,7 @@ export type SessionMessageBlockItem = {
   interrupt?: RuntimeInterrupt | null;
 };
 
-export type SessionMessageBlockDetailItem = {
+type SessionMessageBlockDetailItem = {
   id: string;
   messageId: string;
   type: string;
@@ -57,7 +57,7 @@ export type SessionMessageItem = {
   blocks?: SessionMessageBlockItem[];
 };
 
-export type SessionMessagesPageInfo = {
+type SessionMessagesPageInfo = {
   hasMoreBefore: boolean;
   nextBefore?: string | null;
 };

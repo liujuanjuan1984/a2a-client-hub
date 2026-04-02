@@ -10,7 +10,7 @@ export type ShortcutItem = {
   created_at: string | null;
 };
 
-export type ShortcutListEnvelope = {
+type ShortcutListEnvelope = {
   items: ShortcutItem[];
   pagination: {
     page: number;
@@ -21,14 +21,14 @@ export type ShortcutListEnvelope = {
   meta: Record<string, unknown>;
 };
 
-export type ShortcutCreatePayload = {
+type ShortcutCreatePayload = {
   title: string;
   prompt: string;
   order?: number;
   agent_id?: string | null;
 };
 
-export type ShortcutUpdatePayload = {
+type ShortcutUpdatePayload = {
   title?: string;
   prompt?: string;
   order?: number;
