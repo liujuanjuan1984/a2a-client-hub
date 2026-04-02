@@ -28,13 +28,18 @@ const inferNextPage = (
     return {};
   }
   const typed = pagination as Record<string, unknown>;
-  const page = typeof typed.page === "number" ? typed.page : undefined;
+  const page =
+    typeof typed.page === "number" ? Math.max(1, typed.page) : undefined;
   const next =
-    typeof typed.next_page === "number" ? typed.next_page : undefined;
+    typeof typed.next_page === "number"
+      ? Math.max(1, typed.next_page)
+      : undefined;
   const hasNext =
     typeof typed.has_next === "boolean" ? typed.has_next : undefined;
   const totalPages =
-    typeof typed.total_pages === "number" ? typed.total_pages : undefined;
+    typeof (typed.total_pages ?? typed.pages) === "number"
+      ? Math.max(0, (typed.total_pages ?? typed.pages) as number)
+      : undefined;
   const size = typeof typed.size === "number" ? typed.size : undefined;
   const totalItems =
     typeof typed.total_items === "number" ? typed.total_items : undefined;
