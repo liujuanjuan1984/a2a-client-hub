@@ -25,6 +25,13 @@ import { useSessionStore } from "@/store/session";
 const PERSONAL_PAGE_SIZE = 12;
 const SHARED_PAGE_SIZE = 8;
 
+const clampPageWithinBounds = (page: number, totalPages: number) => {
+  if (!Number.isFinite(totalPages) || totalPages <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.min(page, totalPages));
+};
+
 const HEALTH_BADGE_STYLES: Record<
   A2AAgentResponse["health_status"],
   { label: string; className: string }
@@ -96,7 +103,7 @@ export function AgentListScreen() {
     if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
       return;
     }
-    setPersonalPage((value) => Math.min(value, totalPages));
+    setPersonalPage((value) => clampPageWithinBounds(value, totalPages));
   }, [personalQuery.data?.pagination.pages]);
 
   useEffect(() => {
@@ -108,7 +115,7 @@ export function AgentListScreen() {
     if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
       return;
     }
-    setAttentionPage((value) => Math.min(value, totalPages));
+    setAttentionPage((value) => clampPageWithinBounds(value, totalPages));
   }, [attentionCount, attentionQuery.data?.pagination.pages]);
 
   useEffect(() => {
@@ -116,7 +123,7 @@ export function AgentListScreen() {
     if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
       return;
     }
-    setSharedPage((value) => Math.min(value, totalPages));
+    setSharedPage((value) => clampPageWithinBounds(value, totalPages));
   }, [sharedQuery.data?.pagination.pages]);
 
   const invalidateAgentQueries = async () => {

@@ -9,9 +9,13 @@ const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 const mockBatchMutate = jest.fn();
 const mockBlurActiveElement = jest.fn();
 const mockSharedPageCalls: number[] = [];
+const mockPersonalHealthyPageCalls: number[] = [];
+const mockAttentionPageCalls: number[] = [];
 
 let mockButtons: Record<string, unknown>[] = [];
 let mockSharedPageLoading = false;
+let mockPersonalHealthyTotalPages = 1;
+let mockAttentionTotalPages = 1;
 
 jest.mock("@tanstack/react-query", () => ({
   useMutation: () => ({
@@ -30,8 +34,15 @@ jest.mock("expo-router", () => ({
 }));
 
 jest.mock("@/hooks/useAgentListQueries", () => ({
-  usePersonalAgentsListQuery: ({ healthBucket }: { healthBucket: string }) => {
+  usePersonalAgentsListQuery: ({
+    healthBucket,
+    page,
+  }: {
+    healthBucket: string;
+    page: number;
+  }) => {
     if (healthBucket === "attention") {
+      mockAttentionPageCalls.push(page);
       return {
         data: {
           items: [
@@ -52,7 +63,12 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
               updated_at: "2026-03-25T09:00:00.000Z",
             },
           ],
-          pagination: { page: 1, size: 12, total: 1, pages: 1 },
+          pagination: {
+            page,
+            size: 12,
+            total: mockAttentionTotalPages > 0 ? 1 : 0,
+            pages: mockAttentionTotalPages,
+          },
           meta: {
             counts: { healthy: 1, degraded: 1, unavailable: 0, unknown: 1 },
           },
@@ -62,6 +78,7 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
       };
     }
 
+    mockPersonalHealthyPageCalls.push(page);
     return {
       data: {
         items: [
@@ -82,7 +99,12 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
             updated_at: "2026-03-25T08:00:00.000Z",
           },
         ],
-        pagination: { page: 1, size: 12, total: 1, pages: 1 },
+        pagination: {
+          page,
+          size: 12,
+          total: mockPersonalHealthyTotalPages > 0 ? 1 : 0,
+          pages: mockPersonalHealthyTotalPages,
+        },
         meta: {
           counts: { healthy: 1, degraded: 1, unavailable: 0, unknown: 1 },
         },
@@ -174,7 +196,11 @@ describe("AgentListScreen", () => {
   beforeEach(() => {
     mockButtons = [];
     mockSharedPageCalls.length = 0;
+    mockPersonalHealthyPageCalls.length = 0;
+    mockAttentionPageCalls.length = 0;
     mockSharedPageLoading = false;
+    mockPersonalHealthyTotalPages = 1;
+    mockAttentionTotalPages = 1;
     jest.clearAllMocks();
   });
 
@@ -335,5 +361,24 @@ describe("AgentListScreen", () => {
       .join(" ");
 
     expect(textContent).toContain("SHARED");
+  });
+
+  it("keeps page at 1 when the server reports zero available pages", async () => {
+    mockPersonalHealthyTotalPages = 0;
+
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    expect(mockPersonalHealthyPageCalls).toEqual([1]);
+
+    await act(async () => {
+      tree!.update(<AgentListScreen />);
+    });
+
+    expect(mockPersonalHealthyPageCalls).toEqual([1, 1]);
+    expect(mockPersonalHealthyPageCalls).not.toContain(0);
   });
 });
