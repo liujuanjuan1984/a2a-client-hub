@@ -57,20 +57,20 @@ describe("useAgentListQueries", () => {
         usePersonalAgentsListQuery({
           page: 2,
           size: 10,
-          healthBucket: "attention",
+          healthBucket: "degraded",
         }),
       { wrapper: createWrapper(queryClient) },
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mocks.listAgents).toHaveBeenCalledWith(2, 10, "attention");
+    expect(mocks.listAgents).toHaveBeenCalledWith(2, 10, "degraded");
     expect(
-      queryKeys.agents.list({ page: 2, size: 10, healthBucket: "attention" }),
+      queryKeys.agents.list({ page: 2, size: 10, healthBucket: "degraded" }),
     ).toEqual([
       "agents",
       "list",
-      { page: 2, size: 10, health_bucket: "attention" },
+      { page: 2, size: 10, health_bucket: "degraded" },
     ]);
   });
 

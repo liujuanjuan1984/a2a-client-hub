@@ -9,13 +9,39 @@ const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 const mockBatchMutate = jest.fn();
 const mockBlurActiveElement = jest.fn();
 const mockSharedPageCalls: number[] = [];
-const mockPersonalHealthyPageCalls: number[] = [];
-const mockAttentionPageCalls: number[] = [];
+const mockPersonalQueryCalls: { healthBucket: string; page: number }[] = [];
 
 let mockButtons: Record<string, unknown>[] = [];
 let mockSharedPageLoading = false;
-let mockPersonalHealthyTotalPages = 1;
-let mockAttentionTotalPages = 1;
+let mockPersonalTotalPagesByBucket: Record<string, number> = {};
+
+const mockPersonalCounts = {
+  healthy: 1,
+  degraded: 1,
+  unavailable: 1,
+  unknown: 1,
+};
+
+const buildPersonalAgent = (
+  healthStatus: "healthy" | "degraded" | "unavailable" | "unknown",
+) => ({
+  id: `personal-${healthStatus}-1`,
+  name: `${healthStatus[0].toUpperCase()}${healthStatus.slice(1)} Agent`,
+  card_url: `https://example.com/${healthStatus}.json`,
+  auth_type: "none",
+  enabled: true,
+  health_status: healthStatus,
+  consecutive_health_check_failures: healthStatus === "healthy" ? 0 : 1,
+  last_health_check_at: "2026-03-25T10:00:00.000Z",
+  last_successful_health_check_at:
+    healthStatus === "healthy" ? "2026-03-25T10:00:00.000Z" : null,
+  last_health_check_error:
+    healthStatus === "healthy" ? null : "Connection failed",
+  tags: [],
+  extra_headers: {},
+  created_at: "2026-03-25T09:00:00.000Z",
+  updated_at: "2026-03-25T09:00:00.000Z",
+});
 
 jest.mock("@tanstack/react-query", () => ({
   useMutation: () => ({
@@ -41,72 +67,26 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
     healthBucket: string;
     page: number;
   }) => {
-    if (healthBucket === "attention") {
-      mockAttentionPageCalls.push(page);
-      return {
-        data: {
-          items: [
-            {
-              id: "personal-attention-1",
-              name: "Attention Agent",
-              card_url: "https://example.com/attention.json",
-              auth_type: "none",
-              enabled: true,
-              health_status: "degraded",
-              consecutive_health_check_failures: 1,
-              last_health_check_at: "2026-03-25T10:00:00.000Z",
-              last_successful_health_check_at: null,
-              last_health_check_error: "Connection failed",
-              tags: [],
-              extra_headers: {},
-              created_at: "2026-03-25T09:00:00.000Z",
-              updated_at: "2026-03-25T09:00:00.000Z",
-            },
-          ],
-          pagination: {
-            page,
-            size: 12,
-            total: mockAttentionTotalPages > 0 ? 1 : 0,
-            pages: mockAttentionTotalPages,
-          },
-          meta: {
-            counts: { healthy: 1, degraded: 1, unavailable: 0, unknown: 1 },
-          },
-        },
-        isFetching: false,
-        refetch: jest.fn().mockResolvedValue({ error: null }),
-      };
-    }
-
-    mockPersonalHealthyPageCalls.push(page);
+    mockPersonalQueryCalls.push({ healthBucket, page });
+    const pages = mockPersonalTotalPagesByBucket[healthBucket] ?? 1;
     return {
       data: {
-        items: [
-          {
-            id: "personal-healthy-1",
-            name: "Healthy Agent",
-            card_url: "https://example.com/healthy.json",
-            auth_type: "none",
-            enabled: true,
-            health_status: "healthy",
-            consecutive_health_check_failures: 0,
-            last_health_check_at: "2026-03-25T09:00:00.000Z",
-            last_successful_health_check_at: "2026-03-25T09:00:00.000Z",
-            last_health_check_error: null,
-            tags: [],
-            extra_headers: {},
-            created_at: "2026-03-25T08:00:00.000Z",
-            updated_at: "2026-03-25T08:00:00.000Z",
-          },
-        ],
+        items:
+          pages > 0 &&
+          (healthBucket === "healthy" ||
+            healthBucket === "degraded" ||
+            healthBucket === "unavailable" ||
+            healthBucket === "unknown")
+            ? [buildPersonalAgent(healthBucket)]
+            : [],
         pagination: {
           page,
           size: 12,
-          total: mockPersonalHealthyTotalPages > 0 ? 1 : 0,
-          pages: mockPersonalHealthyTotalPages,
+          total: pages > 0 ? 1 : 0,
+          pages,
         },
         meta: {
-          counts: { healthy: 1, degraded: 1, unavailable: 0, unknown: 1 },
+          counts: mockPersonalCounts,
         },
       },
       isFetching: false,
@@ -196,11 +176,14 @@ describe("AgentListScreen", () => {
   beforeEach(() => {
     mockButtons = [];
     mockSharedPageCalls.length = 0;
-    mockPersonalHealthyPageCalls.length = 0;
-    mockAttentionPageCalls.length = 0;
+    mockPersonalQueryCalls.length = 0;
     mockSharedPageLoading = false;
-    mockPersonalHealthyTotalPages = 1;
-    mockAttentionTotalPages = 1;
+    mockPersonalTotalPagesByBucket = {
+      healthy: 1,
+      degraded: 1,
+      unavailable: 1,
+      unknown: 1,
+    };
     jest.clearAllMocks();
   });
 
@@ -216,11 +199,16 @@ describe("AgentListScreen", () => {
     expect(
       mockButtons.some((button) => button.label === "Check availability"),
     ).toBe(true);
-    expect(mockButtons.some((button) => button.label === "Expand")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Details")).toBe(
       false,
     );
     expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
+    expect(mockButtons.some((button) => button.label === "Healthy 1")).toBe(
+      true,
+    );
+    expect(mockButtons.some((button) => button.label === "Degraded 1")).toBe(
+      true,
+    );
 
     const chatButton = mockButtons.find(
       (button) => button.label === "Chat",
@@ -242,20 +230,18 @@ describe("AgentListScreen", () => {
 
     expect(mockBatchMutate).toHaveBeenCalled();
 
-    const expandButton = mockButtons.find(
-      (button) => button.label === "Expand",
+    const degradedFilterButton = mockButtons.find(
+      (button) => button.label === "Degraded 1",
     ) as { onPress: () => void };
     mockButtons = [];
     await act(async () => {
-      expandButton.onPress();
+      degradedFilterButton.onPress();
     });
 
-    expect(mockButtons.some((button) => button.label === "Collapse")).toBe(
-      true,
-    );
-    expect(
-      mockButtons.some((button) => button.label === "Attention Agent"),
-    ).toBe(false);
+    expect(mockPersonalQueryCalls[mockPersonalQueryCalls.length - 1]).toEqual({
+      healthBucket: "degraded",
+      page: 1,
+    });
 
     const sharedTabButton = mockButtons.find(
       (button) => button.label === "Shared",
@@ -364,7 +350,7 @@ describe("AgentListScreen", () => {
   });
 
   it("keeps page at 1 when the server reports zero available pages", async () => {
-    mockPersonalHealthyTotalPages = 0;
+    mockPersonalTotalPagesByBucket.healthy = 0;
 
     let tree: ReturnType<typeof create>;
 
@@ -372,13 +358,18 @@ describe("AgentListScreen", () => {
       tree = create(<AgentListScreen />);
     });
 
-    expect(mockPersonalHealthyPageCalls).toEqual([1]);
+    expect(mockPersonalQueryCalls).toEqual([
+      { healthBucket: "healthy", page: 1 },
+    ]);
 
     await act(async () => {
       tree!.update(<AgentListScreen />);
     });
 
-    expect(mockPersonalHealthyPageCalls).toEqual([1, 1]);
-    expect(mockPersonalHealthyPageCalls).not.toContain(0);
+    expect(mockPersonalQueryCalls).toEqual([
+      { healthBucket: "healthy", page: 1 },
+      { healthBucket: "healthy", page: 1 },
+    ]);
+    expect(mockPersonalQueryCalls.some((call) => call.page === 0)).toBe(false);
   });
 });

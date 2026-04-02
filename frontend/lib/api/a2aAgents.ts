@@ -6,7 +6,7 @@ export type A2AAgentHealthStatus =
   | "healthy"
   | "degraded"
   | "unavailable";
-export type A2AAgentHealthBucket = "all" | "healthy" | "attention";
+export type A2AAgentHealthBucket = "all" | A2AAgentHealthStatus | "attention";
 
 export type A2AAgentCardValidationResponse = {
   success: boolean;

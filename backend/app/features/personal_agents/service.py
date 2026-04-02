@@ -794,6 +794,12 @@ class A2AAgentService(AgentValidationMixin):
             return []
         if health_bucket == "healthy":
             return [A2AAgent.health_status == A2AAgent.HEALTH_HEALTHY]
+        if health_bucket == "degraded":
+            return [A2AAgent.health_status == A2AAgent.HEALTH_DEGRADED]
+        if health_bucket == "unavailable":
+            return [A2AAgent.health_status == A2AAgent.HEALTH_UNAVAILABLE]
+        if health_bucket == "unknown":
+            return [A2AAgent.health_status == A2AAgent.HEALTH_UNKNOWN]
         if health_bucket == "attention":
             return [
                 A2AAgent.health_status.in_(

@@ -200,7 +200,7 @@ async def test_personal_agents_list_supports_health_bucket_and_counts(
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
     user = await create_user(async_db_session, email="personal-health-list@example.com")
 
-    for index in range(3):
+    for index in range(4):
         await a2a_agent_service.create_agent(
             async_db_session,
             user_id=user.id,
@@ -223,11 +223,12 @@ async def test_personal_agents_list_supports_health_bucket_and_counts(
         )
     ).scalars()
     agents = list(records)
-    assert len(agents) == 3
+    assert len(agents) == 4
 
     agents[0].health_status = A2AAgent.HEALTH_HEALTHY
     agents[1].health_status = A2AAgent.HEALTH_DEGRADED
-    agents[2].health_status = A2AAgent.HEALTH_UNKNOWN
+    agents[2].health_status = A2AAgent.HEALTH_UNAVAILABLE
+    agents[3].health_status = A2AAgent.HEALTH_UNKNOWN
     await async_db_session.commit()
 
     async with create_test_client(
@@ -248,9 +249,39 @@ async def test_personal_agents_list_supports_health_bucket_and_counts(
         assert healthy_payload["meta"]["counts"] == {
             "healthy": 1,
             "degraded": 1,
-            "unavailable": 0,
+            "unavailable": 1,
             "unknown": 1,
         }
+
+        degraded_response = await client.get(
+            f"{settings.api_v1_prefix}/me/a2a/agents",
+            params={"page": 1, "size": 10, "health_bucket": "degraded"},
+        )
+        assert degraded_response.status_code == 200
+        degraded_payload = degraded_response.json()
+        assert [item["health_status"] for item in degraded_payload["items"]] == [
+            "degraded"
+        ]
+
+        unavailable_response = await client.get(
+            f"{settings.api_v1_prefix}/me/a2a/agents",
+            params={"page": 1, "size": 10, "health_bucket": "unavailable"},
+        )
+        assert unavailable_response.status_code == 200
+        unavailable_payload = unavailable_response.json()
+        assert [item["health_status"] for item in unavailable_payload["items"]] == [
+            "unavailable"
+        ]
+
+        unknown_response = await client.get(
+            f"{settings.api_v1_prefix}/me/a2a/agents",
+            params={"page": 1, "size": 10, "health_bucket": "unknown"},
+        )
+        assert unknown_response.status_code == 200
+        unknown_payload = unknown_response.json()
+        assert [item["health_status"] for item in unknown_payload["items"]] == [
+            "unknown"
+        ]
 
         attention_response = await client.get(
             f"{settings.api_v1_prefix}/me/a2a/agents",
@@ -260,6 +291,7 @@ async def test_personal_agents_list_supports_health_bucket_and_counts(
         attention_payload = attention_response.json()
         assert {item["health_status"] for item in attention_payload["items"]} == {
             "degraded",
+            "unavailable",
             "unknown",
         }
 

@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { listAgents } from "@/lib/api/a2aAgents";
+import { listAgents, type A2AAgentHealthBucket } from "@/lib/api/a2aAgents";
 import { listHubAgents } from "@/lib/api/hubA2aAgentsUser";
 import { queryKeys } from "@/lib/queryKeys";
 
 export function usePersonalAgentsListQuery(input: {
   page: number;
   size: number;
-  healthBucket: "all" | "healthy" | "attention";
+  healthBucket: A2AAgentHealthBucket;
   enabled?: boolean;
 }) {
   const { page, size, healthBucket, enabled = true } = input;

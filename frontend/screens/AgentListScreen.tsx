@@ -12,7 +12,11 @@ import {
   usePersonalAgentsListQuery,
   useSharedAgentsListQuery,
 } from "@/hooks/useAgentListQueries";
-import { checkAgentsHealth, type A2AAgentResponse } from "@/lib/api/a2aAgents";
+import {
+  checkAgentsHealth,
+  type A2AAgentHealthStatus,
+  type A2AAgentResponse,
+} from "@/lib/api/a2aAgents";
 import { type HubA2AAgentUserResponse } from "@/lib/api/hubA2aAgentsUser";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
@@ -54,6 +58,13 @@ const HEALTH_BADGE_STYLES: Record<
   },
 };
 
+const PERSONAL_HEALTH_FILTERS: A2AAgentHealthStatus[] = [
+  "healthy",
+  "degraded",
+  "unavailable",
+  "unknown",
+];
+
 export function AgentListScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -62,30 +73,15 @@ export function AgentListScreen() {
   const [activeView, setActiveView] = useState<"personal" | "shared">(
     "personal",
   );
+  const [activePersonalHealthFilter, setActivePersonalHealthFilter] =
+    useState<A2AAgentHealthStatus>("healthy");
   const [personalPage, setPersonalPage] = useState(1);
-  const [attentionPage, setAttentionPage] = useState(1);
   const [sharedPage, setSharedPage] = useState(1);
-  const [showAttention, setShowAttention] = useState(false);
 
   const personalQuery = usePersonalAgentsListQuery({
     page: personalPage,
     size: PERSONAL_PAGE_SIZE,
-    healthBucket: "healthy",
-  });
-
-  const counts = personalQuery.data?.meta.counts;
-  const attentionCount = useMemo(() => {
-    if (!counts) {
-      return 0;
-    }
-    return counts.degraded + counts.unavailable + counts.unknown;
-  }, [counts]);
-
-  const attentionQuery = usePersonalAgentsListQuery({
-    page: attentionPage,
-    size: PERSONAL_PAGE_SIZE,
-    healthBucket: "attention",
-    enabled: showAttention && attentionCount > 0,
+    healthBucket: activePersonalHealthFilter,
   });
 
   const sharedQuery = useSharedAgentsListQuery({
@@ -93,10 +89,7 @@ export function AgentListScreen() {
     size: SHARED_PAGE_SIZE,
   });
 
-  const isFetching =
-    personalQuery.isFetching ||
-    attentionQuery.isFetching ||
-    sharedQuery.isFetching;
+  const isFetching = personalQuery.isFetching || sharedQuery.isFetching;
 
   useEffect(() => {
     const totalPages = personalQuery.data?.pagination.pages;
@@ -105,18 +98,6 @@ export function AgentListScreen() {
     }
     setPersonalPage((value) => clampPageWithinBounds(value, totalPages));
   }, [personalQuery.data?.pagination.pages]);
-
-  useEffect(() => {
-    if (attentionCount === 0) {
-      setAttentionPage(1);
-      return;
-    }
-    const totalPages = attentionQuery.data?.pagination.pages;
-    if (typeof totalPages !== "number" || !Number.isFinite(totalPages)) {
-      return;
-    }
-    setAttentionPage((value) => clampPageWithinBounds(value, totalPages));
-  }, [attentionCount, attentionQuery.data?.pagination.pages]);
 
   useEffect(() => {
     const totalPages = sharedQuery.data?.pagination.pages;
@@ -154,7 +135,6 @@ export function AgentListScreen() {
     const results = await Promise.allSettled([
       personalQuery.refetch(),
       sharedQuery.refetch(),
-      ...(showAttention ? [attentionQuery.refetch()] : []),
     ]);
     const failed = results.find(
       (result) => result.status === "rejected" || result.value.error,
@@ -389,14 +369,26 @@ export function AgentListScreen() {
     );
   };
 
-  const healthyAgents = personalQuery.data?.items ?? [];
-  const attentionAgents = attentionQuery.data?.items ?? [];
+  const counts = personalQuery.data?.meta.counts;
+  const personalAgents = personalQuery.data?.items ?? [];
   const sharedAgents = sharedQuery.data?.items ?? [];
+  const totalPersonalAgents = useMemo(() => {
+    if (!counts) {
+      return 0;
+    }
+    return (
+      counts.healthy + counts.degraded + counts.unavailable + counts.unknown
+    );
+  }, [counts]);
+  const selectedFilterLabel =
+    HEALTH_BADGE_STYLES[activePersonalHealthFilter].label;
   const showPersonalEmptyState =
+    !isFetching && activeView === "personal" && totalPersonalAgents === 0;
+  const showPersonalFilteredEmptyState =
     !isFetching &&
     activeView === "personal" &&
-    healthyAgents.length === 0 &&
-    attentionCount === 0;
+    totalPersonalAgents > 0 &&
+    personalAgents.length === 0;
   const showSharedEmptyState =
     !isFetching && activeView === "shared" && sharedAgents.length === 0;
 
@@ -484,22 +476,27 @@ export function AgentListScreen() {
               </View>
 
               <View className="mt-4 flex-row flex-wrap items-center gap-3">
-                <Text className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
-                  Healthy {counts?.healthy ?? 0}
-                </Text>
-                <Text className="rounded-full bg-amber-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-200">
-                  Degraded {counts?.degraded ?? 0}
-                </Text>
-                <Text className="rounded-full bg-rose-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-rose-200">
-                  Unavailable {counts?.unavailable ?? 0}
-                </Text>
-                <Text className="rounded-full bg-slate-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-300">
-                  Unknown {counts?.unknown ?? 0}
-                </Text>
+                {PERSONAL_HEALTH_FILTERS.map((status) => (
+                  <Button
+                    key={status}
+                    className="rounded-full"
+                    label={`${HEALTH_BADGE_STYLES[status].label} ${counts?.[status] ?? 0}`}
+                    size="xs"
+                    variant={
+                      activePersonalHealthFilter === status
+                        ? "primary"
+                        : "secondary"
+                    }
+                    onPress={() => {
+                      setActivePersonalHealthFilter(status);
+                      setPersonalPage(1);
+                    }}
+                  />
+                ))}
               </View>
             </View>
 
-            {healthyAgents.map(renderPersonalAgentItem)}
+            {personalAgents.map(renderPersonalAgentItem)}
 
             {renderPagination({
               page: personalPage,
@@ -508,43 +505,6 @@ export function AgentListScreen() {
                 setPersonalPage((value) => Math.max(1, value - 1)),
               onNext: () => setPersonalPage((value) => value + 1),
             })}
-
-            {attentionCount > 0 ? (
-              <View className="mb-6 rounded-2xl bg-surface p-4">
-                <View className="flex-row items-center justify-between gap-3">
-                  <View className="flex-1">
-                    <Text className="text-sm font-semibold text-white">
-                      Need attention ({attentionCount})
-                    </Text>
-                    <Text className="mt-1 text-xs text-slate-400">
-                      Includes degraded, unavailable, and not-yet-checked
-                      personal agents.
-                    </Text>
-                  </View>
-                  <Button
-                    label={showAttention ? "Collapse" : "Expand"}
-                    size="sm"
-                    variant="secondary"
-                    onPress={() => {
-                      setShowAttention((value) => !value);
-                    }}
-                  />
-                </View>
-
-                {showAttention ? (
-                  <View className="mt-4">
-                    {attentionAgents.map(renderPersonalAgentItem)}
-                    {renderPagination({
-                      page: attentionPage,
-                      pages: attentionQuery.data?.pagination.pages ?? 0,
-                      onPrevious: () =>
-                        setAttentionPage((value) => Math.max(1, value - 1)),
-                      onNext: () => setAttentionPage((value) => value + 1),
-                    })}
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
           </>
         ) : (
           <>
@@ -578,6 +538,18 @@ export function AgentListScreen() {
                 router.push("/agents/new");
               }}
             />
+          </View>
+        ) : null}
+
+        {showPersonalFilteredEmptyState ? (
+          <View className="items-center rounded-2xl bg-surface p-8">
+            <Text className="text-base font-bold text-white">
+              No {selectedFilterLabel.toLowerCase()} agents right now
+            </Text>
+            <Text className="mt-2 text-center text-sm text-slate-400">
+              Try another health status or run an availability check to refresh
+              the latest results.
+            </Text>
           </View>
         ) : null}
 
