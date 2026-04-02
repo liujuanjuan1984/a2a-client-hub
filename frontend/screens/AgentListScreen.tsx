@@ -459,9 +459,7 @@ export function AgentListScreen() {
               <View className="flex-row items-center justify-end">
                 <Button
                   label={
-                    batchHealthMutation.isPending
-                      ? "Checking..."
-                      : "Check availability"
+                    batchHealthMutation.isPending ? "Checking..." : "Check"
                   }
                   size="sm"
                   variant="secondary"

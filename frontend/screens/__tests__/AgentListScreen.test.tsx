@@ -196,13 +196,10 @@ describe("AgentListScreen", () => {
 
     expect(mockButtons.some((button) => button.label === "My")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
-    expect(
-      mockButtons.some((button) => button.label === "Check availability"),
-    ).toBe(true);
+    expect(mockButtons.some((button) => button.label === "Check")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Details")).toBe(
       false,
     );
-    expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
     expect(mockButtons.some((button) => button.label === "Healthy 1")).toBe(
       true,
     );
@@ -222,7 +219,7 @@ describe("AgentListScreen", () => {
     expect(mockBlurActiveElement).toHaveBeenCalled();
 
     const batchButton = mockButtons.find(
-      (button) => button.label === "Check availability",
+      (button) => button.label === "Check",
     ) as { onPress: () => void };
     await act(async () => {
       batchButton.onPress();
@@ -253,9 +250,7 @@ describe("AgentListScreen", () => {
     });
 
     expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
-    expect(
-      mockButtons.some((button) => button.label === "Check availability"),
-    ).toBe(false);
+    expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
   });
 
   it("does not reset shared pagination when the next page query is temporarily empty", async () => {
