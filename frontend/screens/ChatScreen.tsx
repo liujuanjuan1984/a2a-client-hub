@@ -127,13 +127,11 @@ export function ChatScreen({
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}
         currentDirectory={controller.opencodeDirectory}
-        quickShortcuts={controller.quickShortcuts}
         pendingInterrupt={controller.pendingInterrupt}
         pendingInterruptCount={controller.pendingInterruptCount}
         showShortcutManager={controller.showShortcutManager}
         onOpenDirectoryPicker={controller.openDirectoryPicker}
         onOpenShortcutManager={controller.openShortcutManager}
-        onUseShortcut={controller.handleUseShortcut}
         selectedModel={controller.selectedModel}
         onOpenModelPicker={controller.openModelPicker}
         inputRef={controller.inputRef}

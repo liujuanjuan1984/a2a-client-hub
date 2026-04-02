@@ -10,10 +10,6 @@ import {
   View,
 } from "react-native";
 
-import {
-  ShortcutSuggestionBar,
-  type ShortcutSuggestionItem,
-} from "@/components/chat/ShortcutSuggestionBar";
 import { type GenericCapabilityStatus } from "@/hooks/useExtensionCapabilitiesQuery";
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { type SharedModelSelection } from "@/lib/chat-utils";
@@ -21,13 +17,11 @@ import { type SharedModelSelection } from "@/lib/chat-utils";
 export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
   currentDirectory,
-  quickShortcuts,
   pendingInterrupt,
   pendingInterruptCount,
   showShortcutManager,
   onOpenDirectoryPicker,
   onOpenShortcutManager,
-  onUseShortcut,
   selectedModel,
   onOpenModelPicker,
   inputRef,
@@ -48,13 +42,11 @@ export const ChatComposer = memo(function ChatComposer({
 }: {
   modelSelectionStatus: GenericCapabilityStatus;
   currentDirectory?: string | null;
-  quickShortcuts: ShortcutSuggestionItem[];
   pendingInterrupt: PendingRuntimeInterrupt | null;
   pendingInterruptCount: number;
   showShortcutManager: boolean;
   onOpenDirectoryPicker: () => void;
   onOpenShortcutManager: () => void;
-  onUseShortcut: (prompt: string) => void;
   selectedModel: SharedModelSelection | null;
   onOpenModelPicker: () => void;
   inputRef: React.RefObject<TextInput | null>;
@@ -187,11 +179,6 @@ export const ChatComposer = memo(function ChatComposer({
           )}
         </View>
       </View>
-
-      <ShortcutSuggestionBar
-        shortcuts={quickShortcuts}
-        onUseShortcut={onUseShortcut}
-      />
 
       <View className="flex-row items-end gap-2 rounded-2xl bg-surface p-2">
         <TextInput
