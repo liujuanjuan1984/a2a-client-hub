@@ -12,6 +12,7 @@ from app.integrations.a2a_extensions.session_query import (
     resolve_session_query_control_methods,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_SHARED_SESSION_QUERY_URI,
     LEGACY_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
 )
@@ -251,6 +252,140 @@ def test_resolve_extracts_message_cursor_pagination_contract() -> None:
 
     assert resolved.message_cursor_pagination.cursor_param == "before"
     assert resolved.message_cursor_pagination.result_cursor_field == "next_cursor"
+
+
+def test_resolve_accepts_codex_session_query_contract() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "codex",
+                "methods": {
+                    "list_sessions": "codex.sessions.list",
+                    "get_session_messages": "codex.sessions.messages.list",
+                    "prompt_async": "codex.sessions.prompt_async",
+                    "command": "codex.sessions.command",
+                },
+                "pagination": {
+                    "mode": "limit",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                },
+                "method_contracts": {
+                    "codex.sessions.prompt_async": {
+                        "params": {
+                            "required": ["session_id", "request.parts"],
+                            "optional": [
+                                "request.messageID",
+                                "request.agent",
+                                "request.system",
+                                "request.variant",
+                                "metadata.codex.directory",
+                            ],
+                        }
+                    },
+                    "codex.sessions.command": {
+                        "params": {
+                            "required": ["session_id", "request.command"],
+                            "optional": [
+                                "request.arguments",
+                                "request.messageID",
+                                "metadata.codex.directory",
+                            ],
+                        }
+                    },
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {},
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_session_query(card)
+
+    assert resolved.uri == CODEX_SHARED_SESSION_QUERY_URI
+    assert resolved.provider == "codex"
+    assert resolved.pagination.mode == "limit"
+    assert resolved.pagination.params == ("limit",)
+    assert resolved.pagination.supports_offset is False
+
+
+def test_resolve_rejects_codex_offset_pagination() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "codex",
+                "methods": {
+                    "list_sessions": "codex.sessions.list",
+                    "get_session_messages": "codex.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "limit",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                    "params": ["limit", "offset"],
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {},
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    with pytest.raises(
+        A2AExtensionContractError,
+        match="does not support offset pagination",
+    ):
+        resolve_session_query(card)
+
+
+def test_resolve_rejects_codex_command_requiring_arguments() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "codex",
+                "methods": {
+                    "list_sessions": "codex.sessions.list",
+                    "get_session_messages": "codex.sessions.messages.list",
+                    "command": "codex.sessions.command",
+                },
+                "pagination": {
+                    "mode": "limit",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                },
+                "method_contracts": {
+                    "codex.sessions.command": {
+                        "params": {
+                            "required": [
+                                "session_id",
+                                "request.command",
+                                "request.arguments",
+                            ]
+                        }
+                    }
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {},
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    with pytest.raises(
+        A2AExtensionContractError,
+        match="must not require request.arguments",
+    ):
+        resolve_session_query(card)
 
 
 def test_resolve_accepts_limit_and_optional_cursor_mode() -> None:

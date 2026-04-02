@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from a2a.types import AgentCard
 
@@ -10,13 +10,30 @@ from app.integrations.a2a_extensions.contract_utils import as_dict
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.session_query import (
     resolve_canonical_session_query,
+    resolve_codex_session_query,
     resolve_legacy_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_SHARED_SESSION_QUERY_URI,
     LEGACY_SHARED_SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
 )
 from app.schemas.a2a_agent_card import SharedSessionQueryDiagnostic
+
+_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY = "a2a_client_hub"
+
+
+def _declared_contract_family(
+    *,
+    uses_legacy_uri: bool,
+    uses_legacy_contract_fields: bool,
+    uses_codex_uri: bool,
+) -> Literal["opencode", "codex", "legacy"]:
+    if uses_legacy_uri or uses_legacy_contract_fields:
+        return "legacy"
+    if uses_codex_uri:
+        return "codex"
+    return "opencode"
 
 
 def _find_declared_extension(card: AgentCard) -> tuple[Any | None, str | None]:
@@ -57,6 +74,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     raw_pagination = as_dict(params.get("pagination"))
     result_envelope = params.get("result_envelope")
     uses_legacy_uri = uri == LEGACY_SHARED_SESSION_QUERY_URI
+    uses_codex_uri = uri == CODEX_SHARED_SESSION_QUERY_URI
     uses_legacy_contract_fields = bool(
         raw_pagination.get("mode") == "limit"
         and (
@@ -65,19 +83,27 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
             or "page" in raw_pagination.get("params", [])
         )
     )
+    declared_contract_family = _declared_contract_family(
+        uses_legacy_uri=uses_legacy_uri,
+        uses_legacy_contract_fields=uses_legacy_contract_fields,
+        uses_codex_uri=uses_codex_uri,
+    )
 
     try:
-        resolver = (
-            resolve_legacy_session_query
-            if uses_legacy_uri or uses_legacy_contract_fields
-            else resolve_canonical_session_query
-        )
+        if uses_codex_uri:
+            resolver = resolve_codex_session_query
+        elif uses_legacy_uri or uses_legacy_contract_fields:
+            resolver = resolve_legacy_session_query
+        else:
+            resolver = resolve_canonical_session_query
         resolved = resolver(card)
     except A2AExtensionContractError as exc:
         return SharedSessionQueryDiagnostic(
             declared=True,
             status="invalid",
             uri=uri,
+            declaredContractFamily=declared_contract_family,
+            normalizedContractFamily=_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY,
             provider=str(params.get("provider") or "").strip().lower() or None,
             methods=sorted(
                 key
@@ -100,10 +126,10 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
 
     return SharedSessionQueryDiagnostic(
         declared=True,
-        status=(
-            "legacy" if uses_legacy_uri or uses_legacy_contract_fields else "canonical"
-        ),
+        status="supported",
         uri=resolved.uri,
+        declaredContractFamily=declared_contract_family,
+        normalizedContractFamily=_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY,
         provider=resolved.provider,
         methods=sorted(key for key, value in resolved.methods.items() if value),
         pagination_mode=(

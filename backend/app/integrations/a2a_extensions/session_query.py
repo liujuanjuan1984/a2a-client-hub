@@ -19,6 +19,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_SHARED_SESSION_QUERY_URI,
     LEGACY_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
@@ -190,6 +191,19 @@ def _resolve_method_contract_optional_params(
     *,
     method_name: str,
 ) -> set[str]:
+    return _resolve_method_contract_param_names(
+        params,
+        method_name=method_name,
+        field_name="optional",
+    )
+
+
+def _resolve_method_contract_param_names(
+    params: Dict[str, Any],
+    *,
+    method_name: str,
+    field_name: Literal["required", "optional", "unsupported"],
+) -> set[str]:
     raw_method_contracts = params.get("method_contracts")
     if raw_method_contracts is None:
         return set()
@@ -205,24 +219,104 @@ def _resolve_method_contract_optional_params(
         return set()
 
     params_contract = as_dict(raw_params_contract)
-    raw_optional_params = params_contract.get("optional_params")
-    if raw_optional_params is None:
-        return set()
-    if not isinstance(raw_optional_params, list):
+    candidate_fields = {
+        "required": ("required", "required_params"),
+        "optional": ("optional", "optional_params"),
+        "unsupported": ("unsupported", "unsupported_params"),
+    }[field_name]
+
+    resolved_params: set[str] = set()
+    for candidate_field in candidate_fields:
+        raw_param_names = params_contract.get(candidate_field)
+        if raw_param_names is None:
+            continue
+        if not isinstance(raw_param_names, list):
+            raise A2AExtensionContractError(
+                f"Extension method_contracts.{method_name}.params.{candidate_field} must be an array if provided"
+            )
+        for item in raw_param_names:
+            if not isinstance(item, str):
+                raise A2AExtensionContractError(
+                    f"Extension method_contracts.{method_name}.params.{candidate_field} must contain only strings"
+                )
+            token = item.strip()
+            if token:
+                resolved_params.add(token)
+    return resolved_params
+
+
+def _is_empty_session_list_filter_contract(
+    contract: SessionListFilterFieldContract,
+) -> bool:
+    return contract.top_level_param is None and contract.query_param is None
+
+
+def _validate_codex_session_query_compatibility(
+    *,
+    params: Dict[str, Any],
+    ext: ResolvedExtension,
+    declared_mode: str,
+) -> None:
+    if declared_mode != "limit":
         raise A2AExtensionContractError(
-            f"Extension method_contracts.{method_name}.params.optional_params must be an array if provided"
+            "Codex session query compatibility requires pagination.mode to be 'limit'"
         )
 
-    optional_params: set[str] = set()
-    for item in raw_optional_params:
-        if not isinstance(item, str):
+    if ext.pagination.supports_offset:
+        raise A2AExtensionContractError(
+            "Codex session query compatibility does not support offset pagination"
+        )
+
+    if ext.message_cursor_pagination.cursor_param is not None:
+        raise A2AExtensionContractError(
+            "Codex session query compatibility does not support cursor pagination"
+        )
+
+    if not _is_empty_session_list_filter_contract(ext.session_list_filters.directory):
+        raise A2AExtensionContractError(
+            "Codex session query compatibility does not support directory filters"
+        )
+    if not _is_empty_session_list_filter_contract(ext.session_list_filters.roots):
+        raise A2AExtensionContractError(
+            "Codex session query compatibility does not support roots filters"
+        )
+    if not _is_empty_session_list_filter_contract(ext.session_list_filters.start):
+        raise A2AExtensionContractError(
+            "Codex session query compatibility does not support start filters"
+        )
+    if not _is_empty_session_list_filter_contract(ext.session_list_filters.search):
+        raise A2AExtensionContractError(
+            "Codex session query compatibility does not support search filters"
+        )
+
+    prompt_async_method = ext.methods.get("prompt_async")
+    if prompt_async_method:
+        unsupported_required = _resolve_method_contract_param_names(
+            params,
+            method_name=prompt_async_method,
+            field_name="required",
+        ) - {"session_id", "request.parts"}
+        if unsupported_required:
             raise A2AExtensionContractError(
-                f"Extension method_contracts.{method_name}.params.optional_params must contain only strings"
+                "Codex session query prompt_async declares unsupported required params"
             )
-        token = item.strip()
-        if token:
-            optional_params.add(token)
-    return optional_params
+
+    command_method = ext.methods.get("command")
+    if command_method:
+        command_required = _resolve_method_contract_param_names(
+            params,
+            method_name=command_method,
+            field_name="required",
+        )
+        if "request.arguments" in command_required:
+            raise A2AExtensionContractError(
+                "Codex session query command must not require request.arguments"
+            )
+        unsupported_required = command_required - {"session_id", "request.command"}
+        if unsupported_required:
+            raise A2AExtensionContractError(
+                "Codex session query command declares unsupported required params"
+            )
 
 
 def _resolve_session_list_filter_field(
@@ -334,6 +428,7 @@ def _resolve_extension(
         "limit" if declared_mode == LIMIT_WITH_OPTIONAL_CURSOR_MODE else declared_mode
     )
     uses_legacy_limit_fields = _uses_legacy_limit_fields(pagination)
+    is_codex_variant = getattr(ext, "uri", None) == CODEX_SHARED_SESSION_QUERY_URI
     is_legacy_variant = (
         getattr(ext, "uri", None) == LEGACY_SHARED_SESSION_QUERY_URI
         or uses_legacy_limit_fields
@@ -346,6 +441,14 @@ def _resolve_extension(
     if variant == "canonical" and is_legacy_variant:
         raise A2AExtensionContractError(
             "Shared session query legacy variants must use the explicit legacy resolver"
+        )
+    if variant == "codex" and not is_codex_variant:
+        raise A2AExtensionNotSupportedError(
+            "Codex session query compatibility variant not found"
+        )
+    if variant == "canonical" and is_codex_variant:
+        raise A2AExtensionContractError(
+            "Codex session query variants must use the explicit codex resolver"
         )
 
     if mode == "page_size":
@@ -399,7 +502,7 @@ def _resolve_extension(
         list_sessions_method=list_sessions_method,
     )
 
-    return ResolvedExtension(
+    resolved = ResolvedExtension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
         required=required,
         provider=provider,
@@ -423,6 +526,13 @@ def _resolve_extension(
         message_cursor_pagination=message_cursor_pagination,
         session_list_filters=session_list_filters,
     )
+    if is_codex_variant:
+        _validate_codex_session_query_compatibility(
+            params=params,
+            ext=resolved,
+            declared_mode=declared_mode,
+        )
+    return resolved
 
 
 def resolve_session_query(card: AgentCard) -> ResolvedExtension:
@@ -455,6 +565,17 @@ def resolve_legacy_session_query(card: AgentCard) -> ResolvedExtension:
         allow_legacy_uri=True,
         allow_legacy_limit_fields=True,
         variant="legacy",
+    )
+
+
+def resolve_codex_session_query(card: AgentCard) -> ResolvedExtension:
+    """Resolve the Codex-compatible shared session query contract explicitly."""
+
+    return _resolve_extension(
+        card,
+        allow_legacy_uri=False,
+        allow_legacy_limit_fields=False,
+        variant="codex",
     )
 
 
@@ -529,6 +650,7 @@ def resolve_session_query_control_methods(
 
 __all__ = [
     "resolve_canonical_session_query",
+    "resolve_codex_session_query",
     "resolve_legacy_session_query",
     "resolve_session_query_control_methods",
     "resolve_session_query",

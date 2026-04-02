@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import AnyHttpUrl, BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from app.features.personal_agents.schemas import A2AAuthType
 from app.schemas.a2a_compatibility_profile import (
@@ -28,14 +28,29 @@ class A2AAgentCardProxyRequest(BaseModel):
 
 
 class SharedSessionQueryDiagnostic(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     declared: bool = Field(
         ..., description="Whether the card declares a shared session query extension"
     )
-    status: Literal["canonical", "legacy", "unsupported", "invalid"] = Field(
+    status: Literal["supported", "unsupported", "invalid"] = Field(
         ...,
-        description="Hub compatibility classification for the declared contract",
+        description="Hub compatibility result for the declared session-query contract",
     )
     uri: Optional[str] = Field(default=None)
+    declared_contract_family: Optional[Literal["opencode", "codex", "legacy"]] = Field(
+        default=None,
+        alias="declaredContractFamily",
+        description="Family inferred from the upstream-declared session-query contract",
+    )
+    normalized_contract_family: Optional[str] = Field(
+        default=None,
+        alias="normalizedContractFamily",
+        description=(
+            "Hub-private normalized contract family consumed after compatibility "
+            "mapping"
+        ),
+    )
     provider: Optional[str] = Field(default=None)
     methods: List[str] = Field(default_factory=list)
     pagination_mode: Optional[str] = Field(default=None)

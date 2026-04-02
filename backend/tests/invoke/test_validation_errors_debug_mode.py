@@ -171,8 +171,88 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
 
     assert resp.success is True
     assert resp.shared_session_query is not None
-    assert resp.shared_session_query.status == "canonical"
+    assert resp.shared_session_query.status == "supported"
+    assert resp.shared_session_query.declared_contract_family == "opencode"
+    assert resp.shared_session_query.normalized_contract_family == "a2a_client_hub"
     assert resp.shared_session_query.pagination_mode == "limit_and_optional_cursor"
+    assert resp.message == "Agent card validated"
+
+
+@pytest.mark.asyncio
+async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contract() -> (
+    None
+):
+    class _ExtensionCard:
+        def model_dump(self, **kwargs):
+            return {
+                "name": "dummy",
+                "description": "dummy",
+                "url": "https://example.com",
+                "version": "1.0",
+                "capabilities": {
+                    "extensions": [
+                        {
+                            "uri": "urn:codex-a2a:codex-session-query/v1",
+                            "params": {
+                                "provider": "codex",
+                                "methods": {
+                                    "list_sessions": "codex.sessions.list",
+                                    "get_session_messages": (
+                                        "codex.sessions.messages.list"
+                                    ),
+                                    "prompt_async": "codex.sessions.prompt_async",
+                                    "command": "codex.sessions.command",
+                                },
+                                "pagination": {
+                                    "mode": "limit",
+                                    "default_limit": 20,
+                                    "max_limit": 100,
+                                },
+                                "method_contracts": {
+                                    "codex.sessions.prompt_async": {
+                                        "params": {
+                                            "required": [
+                                                "session_id",
+                                                "request.parts",
+                                            ]
+                                        }
+                                    },
+                                    "codex.sessions.command": {
+                                        "params": {
+                                            "required": [
+                                                "session_id",
+                                                "request.command",
+                                            ],
+                                            "optional": ["request.arguments"],
+                                        }
+                                    },
+                                },
+                                "result_envelope": {},
+                            },
+                        }
+                    ]
+                },
+                "defaultInputModes": [],
+                "defaultOutputModes": [],
+                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+            }
+
+    class _ExtensionGateway:
+        async def fetch_agent_card_detail(self, **kwargs):
+            from a2a.types import AgentCard
+
+            return AgentCard.model_validate(_ExtensionCard().model_dump())
+
+    resp = await fetch_and_validate_agent_card(
+        gateway=_ExtensionGateway(), resolved=object()
+    )
+
+    assert resp.success is True
+    assert resp.shared_session_query is not None
+    assert resp.shared_session_query.status == "supported"
+    assert resp.shared_session_query.declared_contract_family == "codex"
+    assert resp.shared_session_query.normalized_contract_family == "a2a_client_hub"
+    assert resp.shared_session_query.pagination_mode == "limit"
     assert resp.message == "Agent card validated"
 
 

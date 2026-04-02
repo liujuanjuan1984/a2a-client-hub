@@ -69,8 +69,9 @@ from app.integrations.a2a_extensions.types import (
 def _session_query_snapshot(
     ext: ResolvedExtension,
     *,
-    contract_mode: str = "canonical",
-    selection_mode: str = "canonical_parser",
+    declared_contract_family: str = "opencode",
+    normalized_contract_family: str = "a2a_client_hub",
+    selection_mode: str = "direct",
 ) -> SessionQueryCapabilitySnapshot:
     control_methods = {
         "prompt_async": ResolvedSessionControlMethodCapability(
@@ -95,7 +96,8 @@ def _session_query_snapshot(
         status="supported",
         capability=ResolvedSessionQueryRuntimeCapability(
             ext=ext,
-            contract_mode=contract_mode,
+            declared_contract_family=declared_contract_family,
+            normalized_contract_family=normalized_contract_family,
             selection_mode=selection_mode,
             control_methods=control_methods,
         ),
@@ -929,7 +931,7 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
 
     assert result.success is True
     assert result.meta["session_binding_mode"] == "declared_contract"
-    assert result.meta["session_query_selection_mode"] == "canonical_parser"
+    assert result.meta["session_query_selection_mode"] == "direct"
     assert fetch_calls == 1
 
 
@@ -1431,8 +1433,9 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     assert result.error_code == "method_not_supported"
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "session_query_contract_mode": "canonical",
-        "session_query_selection_mode": "canonical_parser",
+        "session_query_declared_contract_family": "opencode",
+        "session_query_normalized_contract_family": "a2a_client_hub",
+        "session_query_selection_mode": "direct",
     }
 
 
@@ -1643,8 +1646,9 @@ async def test_command_session_returns_method_not_supported_if_missing(
     assert result.error_code == "method_not_supported"
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "session_query_contract_mode": "canonical",
-        "session_query_selection_mode": "canonical_parser",
+        "session_query_declared_contract_family": "opencode",
+        "session_query_normalized_contract_family": "a2a_client_hub",
+        "session_query_selection_mode": "direct",
     }
 
 
@@ -1728,7 +1732,7 @@ async def test_command_session_requires_non_empty_command() -> None:
 
 
 @pytest.mark.asyncio
-async def test_command_session_requires_string_arguments() -> None:
+async def test_command_session_rejects_non_string_arguments() -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
@@ -1737,8 +1741,58 @@ async def test_command_session_requires_string_arguments() -> None:
         await service.command_session(
             runtime=runtime,
             session_id="ses_123",
-            request_payload={"command": "/review", "arguments": None},
+            request_payload={"command": "/review", "arguments": []},
         )
+
+
+@pytest.mark.asyncio
+async def test_command_session_allows_missing_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(supports_offset=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "command"
+        assert kwargs["params"]["request"] == {
+            "command": "/status",
+        }
+        return ExtensionCallResult(
+            success=True,
+            result={"item": {"kind": "message", "messageId": "msg-cmd-status-2"}},
+            meta={"session_id": "ses_123"},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    result = await service.command_session(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={
+            "command": "/status",
+        },
+    )
+
+    assert result.success is True
+    assert result.result == {
+        "item": {"kind": "message", "messageId": "msg-cmd-status-2"}
+    }
 
 
 @pytest.mark.asyncio
