@@ -9,6 +9,17 @@ type SessionControlMethodCapability = {
   declared: boolean;
   consumedByHub: boolean;
 };
+type InvokeMetadataCapability = {
+  declared: boolean;
+  consumedByHub: boolean;
+  metadataField?: string | null;
+  appliesToMethods: string[];
+  fields: {
+    name: string;
+    required: boolean;
+    description?: string | null;
+  }[];
+};
 
 const resolveSessionControlStatus = (
   method?: SessionControlMethodCapability | null,
@@ -84,6 +95,13 @@ export const useExtensionCapabilitiesQuery = ({
     query.data?.sessionControl?.shell != null
       ? resolveSessionControlStatus(query.data.sessionControl.shell)
       : "unknown";
+  const invokeMetadataStatus: GenericCapabilityStatus =
+    query.data?.invokeMetadata != null
+      ? query.data.invokeMetadata.declared &&
+        query.data.invokeMetadata.consumedByHub
+        ? "supported"
+        : "unsupported"
+      : "unknown";
 
   return {
     ...query,
@@ -94,7 +112,10 @@ export const useExtensionCapabilitiesQuery = ({
     sessionPromptAsyncStatus,
     sessionCommandStatus,
     sessionShellStatus,
+    invokeMetadataStatus,
     sessionControl: query.data?.sessionControl ?? null,
+    invokeMetadata:
+      (query.data?.invokeMetadata as InvokeMetadataCapability) ?? null,
     canShowModelPicker: modelSelectionStatus !== "unsupported",
   };
 };

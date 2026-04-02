@@ -43,6 +43,7 @@ import {
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { generateUuid } from "@/lib/id";
+import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
 import {
   getOpencodeDirectory,
   pickOpencodeDirectoryMetadata,
@@ -94,6 +95,9 @@ export function useChatScreenController({
   const setOpencodeDirectory = useChatStore(
     (state) => state.setOpencodeDirectory,
   );
+  const setInvokeMetadataBindings = useChatStore(
+    (state) => state.setInvokeMetadataBindings,
+  );
   const setSharedModelSelection = useChatStore(
     (state) => state.setSharedModelSelection,
   );
@@ -104,6 +108,7 @@ export function useChatScreenController({
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
+  const [showInvokeMetadataModal, setShowInvokeMetadataModal] = useState(false);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
@@ -155,6 +160,7 @@ export function useChatScreenController({
     session?.externalSessionRef?.externalSessionId?.trim() ?? "";
   const selectedModel = getSharedModelSelection(session?.metadata);
   const opencodeDirectory = getOpencodeDirectory(session?.metadata);
+  const invokeMetadataBindings = getInvokeMetadataBindings(session?.metadata);
   const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
     agentId: activeAgentId,
     source: agent?.source,
@@ -181,6 +187,40 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
+  const invokeMetadataStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.invokeMetadataStatus;
+  const latestMissingParams = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const item = messages[index];
+      if (item?.missingParams?.length) {
+        return item.missingParams;
+      }
+    }
+    return null;
+  }, [messages]);
+  const invokeMetadataFields = useMemo(() => {
+    const declaredFields =
+      extensionCapabilitiesQuery.invokeMetadata?.fields ?? [];
+    if (declaredFields.length > 0) {
+      return declaredFields.map((field) => ({
+        name: field.name,
+        required: field.required,
+        description: field.description ?? null,
+      }));
+    }
+    return (latestMissingParams ?? []).map((field) => ({
+      name: field.name,
+      required: field.required,
+      description: null,
+    }));
+  }, [extensionCapabilitiesQuery.invokeMetadata?.fields, latestMissingParams]);
+  const hasInvokeMetadataBindings =
+    Object.keys(invokeMetadataBindings).length > 0;
+  const invokeMetadataRequiredCount = invokeMetadataFields.filter(
+    (field) => field.required,
+  ).length;
   const pendingQuestionCount =
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
@@ -858,6 +898,38 @@ export function useChatScreenController({
     toast.success("Working directory cleared", "Using upstream default.");
   }, [activeAgentId, conversationId, ensureSession, setOpencodeDirectory]);
 
+  const openInvokeMetadataModal = useCallback(() => {
+    setShowInvokeMetadataModal(true);
+  }, []);
+
+  const closeInvokeMetadataModal = useCallback(() => {
+    setShowInvokeMetadataModal(false);
+  }, []);
+
+  const handleSaveInvokeMetadata = useCallback(
+    (bindings: Record<string, string>) => {
+      if (!conversationId || !activeAgentId) {
+        return;
+      }
+      ensureSession(conversationId, activeAgentId);
+      setInvokeMetadataBindings(conversationId, activeAgentId, bindings);
+      toast.success("Invoke metadata updated", "Session bindings saved.");
+    },
+    [activeAgentId, conversationId, ensureSession, setInvokeMetadataBindings],
+  );
+
+  const handleClearInvokeMetadata = useCallback(() => {
+    if (!conversationId || !activeAgentId) {
+      return;
+    }
+    ensureSession(conversationId, activeAgentId);
+    setInvokeMetadataBindings(conversationId, activeAgentId, {});
+    toast.success(
+      "Invoke metadata cleared",
+      "Using request or upstream defaults.",
+    );
+  }, [activeAgentId, conversationId, ensureSession, setInvokeMetadataBindings]);
+
   const handleRetry = useCallback(() => {
     if (
       !conversationId ||
@@ -932,8 +1004,13 @@ export function useChatScreenController({
     modelSelectionStatus,
     providerDiscoveryStatus,
     sessionCommandStatus,
+    invokeMetadataStatus,
     selectedModel,
     opencodeDirectory,
+    invokeMetadataBindings,
+    invokeMetadataFields,
+    hasInvokeMetadataBindings,
+    invokeMetadataRequiredCount,
     messages,
     historyLoading,
     historyLoadingMore,
@@ -951,12 +1028,15 @@ export function useChatScreenController({
     scrollToBottom,
     showShortcutManager,
     showSessionPicker,
+    showInvokeMetadataModal,
     showDirectoryPicker,
     showModelPicker,
     openShortcutManager,
     closeShortcutManager,
     openSessionPicker,
     closeSessionPicker,
+    openInvokeMetadataModal,
+    closeInvokeMetadataModal,
     openDirectoryPicker,
     closeDirectoryPicker,
     openModelPicker,
@@ -965,6 +1045,8 @@ export function useChatScreenController({
     clearModelSelection,
     handleSaveOpencodeDirectory,
     handleClearOpencodeDirectory,
+    handleSaveInvokeMetadata,
+    handleClearInvokeMetadata,
     handleUseShortcut,
     handleSessionSelect,
     handleTest,

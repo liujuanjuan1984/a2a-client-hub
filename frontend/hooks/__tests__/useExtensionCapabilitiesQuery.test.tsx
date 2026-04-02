@@ -90,6 +90,25 @@ const createSessionControl = (overrides?: {
   },
 });
 
+const createInvokeMetadata = (overrides?: {
+  declared?: boolean;
+  consumedByHub?: boolean;
+  metadataField?: string | null;
+  appliesToMethods?: string[];
+  fields?: {
+    name: string;
+    required: boolean;
+    description?: string | null;
+  }[];
+}) => ({
+  declared: false,
+  consumedByHub: true,
+  metadataField: null,
+  appliesToMethods: [],
+  fields: [],
+  ...overrides,
+});
+
 describe("useExtensionCapabilitiesQuery", () => {
   let queryClient: QueryClient;
 
@@ -109,6 +128,7 @@ describe("useExtensionCapabilitiesQuery", () => {
       interruptRecovery: true,
       sessionPromptAsync: true,
       sessionControl: createSessionControl(),
+      invokeMetadata: createInvokeMetadata(),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -130,6 +150,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.sessionPromptAsyncStatus).toBe("supported");
     expect(result.current.sessionCommandStatus).toBe("supported");
     expect(result.current.sessionShellStatus).toBe("unsupported");
+    expect(result.current.invokeMetadataStatus).toBe("unsupported");
   });
 
   it("returns unsupported when model selection is unavailable", async () => {
@@ -151,6 +172,7 @@ describe("useExtensionCapabilitiesQuery", () => {
           availability: "unsupported",
         },
       }),
+      invokeMetadata: createInvokeMetadata(),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -180,6 +202,10 @@ describe("useExtensionCapabilitiesQuery", () => {
       sessionControl: createSessionControl({
         promptAsync: { declared: false, availability: "unsupported" },
       }),
+      invokeMetadata: createInvokeMetadata({
+        declared: true,
+        fields: [{ name: "project_id", required: true }],
+      }),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -197,6 +223,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     });
     expect(result.current.providerDiscoveryStatus).toBe("unsupported");
     expect(result.current.interruptRecoveryStatus).toBe("unsupported");
+    expect(result.current.invokeMetadataStatus).toBe("supported");
   });
 
   it("returns unknown when capability lookup fails", async () => {
@@ -221,5 +248,6 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.sessionPromptAsyncStatus).toBe("unknown");
     expect(result.current.sessionCommandStatus).toBe("unknown");
     expect(result.current.sessionShellStatus).toBe("unknown");
+    expect(result.current.invokeMetadataStatus).toBe("unknown");
   });
 });

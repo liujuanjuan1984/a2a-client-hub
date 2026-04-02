@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
 import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
+import { InvokeMetadataModal } from "@/components/chat/InvokeMetadataModal";
 import { ModelPickerModal } from "@/components/chat/ModelPickerModal";
 import { OpencodeDirectoryModal } from "@/components/chat/OpencodeDirectoryModal";
 import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
@@ -124,13 +125,25 @@ export function ChatScreen({
         onClear={controller.handleClearOpencodeDirectory}
       />
 
+      <InvokeMetadataModal
+        visible={controller.showInvokeMetadataModal}
+        onClose={controller.closeInvokeMetadataModal}
+        fields={controller.invokeMetadataFields}
+        currentBindings={controller.invokeMetadataBindings}
+        onSave={controller.handleSaveInvokeMetadata}
+        onClear={controller.handleClearInvokeMetadata}
+      />
+
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}
         currentDirectory={controller.opencodeDirectory}
+        hasInvokeMetadata={controller.hasInvokeMetadataBindings}
+        invokeMetadataRequiredCount={controller.invokeMetadataRequiredCount}
         pendingInterrupt={controller.pendingInterrupt}
         pendingInterruptCount={controller.pendingInterruptCount}
         showShortcutManager={controller.showShortcutManager}
         onOpenDirectoryPicker={controller.openDirectoryPicker}
+        onOpenInvokeMetadata={controller.openInvokeMetadataModal}
         onOpenShortcutManager={controller.openShortcutManager}
         selectedModel={controller.selectedModel}
         onOpenModelPicker={controller.openModelPicker}

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, cast
 
+from app.features.invoke.invoke_metadata import (
+    apply_invoke_metadata_bindings,
+    summarize_invoke_metadata_fields,
+)
 from app.features.invoke.session_binding import resolve_invoke_session_binding_hint
 from app.features.invoke.shared_metadata import (
     apply_invoke_session_binding_metadata,
@@ -88,6 +93,39 @@ def log_session_binding_warning(
     log_warning(message, extra=merged_extra)
 
 
+@dataclass(frozen=True, slots=True)
+class InvokeMetadataBindingRequiredError(RuntimeError):
+    missing_params: tuple[dict[str, Any], ...]
+    upstream_error: dict[str, Any]
+
+    def __init__(
+        self,
+        *,
+        missing_fields: tuple[str, ...],
+        declared_fields: tuple[dict[str, Any], ...],
+    ) -> None:
+        message = (
+            "Declared invoke metadata is required before this agent can be invoked"
+        )
+        RuntimeError.__init__(self, message)
+        object.__setattr__(
+            self,
+            "missing_params",
+            tuple({"name": name, "required": True} for name in missing_fields),
+        )
+        object.__setattr__(
+            self,
+            "upstream_error",
+            {
+                "message": message,
+                "code": "invoke_metadata_not_bound",
+                "missing_fields": list(missing_fields),
+                "declared_fields": list(declared_fields),
+            },
+        )
+        object.__setattr__(self, "args", (message,))
+
+
 async def resolve_session_binding_outbound_mode(
     *,
     runtime: Any,
@@ -155,16 +193,45 @@ async def finalize_outbound_invoke_payload(
     runtime: Any,
     logger: Any,
     log_extra: dict[str, Any],
+    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
     resolve_outbound_mode: Callable[..., Awaitable[bool]] = (
         resolve_session_binding_outbound_mode
     ),
     log_warning_fn: Callable[..., None] = log_session_binding_warning,
 ) -> A2AAgentInvokeRequest:
+    invoke_metadata_ext = None
+    try:
+        invoke_metadata_ext = await extensions_service_getter().resolve_invoke_metadata(
+            runtime=runtime
+        )
+    except A2AExtensionNotSupportedError:
+        invoke_metadata_ext = None
+    except A2AExtensionContractError as exc:
+        log_warning_fn(
+            logger=logger,
+            message="Invoke metadata contract invalid; ignoring declared bindings",
+            log_extra=log_extra,
+            extra={"invoke_metadata_contract_error": str(exc)},
+        )
+    except A2AExtensionUpstreamError as exc:
+        log_warning_fn(
+            logger=logger,
+            message="Invoke metadata capability resolution failed upstream",
+            log_extra=log_extra,
+            extra={"invoke_metadata_resolution_error": str(exc)},
+        )
+
     provider, external_session_id = resolve_invoke_session_binding_hint(
         session_binding=payload.session_binding,
         metadata=payload.metadata,
     )
-    cleaned_metadata = strip_session_binding_metadata(payload.metadata or {})
+    invoke_metadata_resolution = apply_invoke_metadata_bindings(
+        metadata=payload.metadata,
+        ext=invoke_metadata_ext,
+    )
+    cleaned_metadata = strip_session_binding_metadata(
+        invoke_metadata_resolution.metadata
+    )
     if provider and not external_session_id:
         log_warning_fn(
             logger=logger,
@@ -186,6 +253,15 @@ async def finalize_outbound_invoke_payload(
         )
         provider = None
     if not provider and not external_session_id:
+        if invoke_metadata_ext is not None and (
+            invoke_metadata_resolution.missing_required_fields
+        ):
+            raise InvokeMetadataBindingRequiredError(
+                missing_fields=invoke_metadata_resolution.missing_required_fields,
+                declared_fields=tuple(
+                    summarize_invoke_metadata_fields(invoke_metadata_ext.fields)
+                ),
+            )
         if (
             cleaned_metadata == (payload.metadata or {})
             and payload.session_binding is None
@@ -206,6 +282,16 @@ async def finalize_outbound_invoke_payload(
         external_session_id=external_session_id,
         include_legacy_root=include_legacy_root,
     )
+    if (
+        invoke_metadata_ext is not None
+        and invoke_metadata_resolution.missing_required_fields
+    ):
+        raise InvokeMetadataBindingRequiredError(
+            missing_fields=invoke_metadata_resolution.missing_required_fields,
+            declared_fields=tuple(
+                summarize_invoke_metadata_fields(invoke_metadata_ext.fields)
+            ),
+        )
     return payload.model_copy(
         update={"metadata": next_metadata, "session_binding": None}
     )
@@ -215,6 +301,7 @@ __all__ = [
     "build_rebound_invoke_payload",
     "extract_rebound_continue_binding_fields",
     "finalize_outbound_invoke_payload",
+    "InvokeMetadataBindingRequiredError",
     "log_session_binding_warning",
     "resolve_session_binding_outbound_mode",
 ]

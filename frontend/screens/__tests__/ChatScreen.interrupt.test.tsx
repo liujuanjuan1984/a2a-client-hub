@@ -30,6 +30,10 @@ const mockExtensionCapabilitiesState = {
   interruptRecoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
   sessionCommandStatus: "supported" as MockCapabilityStatus,
+  invokeMetadataStatus: "unsupported" as MockCapabilityStatus,
+  invokeMetadata: null as {
+    fields: { name: string; required: boolean; description?: string | null }[];
+  } | null,
   canShowModelPicker: true,
 };
 
@@ -87,6 +91,10 @@ jest.mock("@/components/chat/SessionPickerModal", () => ({
 
 jest.mock("@/components/chat/OpencodeDirectoryModal", () => ({
   OpencodeDirectoryModal: () => null,
+}));
+
+jest.mock("@/components/chat/InvokeMetadataModal", () => ({
+  InvokeMetadataModal: () => null,
 }));
 
 jest.mock("@/components/chat/ShortcutManagerModal", () => ({
@@ -235,6 +243,7 @@ const mockChatState: {
   replaceRecoveredInterrupts: jest.Mock;
   bindExternalSession: jest.Mock;
   setOpencodeDirectory: jest.Mock;
+  setInvokeMetadataBindings: jest.Mock;
   getSessionsByAgentId: jest.Mock;
 } = {
   sessions: {},
@@ -246,6 +255,7 @@ const mockChatState: {
   replaceRecoveredInterrupts: jest.fn(),
   bindExternalSession: jest.fn(),
   setOpencodeDirectory: jest.fn(),
+  setInvokeMetadataBindings: jest.fn(),
   getSessionsByAgentId: jest.fn(() => []),
 };
 
@@ -437,6 +447,7 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.replaceRecoveredInterrupts.mockReset();
     mockChatState.bindExternalSession.mockReset();
     mockChatState.setOpencodeDirectory.mockReset();
+    mockChatState.setInvokeMetadataBindings.mockReset();
     mockPromptSessionAsync.mockReset().mockResolvedValue({
       ok: true,
       sessionId: "ses-upstream-1",
@@ -454,6 +465,8 @@ describe("ChatScreen interrupt handling", () => {
     mockExtensionCapabilitiesState.interruptRecoveryStatus = "supported";
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
     mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
+    mockExtensionCapabilitiesState.invokeMetadataStatus = "unsupported";
+    mockExtensionCapabilitiesState.invokeMetadata = null;
     mockExtensionCapabilitiesState.canShowModelPicker = true;
     mockSessionHistoryState.loadMore.mockReset();
     mockSessionHistoryState.messages = [];

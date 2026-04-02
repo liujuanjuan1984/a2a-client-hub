@@ -47,6 +47,17 @@ type A2AExtensionCapabilities = {
       configKey?: string | null;
     };
   };
+  invokeMetadata: {
+    declared: boolean;
+    consumedByHub: boolean;
+    metadataField?: string | null;
+    appliesToMethods: string[];
+    fields: {
+      name: string;
+      required: boolean;
+      description?: string | null;
+    }[];
+  };
   runtimeStatus: RuntimeStatusContract;
 };
 

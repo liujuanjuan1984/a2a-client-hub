@@ -13,6 +13,7 @@ from app.integrations.a2a_extensions.service import (
     ExtensionCallResult,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
+    InvokeMetadataCapabilitySnapshot,
     ModelSelectionCapabilitySnapshot,
     ProviderDiscoveryCapabilitySnapshot,
     ResolvedCapabilitySnapshot,
@@ -29,8 +30,10 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
 from app.integrations.a2a_extensions.shared_contract import (
     COMPATIBILITY_PROFILE_URI,
     INTERRUPT_RECOVERY_URI,
+    INVOKE_METADATA_URI,
     PROVIDER_DISCOVERY_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
+    SHARED_INVOKE_FIELD,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     SHARED_SESSION_QUERY_URI,
@@ -46,6 +49,8 @@ from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedInterruptRecoveryExtension,
+    ResolvedInvokeMetadataExtension,
+    ResolvedInvokeMetadataField,
     ResolvedModelSelectionExtension,
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionControlMethodCapability,
@@ -100,6 +105,21 @@ def _binding_snapshot(
     meta: dict | None = None,
 ) -> SessionBindingCapabilitySnapshot:
     return SessionBindingCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        error=error,
+        meta=meta or {},
+    )
+
+
+def _invoke_metadata_snapshot(
+    *,
+    status: str = "supported",
+    ext: ResolvedInvokeMetadataExtension | None = None,
+    error: str | None = None,
+    meta: dict | None = None,
+) -> InvokeMetadataCapabilitySnapshot:
+    return InvokeMetadataCapabilitySnapshot(
         status=status,
         ext=ext,
         error=error,
@@ -184,6 +204,7 @@ def _capability_snapshot(
     *,
     session_query: SessionQueryCapabilitySnapshot,
     session_binding: SessionBindingCapabilitySnapshot | None = None,
+    invoke_metadata: InvokeMetadataCapabilitySnapshot | None = None,
     interrupt_callback: InterruptCallbackCapabilitySnapshot | None = None,
     interrupt_recovery: InterruptRecoveryCapabilitySnapshot | None = None,
     model_selection: ModelSelectionCapabilitySnapshot | None = None,
@@ -194,6 +215,8 @@ def _capability_snapshot(
     return ResolvedCapabilitySnapshot(
         session_query=session_query,
         session_binding=session_binding or _binding_snapshot(status="unsupported"),
+        invoke_metadata=invoke_metadata
+        or _invoke_metadata_snapshot(status="unsupported"),
         interrupt_callback=interrupt_callback or _interrupt_snapshot(),
         interrupt_recovery=interrupt_recovery or _interrupt_recovery_snapshot(),
         model_selection=model_selection or _model_selection_snapshot(),
@@ -202,6 +225,33 @@ def _capability_snapshot(
         or StreamHintsCapabilitySnapshot(status="unsupported", meta={}),
         compatibility_profile=compatibility_profile
         or _compatibility_profile_snapshot(),
+    )
+
+
+def _invoke_metadata_extension_fixture() -> ResolvedInvokeMetadataExtension:
+    return ResolvedInvokeMetadataExtension(
+        uri=INVOKE_METADATA_URI,
+        required=False,
+        provider="commonground",
+        metadata_field=SHARED_INVOKE_FIELD,
+        behavior="merge_bound_metadata_into_invoke",
+        applies_to_methods=("message/send", "message/stream"),
+        fields=(
+            ResolvedInvokeMetadataField(
+                name="project_id",
+                required=True,
+                description="Project scope.",
+            ),
+            ResolvedInvokeMetadataField(
+                name="channel_id",
+                required=True,
+                description="Channel scope.",
+            ),
+        ),
+        supported_metadata=(
+            "shared.invoke.bindings.project_id",
+            "shared.invoke.bindings.channel_id",
+        ),
     )
 
 
@@ -485,6 +535,46 @@ async def test_resolve_session_binding_refreshes_cache_after_ttl(
     await service.resolve_session_binding(runtime=runtime)
 
     assert fetch_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_invoke_metadata_fetches_card_and_returns_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    fake_card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=INVOKE_METADATA_URI,
+                    required=False,
+                    params={
+                        "metadata_field": SHARED_INVOKE_FIELD,
+                        "behavior": "merge_bound_metadata_into_invoke",
+                        "applies_to_methods": ["message/send", "message/stream"],
+                        "fields": [
+                            {"name": "project_id", "required": True},
+                            {"name": "channel_id", "required": True},
+                        ],
+                    },
+                )
+            ]
+        )
+    )
+
+    async def _fake_fetch_card(_runtime):
+        return fake_card
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+
+    resolved = await service.resolve_invoke_metadata(runtime=runtime)
+
+    assert resolved.uri == INVOKE_METADATA_URI
+    assert resolved.metadata_field == SHARED_INVOKE_FIELD
+    assert [item.name for item in resolved.fields] == ["project_id", "channel_id"]
 
 
 def test_map_business_error_code_supports_dynamic_declared_codes() -> None:

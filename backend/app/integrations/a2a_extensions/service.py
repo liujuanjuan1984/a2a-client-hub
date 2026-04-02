@@ -29,6 +29,7 @@ from app.integrations.a2a_extensions.interrupt_recovery import (
 from app.integrations.a2a_extensions.interrupt_recovery_service import (
     InterruptRecoveryService,
 )
+from app.integrations.a2a_extensions.invoke_metadata import resolve_invoke_metadata
 from app.integrations.a2a_extensions.model_selection import resolve_model_selection
 from app.integrations.a2a_extensions.opencode_discovery_service import (
     OpencodeDiscoveryService,
@@ -53,6 +54,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedCompatibilityProfileExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedInterruptRecoveryExtension,
+    ResolvedInvokeMetadataExtension,
     ResolvedModelSelectionExtension,
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionBindingExtension,
@@ -83,6 +85,14 @@ class SessionQueryCapabilitySnapshot:
 class SessionBindingCapabilitySnapshot:
     status: Literal["supported", "unsupported", "invalid"]
     ext: ResolvedSessionBindingExtension | None = None
+    error: str | None = None
+    meta: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InvokeMetadataCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedInvokeMetadataExtension | None = None
     error: str | None = None
     meta: dict[str, Any] | None = None
 
@@ -138,6 +148,7 @@ class CompatibilityProfileCapabilitySnapshot:
 class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
+    invoke_metadata: InvokeMetadataCapabilitySnapshot
     interrupt_callback: InterruptCallbackCapabilitySnapshot
     interrupt_recovery: InterruptRecoveryCapabilitySnapshot
     model_selection: ModelSelectionCapabilitySnapshot
@@ -234,6 +245,41 @@ class A2AExtensionsService:
                     "compat_fallback" if ext.legacy_uri_used else "declared_contract"
                 ),
                 "session_binding_fallback_used": ext.legacy_uri_used,
+            },
+        )
+
+    @staticmethod
+    def _build_invoke_metadata_snapshot(card: Any) -> InvokeMetadataCapabilitySnapshot:
+        try:
+            ext = resolve_invoke_metadata(card)
+        except A2AExtensionNotSupportedError as exc:
+            return InvokeMetadataCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+                meta={
+                    "invoke_metadata_declared": False,
+                    "invoke_metadata_consumed_by_hub": True,
+                },
+            )
+        except A2AExtensionContractError as exc:
+            return InvokeMetadataCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+                meta={
+                    "invoke_metadata_declared": True,
+                    "invoke_metadata_consumed_by_hub": True,
+                    "invoke_metadata_contract_error": str(exc),
+                },
+            )
+
+        return InvokeMetadataCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+            meta={
+                "invoke_metadata_declared": True,
+                "invoke_metadata_consumed_by_hub": True,
+                "invoke_metadata_uri": ext.uri,
+                "invoke_metadata_field_count": len(ext.fields),
             },
         )
 
@@ -421,6 +467,7 @@ class A2AExtensionsService:
         snapshot = ResolvedCapabilitySnapshot(
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
+            invoke_metadata=self._build_invoke_metadata_snapshot(card),
             interrupt_callback=self._build_interrupt_callback_snapshot(card),
             interrupt_recovery=self._build_interrupt_recovery_snapshot(card),
             model_selection=self._build_model_selection_snapshot(card),
@@ -507,6 +554,22 @@ class A2AExtensionsService:
         raise A2AExtensionNotSupportedError(
             snapshot.session_binding.error
             or "Shared session binding extension not found"
+        )
+
+    async def resolve_invoke_metadata(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ResolvedInvokeMetadataExtension:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        if snapshot.invoke_metadata.ext is not None:
+            return snapshot.invoke_metadata.ext
+        if snapshot.invoke_metadata.status == "invalid":
+            raise A2AExtensionContractError(
+                snapshot.invoke_metadata.error or "Invoke metadata contract is invalid"
+            )
+        raise A2AExtensionNotSupportedError(
+            snapshot.invoke_metadata.error or "Invoke metadata extension not found"
         )
 
     async def list_sessions(

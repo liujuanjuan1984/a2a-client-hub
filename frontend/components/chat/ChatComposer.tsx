@@ -17,10 +17,13 @@ import { type SharedModelSelection } from "@/lib/chat-utils";
 export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
   currentDirectory,
+  hasInvokeMetadata,
+  invokeMetadataRequiredCount,
   pendingInterrupt,
   pendingInterruptCount,
   showShortcutManager,
   onOpenDirectoryPicker,
+  onOpenInvokeMetadata,
   onOpenShortcutManager,
   selectedModel,
   onOpenModelPicker,
@@ -44,10 +47,13 @@ export const ChatComposer = memo(function ChatComposer({
 }: {
   modelSelectionStatus: GenericCapabilityStatus;
   currentDirectory?: string | null;
+  hasInvokeMetadata: boolean;
+  invokeMetadataRequiredCount: number;
   pendingInterrupt: PendingRuntimeInterrupt | null;
   pendingInterruptCount: number;
   showShortcutManager: boolean;
   onOpenDirectoryPicker: () => void;
+  onOpenInvokeMetadata: () => void;
   onOpenShortcutManager: () => void;
   selectedModel: SharedModelSelection | null;
   onOpenModelPicker: () => void;
@@ -75,6 +81,12 @@ export const ChatComposer = memo(function ChatComposer({
     ? `${selectedModel.providerID} / ${selectedModel.modelID}`
     : "Model: Default";
   const hasDirectory = Boolean(currentDirectory?.trim());
+  const invokeMetadataHint =
+    invokeMetadataRequiredCount > 0
+      ? `${invokeMetadataRequiredCount} required invoke metadata field${
+          invokeMetadataRequiredCount === 1 ? "" : "s"
+        }`
+      : "Configure invoke metadata bindings for this session";
 
   return (
     <View className="relative border-t border-slate-800 px-2 sm:px-6 py-4">
@@ -142,6 +154,22 @@ export const ChatComposer = memo(function ChatComposer({
               name={hasDirectory ? "folder-open" : "folder-open-outline"}
               size={18}
               color={hasDirectory ? "#000000" : "#FFFFFF"}
+            />
+          </Pressable>
+
+          <Pressable
+            className={`h-9 w-14 items-center justify-center rounded-xl ${
+              hasInvokeMetadata ? "bg-primary" : "bg-slate-800/40"
+            }`}
+            onPress={onOpenInvokeMetadata}
+            accessibilityRole="button"
+            accessibilityLabel="Configure invoke metadata"
+            accessibilityHint={invokeMetadataHint}
+          >
+            <Ionicons
+              name={hasInvokeMetadata ? "key" : "key-outline"}
+              size={18}
+              color={hasInvokeMetadata ? "#000000" : "#FFFFFF"}
             />
           </Pressable>
 

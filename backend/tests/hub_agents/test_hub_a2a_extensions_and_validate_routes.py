@@ -93,6 +93,7 @@ class _FakeExtensionsService:
             model_selection=SimpleNamespace(status="unsupported"),
             provider_discovery=SimpleNamespace(status="unsupported"),
             interrupt_recovery=SimpleNamespace(status="unsupported"),
+            invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
             session_query=SimpleNamespace(status="unsupported", capability=None),
             compatibility_profile=SimpleNamespace(
                 status="unsupported",
@@ -1533,6 +1534,13 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 "configKey": "A2A_ENABLE_SESSION_SHELL",
             },
         },
+        "invokeMetadata": {
+            "declared": False,
+            "consumedByHub": True,
+            "metadataField": None,
+            "appliesToMethods": [],
+            "fields": [],
+        },
         "compatibilityProfile": {
             "declared": True,
             "status": "supported",
@@ -1615,6 +1623,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
                 }
             ),
         ),
+        invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
     )
     monkeypatch.setattr(
         extension_router_common,
@@ -1663,6 +1672,13 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
                 "enabledByDefault": None,
                 "configKey": None,
             },
+        },
+        "invokeMetadata": {
+            "declared": False,
+            "consumedByHub": True,
+            "metadataField": None,
+            "appliesToMethods": [],
+            "fields": [],
         },
         "compatibilityProfile": {
             "declared": False,
@@ -1726,6 +1742,7 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
                 }
             ),
         ),
+        invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
     )
     monkeypatch.setattr(
         extension_router_common,
@@ -1774,6 +1791,13 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
                 "enabledByDefault": False,
                 "configKey": "A2A_ENABLE_SESSION_SHELL",
             },
+        },
+        "invokeMetadata": {
+            "declared": False,
+            "consumedByHub": True,
+            "metadataField": None,
+            "appliesToMethods": [],
+            "fields": [],
         },
         "compatibilityProfile": {
             "declared": True,

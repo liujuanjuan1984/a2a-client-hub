@@ -321,6 +321,24 @@ describe("assertExtensionSuccess", () => {
           enabledByDefault: false,
         },
       },
+      invokeMetadata: {
+        declared: true,
+        consumedByHub: true,
+        metadataField: "metadata.shared.invoke",
+        appliesToMethods: ["message/send", "message/stream"],
+        fields: [
+          {
+            name: "project_id",
+            required: true,
+            description: "Project scope.",
+          },
+          {
+            name: "channel_id",
+            required: true,
+            description: "Channel scope.",
+          },
+        ],
+      },
       runtimeStatus: {
         version: "v1",
         canonicalStates: [
@@ -367,6 +385,8 @@ describe("assertExtensionSuccess", () => {
     expect(result.sessionPromptAsync).toBe(true);
     expect(result.sessionControl.command.consumedByHub).toBe(true);
     expect(result.sessionControl.shell.availability).toBe("conditional");
+    expect(result.invokeMetadata.metadataField).toBe("metadata.shared.invoke");
+    expect(result.invokeMetadata.fields[0]?.name).toBe("project_id");
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
   });

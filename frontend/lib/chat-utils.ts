@@ -3,6 +3,7 @@ import type {
   PendingRuntimeInterrupt,
   ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
+import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
 import { pickOpencodeDirectoryMetadata } from "@/lib/opencodeMetadata";
 import {
   pickSharedMetadataSections,
@@ -256,8 +257,22 @@ export const sortSessionsByLastActive = (
 const normalizeSessionForPersistence = (
   session: AgentSession,
 ): AgentSession => {
+  const sharedMetadata = pickSharedMetadataSections(session.metadata, [
+    "model",
+  ]);
+  const invokeBindings = getInvokeMetadataBindings(session.metadata);
   const persistedMetadata = {
-    ...pickSharedMetadataSections(session.metadata, ["model"]),
+    ...sharedMetadata,
+    ...(Object.keys(invokeBindings).length > 0
+      ? {
+          shared: {
+            ...(sharedMetadata.shared as Record<string, unknown> | undefined),
+            invoke: {
+              bindings: invokeBindings,
+            },
+          },
+        }
+      : {}),
     ...(pickOpencodeDirectoryMetadata(session.metadata) ?? {}),
   };
 

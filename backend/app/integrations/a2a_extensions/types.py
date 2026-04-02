@@ -83,6 +83,13 @@ class CompatibilityRetentionEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedInvokeMetadataField:
+    name: str
+    required: bool
+    description: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedInterruptCallbackExtension:
     uri: str
     required: bool
@@ -114,6 +121,18 @@ class ResolvedSessionBindingExtension:
     shared_workspace_across_consumers: bool | None
     tenant_isolation: str | None
     legacy_uri_used: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedInvokeMetadataExtension:
+    uri: str
+    required: bool
+    provider: str
+    metadata_field: str
+    behavior: str
+    applies_to_methods: tuple[str, ...]
+    fields: tuple[ResolvedInvokeMetadataField, ...]
+    supported_metadata: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +185,8 @@ __all__ = [
     "MessageCursorPaginationContract",
     "PageSizePagination",
     "ResolvedCompatibilityProfileExtension",
+    "ResolvedInvokeMetadataExtension",
+    "ResolvedInvokeMetadataField",
     "ResultEnvelopeMapping",
     "ResolvedModelSelectionExtension",
     "ResolvedProviderDiscoveryExtension",
