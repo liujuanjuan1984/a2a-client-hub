@@ -55,6 +55,9 @@ from app.schemas.a2a_extension import (
     A2ARuntimeStatusContractResponse,
     A2ASessionControlCapabilitiesResponse,
     A2ASessionControlMethodResponse,
+    A2AWireContractCapabilitiesResponse,
+    A2AWireContractConditionalMethodResponse,
+    A2AWireContractUnsupportedMethodErrorResponse,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -226,6 +229,49 @@ def _build_invoke_metadata_response(
     )
 
 
+def _build_wire_contract_response(
+    snapshot: Any,
+) -> A2AWireContractCapabilitiesResponse:
+    wire_snapshot = getattr(snapshot, "wire_contract", None)
+    ext = getattr(wire_snapshot, "ext", None)
+    status = cast(
+        Literal["supported", "unsupported", "invalid"],
+        getattr(wire_snapshot, "status", "unsupported"),
+    )
+    error = getattr(wire_snapshot, "error", None)
+    if ext is None:
+        return A2AWireContractCapabilitiesResponse(
+            declared=status != "unsupported",
+            consumedByHub=True,
+            status=status,
+            error=error,
+        )
+
+    return A2AWireContractCapabilitiesResponse(
+        declared=True,
+        consumedByHub=True,
+        status=status,
+        protocolVersion=ext.protocol_version,
+        preferredTransport=ext.preferred_transport,
+        additionalTransports=list(ext.additional_transports),
+        allJsonrpcMethods=list(ext.all_jsonrpc_methods),
+        extensionUris=list(ext.extension_uris),
+        conditionalMethods={
+            name: A2AWireContractConditionalMethodResponse(
+                reason=item.reason,
+                toggle=item.toggle,
+            )
+            for name, item in dict(ext.conditionally_available_methods).items()
+        },
+        unsupportedMethodError=A2AWireContractUnsupportedMethodErrorResponse(
+            code=ext.unsupported_method_error.code,
+            type=ext.unsupported_method_error.type,
+            dataFields=list(ext.unsupported_method_error.data_fields),
+        ),
+        error=error,
+    )
+
+
 def create_extension_capability_router(
     *,
     prefix: str,
@@ -326,6 +372,7 @@ def create_extension_capability_router(
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
             invokeMetadata=_build_invoke_metadata_response(snapshot),
+            wireContract=_build_wire_contract_response(snapshot),
             compatibilityProfile=_build_compatibility_profile_response(snapshot),
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +179,36 @@ class ResolvedCompatibilityProfileExtension:
     consumer_guidance: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedConditionalMethodAvailability:
+    reason: str
+    toggle: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedUnsupportedMethodErrorContract:
+    code: int
+    type: str
+    data_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedWireContractExtension:
+    uri: str
+    required: bool
+    protocol_version: str
+    preferred_transport: str
+    additional_transports: tuple[str, ...]
+    core_jsonrpc_methods: tuple[str, ...]
+    core_http_endpoints: tuple[str, ...]
+    extension_jsonrpc_methods: tuple[str, ...]
+    conditionally_available_methods: Mapping[str, ResolvedConditionalMethodAvailability]
+    extension_uris: tuple[str, ...]
+    all_jsonrpc_methods: tuple[str, ...]
+    service_behaviors: Mapping[str, Any]
+    unsupported_method_error: ResolvedUnsupportedMethodErrorContract
+
+
 __all__ = [
     "CompatibilityRetentionEntry",
     "JsonRpcInterface",
@@ -196,6 +226,9 @@ __all__ = [
     "ResolvedInterruptRecoveryExtension",
     "ResolvedSessionBindingExtension",
     "ResolvedStreamHintsExtension",
+    "ResolvedConditionalMethodAvailability",
     "SessionListFilterFieldContract",
     "SessionListFiltersContract",
+    "ResolvedUnsupportedMethodErrorContract",
+    "ResolvedWireContractExtension",
 ]

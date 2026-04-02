@@ -1430,6 +1430,41 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="supported"),
         interrupt_recovery=SimpleNamespace(status="supported"),
+        wire_contract=SimpleNamespace(
+            status="supported",
+            error=None,
+            ext=SimpleNamespace(
+                protocol_version="0.3.0",
+                preferred_transport="HTTP+JSON",
+                additional_transports=("JSON-RPC",),
+                all_jsonrpc_methods=(
+                    "shared.sessions.prompt_async",
+                    "shared.sessions.command",
+                    "providers.list",
+                    "models.list",
+                ),
+                extension_uris=(
+                    "urn:opencode-a2a:provider-discovery/v1",
+                    "urn:opencode-a2a:session-query/v1",
+                ),
+                conditionally_available_methods={
+                    "opencode.sessions.shell": SimpleNamespace(
+                        reason="disabled_by_configuration",
+                        toggle="A2A_ENABLE_SESSION_SHELL",
+                    )
+                },
+                unsupported_method_error=SimpleNamespace(
+                    code=-32601,
+                    type="METHOD_NOT_SUPPORTED",
+                    data_fields=(
+                        "type",
+                        "method",
+                        "supported_methods",
+                        "protocol_version",
+                    ),
+                ),
+            ),
+        ),
         compatibility_profile=SimpleNamespace(
             status="supported",
             error=None,
@@ -1541,6 +1576,41 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             "appliesToMethods": [],
             "fields": [],
         },
+        "wireContract": {
+            "declared": True,
+            "consumedByHub": True,
+            "status": "supported",
+            "protocolVersion": "0.3.0",
+            "preferredTransport": "HTTP+JSON",
+            "additionalTransports": ["JSON-RPC"],
+            "allJsonrpcMethods": [
+                "shared.sessions.prompt_async",
+                "shared.sessions.command",
+                "providers.list",
+                "models.list",
+            ],
+            "extensionUris": [
+                "urn:opencode-a2a:provider-discovery/v1",
+                "urn:opencode-a2a:session-query/v1",
+            ],
+            "conditionalMethods": {
+                "opencode.sessions.shell": {
+                    "reason": "disabled_by_configuration",
+                    "toggle": "A2A_ENABLE_SESSION_SHELL",
+                }
+            },
+            "unsupportedMethodError": {
+                "code": -32601,
+                "type": "METHOD_NOT_SUPPORTED",
+                "dataFields": [
+                    "type",
+                    "method",
+                    "supported_methods",
+                    "protocol_version",
+                ],
+            },
+            "error": None,
+        },
         "compatibilityProfile": {
             "declared": True,
             "status": "supported",
@@ -1596,6 +1666,11 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="unsupported"),
         interrupt_recovery=SimpleNamespace(status="unsupported"),
+        wire_contract=SimpleNamespace(
+            status="unsupported",
+            ext=None,
+            error="Wire contract extension not found",
+        ),
         compatibility_profile=SimpleNamespace(
             status="unsupported",
             ext=None,
@@ -1680,6 +1755,19 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             "appliesToMethods": [],
             "fields": [],
         },
+        "wireContract": {
+            "declared": False,
+            "consumedByHub": True,
+            "status": "unsupported",
+            "protocolVersion": None,
+            "preferredTransport": None,
+            "additionalTransports": [],
+            "allJsonrpcMethods": [],
+            "extensionUris": [],
+            "conditionalMethods": {},
+            "unsupportedMethodError": None,
+            "error": "Wire contract extension not found",
+        },
         "compatibilityProfile": {
             "declared": False,
             "status": "unsupported",
@@ -1714,6 +1802,11 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         model_selection=SimpleNamespace(status="unsupported"),
         provider_discovery=SimpleNamespace(status="supported"),
         interrupt_recovery=SimpleNamespace(status="unsupported"),
+        wire_contract=SimpleNamespace(
+            status="invalid",
+            ext=None,
+            error="Extension contract missing/invalid 'params.extensions.jsonrpc_methods'",
+        ),
         compatibility_profile=SimpleNamespace(
             status="invalid",
             ext=None,
@@ -1798,6 +1891,19 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             "metadataField": None,
             "appliesToMethods": [],
             "fields": [],
+        },
+        "wireContract": {
+            "declared": True,
+            "consumedByHub": True,
+            "status": "invalid",
+            "protocolVersion": None,
+            "preferredTransport": None,
+            "additionalTransports": [],
+            "allJsonrpcMethods": [],
+            "extensionUris": [],
+            "conditionalMethods": {},
+            "unsupportedMethodError": None,
+            "error": "Extension contract missing/invalid 'params.extensions.jsonrpc_methods'",
         },
         "compatibilityProfile": {
             "declared": True,

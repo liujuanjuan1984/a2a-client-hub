@@ -211,8 +211,8 @@ Notes:
 
 - `before` is a Hub-stable request field for extension session message history. The backend maps it to the upstream runtime's declared cursor param when the session-query contract advertises cursor pagination support.
 - `result.pageInfo.nextBefore` is the Hub-stable cursor field. It is derived from the upstream runtime's declared cursor result field and omitted when the runtime does not expose cursor pagination.
-
 - The backend discovers the JSON-RPC interface URL and method names via the Agent Card extension contract, and enforces the declared pagination constraints (`page/size`, `limit`, or `limit + cursor`, including default/max bounds).
+- When the upstream card declares the wire-contract extension, the backend also preflights custom JSON-RPC calls against `all_jsonrpc_methods` and `extensions.conditionally_available_methods`, returning a normalized `method_not_supported` or `method_disabled` result before making an upstream call.
 - Responses include a stable envelope with `success`, `result` (upstream envelope), `error_code`, and `upstream_error`.
 - Non-2xx HTTP errors are normalized under `detail`, for example: `{"detail":{"message":"...","error_code":"...","source":"...","jsonrpc_code":...}}`.
 - Interrupt callback payloads intentionally follow the strict upstream contract: `request_id` is required; legacy fields such as `requestID`, `decision`, `allow` or `deny` are not accepted.

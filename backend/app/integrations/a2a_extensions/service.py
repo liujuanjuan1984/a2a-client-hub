@@ -52,6 +52,7 @@ from app.integrations.a2a_extensions.shared_support import (
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.integrations.a2a_extensions.types import (
     ResolvedCompatibilityProfileExtension,
+    ResolvedConditionalMethodAvailability,
     ResolvedInterruptCallbackExtension,
     ResolvedInterruptRecoveryExtension,
     ResolvedInvokeMetadataExtension,
@@ -59,7 +60,9 @@ from app.integrations.a2a_extensions.types import (
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionBindingExtension,
     ResolvedStreamHintsExtension,
+    ResolvedWireContractExtension,
 )
+from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
 
 logger = get_logger(__name__)
 _CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS = 300.0
@@ -145,6 +148,13 @@ class CompatibilityProfileCapabilitySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class WireContractCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedWireContractExtension | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
@@ -154,6 +164,7 @@ class ResolvedCapabilitySnapshot:
     model_selection: ModelSelectionCapabilitySnapshot
     provider_discovery: ProviderDiscoveryCapabilitySnapshot
     stream_hints: StreamHintsCapabilitySnapshot
+    wire_contract: WireContractCapabilitySnapshot
     compatibility_profile: CompatibilityProfileCapabilitySnapshot
 
 
@@ -451,6 +462,28 @@ class A2AExtensionsService:
             ext=ext,
         )
 
+    @staticmethod
+    def _build_wire_contract_snapshot(
+        card: Any,
+    ) -> WireContractCapabilitySnapshot:
+        try:
+            ext = resolve_wire_contract(card)
+        except A2AExtensionNotSupportedError as exc:
+            return WireContractCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+            )
+        except A2AExtensionContractError as exc:
+            return WireContractCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+            )
+
+        return WireContractCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+        )
+
     async def resolve_capability_snapshot(
         self,
         *,
@@ -473,6 +506,7 @@ class A2AExtensionsService:
             model_selection=self._build_model_selection_snapshot(card),
             provider_discovery=self._build_provider_discovery_snapshot(card),
             stream_hints=self._build_stream_hints_snapshot(card),
+            wire_contract=self._build_wire_contract_snapshot(card),
             compatibility_profile=self._build_compatibility_profile_snapshot(card),
         )
         async with self._capability_snapshot_cache_lock:
@@ -538,6 +572,93 @@ class A2AExtensionsService:
             snapshot.error or "Provider discovery extension not found"
         )
 
+    @staticmethod
+    def _build_wire_contract_preflight_error(
+        *,
+        error_code: Literal["method_disabled", "method_not_supported"],
+        extension_uri: str,
+        method_name: str,
+        wire_contract: ResolvedWireContractExtension,
+        conditional: ResolvedConditionalMethodAvailability | None = None,
+    ) -> ExtensionCallResult:
+        if conditional is not None:
+            message = f"Method {method_name} is disabled by upstream deployment"
+            upstream_error = {
+                "message": message,
+                "type": "METHOD_DISABLED",
+                "method": method_name,
+                "reason": conditional.reason,
+            }
+            if conditional.toggle:
+                upstream_error["toggle"] = conditional.toggle
+            return ExtensionCallResult(
+                success=False,
+                error_code=error_code,
+                source="wire_contract",
+                upstream_error=upstream_error,
+                meta={
+                    "extension_uri": extension_uri,
+                    "wire_contract_uri": wire_contract.uri,
+                    "wire_contract_preflight": "conditionally_available",
+                    "method_name": method_name,
+                },
+            )
+
+        unsupported = wire_contract.unsupported_method_error
+        supported_methods = list(wire_contract.all_jsonrpc_methods)
+        message = f"Unsupported method: {method_name}"
+        return ExtensionCallResult(
+            success=False,
+            error_code=error_code,
+            source="wire_contract",
+            jsonrpc_code=unsupported.code,
+            upstream_error={
+                "message": message,
+                "type": unsupported.type,
+                "method": method_name,
+                "supported_methods": supported_methods,
+                "protocol_version": wire_contract.protocol_version,
+            },
+            meta={
+                "extension_uri": extension_uri,
+                "wire_contract_uri": wire_contract.uri,
+                "wire_contract_preflight": "unsupported_method",
+                "method_name": method_name,
+            },
+        )
+
+    @classmethod
+    def _preflight_wire_contract_method(
+        cls,
+        *,
+        snapshot: WireContractCapabilitySnapshot,
+        extension_uri: str,
+        method_name: str | None,
+    ) -> ExtensionCallResult | None:
+        if not method_name or snapshot.ext is None or snapshot.status != "supported":
+            return None
+
+        wire_contract = snapshot.ext
+        if method_name in wire_contract.all_jsonrpc_methods:
+            return None
+
+        conditional = wire_contract.conditionally_available_methods.get(method_name)
+        if conditional is not None:
+            return cls._build_wire_contract_preflight_error(
+                error_code="method_disabled",
+                extension_uri=extension_uri,
+                method_name=method_name,
+                wire_contract=wire_contract,
+                conditional=conditional,
+            )
+
+        return cls._build_wire_contract_preflight_error(
+            error_code="method_not_supported",
+            extension_uri=extension_uri,
+            method_name=method_name,
+            wire_contract=wire_contract,
+        )
+
     async def resolve_session_binding(
         self,
         *,
@@ -584,6 +705,13 @@ class A2AExtensionsService:
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         capability = self._require_session_query_capability(snapshot.session_query)
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("list_sessions"),
+        )
+        if preflight is not None:
+            return preflight
         return await self._session_extensions.list_sessions(
             runtime=runtime,
             ext=capability.ext,
@@ -608,6 +736,13 @@ class A2AExtensionsService:
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         capability = self._require_session_query_capability(snapshot.session_query)
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("get_session_messages"),
+        )
+        if preflight is not None:
+            return preflight
         return await self._session_extensions.get_session_messages(
             runtime=runtime,
             ext=capability.ext,
@@ -628,6 +763,13 @@ class A2AExtensionsService:
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         capability = self._require_session_query_capability(snapshot.session_query)
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("get_session_messages"),
+        )
+        if preflight is not None:
+            return preflight
         return await self._session_extensions.continue_session(
             runtime=runtime,
             ext=capability.ext,
@@ -651,6 +793,13 @@ class A2AExtensionsService:
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         capability = self._require_session_query_capability(snapshot.session_query)
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("prompt_async"),
+        )
+        if preflight is not None:
+            return preflight
         return await self._session_extensions.prompt_session_async(
             runtime=runtime,
             ext=capability.ext,
@@ -675,6 +824,13 @@ class A2AExtensionsService:
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         capability = self._require_session_query_capability(snapshot.session_query)
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("command"),
+        )
+        if preflight is not None:
+            return preflight
         return await self._session_extensions.command_session(
             runtime=runtime,
             ext=capability.ext,
@@ -694,6 +850,13 @@ class A2AExtensionsService:
         ext, jsonrpc_url = self._require_provider_discovery_capability(
             snapshot.provider_discovery
         )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=ext.uri,
+            method_name=ext.methods.get("list_providers"),
+        )
+        if preflight is not None:
+            return preflight
         return await self._opencode_discovery.list_model_providers(
             runtime=runtime,
             ext=ext,
@@ -712,6 +875,13 @@ class A2AExtensionsService:
         ext, jsonrpc_url = self._require_provider_discovery_capability(
             snapshot.provider_discovery
         )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=ext.uri,
+            method_name=ext.methods.get("list_models"),
+        )
+        if preflight is not None:
+            return preflight
         return await self._opencode_discovery.list_models(
             runtime=runtime,
             ext=ext,
