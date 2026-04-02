@@ -69,8 +69,9 @@ from app.integrations.a2a_extensions.types import (
 def _session_query_snapshot(
     ext: ResolvedExtension,
     *,
-    contract_mode: str = "canonical",
-    selection_mode: str = "canonical_parser",
+    declared_contract_family: str = "opencode",
+    normalized_contract_family: str = "a2a_client_hub",
+    selection_mode: str = "direct",
 ) -> SessionQueryCapabilitySnapshot:
     control_methods = {
         "prompt_async": ResolvedSessionControlMethodCapability(
@@ -95,7 +96,8 @@ def _session_query_snapshot(
         status="supported",
         capability=ResolvedSessionQueryRuntimeCapability(
             ext=ext,
-            contract_mode=contract_mode,
+            declared_contract_family=declared_contract_family,
+            normalized_contract_family=normalized_contract_family,
             selection_mode=selection_mode,
             control_methods=control_methods,
         ),
@@ -929,7 +931,7 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
 
     assert result.success is True
     assert result.meta["session_binding_mode"] == "declared_contract"
-    assert result.meta["session_query_selection_mode"] == "canonical_parser"
+    assert result.meta["session_query_selection_mode"] == "direct"
     assert fetch_calls == 1
 
 
@@ -1431,8 +1433,9 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     assert result.error_code == "method_not_supported"
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "session_query_contract_mode": "canonical",
-        "session_query_selection_mode": "canonical_parser",
+        "session_query_declared_contract_family": "opencode",
+        "session_query_normalized_contract_family": "a2a_client_hub",
+        "session_query_selection_mode": "direct",
     }
 
 
@@ -1643,8 +1646,9 @@ async def test_command_session_returns_method_not_supported_if_missing(
     assert result.error_code == "method_not_supported"
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "session_query_contract_mode": "canonical",
-        "session_query_selection_mode": "canonical_parser",
+        "session_query_declared_contract_family": "opencode",
+        "session_query_normalized_contract_family": "a2a_client_hub",
+        "session_query_selection_mode": "direct",
     }
 
 

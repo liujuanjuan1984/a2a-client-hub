@@ -882,7 +882,11 @@ async def test_hub_card_validate_reports_shared_session_query_diagnostics(
     payload = resp.json()
     assert payload["success"] is True
     assert payload["shared_session_query"]["declared"] is True
-    assert payload["shared_session_query"]["status"] == "legacy"
+    assert payload["shared_session_query"]["status"] == "supported"
+    assert payload["shared_session_query"]["declaredContractFamily"] == "legacy"
+    assert payload["shared_session_query"]["normalizedContractFamily"] == (
+        "a2a_client_hub"
+    )
     assert payload["shared_session_query"]["uses_legacy_uri"] is True
 
 
@@ -941,7 +945,11 @@ async def test_hub_card_validate_accepts_limit_and_optional_cursor_session_query
     payload = resp.json()
     assert payload["success"] is True
     assert payload["message"] == "Agent card validated"
-    assert payload["shared_session_query"]["status"] == "canonical"
+    assert payload["shared_session_query"]["status"] == "supported"
+    assert payload["shared_session_query"]["declaredContractFamily"] == "opencode"
+    assert payload["shared_session_query"]["normalizedContractFamily"] == (
+        "a2a_client_hub"
+    )
     assert payload["shared_session_query"]["pagination_mode"] == (
         "limit_and_optional_cursor"
     )

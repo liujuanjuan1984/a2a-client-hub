@@ -1,24 +1,27 @@
-# Shared Session Query Canonical Contract
+# Shared Session Query Hub-Normalized Contract
 
-This document defines the canonical Hub-consumed contract for the shared session query extension.
+This document defines the Hub-private normalized contract consumed for shared session query handling.
 
 It is intentionally scoped to the runtime contract that `a2a-client-hub` parses and consumes. It does not attempt to document every provider-private metadata field or method-level descriptive annotation that an upstream server may choose to publish.
 
 ## Status
 
-- Hub-stable canonical identifier: `urn:opencode-a2a:session-query/v1`
-- Current `opencode-a2a` HTTPS alias also recognized by Hub: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
-- Legacy extension URI still recognized by Hub: `urn:shared-a2a:session-query:v1`
-- Codex compatibility URI also recognized when the declared contract remains losslessly mappable to the Hub-stable session-query surface: `urn:codex-a2a:codex-session-query/v1`
-- This document describes the canonical contract only
-- Hub normalizes known aliases back to its stable internal identifier where a canonical URI value is required by downstream diagnostics
+- Hub-private normalized contract family: `a2a_client_hub`
+- Supported upstream declaration families currently include:
+  - `opencode`: `urn:opencode-a2a:session-query/v1`
+  - `opencode` HTTPS alias: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
+  - `legacy`: `urn:shared-a2a:session-query:v1`
+  - `codex`: `urn:codex-a2a:codex-session-query/v1`
+- This document describes the Hub-private normalized contract only
+- Hub keeps the upstream-declared URI family and the normalized Hub contract family as separate diagnostic dimensions
 
 ## Contract Goals
 
 The contract exists so that Hub can:
 
 - validate a peer during onboarding
-- classify the peer as `canonical`, `legacy`, `codex`, `unsupported`, or `invalid`
+- classify the peer as `supported`, `unsupported`, or `invalid`
+- record the upstream-declared contract family separately from the Hub-private normalized contract family
 - choose the correct runtime parser path
 - reject ambiguous or unsafe declarations early
 
@@ -30,16 +33,16 @@ The session query extension must be declared under:
 AgentCard.capabilities.extensions[]
 ```
 
-The canonical declaration must provide:
+The normalized Hub contract requires upstream declarations to provide:
 
 - `uri`
 - `params.methods.list_sessions`
 - `params.methods.get_session_messages`
 - `params.pagination`
 
-For upstreams that slim down the public Agent Card and move detailed extension contracts into an authenticated extended card, Hub should prefer consuming the extended card when available. The canonical runtime contract described here still applies; only the card discovery surface changes.
+For upstreams that slim down the public Agent Card and move detailed extension contracts into an authenticated extended card, Hub should prefer consuming the extended card when available. The normalized runtime contract described here still applies; only the card discovery surface changes.
 
-The optional canonical declaration may provide:
+The normalized contract can additionally consume upstream declarations for:
 
 - `params.provider`
 - `params.methods.prompt_async`
@@ -52,7 +55,7 @@ Hub normalizes those declared keys into its own lowercase internal `error_code` 
 
 ## Methods
 
-Canonical method keys consumed by Hub:
+Normalized method keys consumed by Hub:
 
 - `list_sessions`
 - `get_session_messages`
@@ -62,7 +65,7 @@ Method names must be non-empty strings.
 
 ## Pagination
 
-Hub accepts three canonical pagination declarations:
+Hub accepts three normalized pagination declarations:
 
 - `page_size`
 - `limit`
@@ -148,7 +151,7 @@ Unknown keys are invalid.
 
 ## Intentional Non-Scope
 
-The following are not part of the canonical runtime envelope contract:
+The following are not part of the normalized Hub runtime envelope contract:
 
 - method-level result documentation for non-query methods
 - provider-private descriptive annotations
@@ -158,17 +161,15 @@ If an upstream server needs to describe method-specific result structures, that 
 
 ## Hub Interpretation
 
-At onboarding time, Hub classifies the declaration as one of:
+At onboarding time, Hub emits:
 
-- `canonical`
-- `legacy`
-- `codex`
-- `unsupported`
-- `invalid`
+- `status = supported | unsupported | invalid`
+- `declaredContractFamily = opencode | codex | legacy` when the declaration family is recognized
+- `normalizedContractFamily = a2a_client_hub` when the declaration maps into the Hub-private normalized contract
 
 At runtime, Hub uses that classification to choose:
 
-- the canonical parser path
+- the direct parser path for `opencode`
 - the explicit legacy compatibility path
 - the explicit Codex compatibility path
 - or fast-fail for unsupported / invalid contracts
