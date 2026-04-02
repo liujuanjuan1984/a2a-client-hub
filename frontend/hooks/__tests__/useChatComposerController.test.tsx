@@ -66,9 +66,24 @@ describe("useChatComposerController", () => {
 
     expect(result.current.showShortcutManager).toBe(false);
     expect(result.current.inputDefaultValue).toBe("Use the cached prompt");
+    expect(result.current.inputSelection).toEqual({
+      start: "Use the cached prompt".length,
+      end: "Use the cached prompt".length,
+    });
     expect(result.current.hasInput).toBe(true);
     expect(result.current.hasSendableInput).toBe(true);
     expect(result.current.inputResetKey).toBe(1);
+  });
+
+  it("tracks input selection changes after shortcut insertion", () => {
+    const { result } = renderComposer();
+
+    act(() => {
+      result.current.handleUseShortcut("Use the cached prompt");
+      result.current.handleSelectionChange(4, 4);
+    });
+
+    expect(result.current.inputSelection).toEqual({ start: 4, end: 4 });
   });
 
   it("sends the current draft from the ref-backed buffer and clears the composer immediately", () => {

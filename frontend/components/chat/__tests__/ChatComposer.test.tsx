@@ -22,11 +22,13 @@ describe("ChatComposer clear button", () => {
     inputRef: { current: { focus: jest.fn() } } as any,
     inputResetKey: 0,
     inputDefaultValue: "",
+    inputSelection: null,
     hasInput: false,
     hasSendableInput: false,
     maxInputChars: 50_000,
     onClearInput: jest.fn(),
     onInputChange: jest.fn(),
+    onSelectionChange: jest.fn(),
     onContentSizeChange: jest.fn(),
     inputHeight: 40,
     maxInputHeight: 200,
@@ -148,5 +150,20 @@ describe("ChatComposer clear button", () => {
     const { UNSAFE_getByType } = render(<ChatComposer {...mockProps} />);
 
     expect(UNSAFE_getByType(TextInput).props.maxLength).toBe(50_000);
+  });
+
+  it("passes the requested caret position to the input selection", () => {
+    const { UNSAFE_getByType } = render(
+      <ChatComposer
+        {...mockProps}
+        inputDefaultValue="Shortcut prompt"
+        inputSelection={{ start: 15, end: 15 }}
+      />,
+    );
+
+    expect(UNSAFE_getByType(TextInput).props.selection).toEqual({
+      start: 15,
+      end: 15,
+    });
   });
 });

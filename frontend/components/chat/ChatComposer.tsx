@@ -27,11 +27,13 @@ export const ChatComposer = memo(function ChatComposer({
   inputRef,
   inputResetKey,
   inputDefaultValue,
+  inputSelection,
   hasInput,
   hasSendableInput,
   maxInputChars,
   onClearInput,
   onInputChange,
+  onSelectionChange,
   onContentSizeChange,
   inputHeight,
   maxInputHeight,
@@ -52,11 +54,13 @@ export const ChatComposer = memo(function ChatComposer({
   inputRef: React.RefObject<TextInput | null>;
   inputResetKey: number;
   inputDefaultValue: string;
+  inputSelection: { start: number; end: number } | null;
   hasInput: boolean;
   hasSendableInput: boolean;
   maxInputChars: number;
   onClearInput: () => void;
   onInputChange: (value: string) => void;
+  onSelectionChange: (start: number, end: number) => void;
   onContentSizeChange: (height: number) => void;
   inputHeight: number;
   maxInputHeight: number;
@@ -191,8 +195,15 @@ export const ChatComposer = memo(function ChatComposer({
           placeholderTextColor="#666666"
           multiline
           defaultValue={inputDefaultValue}
+          selection={inputSelection ?? undefined}
           maxLength={maxInputChars}
           onChangeText={onInputChange}
+          onSelectionChange={(event) =>
+            onSelectionChange(
+              event.nativeEvent.selection.start,
+              event.nativeEvent.selection.end,
+            )
+          }
           onContentSizeChange={(event) =>
             onContentSizeChange(event.nativeEvent.contentSize.height)
           }

@@ -137,11 +137,13 @@ export function ChatScreen({
         inputRef={controller.inputRef}
         inputResetKey={controller.inputResetKey}
         inputDefaultValue={controller.inputDefaultValue}
+        inputSelection={controller.inputSelection}
         hasInput={controller.hasInput}
         hasSendableInput={controller.hasSendableInput}
         maxInputChars={controller.maxInputChars}
         onClearInput={controller.clearInput}
         onInputChange={controller.handleInputChange}
+        onSelectionChange={controller.handleSelectionChange}
         onContentSizeChange={controller.handleContentSizeChange}
         inputHeight={controller.inputHeight}
         maxInputHeight={controller.maxInputHeight}
