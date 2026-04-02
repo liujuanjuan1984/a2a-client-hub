@@ -303,6 +303,46 @@ class A2AInvokeMetadataCapabilitiesResponse(BaseModel):
     fields: List[A2AInvokeMetadataFieldResponse] = Field(default_factory=list)
 
 
+class A2AWireContractConditionalMethodResponse(BaseModel):
+    reason: str
+    toggle: Optional[str] = None
+
+
+class A2AWireContractUnsupportedMethodErrorResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    code: int
+    type: str
+    data_fields: List[str] = Field(default_factory=list, alias="dataFields")
+
+
+class A2AWireContractCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    status: Literal["supported", "unsupported", "invalid"]
+    protocol_version: Optional[str] = Field(default=None, alias="protocolVersion")
+    preferred_transport: Optional[str] = Field(default=None, alias="preferredTransport")
+    additional_transports: List[str] = Field(
+        default_factory=list,
+        alias="additionalTransports",
+    )
+    all_jsonrpc_methods: List[str] = Field(
+        default_factory=list,
+        alias="allJsonrpcMethods",
+    )
+    extension_uris: List[str] = Field(default_factory=list, alias="extensionUris")
+    conditional_methods: Dict[str, A2AWireContractConditionalMethodResponse] = Field(
+        default_factory=dict,
+        alias="conditionalMethods",
+    )
+    unsupported_method_error: Optional[
+        A2AWireContractUnsupportedMethodErrorResponse
+    ] = Field(default=None, alias="unsupportedMethodError")
+    error: Optional[str] = None
+
+
 class A2AInterruptRecoveryItemResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -357,6 +397,14 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="invokeMetadata",
         description="Hub-stable invoke metadata declaration and consumption contract.",
     )
+    wire_contract: A2AWireContractCapabilitiesResponse = Field(
+        ...,
+        alias="wireContract",
+        description=(
+            "Declared wire-contract summary consumed by the hub for method "
+            "availability preflight and diagnostics."
+        ),
+    )
     compatibility_profile: A2ACompatibilityProfileDiagnostic = Field(
         ...,
         alias="compatibilityProfile",
@@ -376,6 +424,9 @@ __all__ = [
     "A2AExtensionInterruptRecoveryRequest",
     "A2AInvokeMetadataCapabilitiesResponse",
     "A2AInvokeMetadataFieldResponse",
+    "A2AWireContractCapabilitiesResponse",
+    "A2AWireContractConditionalMethodResponse",
+    "A2AWireContractUnsupportedMethodErrorResponse",
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionSessionCommandRequest",
     "A2AExtensionSessionListFilters",

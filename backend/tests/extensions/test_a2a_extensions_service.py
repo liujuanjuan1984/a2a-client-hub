@@ -20,6 +20,7 @@ from app.integrations.a2a_extensions.service import (
     SessionBindingCapabilitySnapshot,
     SessionQueryCapabilitySnapshot,
     StreamHintsCapabilitySnapshot,
+    WireContractCapabilitySnapshot,
 )
 from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
@@ -31,6 +32,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     COMPATIBILITY_PROFILE_URI,
     INTERRUPT_RECOVERY_URI,
     INVOKE_METADATA_URI,
+    OPENCODE_WIRE_CONTRACT_URI,
     PROVIDER_DISCOVERY_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_INVOKE_FIELD,
@@ -46,6 +48,7 @@ from app.integrations.a2a_extensions.types import (
     MessageCursorPaginationContract,
     PageSizePagination,
     ResolvedCompatibilityProfileExtension,
+    ResolvedConditionalMethodAvailability,
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedInterruptRecoveryExtension,
@@ -55,6 +58,8 @@ from app.integrations.a2a_extensions.types import (
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionControlMethodCapability,
     ResolvedStreamHintsExtension,
+    ResolvedUnsupportedMethodErrorContract,
+    ResolvedWireContractExtension,
     ResultEnvelopeMapping,
     SessionListFilterFieldContract,
     SessionListFiltersContract,
@@ -200,6 +205,19 @@ def _compatibility_profile_snapshot(
     )
 
 
+def _wire_contract_snapshot(
+    *,
+    status: str = "unsupported",
+    ext: ResolvedWireContractExtension | None = None,
+    error: str | None = None,
+) -> WireContractCapabilitySnapshot:
+    return WireContractCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        error=error,
+    )
+
+
 def _capability_snapshot(
     *,
     session_query: SessionQueryCapabilitySnapshot,
@@ -210,6 +228,7 @@ def _capability_snapshot(
     model_selection: ModelSelectionCapabilitySnapshot | None = None,
     provider_discovery: ProviderDiscoveryCapabilitySnapshot | None = None,
     stream_hints: StreamHintsCapabilitySnapshot | None = None,
+    wire_contract: WireContractCapabilitySnapshot | None = None,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot | None = None,
 ) -> ResolvedCapabilitySnapshot:
     return ResolvedCapabilitySnapshot(
@@ -223,6 +242,7 @@ def _capability_snapshot(
         provider_discovery=provider_discovery or _provider_discovery_snapshot(),
         stream_hints=stream_hints
         or StreamHintsCapabilitySnapshot(status="unsupported", meta={}),
+        wire_contract=wire_contract or _wire_contract_snapshot(),
         compatibility_profile=compatibility_profile
         or _compatibility_profile_snapshot(),
     )
@@ -366,6 +386,52 @@ def _provider_discovery_extension_fixture() -> ResolvedProviderDiscoveryExtensio
             "list_models": "models.list",
         },
         business_code_map={},
+    )
+
+
+def _wire_contract_extension_fixture(
+    *,
+    all_jsonrpc_methods: tuple[str, ...] = (
+        "shared.sessions.list",
+        "shared.sessions.messages.list",
+        "shared.sessions.prompt_async",
+        "shared.sessions.command",
+        "providers.list",
+        "models.list",
+    ),
+    conditional_methods: dict[str, ResolvedConditionalMethodAvailability] | None = None,
+) -> ResolvedWireContractExtension:
+    return ResolvedWireContractExtension(
+        uri=OPENCODE_WIRE_CONTRACT_URI,
+        required=False,
+        protocol_version="0.3.0",
+        preferred_transport="HTTP+JSON",
+        additional_transports=("JSON-RPC",),
+        core_jsonrpc_methods=(
+            "agent/getAuthenticatedExtendedCard",
+            "tasks/pushNotificationConfig/get",
+        ),
+        core_http_endpoints=("GET /v1/tasks",),
+        extension_jsonrpc_methods=(
+            "shared.sessions.list",
+            "shared.sessions.messages.list",
+            "shared.sessions.prompt_async",
+            "shared.sessions.command",
+            "providers.list",
+            "models.list",
+        ),
+        conditionally_available_methods=conditional_methods or {},
+        extension_uris=(
+            SHARED_SESSION_QUERY_URI,
+            PROVIDER_DISCOVERY_URI,
+        ),
+        all_jsonrpc_methods=all_jsonrpc_methods,
+        service_behaviors={"classification": "stable-service-semantics"},
+        unsupported_method_error=ResolvedUnsupportedMethodErrorContract(
+            code=-32601,
+            type="METHOD_NOT_SUPPORTED",
+            data_fields=("type", "method", "supported_methods", "protocol_version"),
+        ),
     )
 
 
@@ -1371,6 +1437,72 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
 
 
 @pytest.mark.asyncio
+async def test_prompt_session_async_returns_method_disabled_when_wire_contract_marks_method_conditional(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension()
+    wire_contract = _wire_contract_extension_fixture(
+        all_jsonrpc_methods=(
+            "shared.sessions.list",
+            "shared.sessions.messages.list",
+            "shared.sessions.command",
+        ),
+        conditional_methods={
+            "shared.sessions.prompt_async": ResolvedConditionalMethodAvailability(
+                reason="disabled_by_configuration",
+                toggle="A2A_ENABLE_SESSION_PROMPT_ASYNC",
+            )
+        },
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+            wire_contract=_wire_contract_snapshot(
+                status="supported",
+                ext=wire_contract,
+            ),
+        )
+
+    async def _unexpected_remote_call(**_kwargs):
+        raise AssertionError("method should be rejected during wire-contract preflight")
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._session_extensions, "invoke_method", _unexpected_remote_call
+    )
+
+    result = await service.prompt_session_async(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={"parts": [{"type": "text", "text": "continue"}]},
+    )
+
+    assert result.success is False
+    assert result.error_code == "method_disabled"
+    assert result.source == "wire_contract"
+    assert result.upstream_error == {
+        "message": "Method shared.sessions.prompt_async is disabled by upstream deployment",
+        "type": "METHOD_DISABLED",
+        "method": "shared.sessions.prompt_async",
+        "reason": "disabled_by_configuration",
+        "toggle": "A2A_ENABLE_SESSION_PROMPT_ASYNC",
+    }
+    assert result.meta == {
+        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_preflight": "conditionally_available",
+        "method_name": "shared.sessions.prompt_async",
+    }
+
+
+@pytest.mark.asyncio
 async def test_prompt_session_async_requires_non_empty_parts() -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
@@ -1513,6 +1645,71 @@ async def test_command_session_returns_method_not_supported_if_missing(
         "extension_uri": SHARED_SESSION_QUERY_URI,
         "session_query_contract_mode": "canonical",
         "session_query_selection_mode": "canonical_parser",
+    }
+
+
+@pytest.mark.asyncio
+async def test_command_session_returns_method_not_supported_when_wire_contract_disallows_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension()
+    wire_contract = _wire_contract_extension_fixture(
+        all_jsonrpc_methods=(
+            "shared.sessions.list",
+            "shared.sessions.messages.list",
+            "shared.sessions.prompt_async",
+        ),
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+            wire_contract=_wire_contract_snapshot(
+                status="supported",
+                ext=wire_contract,
+            ),
+        )
+
+    async def _unexpected_remote_call(**_kwargs):
+        raise AssertionError("method should be rejected during wire-contract preflight")
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._session_extensions, "invoke_method", _unexpected_remote_call
+    )
+
+    result = await service.command_session(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={"command": "/review", "arguments": "--quick"},
+    )
+
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.source == "wire_contract"
+    assert result.jsonrpc_code == -32601
+    assert result.upstream_error == {
+        "message": "Unsupported method: shared.sessions.command",
+        "type": "METHOD_NOT_SUPPORTED",
+        "method": "shared.sessions.command",
+        "supported_methods": [
+            "shared.sessions.list",
+            "shared.sessions.messages.list",
+            "shared.sessions.prompt_async",
+        ],
+        "protocol_version": "0.3.0",
+    }
+    assert result.meta == {
+        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_preflight": "unsupported_method",
+        "method_name": "shared.sessions.command",
     }
 
 
@@ -2141,6 +2338,60 @@ async def test_list_model_providers_uses_resolved_provider_discovery_snapshot(
 
     assert result.success is True
     assert result.result == {"items": []}
+
+
+@pytest.mark.asyncio
+async def test_list_model_providers_returns_method_not_supported_when_wire_contract_disallows_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _provider_discovery_extension_fixture()
+    wire_contract = _wire_contract_extension_fixture(
+        all_jsonrpc_methods=(
+            "shared.sessions.list",
+            "shared.sessions.messages.list",
+            "shared.sessions.prompt_async",
+            "shared.sessions.command",
+        ),
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            provider_discovery=_provider_discovery_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+            wire_contract=_wire_contract_snapshot(
+                status="supported",
+                ext=wire_contract,
+            ),
+        )
+
+    async def _unexpected_remote_call(**_kwargs):
+        raise AssertionError("provider discovery should be rejected during preflight")
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._opencode_discovery, "invoke_method", _unexpected_remote_call
+    )
+
+    result = await service.list_model_providers(runtime=runtime)
+
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.source == "wire_contract"
+    assert result.meta == {
+        "extension_uri": PROVIDER_DISCOVERY_URI,
+        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_preflight": "unsupported_method",
+        "method_name": "providers.list",
+    }
 
 
 @pytest.mark.asyncio
