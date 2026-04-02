@@ -49,6 +49,8 @@ from app.schemas.a2a_extension import (
     A2AExtensionSessionListQueryRequest,
     A2AExtensionSessionMessagesQueryRequest,
     A2AInterruptRecoveryResponse,
+    A2AInvokeMetadataCapabilitiesResponse,
+    A2AInvokeMetadataFieldResponse,
     A2AModelDiscoveryRequest,
     A2ARuntimeStatusContractResponse,
     A2ASessionControlCapabilitiesResponse,
@@ -202,6 +204,28 @@ def _build_compatibility_profile_response(
     )
 
 
+def _build_invoke_metadata_response(
+    snapshot: Any,
+) -> A2AInvokeMetadataCapabilitiesResponse:
+    invoke_snapshot = getattr(snapshot, "invoke_metadata", None)
+    ext = getattr(invoke_snapshot, "ext", None)
+    fields = list(getattr(ext, "fields", ()) or ())
+    return A2AInvokeMetadataCapabilitiesResponse(
+        declared=ext is not None,
+        consumedByHub=True,
+        metadataField=getattr(ext, "metadata_field", None),
+        appliesToMethods=list(getattr(ext, "applies_to_methods", ()) or ()),
+        fields=[
+            A2AInvokeMetadataFieldResponse(
+                name=item.name,
+                required=item.required,
+                description=item.description,
+            )
+            for item in fields
+        ],
+    )
+
+
 def create_extension_capability_router(
     *,
     prefix: str,
@@ -301,6 +325,7 @@ def create_extension_capability_router(
             interruptRecovery=interrupt_recovery,
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
+            invokeMetadata=_build_invoke_metadata_response(snapshot),
             compatibilityProfile=_build_compatibility_profile_response(snapshot),
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()

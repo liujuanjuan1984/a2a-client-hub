@@ -12,6 +12,12 @@ from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
 from app.features.personal_agents import router as personal_router
 from app.features.personal_agents.service import a2a_agent_service
+from app.integrations.a2a_extensions import service as extensions_service_module
+from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
+from app.integrations.a2a_extensions.types import (
+    ResolvedInvokeMetadataExtension,
+    ResolvedInvokeMetadataField,
+)
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
 
@@ -65,6 +71,18 @@ class _FakeA2AService:
         self.gateway = gateway
 
 
+class _FakeExtensionsService:
+    def __init__(self, *, invoke_metadata_ext: Any | None = None) -> None:
+        self.invoke_metadata_ext = invoke_metadata_ext
+
+    async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+        if self.invoke_metadata_ext is None:
+            raise A2AExtensionNotSupportedError(
+                "invoke metadata extension not configured"
+            )
+        return self.invoke_metadata_ext
+
+
 @pytest.mark.asyncio
 async def test_personal_agent_http_invoke_works_with_dependency_injected_db(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
@@ -100,6 +118,151 @@ async def test_personal_agent_http_invoke_works_with_dependency_injected_db(
     assert response.status_code == 200
     assert response.json()["success"] is True
     assert len(fake_gateway.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_personal_agent_http_invoke_injects_session_bound_invoke_metadata(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(
+        async_db_session, email="personal-http-invoke-metadata@example.com"
+    )
+    record = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="Personal HTTP Agent",
+        card_url="https://example.com/.well-known/agent-card.json",
+        auth_type="none",
+        enabled=True,
+        tags=[],
+        extra_headers={},
+    )
+    fake_gateway = _FakeGateway()
+    monkeypatch.setattr(
+        personal_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
+    monkeypatch.setattr(
+        extensions_service_module,
+        "get_a2a_extensions_service",
+        lambda: _FakeExtensionsService(
+            invoke_metadata_ext=ResolvedInvokeMetadataExtension(
+                uri="urn:a2a:invoke-metadata/v1",
+                required=False,
+                provider="commonground",
+                metadata_field="metadata.shared.invoke",
+                behavior="merge_bound_metadata_into_invoke",
+                applies_to_methods=("message/send", "message/stream"),
+                fields=(
+                    ResolvedInvokeMetadataField(name="project_id", required=True),
+                    ResolvedInvokeMetadataField(name="channel_id", required=True),
+                ),
+                supported_metadata=(
+                    "shared.invoke.bindings.project_id",
+                    "shared.invoke.bindings.channel_id",
+                ),
+            )
+        ),
+    )
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/invoke",
+            json={
+                "query": "hello",
+                "metadata": {
+                    "shared": {
+                        "invoke": {
+                            "bindings": {
+                                "project_id": "proj-1",
+                                "channel_id": "chan-1",
+                            }
+                        }
+                    }
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert fake_gateway.calls[0]["metadata"] == {
+        "project_id": "proj-1",
+        "channel_id": "chan-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_personal_agent_http_invoke_returns_preflight_binding_error_when_declared_fields_missing(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(
+        async_db_session, email="personal-http-metadata-preflight@example.com"
+    )
+    record = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="Personal HTTP Agent",
+        card_url="https://example.com/.well-known/agent-card.json",
+        auth_type="none",
+        enabled=True,
+        tags=[],
+        extra_headers={},
+    )
+    fake_gateway = _FakeGateway()
+    monkeypatch.setattr(
+        personal_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
+    monkeypatch.setattr(
+        extensions_service_module,
+        "get_a2a_extensions_service",
+        lambda: _FakeExtensionsService(
+            invoke_metadata_ext=ResolvedInvokeMetadataExtension(
+                uri="urn:a2a:invoke-metadata/v1",
+                required=False,
+                provider="commonground",
+                metadata_field="metadata.shared.invoke",
+                behavior="merge_bound_metadata_into_invoke",
+                applies_to_methods=("message/send", "message/stream"),
+                fields=(
+                    ResolvedInvokeMetadataField(name="project_id", required=True),
+                    ResolvedInvokeMetadataField(name="channel_id", required=True),
+                ),
+                supported_metadata=(
+                    "shared.invoke.bindings.project_id",
+                    "shared.invoke.bindings.channel_id",
+                ),
+            )
+        ),
+    )
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/invoke",
+            json={
+                "query": "hello",
+                "metadata": {
+                    "shared": {"invoke": {"bindings": {"project_id": "proj-1"}}}
+                },
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["error_code"] == "invoke_metadata_not_bound"
+    assert response.json()["detail"]["missing_params"] == [
+        {"name": "channel_id", "required": True}
+    ]
+    assert fake_gateway.calls == []
 
 
 @pytest.mark.asyncio

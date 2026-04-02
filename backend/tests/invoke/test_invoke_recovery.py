@@ -4,11 +4,19 @@ from uuid import uuid4
 import pytest
 
 from app.features.invoke.recovery import (
+    InvokeMetadataBindingRequiredError,
     build_rebound_invoke_payload,
     finalize_outbound_invoke_payload,
     resolve_session_binding_outbound_mode,
 )
-from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionNotSupportedError,
+    A2AExtensionUpstreamError,
+)
+from app.integrations.a2a_extensions.types import (
+    ResolvedInvokeMetadataExtension,
+    ResolvedInvokeMetadataField,
+)
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 
 
@@ -33,6 +41,25 @@ def _capture_warning(
 
 async def _return_false(**kwargs) -> bool:  # noqa: ANN003, ARG001
     return False
+
+
+def _invoke_metadata_extension() -> ResolvedInvokeMetadataExtension:
+    return ResolvedInvokeMetadataExtension(
+        uri="urn:a2a:invoke-metadata/v1",
+        required=False,
+        provider="commonground",
+        metadata_field="metadata.shared.invoke",
+        behavior="merge_bound_metadata_into_invoke",
+        applies_to_methods=("message/send", "message/stream"),
+        fields=(
+            ResolvedInvokeMetadataField(name="project_id", required=True),
+            ResolvedInvokeMetadataField(name="channel_id", required=True),
+        ),
+        supported_metadata=(
+            "shared.invoke.bindings.project_id",
+            "shared.invoke.bindings.channel_id",
+        ),
+    )
 
 
 def test_build_rebound_invoke_payload_applies_continue_binding_fields() -> None:
@@ -122,6 +149,132 @@ async def test_finalize_outbound_invoke_payload_applies_declared_contract() -> N
 
 
 @pytest.mark.asyncio
+async def test_finalize_outbound_invoke_payload_injects_bound_invoke_metadata() -> None:
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {
+                "locale": "zh-CN",
+                "shared": {
+                    "invoke": {
+                        "bindings": {
+                            "project_id": "proj-1",
+                            "channel_id": "chan-1",
+                        }
+                    }
+                },
+            },
+        }
+    )
+
+    class _ExtensionsService:
+        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+            return _invoke_metadata_extension()
+
+    finalized = await finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+        ),
+        logger=_fake_logger(),
+        log_extra={},
+        extensions_service_getter=lambda: _ExtensionsService(),
+        resolve_outbound_mode=_return_false,
+    )
+
+    assert finalized.metadata == {
+        "locale": "zh-CN",
+        "project_id": "proj-1",
+        "channel_id": "chan-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_finalize_outbound_invoke_payload_prefers_request_override_over_bound_metadata() -> (
+    None
+):
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {
+                "project_id": "request-project",
+                "shared": {
+                    "invoke": {
+                        "bindings": {
+                            "project_id": "bound-project",
+                            "channel_id": "bound-channel",
+                        }
+                    }
+                },
+            },
+        }
+    )
+
+    class _ExtensionsService:
+        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+            return _invoke_metadata_extension()
+
+    finalized = await finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+        ),
+        logger=_fake_logger(),
+        log_extra={},
+        extensions_service_getter=lambda: _ExtensionsService(),
+        resolve_outbound_mode=_return_false,
+    )
+
+    assert finalized.metadata == {
+        "project_id": "request-project",
+        "channel_id": "bound-channel",
+    }
+
+
+@pytest.mark.asyncio
+async def test_finalize_outbound_invoke_payload_raises_when_declared_fields_are_unbound() -> (
+    None
+):
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {
+                "shared": {
+                    "invoke": {
+                        "bindings": {
+                            "project_id": "proj-1",
+                        }
+                    }
+                },
+            },
+        }
+    )
+
+    class _ExtensionsService:
+        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+            return _invoke_metadata_extension()
+
+    with pytest.raises(InvokeMetadataBindingRequiredError) as exc_info:
+        await finalize_outbound_invoke_payload(
+            payload=payload,
+            runtime=SimpleNamespace(
+                resolved=SimpleNamespace(
+                    name="Demo Agent", url="https://example.com/a2a"
+                )
+            ),
+            logger=_fake_logger(),
+            log_extra={},
+            extensions_service_getter=lambda: _ExtensionsService(),
+            resolve_outbound_mode=_return_false,
+        )
+
+    assert exc_info.value.missing_params == ({"name": "channel_id", "required": True},)
+
+
+@pytest.mark.asyncio
 async def test_finalize_outbound_invoke_payload_discards_incomplete_binding_and_warns() -> (
     None
 ):
@@ -135,6 +288,10 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_binding_and_
         }
     )
 
+    class _UnsupportedInvokeMetadataService:
+        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+            raise A2AExtensionNotSupportedError("Invoke metadata extension not found")
+
     finalized = await finalize_outbound_invoke_payload(
         payload=payload,
         runtime=SimpleNamespace(
@@ -142,6 +299,7 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_binding_and_
         ),
         logger=_fake_logger(),
         log_extra={"agent_id": "agent-1"},
+        extensions_service_getter=lambda: _UnsupportedInvokeMetadataService(),
         resolve_outbound_mode=_return_false,
         log_warning_fn=_capture_warning(warnings),
     )

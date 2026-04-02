@@ -285,6 +285,24 @@ class A2ASessionControlCapabilitiesResponse(BaseModel):
     shell: A2ASessionControlMethodResponse
 
 
+class A2AInvokeMetadataFieldResponse(BaseModel):
+    name: str
+    required: bool
+    description: Optional[str] = None
+
+
+class A2AInvokeMetadataCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    metadata_field: Optional[str] = Field(default=None, alias="metadataField")
+    applies_to_methods: List[str] = Field(
+        default_factory=list, alias="appliesToMethods"
+    )
+    fields: List[A2AInvokeMetadataFieldResponse] = Field(default_factory=list)
+
+
 class A2AInterruptRecoveryItemResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -334,6 +352,11 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="sessionControl",
         description="Hub-stable method-level session control capability contract",
     )
+    invoke_metadata: A2AInvokeMetadataCapabilitiesResponse = Field(
+        ...,
+        alias="invokeMetadata",
+        description="Hub-stable invoke metadata declaration and consumption contract.",
+    )
     compatibility_profile: A2ACompatibilityProfileDiagnostic = Field(
         ...,
         alias="compatibilityProfile",
@@ -351,6 +374,8 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
 
 __all__ = [
     "A2AExtensionInterruptRecoveryRequest",
+    "A2AInvokeMetadataCapabilitiesResponse",
+    "A2AInvokeMetadataFieldResponse",
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionSessionCommandRequest",
     "A2AExtensionSessionListFilters",

@@ -147,6 +147,35 @@ describe("chat store utils", () => {
     });
   });
 
+  it("preserves invoke metadata bindings in persisted sessions", () => {
+    const session = createAgentSession("agent-4");
+    session.metadata = {
+      shared: {
+        invoke: {
+          bindings: {
+            project_id: "proj-1",
+            channel_id: "chan-1",
+          },
+        },
+      },
+      opencode: { directory: "/workspace" },
+    };
+
+    const persisted = buildPersistedSessions({ "conv-1": session });
+
+    expect(persisted["conv-1"]?.metadata).toEqual({
+      shared: {
+        invoke: {
+          bindings: {
+            project_id: "proj-1",
+            channel_id: "chan-1",
+          },
+        },
+      },
+      opencode: { directory: "/workspace" },
+    });
+  });
+
   it("sorts sessions by last active timestamp descending", () => {
     const s1 = createAgentSession("agent-1");
     s1.lastActiveAt = "2026-02-14T12:00:00.000Z";

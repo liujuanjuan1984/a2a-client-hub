@@ -33,6 +33,9 @@ from app.features.invoke.guard import (
     try_acquire_invoke_guard as _try_acquire_invoke_guard_impl,
 )
 from app.features.invoke.recovery import (
+    InvokeMetadataBindingRequiredError,
+)
+from app.features.invoke.recovery import (
     build_rebound_invoke_payload as _build_rebound_invoke_payload,
 )
 from app.features.invoke.recovery import (
@@ -705,6 +708,25 @@ async def _finalize_outbound_invoke_payload(
     )
 
 
+def _build_invoke_metadata_error_response(
+    *,
+    runtime: Any,
+    exc: InvokeMetadataBindingRequiredError,
+) -> A2AAgentInvokeResponse:
+    return A2AAgentInvokeResponse(
+        success=False,
+        content=None,
+        error=str(exc),
+        error_code="invoke_metadata_not_bound",
+        source="hub_invoke_metadata",
+        jsonrpc_code=None,
+        missing_params=list(exc.missing_params) or None,
+        upstream_error=exc.upstream_error,
+        agent_name=getattr(runtime.resolved, "name", None),
+        agent_url=getattr(runtime.resolved, "url", None),
+    )
+
+
 async def _ensure_local_message_headers(
     *,
     state: _InvokeState,
@@ -1041,12 +1063,15 @@ async def run_http_invoke(
     logger: Any,
     log_extra: dict[str, Any],
 ) -> A2AAgentInvokeResponse | StreamingResponse:
-    payload = await _finalize_outbound_invoke_payload(
-        payload=payload,
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-    )
+    try:
+        payload = await _finalize_outbound_invoke_payload(
+            payload=payload,
+            runtime=runtime,
+            logger=logger,
+            log_extra=log_extra,
+        )
+    except InvokeMetadataBindingRequiredError as exc:
+        return _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,
@@ -1173,12 +1198,29 @@ async def run_background_invoke(
     total_timeout_seconds: float | None = None,
     idle_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
-    payload = await _finalize_outbound_invoke_payload(
-        payload=payload,
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-    )
+    try:
+        payload = await _finalize_outbound_invoke_payload(
+            payload=payload,
+            runtime=runtime,
+            logger=logger,
+            log_extra=log_extra,
+        )
+    except InvokeMetadataBindingRequiredError as exc:
+        response = _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
+        return {
+            "success": False,
+            "response_content": "",
+            "error": response.error,
+            "error_code": response.error_code,
+            "source": response.source,
+            "jsonrpc_code": response.jsonrpc_code,
+            "missing_params": response.missing_params,
+            "upstream_error": response.upstream_error,
+            "internal_error_message": None,
+            "conversation_id": payload.conversation_id,
+            "message_refs": {},
+            "context_id": None,
+        }
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,
@@ -1275,12 +1317,36 @@ async def run_ws_invoke(
     on_error_metadata: Callable[[dict[str, Any]], Any] | None = None,
     send_stream_end: bool = True,
 ) -> None:
-    payload = await _finalize_outbound_invoke_payload(
-        payload=payload,
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-    )
+    try:
+        payload = await _finalize_outbound_invoke_payload(
+            payload=payload,
+            runtime=runtime,
+            logger=logger,
+            log_extra=log_extra,
+        )
+    except InvokeMetadataBindingRequiredError as exc:
+        response = _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
+        error_payload = {
+            "message": response.error or "Invoke failed",
+            "error_code": response.error_code,
+            "source": response.source,
+            "missing_params": response.missing_params,
+            "upstream_error": response.upstream_error,
+        }
+        await a2a_invoke_service.send_ws_error(
+            websocket=websocket,
+            message=response.error or "Invoke failed",
+            error_code=response.error_code,
+            source=response.source,
+            jsonrpc_code=None,
+            missing_params=response.missing_params,
+            upstream_error=response.upstream_error,
+        )
+        if on_error_metadata is not None:
+            await a2a_invoke_service._call_callback(on_error_metadata, error_payload)
+        if send_stream_end:
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+        return
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,

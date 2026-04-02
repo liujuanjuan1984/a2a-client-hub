@@ -20,7 +20,10 @@ from app.db.locking import (
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.features.sessions.common import deserialize_interrupt_event_block_content
-from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionNotSupportedError,
+    A2AExtensionUpstreamError,
+)
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 
 
@@ -2868,6 +2871,24 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_session_bind
         invoke_route_runner,
         "_resolve_session_binding_outbound_mode",
         fake_resolve_session_binding_outbound_mode,
+    )
+
+    class _UnsupportedInvokeMetadataService:
+        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+            raise A2AExtensionNotSupportedError("Invoke metadata extension not found")
+
+    from app.features.invoke import recovery as invoke_recovery
+
+    async def fake_finalize_outbound_invoke_payload_impl(**kwargs):
+        return await invoke_recovery.finalize_outbound_invoke_payload(
+            **kwargs,
+            extensions_service_getter=lambda: _UnsupportedInvokeMetadataService(),
+        )
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload_impl",
+        fake_finalize_outbound_invoke_payload_impl,
     )
 
     payload = A2AAgentInvokeRequest.model_validate(

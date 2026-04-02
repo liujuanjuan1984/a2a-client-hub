@@ -22,6 +22,7 @@ class _A2AErrorCodeStatus:
         "runtime_invalid": 400,
         "invalid_request": 400,
         "invalid_params": 400,
+        "invoke_metadata_not_bound": 400,
         "invalid_query": 400,
         "method_disabled": 403,
         "interrupt_request_not_found": 404,

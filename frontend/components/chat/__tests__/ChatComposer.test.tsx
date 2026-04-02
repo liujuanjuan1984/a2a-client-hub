@@ -12,10 +12,13 @@ describe("ChatComposer clear button", () => {
   const mockProps = {
     modelSelectionStatus: "supported" as const,
     currentDirectory: null,
+    hasInvokeMetadata: false,
+    invokeMetadataRequiredCount: 0,
     pendingInterrupt: null,
     pendingInterruptCount: 0,
     showShortcutManager: false,
     onOpenDirectoryPicker: jest.fn(),
+    onOpenInvokeMetadata: jest.fn(),
     onOpenShortcutManager: jest.fn(),
     selectedModel: null,
     onOpenModelPicker: jest.fn(),

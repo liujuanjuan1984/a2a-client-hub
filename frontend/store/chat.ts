@@ -30,6 +30,10 @@ import {
 } from "@/lib/chatHistoryCache";
 import { generateUuid } from "@/lib/id";
 import {
+  getInvokeMetadataBindings,
+  withInvokeMetadataBindings,
+} from "@/lib/invokeMetadata";
+import {
   getOpencodeDirectory,
   withOpencodeDirectory,
 } from "@/lib/opencodeMetadata";
@@ -133,6 +137,11 @@ type ChatState = {
     conversationId: string,
     agentId: string,
     directory: string | null,
+  ) => void;
+  setInvokeMetadataBindings: (
+    conversationId: string,
+    agentId: string,
+    bindings: Record<string, string>,
   ) => void;
   setSharedModelSelection: (
     conversationId: string,
@@ -242,6 +251,33 @@ export const useChatStore = create<ChatState>()(
                 ...current,
                 agentId,
                 metadata: withOpencodeDirectory(current.metadata, directory),
+                lastActiveAt: new Date().toISOString(),
+              },
+            },
+          };
+        });
+      },
+      setInvokeMetadataBindings: (conversationId, agentId, bindings) => {
+        set((state) => {
+          const current =
+            state.sessions[conversationId] ?? createAgentSession(agentId);
+          const nextMetadata = withInvokeMetadataBindings(
+            current.metadata,
+            bindings,
+          );
+          if (
+            JSON.stringify(getInvokeMetadataBindings(current.metadata)) ===
+            JSON.stringify(getInvokeMetadataBindings(nextMetadata))
+          ) {
+            return state;
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              [conversationId]: {
+                ...current,
+                agentId,
+                metadata: nextMetadata,
                 lastActiveAt: new Date().toISOString(),
               },
             },
