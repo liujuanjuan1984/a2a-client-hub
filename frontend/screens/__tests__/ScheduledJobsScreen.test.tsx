@@ -19,7 +19,7 @@ jest.mock("@/hooks/useScheduledJobs", () => ({
 }));
 
 jest.mock("@/hooks/useScheduledJobsQuery", () => ({
-  useScheduledJobsQuery: ({ enabled }: { enabled?: boolean }) => ({
+  useScheduledJobsQuery: ({ enabled: _enabled }: { enabled?: boolean }) => ({
     items: mockJobs,
     hasMore: false,
     loading: false,

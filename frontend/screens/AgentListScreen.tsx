@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { FlatList, RefreshControl, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -18,6 +18,7 @@ import {
   type A2AAgentResponse,
 } from "@/lib/api/a2aAgents";
 import { type HubA2AAgentUserResponse } from "@/lib/api/hubA2aAgentsUser";
+import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
@@ -31,23 +32,19 @@ const SHARED_PAGE_SIZE = 8;
 
 const HEALTH_BADGE_STYLES: Record<
   A2AAgentResponse["health_status"],
-  { label: string; className: string }
+  { label: string }
 > = {
   healthy: {
     label: "Healthy",
-    className: "bg-emerald-500/20 text-emerald-300",
   },
   degraded: {
     label: "Degraded",
-    className: "bg-amber-500/20 text-amber-200",
   },
   unavailable: {
     label: "Unavailable",
-    className: "bg-rose-500/20 text-rose-200",
   },
   unknown: {
     label: "Unknown",
-    className: "bg-slate-500/20 text-slate-300",
   },
 };
 
@@ -68,16 +65,17 @@ export function AgentListScreen() {
   );
   const [activePersonalHealthFilter, setActivePersonalHealthFilter] =
     useState<A2AAgentHealthStatus>("healthy");
+  const isPersonalView = activeView === "personal";
 
   const personalQuery = usePersonalAgentsListQuery({
     size: PERSONAL_PAGE_SIZE,
     healthBucket: activePersonalHealthFilter,
-    enabled: activeView === "personal",
+    enabled: isPersonalView,
   });
 
   const sharedQuery = useSharedAgentsListQuery({
     size: SHARED_PAGE_SIZE,
-    enabled: activeView === "shared",
+    enabled: !isPersonalView,
   });
 
   const invalidateAgentQueries = async () => {
@@ -105,6 +103,11 @@ export function AgentListScreen() {
   });
 
   const counts = personalQuery.counts;
+  const visiblePersonalHealthFilters = useMemo(
+    () =>
+      PERSONAL_HEALTH_FILTERS.filter((status) => (counts?.[status] ?? 0) > 0),
+    [counts],
+  );
   const totalPersonalAgents = useMemo(() => {
     if (!counts) {
       return 0;
@@ -115,6 +118,24 @@ export function AgentListScreen() {
   }, [counts]);
   const selectedFilterLabel =
     HEALTH_BADGE_STYLES[activePersonalHealthFilter].label.toLowerCase();
+
+  useEffect(() => {
+    if (!isPersonalView) {
+      return;
+    }
+    if ((counts?.[activePersonalHealthFilter] ?? 0) > 0) {
+      return;
+    }
+    const fallbackFilter = visiblePersonalHealthFilters[0];
+    if (fallbackFilter && fallbackFilter !== activePersonalHealthFilter) {
+      setActivePersonalHealthFilter(fallbackFilter);
+    }
+  }, [
+    activePersonalHealthFilter,
+    counts,
+    isPersonalView,
+    visiblePersonalHealthFilters,
+  ]);
 
   const handleChat = useCallback(
     (agentId: string) => {
@@ -156,33 +177,31 @@ export function AgentListScreen() {
 
   const onRefresh = useCallback(() => handleRefresh(), [handleRefresh]);
   const onEndReached = useCallback(() => handleLoadMore(), [handleLoadMore]);
+  const toggleActiveView = useCallback(() => {
+    setActiveView((currentView) =>
+      currentView === "personal" ? "shared" : "personal",
+    );
+  }, []);
+
+  const activeViewButtonLabel = isPersonalView ? "My" : "Shared";
+  const activeViewButtonIcon = isPersonalView ? "person-outline" : "people";
 
   const renderPersonalAgentItem = useCallback(
     ({ item: agent }: { item: A2AAgentResponse }) => {
-      const badge = HEALTH_BADGE_STYLES[agent.health_status];
       const showCheckedAt = agent.health_status !== "healthy";
       const checkedAtLabel = agent.last_health_check_at
-        ? `Checked ${new Date(agent.last_health_check_at).toLocaleString()}`
+        ? `Checked ${formatLocalDateTime(agent.last_health_check_at)}`
         : "Not checked yet";
 
       return (
         <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
           <View className="px-4 py-4">
-            <View className="flex-row items-center justify-between">
-              <Text
-                className="flex-1 pr-4 text-[13px] font-semibold text-white"
-                numberOfLines={1}
-              >
-                {agent.name}
-              </Text>
-              <View className="items-end gap-2">
-                <Text
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${badge.className}`}
-                >
-                  {badge.label}
-                </Text>
-              </View>
-            </View>
+            <Text
+              className="text-[13px] font-semibold text-white"
+              numberOfLines={1}
+            >
+              {agent.name}
+            </Text>
             {!agent.enabled || showCheckedAt ? (
               <View className="mt-3 flex-row items-center justify-between gap-3">
                 {agent.enabled ? (
@@ -322,26 +341,30 @@ export function AgentListScreen() {
   const renderHeader = useMemo(
     () => (
       <View className="mb-5">
-        <View className="mb-5 flex-row gap-2">
-          <Button
-            className="flex-1"
-            label="My"
-            size="sm"
-            variant={activeView === "personal" ? "primary" : "secondary"}
-            onPress={() => setActiveView("personal")}
-          />
-          <Button
-            className="flex-1"
-            label="Shared"
-            size="sm"
-            variant={activeView === "shared" ? "primary" : "secondary"}
-            onPress={() => setActiveView("shared")}
-          />
-        </View>
-
-        {activeView === "personal" ? (
+        {isPersonalView ? (
           <View className="rounded-2xl bg-surface p-4">
-            <View className="flex-row items-center justify-end">
+            <View className="flex-row items-center gap-3">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                className="min-w-0 flex-1"
+                contentContainerStyle={{ gap: 12, paddingRight: 4 }}
+              >
+                {visiblePersonalHealthFilters.map((status) => (
+                  <Button
+                    key={status}
+                    className="rounded-full"
+                    label={`${counts?.[status] ?? 0} ${HEALTH_BADGE_STYLES[status].label}`}
+                    size="xs"
+                    variant={
+                      activePersonalHealthFilter === status
+                        ? "primary"
+                        : "secondary"
+                    }
+                    onPress={() => setActivePersonalHealthFilter(status)}
+                  />
+                ))}
+              </ScrollView>
               <Button
                 label={batchHealthMutation.isPending ? "Checking..." : "Check"}
                 size="sm"
@@ -355,33 +378,17 @@ export function AgentListScreen() {
                 }}
               />
             </View>
-
-            <View className="mt-4 flex-row flex-wrap items-center gap-3">
-              {PERSONAL_HEALTH_FILTERS.map((status) => (
-                <Button
-                  key={status}
-                  className="rounded-full"
-                  label={`${HEALTH_BADGE_STYLES[status].label} ${counts?.[status] ?? 0}`}
-                  size="xs"
-                  variant={
-                    activePersonalHealthFilter === status
-                      ? "primary"
-                      : "secondary"
-                  }
-                  onPress={() => setActivePersonalHealthFilter(status)}
-                />
-              ))}
-            </View>
           </View>
         ) : null}
       </View>
     ),
     [
       activePersonalHealthFilter,
-      activeView,
       batchHealthMutation,
       counts,
+      isPersonalView,
       setActivePersonalHealthFilter,
+      visiblePersonalHealthFilters,
     ],
   );
 
@@ -510,6 +517,17 @@ export function AgentListScreen() {
                 }}
               />
             ) : null}
+            <Button
+              label={activeViewButtonLabel}
+              size="sm"
+              variant="secondary"
+              iconLeft={activeViewButtonIcon}
+              accessibilityLabel={`Switch to ${
+                isPersonalView ? "shared" : "my"
+              } agents`}
+              accessibilityHint={`Currently showing ${activeViewButtonLabel.toLowerCase()} agents`}
+              onPress={toggleActiveView}
+            />
             <IconButton
               accessibilityLabel="Add agent"
               icon="add"
@@ -523,7 +541,7 @@ export function AgentListScreen() {
         }
       />
 
-      {activeView === "personal" ? (
+      {isPersonalView ? (
         <FlatList
           data={personalQuery.items}
           renderItem={renderPersonalAgentItem}

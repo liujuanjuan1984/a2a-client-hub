@@ -25,7 +25,7 @@ let mockPersonalLoadingMore = false;
 let mockSharedHasMore = true;
 let mockSharedLoadingMore = false;
 
-const mockPersonalCounts = {
+let mockPersonalCounts = {
   healthy: 1,
   degraded: 1,
   unavailable: 1,
@@ -249,6 +249,12 @@ describe("AgentListScreen", () => {
     mockPersonalLoadingMore = false;
     mockSharedHasMore = true;
     mockSharedLoadingMore = false;
+    mockPersonalCounts = {
+      healthy: 1,
+      degraded: 1,
+      unavailable: 1,
+      unknown: 1,
+    };
     jest.clearAllMocks();
   });
 
@@ -260,7 +266,17 @@ describe("AgentListScreen", () => {
     });
 
     expect(mockButtons.some((button) => button.label === "My")).toBe(true);
-    expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
+    expect(
+      mockButtons.some(
+        (button) => button.accessibilityLabel === "Switch to shared agents",
+      ),
+    ).toBe(true);
+    expect(mockButtons.some((button) => button.label === "1 Healthy")).toBe(
+      true,
+    );
+    expect(mockButtons.some((button) => button.label === "1 Degraded")).toBe(
+      true,
+    );
     expect(mockButtons.some((button) => button.label === "Check")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Load more")).toBe(
       true,
@@ -300,7 +316,7 @@ describe("AgentListScreen", () => {
     expect(mockPersonalLoadMore).toHaveBeenCalled();
 
     const degradedFilterButton = mockButtons.find(
-      (button) => button.label === "Degraded 1",
+      (button) => button.label === "1 Degraded",
     ) as { onPress: () => void };
     mockButtons = [];
     await act(async () => {
@@ -321,16 +337,17 @@ describe("AgentListScreen", () => {
       tree = create(<AgentListScreen />);
     });
 
-    const sharedTabButton = mockButtons.find(
-      (button) => button.label === "Shared",
+    const sourceToggleButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Switch to shared agents",
     ) as { onPress: () => void };
 
     mockButtons = [];
     await act(async () => {
-      sharedTabButton.onPress();
+      sourceToggleButton.onPress();
       tree!.update(<AgentListScreen />);
     });
 
+    expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
     expect(mockButtons.some((button) => button.label === "Load more")).toBe(
@@ -366,14 +383,14 @@ describe("AgentListScreen", () => {
 
     expect(mockPersonalLoadMore).toHaveBeenCalledTimes(1);
 
-    const sharedTabButton = mockButtons.find(
-      (button) => button.label === "Shared",
+    const sourceToggleButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Switch to shared agents",
     ) as { onPress: () => void };
 
     mockButtons = [];
     mockFlatLists = [];
     await act(async () => {
-      sharedTabButton.onPress();
+      sourceToggleButton.onPress();
       tree!.update(<AgentListScreen />);
     });
 
@@ -469,13 +486,13 @@ describe("AgentListScreen", () => {
 
     expect(textContent).not.toContain("SHARED");
 
-    const sharedTabButton = mockButtons.find(
-      (button) => button.label === "Shared",
+    const sourceToggleButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Switch to shared agents",
     ) as { onPress: () => void };
 
     mockButtons = [];
     await act(async () => {
-      sharedTabButton.onPress();
+      sourceToggleButton.onPress();
       tree!.update(<AgentListScreen />);
     });
 
@@ -485,5 +502,75 @@ describe("AgentListScreen", () => {
       .join(" ");
 
     expect(textContent).toContain("SHARED");
+  });
+
+  it("formats personal checked timestamps as YYYY-MM-DD HH:mm", async () => {
+    let tree: ReturnType<typeof create>;
+
+    jest
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({
+        timeZone: "UTC",
+      } as Intl.ResolvedDateTimeFormatOptions);
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const degradedFilterButton = mockButtons.find(
+      (button) => button.label === "1 Degraded",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    await act(async () => {
+      degradedFilterButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    const textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
+    expect(textContent).toContain("Checked 2026-03-25 10:00");
+    expect(textContent).not.toContain("AM");
+    expect(textContent).not.toContain("PM");
+  });
+
+  it("hides zero-count health filters and falls back to the first visible status", async () => {
+    let tree: ReturnType<typeof create>;
+
+    mockPersonalCounts = {
+      healthy: 0,
+      degraded: 2,
+      unavailable: 1,
+      unknown: 0,
+    };
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    expect(mockButtons.some((button) => button.label === "0 Healthy")).toBe(
+      false,
+    );
+    expect(mockButtons.some((button) => button.label === "0 Unknown")).toBe(
+      false,
+    );
+    expect(mockButtons.some((button) => button.label === "2 Degraded")).toBe(
+      true,
+    );
+    expect(mockButtons.some((button) => button.label === "1 Unavailable")).toBe(
+      true,
+    );
+
+    await act(async () => {
+      tree!.update(<AgentListScreen />);
+    });
+
+    expect(mockPersonalQueryCalls[mockPersonalQueryCalls.length - 1]).toEqual({
+      healthBucket: "degraded",
+      enabled: true,
+    });
   });
 });

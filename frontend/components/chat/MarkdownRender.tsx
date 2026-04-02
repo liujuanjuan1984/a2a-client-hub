@@ -109,7 +109,7 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
   }, [isAgent]);
 
   const rules: RenderRules = {
-    fence: (node, children, parent, styles) => {
+    fence: (node, _children, _parent, styles) => {
       const { content } = node;
       return (
         <View key={node.key} style={styles.fence}>
@@ -133,7 +133,7 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         </View>
       );
     },
-    code_block: (node, children, parent, styles) => {
+    code_block: (node, _children, _parent, styles) => {
       const { content } = node;
       return (
         <View key={node.key} style={styles.code_block}>

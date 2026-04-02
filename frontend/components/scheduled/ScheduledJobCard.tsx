@@ -290,8 +290,10 @@ export function ScheduledJobCard({
             </Text>
             <Text className={`mt-0.5 text-[11px] font-normal ${tone.text}`}>
               Next:{" "}
-              {job.next_run_at_local ??
-                formatLocalDateTime(job.next_run_at_utc, timeZone)}
+              {formatLocalDateTime(
+                job.next_run_at_local ?? job.next_run_at_utc,
+                timeZone,
+              )}
             </Text>
             {statusHint ? (
               <Text
