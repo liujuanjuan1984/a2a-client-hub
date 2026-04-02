@@ -12,6 +12,7 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.session_query import (
     resolve_canonical_session_query,
+    resolve_codex_session_query,
     resolve_legacy_session_query,
     resolve_session_query_control_methods,
 )
@@ -54,6 +55,15 @@ def resolve_runtime_session_query(
             ext=ext,
             contract_mode="legacy",
             selection_mode="legacy_compatibility",
+            control_methods=resolve_session_query_control_methods(card, ext=ext),
+        )
+
+    if diagnostic.status == "codex":
+        ext = resolve_codex_session_query(card)
+        return ResolvedSessionQueryRuntimeCapability(
+            ext=ext,
+            contract_mode="codex",
+            selection_mode="codex_compatibility",
             control_methods=resolve_session_query_control_methods(card, ext=ext),
         )
 

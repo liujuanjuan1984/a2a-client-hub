@@ -10,9 +10,11 @@ from app.integrations.a2a_extensions.contract_utils import as_dict
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.session_query import (
     resolve_canonical_session_query,
+    resolve_codex_session_query,
     resolve_legacy_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_SHARED_SESSION_QUERY_URI,
     LEGACY_SHARED_SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
 )
@@ -57,6 +59,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     raw_pagination = as_dict(params.get("pagination"))
     result_envelope = params.get("result_envelope")
     uses_legacy_uri = uri == LEGACY_SHARED_SESSION_QUERY_URI
+    uses_codex_uri = uri == CODEX_SHARED_SESSION_QUERY_URI
     uses_legacy_contract_fields = bool(
         raw_pagination.get("mode") == "limit"
         and (
@@ -67,11 +70,12 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     )
 
     try:
-        resolver = (
-            resolve_legacy_session_query
-            if uses_legacy_uri or uses_legacy_contract_fields
-            else resolve_canonical_session_query
-        )
+        if uses_codex_uri:
+            resolver = resolve_codex_session_query
+        elif uses_legacy_uri or uses_legacy_contract_fields:
+            resolver = resolve_legacy_session_query
+        else:
+            resolver = resolve_canonical_session_query
         resolved = resolver(card)
     except A2AExtensionContractError as exc:
         return SharedSessionQueryDiagnostic(
@@ -101,7 +105,13 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     return SharedSessionQueryDiagnostic(
         declared=True,
         status=(
-            "legacy" if uses_legacy_uri or uses_legacy_contract_fields else "canonical"
+            "codex"
+            if uses_codex_uri
+            else (
+                "legacy"
+                if uses_legacy_uri or uses_legacy_contract_fields
+                else "canonical"
+            )
         ),
         uri=resolved.uri,
         provider=resolved.provider,

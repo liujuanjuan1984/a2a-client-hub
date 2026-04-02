@@ -9,6 +9,7 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
 - Hub-stable canonical identifier: `urn:opencode-a2a:session-query/v1`
 - Current `opencode-a2a` HTTPS alias also recognized by Hub: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
 - Legacy extension URI still recognized by Hub: `urn:shared-a2a:session-query:v1`
+- Codex compatibility URI also recognized when the declared contract remains losslessly mappable to the Hub-stable session-query surface: `urn:codex-a2a:codex-session-query/v1`
 - This document describes the canonical contract only
 - Hub normalizes known aliases back to its stable internal identifier where a canonical URI value is required by downstream diagnostics
 
@@ -17,7 +18,7 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
 The contract exists so that Hub can:
 
 - validate a peer during onboarding
-- classify the peer as `canonical`, `legacy`, `unsupported`, or `invalid`
+- classify the peer as `canonical`, `legacy`, `codex`, `unsupported`, or `invalid`
 - choose the correct runtime parser path
 - reject ambiguous or unsafe declarations early
 
@@ -161,6 +162,7 @@ At onboarding time, Hub classifies the declaration as one of:
 
 - `canonical`
 - `legacy`
+- `codex`
 - `unsupported`
 - `invalid`
 
@@ -168,6 +170,7 @@ At runtime, Hub uses that classification to choose:
 
 - the canonical parser path
 - the explicit legacy compatibility path
+- the explicit Codex compatibility path
 - or fast-fail for unsupported / invalid contracts
 
 ## Reference Payloads

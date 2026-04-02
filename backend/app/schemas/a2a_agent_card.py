@@ -31,7 +31,7 @@ class SharedSessionQueryDiagnostic(BaseModel):
     declared: bool = Field(
         ..., description="Whether the card declares a shared session query extension"
     )
-    status: Literal["canonical", "legacy", "unsupported", "invalid"] = Field(
+    status: Literal["canonical", "legacy", "codex", "unsupported", "invalid"] = Field(
         ...,
         description="Hub compatibility classification for the declared contract",
     )

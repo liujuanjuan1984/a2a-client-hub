@@ -69,7 +69,7 @@ class SessionExtensionService:
             raise ValueError("request.command must be a non-empty string")
 
         arguments = request_payload.get("arguments")
-        if not isinstance(arguments, str):
+        if arguments is not None and not isinstance(arguments, str):
             raise ValueError("request.arguments must be a string")
 
         parts = request_payload.get("parts")
