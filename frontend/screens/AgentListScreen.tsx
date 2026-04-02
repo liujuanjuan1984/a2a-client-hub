@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { FlatList, RefreshControl, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -107,6 +107,11 @@ export function AgentListScreen() {
   });
 
   const counts = personalQuery.counts;
+  const visiblePersonalHealthFilters = useMemo(
+    () =>
+      PERSONAL_HEALTH_FILTERS.filter((status) => (counts?.[status] ?? 0) > 0),
+    [counts],
+  );
   const totalPersonalAgents = useMemo(() => {
     if (!counts) {
       return 0;
@@ -117,6 +122,24 @@ export function AgentListScreen() {
   }, [counts]);
   const selectedFilterLabel =
     HEALTH_BADGE_STYLES[activePersonalHealthFilter].label.toLowerCase();
+
+  useEffect(() => {
+    if (!isPersonalView) {
+      return;
+    }
+    if ((counts?.[activePersonalHealthFilter] ?? 0) > 0) {
+      return;
+    }
+    const fallbackFilter = visiblePersonalHealthFilters[0];
+    if (fallbackFilter && fallbackFilter !== activePersonalHealthFilter) {
+      setActivePersonalHealthFilter(fallbackFilter);
+    }
+  }, [
+    activePersonalHealthFilter,
+    counts,
+    isPersonalView,
+    visiblePersonalHealthFilters,
+  ]);
 
   const handleChat = useCallback(
     (agentId: string) => {
@@ -169,7 +192,6 @@ export function AgentListScreen() {
 
   const renderPersonalAgentItem = useCallback(
     ({ item: agent }: { item: A2AAgentResponse }) => {
-      const badge = HEALTH_BADGE_STYLES[agent.health_status];
       const showCheckedAt = agent.health_status !== "healthy";
       const checkedAtLabel = agent.last_health_check_at
         ? `Checked ${formatLocalDateTime(agent.last_health_check_at)}`
@@ -178,21 +200,12 @@ export function AgentListScreen() {
       return (
         <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
           <View className="px-4 py-4">
-            <View className="flex-row items-center justify-between">
-              <Text
-                className="flex-1 pr-4 text-[13px] font-semibold text-white"
-                numberOfLines={1}
-              >
-                {agent.name}
-              </Text>
-              <View className="items-end gap-2">
-                <Text
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${badge.className}`}
-                >
-                  {badge.label}
-                </Text>
-              </View>
-            </View>
+            <Text
+              className="text-[13px] font-semibold text-white"
+              numberOfLines={1}
+            >
+              {agent.name}
+            </Text>
             {!agent.enabled || showCheckedAt ? (
               <View className="mt-3 flex-row items-center justify-between gap-3">
                 {agent.enabled ? (
@@ -334,7 +347,28 @@ export function AgentListScreen() {
       <View className="mb-5">
         {isPersonalView ? (
           <View className="rounded-2xl bg-surface p-4">
-            <View className="flex-row items-center justify-end">
+            <View className="flex-row items-center gap-3">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                className="min-w-0 flex-1"
+                contentContainerStyle={{ gap: 12, paddingRight: 4 }}
+              >
+                {visiblePersonalHealthFilters.map((status) => (
+                  <Button
+                    key={status}
+                    className="rounded-full"
+                    label={`${counts?.[status] ?? 0} ${HEALTH_BADGE_STYLES[status].label}`}
+                    size="xs"
+                    variant={
+                      activePersonalHealthFilter === status
+                        ? "primary"
+                        : "secondary"
+                    }
+                    onPress={() => setActivePersonalHealthFilter(status)}
+                  />
+                ))}
+              </ScrollView>
               <Button
                 label={batchHealthMutation.isPending ? "Checking..." : "Check"}
                 size="sm"
@@ -348,23 +382,6 @@ export function AgentListScreen() {
                 }}
               />
             </View>
-
-            <View className="mt-4 flex-row flex-wrap items-center gap-3">
-              {PERSONAL_HEALTH_FILTERS.map((status) => (
-                <Button
-                  key={status}
-                  className="rounded-full"
-                  label={`${HEALTH_BADGE_STYLES[status].label} ${counts?.[status] ?? 0}`}
-                  size="xs"
-                  variant={
-                    activePersonalHealthFilter === status
-                      ? "primary"
-                      : "secondary"
-                  }
-                  onPress={() => setActivePersonalHealthFilter(status)}
-                />
-              ))}
-            </View>
           </View>
         ) : null}
       </View>
@@ -375,6 +392,7 @@ export function AgentListScreen() {
       counts,
       isPersonalView,
       setActivePersonalHealthFilter,
+      visiblePersonalHealthFilters,
     ],
   );
 

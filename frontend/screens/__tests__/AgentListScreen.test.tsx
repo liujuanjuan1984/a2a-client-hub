@@ -25,7 +25,7 @@ let mockPersonalLoadingMore = false;
 let mockSharedHasMore = true;
 let mockSharedLoadingMore = false;
 
-const mockPersonalCounts = {
+let mockPersonalCounts = {
   healthy: 1,
   degraded: 1,
   unavailable: 1,
@@ -249,6 +249,12 @@ describe("AgentListScreen", () => {
     mockPersonalLoadingMore = false;
     mockSharedHasMore = true;
     mockSharedLoadingMore = false;
+    mockPersonalCounts = {
+      healthy: 1,
+      degraded: 1,
+      unavailable: 1,
+      unknown: 1,
+    };
     jest.clearAllMocks();
   });
 
@@ -265,6 +271,12 @@ describe("AgentListScreen", () => {
         (button) => button.accessibilityLabel === "Switch to shared agents",
       ),
     ).toBe(true);
+    expect(mockButtons.some((button) => button.label === "1 Healthy")).toBe(
+      true,
+    );
+    expect(mockButtons.some((button) => button.label === "1 Degraded")).toBe(
+      true,
+    );
     expect(mockButtons.some((button) => button.label === "Check")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Load more")).toBe(
       true,
@@ -304,7 +316,7 @@ describe("AgentListScreen", () => {
     expect(mockPersonalLoadMore).toHaveBeenCalled();
 
     const degradedFilterButton = mockButtons.find(
-      (button) => button.label === "Degraded 1",
+      (button) => button.label === "1 Degraded",
     ) as { onPress: () => void };
     mockButtons = [];
     await act(async () => {
@@ -506,7 +518,7 @@ describe("AgentListScreen", () => {
     });
 
     const degradedFilterButton = mockButtons.find(
-      (button) => button.label === "Degraded 1",
+      (button) => button.label === "1 Degraded",
     ) as { onPress: () => void };
 
     mockButtons = [];
@@ -523,5 +535,42 @@ describe("AgentListScreen", () => {
     expect(textContent).toContain("Checked 2026-03-25 10:00");
     expect(textContent).not.toContain("AM");
     expect(textContent).not.toContain("PM");
+  });
+
+  it("hides zero-count health filters and falls back to the first visible status", async () => {
+    let tree: ReturnType<typeof create>;
+
+    mockPersonalCounts = {
+      healthy: 0,
+      degraded: 2,
+      unavailable: 1,
+      unknown: 0,
+    };
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    expect(mockButtons.some((button) => button.label === "0 Healthy")).toBe(
+      false,
+    );
+    expect(mockButtons.some((button) => button.label === "0 Unknown")).toBe(
+      false,
+    );
+    expect(mockButtons.some((button) => button.label === "2 Degraded")).toBe(
+      true,
+    );
+    expect(mockButtons.some((button) => button.label === "1 Unavailable")).toBe(
+      true,
+    );
+
+    await act(async () => {
+      tree!.update(<AgentListScreen />);
+    });
+
+    expect(mockPersonalQueryCalls[mockPersonalQueryCalls.length - 1]).toEqual({
+      healthBucket: "degraded",
+      enabled: true,
+    });
   });
 });
