@@ -68,16 +68,17 @@ export function AgentListScreen() {
   );
   const [activePersonalHealthFilter, setActivePersonalHealthFilter] =
     useState<A2AAgentHealthStatus>("healthy");
+  const isPersonalView = activeView === "personal";
 
   const personalQuery = usePersonalAgentsListQuery({
     size: PERSONAL_PAGE_SIZE,
     healthBucket: activePersonalHealthFilter,
-    enabled: activeView === "personal",
+    enabled: isPersonalView,
   });
 
   const sharedQuery = useSharedAgentsListQuery({
     size: SHARED_PAGE_SIZE,
-    enabled: activeView === "shared",
+    enabled: !isPersonalView,
   });
 
   const invalidateAgentQueries = async () => {
@@ -156,6 +157,14 @@ export function AgentListScreen() {
 
   const onRefresh = useCallback(() => handleRefresh(), [handleRefresh]);
   const onEndReached = useCallback(() => handleLoadMore(), [handleLoadMore]);
+  const toggleActiveView = useCallback(() => {
+    setActiveView((currentView) =>
+      currentView === "personal" ? "shared" : "personal",
+    );
+  }, []);
+
+  const activeViewButtonLabel = isPersonalView ? "My" : "Shared";
+  const activeViewButtonIcon = isPersonalView ? "person-outline" : "people";
 
   const renderPersonalAgentItem = useCallback(
     ({ item: agent }: { item: A2AAgentResponse }) => {
@@ -322,24 +331,7 @@ export function AgentListScreen() {
   const renderHeader = useMemo(
     () => (
       <View className="mb-5">
-        <View className="mb-5 flex-row gap-2">
-          <Button
-            className="flex-1"
-            label="My"
-            size="sm"
-            variant={activeView === "personal" ? "primary" : "secondary"}
-            onPress={() => setActiveView("personal")}
-          />
-          <Button
-            className="flex-1"
-            label="Shared"
-            size="sm"
-            variant={activeView === "shared" ? "primary" : "secondary"}
-            onPress={() => setActiveView("shared")}
-          />
-        </View>
-
-        {activeView === "personal" ? (
+        {isPersonalView ? (
           <View className="rounded-2xl bg-surface p-4">
             <View className="flex-row items-center justify-end">
               <Button
@@ -378,9 +370,9 @@ export function AgentListScreen() {
     ),
     [
       activePersonalHealthFilter,
-      activeView,
       batchHealthMutation,
       counts,
+      isPersonalView,
       setActivePersonalHealthFilter,
     ],
   );
@@ -510,6 +502,17 @@ export function AgentListScreen() {
                 }}
               />
             ) : null}
+            <Button
+              label={activeViewButtonLabel}
+              size="sm"
+              variant="secondary"
+              iconLeft={activeViewButtonIcon}
+              accessibilityLabel={`Switch to ${
+                isPersonalView ? "shared" : "my"
+              } agents`}
+              accessibilityHint={`Currently showing ${activeViewButtonLabel.toLowerCase()} agents`}
+              onPress={toggleActiveView}
+            />
             <IconButton
               accessibilityLabel="Add agent"
               icon="add"
@@ -523,7 +526,7 @@ export function AgentListScreen() {
         }
       />
 
-      {activeView === "personal" ? (
+      {isPersonalView ? (
         <FlatList
           data={personalQuery.items}
           renderItem={renderPersonalAgentItem}

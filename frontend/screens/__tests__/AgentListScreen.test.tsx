@@ -260,7 +260,11 @@ describe("AgentListScreen", () => {
     });
 
     expect(mockButtons.some((button) => button.label === "My")).toBe(true);
-    expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
+    expect(
+      mockButtons.some(
+        (button) => button.accessibilityLabel === "Switch to shared agents",
+      ),
+    ).toBe(true);
     expect(mockButtons.some((button) => button.label === "Check")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Load more")).toBe(
       true,
@@ -321,16 +325,17 @@ describe("AgentListScreen", () => {
       tree = create(<AgentListScreen />);
     });
 
-    const sharedTabButton = mockButtons.find(
-      (button) => button.label === "Shared",
+    const sourceToggleButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Switch to shared agents",
     ) as { onPress: () => void };
 
     mockButtons = [];
     await act(async () => {
-      sharedTabButton.onPress();
+      sourceToggleButton.onPress();
       tree!.update(<AgentListScreen />);
     });
 
+    expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
     expect(mockButtons.some((button) => button.label === "Load more")).toBe(
@@ -366,14 +371,14 @@ describe("AgentListScreen", () => {
 
     expect(mockPersonalLoadMore).toHaveBeenCalledTimes(1);
 
-    const sharedTabButton = mockButtons.find(
-      (button) => button.label === "Shared",
+    const sourceToggleButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Switch to shared agents",
     ) as { onPress: () => void };
 
     mockButtons = [];
     mockFlatLists = [];
     await act(async () => {
-      sharedTabButton.onPress();
+      sourceToggleButton.onPress();
       tree!.update(<AgentListScreen />);
     });
 
@@ -469,13 +474,13 @@ describe("AgentListScreen", () => {
 
     expect(textContent).not.toContain("SHARED");
 
-    const sharedTabButton = mockButtons.find(
-      (button) => button.label === "Shared",
+    const sourceToggleButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Switch to shared agents",
     ) as { onPress: () => void };
 
     mockButtons = [];
     await act(async () => {
-      sharedTabButton.onPress();
+      sourceToggleButton.onPress();
       tree!.update(<AgentListScreen />);
     });
 
