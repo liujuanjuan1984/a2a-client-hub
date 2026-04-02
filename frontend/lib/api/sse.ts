@@ -14,19 +14,19 @@ import {
 } from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
 
-export type SSEEvent = {
+type SSEEvent = {
   eventType: string;
   data: string;
 };
 
-export type SSEHandlers = {
+type SSEHandlers = {
   onEvent?: (event: SSEEvent) => void;
   onData?: (data: Record<string, unknown>) => boolean | void;
   onError?: (error: Error) => void;
   onDone?: () => void;
 };
 
-export type SSEReconnectOptions = {
+type SSEReconnectOptions = {
   retries?: number;
   initialDelayMs?: number;
   maxDelayMs?: number;
@@ -34,7 +34,7 @@ export type SSEReconnectOptions = {
   onlyIfNoData?: boolean;
 };
 
-export type SSEOptions = {
+type SSEOptions = {
   method?: string;
   headers?: Record<string, string>;
   body?: unknown;

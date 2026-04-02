@@ -22,7 +22,6 @@ import {
   useExtensionCapabilitiesQuery,
 } from "@/hooks/useExtensionCapabilitiesQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
-import { useShortcutsQuery } from "@/hooks/useShortcutsQuery";
 import {
   A2AExtensionCallError,
   commandSession,
@@ -160,7 +159,6 @@ export function useChatScreenController({
     agentId: activeAgentId,
     source: agent?.source,
   });
-  const shortcutsQuery = useShortcutsQuery();
   const runtimeStatusContract =
     extensionCapabilitiesQuery.runtimeStatusContract ?? undefined;
   const modelSelectionStatus: GenericCapabilityStatus =
@@ -187,19 +185,6 @@ export function useChatScreenController({
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
       : 0;
-  const quickShortcuts = useMemo(
-    () =>
-      shortcutsQuery
-        .getShortcutsForAgent(activeAgentId ?? null)
-        .slice(0, 5)
-        .map((shortcut) => ({
-          id: shortcut.id,
-          title: shortcut.title,
-          prompt: shortcut.prompt,
-        })),
-    [activeAgentId, shortcutsQuery, shortcutsQuery.shortcuts],
-  );
-
   const clearScrollSettleTimer = useCallback(() => {
     if (scrollSettleTimerRef.current) {
       clearTimeout(scrollSettleTimerRef.current);
@@ -519,6 +504,7 @@ export function useChatScreenController({
     inputRef,
     inputResetKey,
     inputDefaultValue,
+    inputSelection,
     hasInput,
     hasSendableInput,
     maxInputChars,
@@ -539,6 +525,7 @@ export function useChatScreenController({
     handleUseShortcut,
     clearInput,
     handleInputChange,
+    handleSelectionChange,
     handleContentSizeChange,
     handleKeyPress,
     handleSend,
@@ -947,7 +934,6 @@ export function useChatScreenController({
     sessionCommandStatus,
     selectedModel,
     opencodeDirectory,
-    quickShortcuts,
     messages,
     historyLoading,
     historyLoadingMore,
@@ -987,6 +973,7 @@ export function useChatScreenController({
     inputRef,
     inputResetKey,
     inputDefaultValue,
+    inputSelection,
     hasInput,
     hasSendableInput,
     maxInputChars,
@@ -995,6 +982,7 @@ export function useChatScreenController({
     maxInputHeight,
     clearInput,
     handleInputChange,
+    handleSelectionChange,
     handleContentSizeChange,
     handleKeyPress,
     handleSend,

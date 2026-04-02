@@ -1,6 +1,6 @@
 import { apiRequest } from "@/lib/api/client";
 
-export type InvitationStatus = "pending" | "registered" | "revoked" | "expired";
+type InvitationStatus = "pending" | "registered" | "revoked" | "expired";
 
 export type InvitationResponse = {
   id: string;
@@ -17,7 +17,7 @@ export type InvitationResponse = {
   revoked_at?: string | null;
 };
 
-export type InvitationListResponse<TItem> = {
+type InvitationListResponse<TItem> = {
   items: TItem[];
   pagination: {
     page: number;
@@ -28,12 +28,12 @@ export type InvitationListResponse<TItem> = {
   meta: Record<string, unknown>;
 };
 
-export type InvitationCreateRequest = {
+type InvitationCreateRequest = {
   email: string;
   memo?: string | null;
 };
 
-export type InvitationLookupResponse = {
+type InvitationLookupResponse = {
   code: string;
   target_email: string;
   status: InvitationStatus;

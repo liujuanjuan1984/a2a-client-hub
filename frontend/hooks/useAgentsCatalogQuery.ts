@@ -13,6 +13,7 @@ import {
 import { headersToEntries } from "@/lib/agentHeaders";
 import { buildAgentUpsertPayload } from "@/lib/agentUpsert";
 import {
+  checkAgentHealth,
   createAgent,
   deleteAgent,
   listAgents,
@@ -108,6 +109,14 @@ const refreshActiveCatalogQuery = async (
   });
 };
 
+const invalidatePersonalAgentLists = async (
+  queryClient: ReturnType<typeof useQueryClient>,
+) => {
+  await queryClient.invalidateQueries({
+    queryKey: queryKeys.agents.listRoot(),
+  });
+};
+
 const toNotFoundError = () => new Error(AGENT_ERROR_MESSAGES.notFound);
 
 const isNotFoundError = (error: unknown) =>
@@ -177,7 +186,15 @@ export function useCreateAgentMutation() {
         queryKeys.agents.catalog(),
         (catalog) => upsertAgentInCatalog(catalog, toAgentConfig(response)),
       );
-      await refreshActiveCatalogQuery(queryClient);
+      try {
+        await checkAgentHealth(response.id, true);
+      } catch {
+        // Keep create success independent from the follow-up availability check.
+      }
+      await Promise.all([
+        refreshActiveCatalogQuery(queryClient),
+        invalidatePersonalAgentLists(queryClient),
+      ]);
     },
   });
 }

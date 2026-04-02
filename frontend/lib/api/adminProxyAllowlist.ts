@@ -1,6 +1,6 @@
 import { apiRequest } from "@/lib/api/client";
 
-export type A2AProxyAllowlistResponse = {
+type A2AProxyAllowlistResponse = {
   id: string;
   host_pattern: string;
   is_enabled: boolean;
@@ -9,13 +9,13 @@ export type A2AProxyAllowlistResponse = {
   updated_at: string;
 };
 
-export type A2AProxyAllowlistCreate = {
+type A2AProxyAllowlistCreate = {
   host_pattern: string;
   is_enabled?: boolean;
   remark?: string | null;
 };
 
-export type A2AProxyAllowlistUpdate = {
+type A2AProxyAllowlistUpdate = {
   host_pattern?: string;
   is_enabled?: boolean;
   remark?: string | null;

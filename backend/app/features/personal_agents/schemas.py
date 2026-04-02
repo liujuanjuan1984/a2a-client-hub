@@ -12,7 +12,14 @@ from app.schemas.pagination import ListResponse, Pagination
 
 A2AAuthType = Literal["none", "bearer", "basic"]
 A2AAgentHealthStatus = Literal["unknown", "healthy", "degraded", "unavailable"]
-A2AAgentHealthBucket = Literal["all", "healthy", "attention"]
+A2AAgentHealthBucket = Literal[
+    "all",
+    "healthy",
+    "degraded",
+    "unavailable",
+    "unknown",
+    "attention",
+]
 
 
 class A2AAgentBase(BaseModel):

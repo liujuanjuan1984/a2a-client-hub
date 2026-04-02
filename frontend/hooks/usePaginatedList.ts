@@ -11,14 +11,20 @@ import { toast } from "@/lib/toast";
 
 type LoadMode = "loading" | "refreshing";
 
-type PaginatedPage<T> = {
+type PageExtras = Record<string, unknown>;
+type EmptyPageExtras = Record<never, never>;
+
+export type PaginatedPage<
+  T,
+  TPageExtras extends PageExtras = EmptyPageExtras,
+> = {
   items: T[];
   nextPage?: number;
-};
+} & TPageExtras;
 
-type Options<T> = {
+type Options<T, TPageExtras extends PageExtras = EmptyPageExtras> = {
   queryKey: QueryKey;
-  fetchPage: (page: number) => Promise<PaginatedPage<T>>;
+  fetchPage: (page: number) => Promise<PaginatedPage<T, TPageExtras>>;
   getKey: (item: T) => string;
   errorTitle: string;
   fallbackMessage: string;
@@ -30,8 +36,8 @@ type Options<T> = {
   staleTime?: number;
 };
 
-const mergeUniqueByKey = <T>(
-  pages: PaginatedPage<T>[],
+const mergeUniqueByKey = <T, TPageExtras extends PageExtras = EmptyPageExtras>(
+  pages: PaginatedPage<T, TPageExtras>[],
   getKey: (item: T) => string,
 ) => {
   const map = new Map<string, T>();
@@ -61,7 +67,10 @@ const resolveErrorMessage = (
   return fallbackMessage;
 };
 
-export function usePaginatedList<T>({
+export function usePaginatedList<
+  T,
+  TPageExtras extends PageExtras = EmptyPageExtras,
+>({
   queryKey,
   fetchPage,
   getKey,
@@ -73,7 +82,7 @@ export function usePaginatedList<T>({
   refetchOnReconnect,
   refetchOnMount,
   staleTime,
-}: Options<T>) {
+}: Options<T, TPageExtras>) {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const lastErrorSignatureRef = useRef<string | null>(null);
@@ -146,7 +155,7 @@ export function usePaginatedList<T>({
 
   const keepFirstPageOnly = useCallback(() => {
     queryClient.setQueryData<
-      InfiniteData<PaginatedPage<T>, number> | undefined
+      InfiniteData<PaginatedPage<T, TPageExtras>, number> | undefined
     >(queryKeyRef.current, (current) => {
       if (!current || current.pages.length <= 1) {
         return current;
@@ -159,7 +168,9 @@ export function usePaginatedList<T>({
   }, [queryClient]);
 
   const restoreSnapshot = useCallback(
-    (snapshot: InfiniteData<PaginatedPage<T>, number> | undefined) => {
+    (
+      snapshot: InfiniteData<PaginatedPage<T, TPageExtras>, number> | undefined,
+    ) => {
       if (!snapshot) return;
       queryClient.setQueryData(queryKeyRef.current, snapshot);
     },
@@ -170,9 +181,9 @@ export function usePaginatedList<T>({
     async (mode: LoadMode = "loading") => {
       const snapshot =
         mode === "refreshing"
-          ? queryClient.getQueryData<InfiniteData<PaginatedPage<T>, number>>(
-              queryKeyRef.current,
-            )
+          ? queryClient.getQueryData<
+              InfiniteData<PaginatedPage<T, TPageExtras>, number>
+            >(queryKeyRef.current)
           : undefined;
 
       if (mode === "refreshing") {
@@ -217,11 +228,26 @@ export function usePaginatedList<T>({
 
   const setItems = useCallback(
     (nextItems: T[]) => {
-      const data: InfiniteData<PaginatedPage<T>, number> = {
-        pages: [{ items: nextItems, nextPage: undefined }],
-        pageParams: [1],
-      };
-      queryClient.setQueryData(queryKeyRef.current, data);
+      queryClient.setQueryData<
+        InfiniteData<PaginatedPage<T, TPageExtras>, number> | undefined
+      >(queryKeyRef.current, (current) => {
+        const firstPage = current?.pages[0];
+        const nextFirstPage = firstPage
+          ? ({
+              ...firstPage,
+              items: nextItems,
+              nextPage: undefined,
+            } as PaginatedPage<T, TPageExtras>)
+          : ({
+              items: nextItems,
+              nextPage: undefined,
+            } as PaginatedPage<T, TPageExtras>);
+
+        return {
+          pages: [nextFirstPage],
+          pageParams: [current?.pageParams[0] ?? 1],
+        };
+      });
     },
     [queryClient],
   );
@@ -231,6 +257,7 @@ export function usePaginatedList<T>({
   return {
     error: query.error,
     isError: query.isError,
+    pages,
     items,
     setItems,
     nextPage,

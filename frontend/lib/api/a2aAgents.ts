@@ -1,12 +1,16 @@
 import { apiRequest } from "@/lib/api/client";
+import {
+  parsePaginatedListResponse,
+  resolveNextPageWithFallback,
+} from "@/lib/api/pagination";
 
-export type A2AAuthType = "none" | "bearer" | "basic";
+type A2AAuthType = "none" | "bearer" | "basic";
 export type A2AAgentHealthStatus =
   | "unknown"
   | "healthy"
   | "degraded"
   | "unavailable";
-export type A2AAgentHealthBucket = "all" | "healthy" | "attention";
+export type A2AAgentHealthBucket = "all" | A2AAgentHealthStatus | "attention";
 
 export type A2AAgentCardValidationResponse = {
   success: boolean;
@@ -57,7 +61,7 @@ export type A2AAgentListResponse = {
   };
 };
 
-export type A2AAgentHealthCheckResponse = {
+type A2AAgentHealthCheckResponse = {
   summary: {
     requested: number;
     checked: number;
@@ -90,7 +94,7 @@ export type A2AAgentCreateRequest = {
   extra_headers: Record<string, string>;
 };
 
-export type A2AAgentUpdateRequest = Partial<A2AAgentCreateRequest>;
+type A2AAgentUpdateRequest = Partial<A2AAgentCreateRequest>;
 
 export type A2AAgentInvokeRequest = {
   query: string;
@@ -105,7 +109,7 @@ export type A2AAgentInvokeRequest = {
   };
 };
 
-export type A2AAgentInvokeResponse = {
+type A2AAgentInvokeResponse = {
   success: boolean;
   content?: string | null;
   error?: string | null;
@@ -118,7 +122,7 @@ export type A2AAgentInvokeResponse = {
   agent_url?: string | null;
 };
 
-export type WsTicketResponse = {
+type WsTicketResponse = {
   token: string;
   expires_at: string;
   expires_in: number;
@@ -132,6 +136,32 @@ export const listAgents = (
   apiRequest<A2AAgentListResponse>("/me/a2a/agents", {
     query: { page, size, health_bucket: healthBucket },
   });
+
+export const listAgentsPage = async (input?: {
+  page?: number;
+  size?: number;
+  healthBucket?: A2AAgentHealthBucket;
+}) => {
+  const page =
+    typeof input?.page === "number" && Number.isFinite(input.page)
+      ? Math.max(1, Math.floor(input.page))
+      : 1;
+  const size =
+    typeof input?.size === "number" && Number.isFinite(input.size)
+      ? Math.max(1, Math.floor(input.size))
+      : 50;
+  const healthBucket = input?.healthBucket ?? "all";
+
+  const response = await listAgents(page, size, healthBucket);
+  const parsed = parsePaginatedListResponse(response);
+
+  return {
+    items: parsed.items,
+    pagination: response.pagination,
+    meta: response.meta,
+    nextPage: resolveNextPageWithFallback({ parsed, page, size }),
+  };
+};
 
 export const createAgent = (payload: A2AAgentCreateRequest) =>
   apiRequest<A2AAgentResponse, A2AAgentCreateRequest>("/me/a2a/agents", {

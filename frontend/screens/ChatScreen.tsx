@@ -127,23 +127,23 @@ export function ChatScreen({
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}
         currentDirectory={controller.opencodeDirectory}
-        quickShortcuts={controller.quickShortcuts}
         pendingInterrupt={controller.pendingInterrupt}
         pendingInterruptCount={controller.pendingInterruptCount}
         showShortcutManager={controller.showShortcutManager}
         onOpenDirectoryPicker={controller.openDirectoryPicker}
         onOpenShortcutManager={controller.openShortcutManager}
-        onUseShortcut={controller.handleUseShortcut}
         selectedModel={controller.selectedModel}
         onOpenModelPicker={controller.openModelPicker}
         inputRef={controller.inputRef}
         inputResetKey={controller.inputResetKey}
         inputDefaultValue={controller.inputDefaultValue}
+        inputSelection={controller.inputSelection}
         hasInput={controller.hasInput}
         hasSendableInput={controller.hasSendableInput}
         maxInputChars={controller.maxInputChars}
         onClearInput={controller.clearInput}
         onInputChange={controller.handleInputChange}
+        onSelectionChange={controller.handleSelectionChange}
         onContentSizeChange={controller.handleContentSizeChange}
         inputHeight={controller.inputHeight}
         maxInputHeight={controller.maxInputHeight}

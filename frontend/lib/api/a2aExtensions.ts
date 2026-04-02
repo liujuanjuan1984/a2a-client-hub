@@ -5,7 +5,7 @@ import type {
 } from "@/lib/api/chat-utils";
 import { apiRequest } from "@/lib/api/client";
 
-export type A2AExtensionResponse = {
+type A2AExtensionResponse = {
   success: boolean;
   result?: Record<string, unknown> | null;
   error_code?: string | null;
@@ -16,7 +16,7 @@ export type A2AExtensionResponse = {
   meta?: Record<string, unknown>;
 };
 
-export type A2AExtensionCapabilities = {
+type A2AExtensionCapabilities = {
   modelSelection: boolean;
   providerDiscovery: boolean;
   interruptRecovery: boolean;
@@ -336,7 +336,7 @@ type PromptAsyncAckResult = {
   sessionId: string;
 };
 
-export type SessionCommandResultItem = {
+type SessionCommandResultItem = {
   kind?: string;
   messageId?: string;
   message_id?: string;

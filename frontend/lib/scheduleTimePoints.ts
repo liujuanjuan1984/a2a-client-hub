@@ -16,7 +16,7 @@ type ScheduleTimePointByCycle = {
   sequential: SequentialTimePoint;
 };
 
-export type ScheduleCycleTimePoint<T extends ScheduleCycleType> =
+type ScheduleCycleTimePoint<T extends ScheduleCycleType> =
   ScheduleTimePointByCycle[T];
 
 const DEFAULT_TIME = "07:00";

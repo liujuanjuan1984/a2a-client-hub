@@ -170,6 +170,8 @@ type ScheduledJobCardProps = {
   onLoadMoreExecutions?: () => void;
 };
 
+const ACTION_ICON_BUTTON_CLASS = "min-h-10 min-w-10";
+
 export function ScheduledJobCard({
   job,
   agentName,
@@ -339,6 +341,7 @@ export function ScheduledJobCard({
           {!canMarkFailed ? (
             <IconButton
               accessibilityLabel="Edit job"
+              className={ACTION_ICON_BUTTON_CLASS}
               icon="create-outline"
               size="xs"
               variant="secondary"
@@ -349,6 +352,7 @@ export function ScheduledJobCard({
             accessibilityLabel={
               promptExpanded ? "Collapse prompt" : "Expand prompt"
             }
+            className={ACTION_ICON_BUTTON_CLASS}
             icon={promptExpanded ? "chevron-up" : "chevron-down"}
             size="xs"
             variant="secondary"
@@ -359,6 +363,7 @@ export function ScheduledJobCard({
               value={job.prompt}
               successMessage="Prompt copied to clipboard."
               accessibilityLabel="Copy prompt"
+              className={ACTION_ICON_BUTTON_CLASS}
               variant="ghost"
               size="xs"
               iconColor={tone.iconColor}
@@ -370,6 +375,7 @@ export function ScheduledJobCard({
                 ? "Hide execution history"
                 : "Show execution history"
             }
+            className={ACTION_ICON_BUTTON_CLASS}
             icon={executionsOpen ? "time" : "time-outline"}
             size="xs"
             variant={executionsOpen ? "primary" : "secondary"}
@@ -395,7 +401,7 @@ export function ScheduledJobCard({
               icon="trash-outline"
               size="xs"
               variant="danger"
-              className="bg-red-500/40"
+              className={`${ACTION_ICON_BUTTON_CLASS} bg-red-500/40`}
               loading={deleting}
               disabled={!onDelete}
               onPress={handleDelete}

@@ -27,6 +27,7 @@ async def test_shortcuts_list_and_mutations(async_db_session, async_session_make
         assert list_payload["pagination"]["total"] == 5
         assert list_payload["items"][0]["id"] == "11111111-1111-1111-1111-111111111111"
         assert list_payload["items"][0]["is_default"] is True
+        assert list_payload["items"][0]["created_at"] is None
 
         create_resp = await client.post(
             "/me/shortcuts",
@@ -37,6 +38,7 @@ async def test_shortcuts_list_and_mutations(async_db_session, async_session_make
         assert custom["title"] == "My test"
         assert custom["prompt"] == "Hello from test"
         assert custom["is_default"] is False
+        assert custom["created_at"] is not None
         custom_id = custom["id"]
 
         update_resp = await client.patch(

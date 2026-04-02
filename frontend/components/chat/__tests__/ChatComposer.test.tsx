@@ -12,23 +12,23 @@ describe("ChatComposer clear button", () => {
   const mockProps = {
     modelSelectionStatus: "supported" as const,
     currentDirectory: null,
-    quickShortcuts: [],
     pendingInterrupt: null,
     pendingInterruptCount: 0,
     showShortcutManager: false,
     onOpenDirectoryPicker: jest.fn(),
     onOpenShortcutManager: jest.fn(),
-    onUseShortcut: jest.fn(),
     selectedModel: null,
     onOpenModelPicker: jest.fn(),
     inputRef: { current: { focus: jest.fn() } } as any,
     inputResetKey: 0,
     inputDefaultValue: "",
+    inputSelection: null,
     hasInput: false,
     hasSendableInput: false,
     maxInputChars: 50_000,
     onClearInput: jest.fn(),
     onInputChange: jest.fn(),
+    onSelectionChange: jest.fn(),
     onContentSizeChange: jest.fn(),
     inputHeight: 40,
     maxInputHeight: 200,
@@ -152,29 +152,18 @@ describe("ChatComposer clear button", () => {
     expect(UNSAFE_getByType(TextInput).props.maxLength).toBe(50_000);
   });
 
-  it("renders quick shortcut suggestions and uses them directly", () => {
-    const onUseShortcut = jest.fn();
-    const { getByLabelText, getByText } = render(
+  it("passes the requested caret position to the input selection", () => {
+    const { UNSAFE_getByType } = render(
       <ChatComposer
         {...mockProps}
-        quickShortcuts={[
-          {
-            id: "shortcut-1",
-            title: "Summarize",
-            prompt: "Please summarize this.",
-          },
-          {
-            id: "shortcut-2",
-            title: "Explain",
-            prompt: "Please explain this.",
-          },
-        ]}
-        onUseShortcut={onUseShortcut}
+        inputDefaultValue="Shortcut prompt"
+        inputSelection={{ start: 15, end: 15 }}
       />,
     );
 
-    expect(getByText("Quick Suggestions")).toBeTruthy();
-    fireEvent.press(getByLabelText("Use shortcut Summarize"));
-    expect(onUseShortcut).toHaveBeenCalledWith("Please summarize this.");
+    expect(UNSAFE_getByType(TextInput).props.selection).toEqual({
+      start: 15,
+      end: 15,
+    });
   });
 });

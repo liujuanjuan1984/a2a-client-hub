@@ -40,10 +40,11 @@ jest.mock("@/components/ui/Button", () => {
 jest.mock("@/components/ui/IconButton", () => {
   const { Pressable, Text } = require("react-native");
   return {
-    IconButton: ({ accessibilityLabel, onPress }: any) => (
+    IconButton: ({ accessibilityLabel, className, onPress }: any) => (
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
+        className={className}
         onPress={onPress}
       >
         <Text>{accessibilityLabel}</Text>
@@ -204,6 +205,30 @@ describe("ScheduledJobCard visuals", () => {
 
     expect(getByText(/No heartbeat since/)).toBeTruthy();
     expect(getByText("Stop stalled run")).toBeTruthy();
+  });
+
+  it("applies a minimum touch target to icon-only actions", () => {
+    const job = {
+      id: "5b",
+      name: "Job",
+      enabled: true,
+      prompt: "Prompt",
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByLabelText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    expect(getByLabelText("Edit job").props.className).toContain("min-h-10");
+    expect(getByLabelText("Edit job").props.className).toContain("min-w-10");
+    expect(getByLabelText("Delete job").props.className).toContain("min-h-10");
+    expect(getByLabelText("Delete job").props.className).toContain("min-w-10");
   });
 
   it("toggles prompt expansion with the prompt icon button", () => {

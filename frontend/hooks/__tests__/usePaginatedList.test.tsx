@@ -241,4 +241,80 @@ describe("usePaginatedList", () => {
       ]);
     });
   });
+
+  it("preserves first-page metadata when setItems replaces cached items", async () => {
+    type ItemWithMeta = { id: string };
+
+    const fetchPage = jest.fn(async () => ({
+      items: [{ id: "item-1" }],
+      nextPage: 2,
+      meta: {
+        counts: {
+          healthy: 2,
+          degraded: 1,
+          unavailable: 0,
+          unknown: 0,
+        },
+      },
+    }));
+
+    const { result } = renderHook(
+      () =>
+        usePaginatedList<
+          ItemWithMeta,
+          {
+            meta: {
+              counts: {
+                healthy: number;
+                degraded: number;
+                unavailable: number;
+                unknown: number;
+              };
+            };
+          }
+        >({
+          queryKey: ["test", "set-items-preserve-meta"],
+          fetchPage,
+          getKey: (item) => item.id,
+          errorTitle: "Load failed",
+          fallbackMessage: "Load failed.",
+          enabled: true,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.pages[0]).toMatchObject({
+      meta: {
+        counts: {
+          healthy: 2,
+          degraded: 1,
+          unavailable: 0,
+          unknown: 0,
+        },
+      },
+    });
+
+    act(() => {
+      result.current.setItems([{ id: "item-2" }]);
+    });
+
+    await waitFor(() => {
+      expect(result.current.items).toEqual([{ id: "item-2" }]);
+      expect(result.current.pages[0]).toMatchObject({
+        meta: {
+          counts: {
+            healthy: 2,
+            degraded: 1,
+            unavailable: 0,
+            unknown: 0,
+          },
+        },
+        items: [{ id: "item-2" }],
+      });
+    });
+  });
 });

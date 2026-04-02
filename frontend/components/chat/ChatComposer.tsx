@@ -10,10 +10,6 @@ import {
   View,
 } from "react-native";
 
-import {
-  ShortcutSuggestionBar,
-  type ShortcutSuggestionItem,
-} from "@/components/chat/ShortcutSuggestionBar";
 import { type GenericCapabilityStatus } from "@/hooks/useExtensionCapabilitiesQuery";
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { type SharedModelSelection } from "@/lib/chat-utils";
@@ -21,23 +17,23 @@ import { type SharedModelSelection } from "@/lib/chat-utils";
 export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
   currentDirectory,
-  quickShortcuts,
   pendingInterrupt,
   pendingInterruptCount,
   showShortcutManager,
   onOpenDirectoryPicker,
   onOpenShortcutManager,
-  onUseShortcut,
   selectedModel,
   onOpenModelPicker,
   inputRef,
   inputResetKey,
   inputDefaultValue,
+  inputSelection,
   hasInput,
   hasSendableInput,
   maxInputChars,
   onClearInput,
   onInputChange,
+  onSelectionChange,
   onContentSizeChange,
   inputHeight,
   maxInputHeight,
@@ -48,23 +44,23 @@ export const ChatComposer = memo(function ChatComposer({
 }: {
   modelSelectionStatus: GenericCapabilityStatus;
   currentDirectory?: string | null;
-  quickShortcuts: ShortcutSuggestionItem[];
   pendingInterrupt: PendingRuntimeInterrupt | null;
   pendingInterruptCount: number;
   showShortcutManager: boolean;
   onOpenDirectoryPicker: () => void;
   onOpenShortcutManager: () => void;
-  onUseShortcut: (prompt: string) => void;
   selectedModel: SharedModelSelection | null;
   onOpenModelPicker: () => void;
   inputRef: React.RefObject<TextInput | null>;
   inputResetKey: number;
   inputDefaultValue: string;
+  inputSelection: { start: number; end: number } | null;
   hasInput: boolean;
   hasSendableInput: boolean;
   maxInputChars: number;
   onClearInput: () => void;
   onInputChange: (value: string) => void;
+  onSelectionChange: (start: number, end: number) => void;
   onContentSizeChange: (height: number) => void;
   inputHeight: number;
   maxInputHeight: number;
@@ -188,11 +184,6 @@ export const ChatComposer = memo(function ChatComposer({
         </View>
       </View>
 
-      <ShortcutSuggestionBar
-        shortcuts={quickShortcuts}
-        onUseShortcut={onUseShortcut}
-      />
-
       <View className="flex-row items-end gap-2 rounded-2xl bg-surface p-2">
         <TextInput
           key={inputResetKey}
@@ -204,8 +195,15 @@ export const ChatComposer = memo(function ChatComposer({
           placeholderTextColor="#666666"
           multiline
           defaultValue={inputDefaultValue}
+          selection={inputSelection ?? undefined}
           maxLength={maxInputChars}
           onChangeText={onInputChange}
+          onSelectionChange={(event) =>
+            onSelectionChange(
+              event.nativeEvent.selection.start,
+              event.nativeEvent.selection.end,
+            )
+          }
           onContentSizeChange={(event) =>
             onContentSizeChange(event.nativeEvent.contentSize.height)
           }
