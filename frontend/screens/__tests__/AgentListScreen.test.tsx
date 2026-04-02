@@ -19,6 +19,11 @@ const mockPersonalQueryCalls: {
 const mockSharedQueryCalls: { enabled?: boolean }[] = [];
 
 let mockButtons: Record<string, unknown>[] = [];
+let mockFlatLists: Record<string, unknown>[] = [];
+let mockPersonalHasMore = true;
+let mockPersonalLoadingMore = false;
+let mockSharedHasMore = true;
+let mockSharedLoadingMore = false;
 
 const mockPersonalCounts = {
   healthy: 1,
@@ -74,7 +79,17 @@ jest.mock("react-native", () => {
     ListHeaderComponent,
     ListEmptyComponent,
     ListFooterComponent,
+    ...props
   }: any) => {
+    mockFlatLists.push({
+      data,
+      renderItem,
+      ListHeaderComponent,
+      ListEmptyComponent,
+      ListFooterComponent,
+      ...props,
+    });
+
     const children: any[] = [];
 
     if (ListHeaderComponent) {
@@ -131,10 +146,10 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
       error: null,
       isError: false,
       nextPage: 2,
-      hasMore: true,
+      hasMore: mockPersonalHasMore,
       loading: false,
       refreshing: false,
-      loadingMore: false,
+      loadingMore: mockPersonalLoadingMore,
       setItems: jest.fn(),
       reset: jest.fn(),
       loadFirstPage: jest.fn(async () => true),
@@ -162,10 +177,10 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
       error: null,
       isError: false,
       nextPage: 2,
-      hasMore: true,
+      hasMore: mockSharedHasMore,
       loading: false,
       refreshing: false,
-      loadingMore: false,
+      loadingMore: mockSharedLoadingMore,
       setItems: jest.fn(),
       reset: jest.fn(),
       loadFirstPage: jest.fn(async () => true),
@@ -227,8 +242,13 @@ jest.mock("@/components/ui/Button", () => ({
 describe("AgentListScreen", () => {
   beforeEach(() => {
     mockButtons = [];
+    mockFlatLists = [];
     mockPersonalQueryCalls.length = 0;
     mockSharedQueryCalls.length = 0;
+    mockPersonalHasMore = true;
+    mockPersonalLoadingMore = false;
+    mockSharedHasMore = true;
+    mockSharedLoadingMore = false;
     jest.clearAllMocks();
   });
 
@@ -328,6 +348,93 @@ describe("AgentListScreen", () => {
     });
 
     expect(mockSharedLoadMore).toHaveBeenCalled();
+  });
+
+  it("loads more from onEndReached only when the active list can paginate", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const personalList = mockFlatLists.at(-1) as {
+      onEndReached: () => void;
+    };
+    await act(async () => {
+      personalList.onEndReached();
+    });
+
+    expect(mockPersonalLoadMore).toHaveBeenCalledTimes(1);
+
+    const sharedTabButton = mockButtons.find(
+      (button) => button.label === "Shared",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    mockFlatLists = [];
+    await act(async () => {
+      sharedTabButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    const sharedList = mockFlatLists.at(-1) as {
+      onEndReached: () => void;
+    };
+    await act(async () => {
+      sharedList.onEndReached();
+    });
+
+    expect(mockSharedLoadMore).toHaveBeenCalledTimes(1);
+
+    mockSharedHasMore = false;
+    mockFlatLists = [];
+    await act(async () => {
+      tree!.update(<AgentListScreen />);
+    });
+
+    const nonPaginatedSharedList = mockFlatLists.at(-1) as {
+      onEndReached: () => void;
+    };
+    await act(async () => {
+      nonPaginatedSharedList.onEndReached();
+    });
+
+    expect(mockSharedLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not load more when the active list is already fetching the next page", async () => {
+    mockPersonalLoadingMore = true;
+
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const personalList = mockFlatLists.at(-1) as {
+      onEndReached: () => void;
+    };
+    await act(async () => {
+      personalList.onEndReached();
+    });
+
+    expect(mockPersonalLoadMore).not.toHaveBeenCalled();
+
+    mockPersonalLoadingMore = false;
+    mockButtons = [];
+    mockFlatLists = [];
+    await act(async () => {
+      tree!.update(<AgentListScreen />);
+    });
+
+    const refreshedPersonalList = mockFlatLists.at(-1) as {
+      onEndReached: () => void;
+    };
+    await act(async () => {
+      refreshedPersonalList.onEndReached();
+    });
+
+    expect(mockPersonalLoadMore).toHaveBeenCalledTimes(1);
   });
 
   it("keeps personal cards visually minimal by hiding personal markers", async () => {

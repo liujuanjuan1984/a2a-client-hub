@@ -228,16 +228,26 @@ export function usePaginatedList<
 
   const setItems = useCallback(
     (nextItems: T[]) => {
-      const data: InfiniteData<PaginatedPage<T, TPageExtras>, number> = {
-        pages: [
-          {
-            items: nextItems,
-            nextPage: undefined,
-          } as PaginatedPage<T, TPageExtras>,
-        ],
-        pageParams: [1],
-      };
-      queryClient.setQueryData(queryKeyRef.current, data);
+      queryClient.setQueryData<
+        InfiniteData<PaginatedPage<T, TPageExtras>, number> | undefined
+      >(queryKeyRef.current, (current) => {
+        const firstPage = current?.pages[0];
+        const nextFirstPage = firstPage
+          ? ({
+              ...firstPage,
+              items: nextItems,
+              nextPage: undefined,
+            } as PaginatedPage<T, TPageExtras>)
+          : ({
+              items: nextItems,
+              nextPage: undefined,
+            } as PaginatedPage<T, TPageExtras>);
+
+        return {
+          pages: [nextFirstPage],
+          pageParams: [current?.pageParams[0] ?? 1],
+        };
+      });
     },
     [queryClient],
   );
