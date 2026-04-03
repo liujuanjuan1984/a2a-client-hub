@@ -119,6 +119,7 @@ Recent examples:
 
 - `app/features/schedules/job.py` keeps scheduler claim/finalize work in short sessions and releases DB state before remote invoke.
 - `app/features/invoke/route_runner.py` keeps session recovery in short transactions instead of tying invoke lifetime to request-scoped DB state.
+- `app/features/opencode_sessions/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
 
 ## A2A Outbound Allowlist
 

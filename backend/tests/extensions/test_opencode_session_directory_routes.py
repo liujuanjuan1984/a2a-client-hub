@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any, Dict, List
 
 import pytest
@@ -13,12 +14,22 @@ from app.db.models.external_session_directory_cache import (
 from app.features.agents_shared.common import upsert_agent_credential
 from app.features.hub_agents.runtime import HubA2ARuntimeValidationError
 from app.features.opencode_sessions import router as opencode_session_directory
+from app.features.opencode_sessions import (
+    service as opencode_session_directory_service_module,
+)
 from app.features.personal_agents.runtime import A2ARuntimeValidationError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
+
+async def test_opencode_sessions_directory_route_does_not_inject_request_db() -> None:
+    signature = inspect.signature(
+        opencode_session_directory.list_opencode_sessions_directory
+    )
+    assert "db" not in signature.parameters
 
 
 def _task(session_id: str, *, title: str, last_active_at: str) -> Dict[str, Any]:
@@ -452,10 +463,8 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
             )
 
     assert resp.status_code == 200
-    credential_batch_selects = [
-        stmt
-        for stmt in select_statements
-        if "a2a_agent_credentials" in stmt and " in (" in stmt
+    credential_selects = [
+        stmt for stmt in select_statements if "a2a_agent_credentials" in stmt
     ]
     per_agent_credential_selects = [
         stmt
@@ -470,7 +479,66 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
         and " in (" not in _where_clause(stmt)
     ]
 
-    assert len(credential_batch_selects) == 1
+    assert len(credential_selects) <= 1
     assert per_agent_credential_selects == []
     assert per_agent_agent_selects == []
-    assert len(select_statements) <= 6
+    assert len(select_statements) <= 7
+
+
+async def test_opencode_sessions_directory_releases_short_session_before_upstream_call(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    await _create_personal_agent(
+        async_db_session, user_id=user.id, card_url="https://personal.example.com"
+    )
+
+    original_run_with_new_session = (
+        opencode_session_directory_service_module.run_with_new_session
+    )
+    active_session_scopes = 0
+
+    async def tracked_run_with_new_session(operation, *, session_factory):
+        nonlocal active_session_scopes
+        active_session_scopes += 1
+        try:
+            return await original_run_with_new_session(
+                operation, session_factory=session_factory
+            )
+        finally:
+            active_session_scopes -= 1
+
+    class FakeExtensionsService:
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
+            assert active_session_scopes == 0
+            return ExtensionCallResult(
+                success=True,
+                result={"items": [], "pagination": {"page": page, "size": size}},
+                error_code=None,
+                upstream_error=None,
+                meta=None,
+            )
+
+    monkeypatch.setattr(
+        opencode_session_directory_service_module,
+        "run_with_new_session",
+        tracked_run_with_new_session,
+    )
+    monkeypatch.setattr(
+        "app.features.opencode_sessions.service.get_a2a_extensions_service",
+        lambda: FakeExtensionsService(),
+    )
+
+    async with create_test_client(
+        opencode_session_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+
+    assert resp.status_code == 200

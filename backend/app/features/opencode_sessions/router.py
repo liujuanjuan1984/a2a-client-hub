@@ -6,9 +6,8 @@ from typing import cast
 from uuid import UUID
 
 from fastapi import Depends, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_user
+from app.api.deps import get_current_user
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
@@ -33,14 +32,12 @@ async def list_opencode_sessions_directory(
     *,
     payload: OpencodeSessionDirectoryQueryRequest,
     response: Response,
-    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> OpencodeSessionDirectoryListResponse:
     response.headers["Cache-Control"] = "no-store"
     current_user_id = cast(UUID, current_user.id)
 
     items, extra = await opencode_session_directory_service.list_directory(
-        db,
         user_id=current_user_id,
         page=payload.page,
         size=payload.size,
