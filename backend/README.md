@@ -163,6 +163,7 @@ Contract references:
 - Reference payloads: [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
 - Hub also accepts the Codex compatibility URI `urn:codex-a2a:codex-session-query/v1` when its declared pagination and control semantics stay losslessly mappable to the Hub-private normalized `a2a_client_hub` session-query contract family.
 - Cross-cutting API examples: [`docs/architecture-and-api.md`](../docs/architecture-and-api.md)
+- Codex discovery watch design boundary: [`docs/codex-discovery-watch-design.md`](../docs/codex-discovery-watch-design.md)
 - Compatibility notes and non-goals: [`docs/compatibility-and-non-goals.md`](../docs/compatibility-and-non-goals.md)
 
 Requirements:
