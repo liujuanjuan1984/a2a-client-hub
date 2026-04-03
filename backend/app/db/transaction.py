@@ -28,6 +28,16 @@ async def rollback_safely(db: AsyncSession) -> None:
     await await_cancel_safe_suppressed(db.rollback())
 
 
+async def cleanup_session_safely(db: AsyncSession) -> None:
+    """Rollback any open transaction and then close the session safely."""
+
+    async def _cleanup() -> None:
+        await rollback_safely(db)
+        await db.close()
+
+    await await_cancel_safe(_cleanup())
+
+
 async def run_with_new_session(
     operation: Callable[[AsyncSession], Awaitable[T]],
     *,
@@ -40,6 +50,7 @@ async def run_with_new_session(
 
 
 __all__ = [
+    "cleanup_session_safely",
     "commit_safely",
     "rollback_safely",
     "run_with_new_session",
