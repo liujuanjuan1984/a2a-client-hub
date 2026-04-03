@@ -21,7 +21,7 @@ from app.db.locking import (
     RetryableDbQueryTimeoutError,
 )
 from app.db.session import AsyncSessionLocal
-from app.db.transaction import close_read_only_transaction, commit_safely
+from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke.guard import (
     _invoke_inflight_keys as _invoke_inflight_keys_impl,
 )
@@ -269,7 +269,7 @@ async def _unregister_inflight_invoke(
 
 
 async def _close_open_transaction(db: AsyncSession) -> None:
-    await close_read_only_transaction(db)
+    await prepare_for_external_call(db)
 
 
 async def _continue_session_with_short_transaction(

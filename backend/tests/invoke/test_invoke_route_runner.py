@@ -251,14 +251,14 @@ async def test_close_open_transaction_delegates_to_shared_helper(
 ) -> None:
     calls: list[object] = []
 
-    async def fake_close_read_only_transaction(db) -> None:
+    async def fake_prepare_for_external_call(db) -> None:
         calls.append(db)
 
     session = object()
     monkeypatch.setattr(
         invoke_route_runner,
-        "close_read_only_transaction",
-        fake_close_read_only_transaction,
+        "prepare_for_external_call",
+        fake_prepare_for_external_call,
     )
 
     await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001

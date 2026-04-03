@@ -16,7 +16,7 @@ from app.api.deps import (
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
-from app.db.transaction import close_read_only_transaction
+from app.db.transaction import load_for_external_call
 from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
 from app.features.hub_agents.runtime import (
     HubA2ARuntimeNotFoundError,
@@ -208,8 +208,13 @@ async def validate_hub_agent_card(
     response.headers["Cache-Control"] = "no-store"
 
     try:
-        runtime = await hub_a2a_runtime_builder.build(
-            db, user_id=current_user_id, agent_id=agent_id
+        runtime = await load_for_external_call(
+            db,
+            lambda session: hub_a2a_runtime_builder.build(
+                session,
+                user_id=current_user_id,
+                agent_id=agent_id,
+            ),
         )
     except HubA2ARuntimeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -217,7 +222,6 @@ async def validate_hub_agent_card(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except HubA2ARuntimeValidationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    await close_read_only_transaction(db)
 
     logger.info(
         "Hub A2A agent card validation requested",

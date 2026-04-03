@@ -21,7 +21,7 @@ from app.api.error_handlers import build_error_detail, build_error_response
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
-from app.db.transaction import close_read_only_transaction
+from app.db.transaction import load_for_external_call
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -303,9 +303,10 @@ def create_extension_capability_router(
         current_user: User,
         agent_id: UUID,
     ) -> Any:
-        runtime = await _get_runtime(db, current_user, agent_id)
-        await close_read_only_transaction(db)
-        return runtime
+        return await load_for_external_call(
+            db,
+            lambda session: _get_runtime(session, current_user, agent_id),
+        )
 
     def _to_extension_response(result: Any) -> A2AExtensionResponse:
         return A2AExtensionResponse(

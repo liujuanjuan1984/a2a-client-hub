@@ -169,8 +169,9 @@ async def test_personal_agent_card_validate_closes_read_only_transaction_before_
 
     call_order: list[str] = []
 
-    async def fake_close_read_only_transaction(_db) -> None:
-        call_order.append("close_tx")
+    async def fake_load_for_external_call(_db, operation):
+        call_order.append("prepare_external_call")
+        return await operation(_db)
 
     class _OrderedGateway(_FakeGateway):
         async def fetch_agent_card_detail(self, **kwargs):
@@ -179,8 +180,8 @@ async def test_personal_agent_card_validate_closes_read_only_transaction_before_
 
     monkeypatch.setattr(
         personal_router,
-        "close_read_only_transaction",
-        fake_close_read_only_transaction,
+        "load_for_external_call",
+        fake_load_for_external_call,
     )
     monkeypatch.setattr(
         personal_router, "get_a2a_service", lambda: _FakeA2AService(_OrderedGateway())
@@ -197,7 +198,7 @@ async def test_personal_agent_card_validate_closes_read_only_transaction_before_
         )
 
     assert response.status_code == 200
-    assert call_order == ["close_tx", "fetch_card"]
+    assert call_order == ["prepare_external_call", "fetch_card"]
 
 
 @pytest.mark.asyncio

@@ -805,8 +805,9 @@ async def test_hub_card_validate_closes_read_only_transaction_before_remote_fetc
 
     call_order: list[str] = []
 
-    async def fake_close_read_only_transaction(_db) -> None:
-        call_order.append("close_tx")
+    async def fake_load_for_external_call(_db, operation):
+        call_order.append("prepare_external_call")
+        return await operation(_db)
 
     class _OrderedGateway(_FakeGateway):
         async def fetch_agent_card_detail(self, **kwargs):
@@ -815,8 +816,8 @@ async def test_hub_card_validate_closes_read_only_transaction_before_remote_fetc
 
     monkeypatch.setattr(
         hub_router,
-        "close_read_only_transaction",
-        fake_close_read_only_transaction,
+        "load_for_external_call",
+        fake_load_for_external_call,
     )
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(_OrderedGateway())
@@ -833,7 +834,7 @@ async def test_hub_card_validate_closes_read_only_transaction_before_remote_fetc
         )
 
     assert resp.status_code == 200
-    assert call_order == ["close_tx", "fetch_card"]
+    assert call_order == ["prepare_external_call", "fetch_card"]
 
 
 @pytest.mark.asyncio
@@ -1854,8 +1855,9 @@ async def test_hub_extension_capabilities_closes_read_only_transaction_before_up
     call_order: list[str] = []
     fake_extensions = _FakeExtensionsService()
 
-    async def fake_close_read_only_transaction(_db) -> None:
-        call_order.append("close_tx")
+    async def fake_load_for_external_call(_db, operation):
+        call_order.append("prepare_external_call")
+        return await operation(_db)
 
     async def fake_resolve_capability_snapshot(*, runtime):
         call_order.append("resolve_capability_snapshot")
@@ -1866,8 +1868,8 @@ async def test_hub_extension_capabilities_closes_read_only_transaction_before_up
 
     monkeypatch.setattr(
         extension_router_common,
-        "close_read_only_transaction",
-        fake_close_read_only_transaction,
+        "load_for_external_call",
+        fake_load_for_external_call,
     )
     monkeypatch.setattr(
         fake_extensions,
@@ -1891,7 +1893,7 @@ async def test_hub_extension_capabilities_closes_read_only_transaction_before_up
         )
 
     assert response.status_code == 200
-    assert call_order == ["close_tx", "resolve_capability_snapshot"]
+    assert call_order == ["prepare_external_call", "resolve_capability_snapshot"]
     assert response.headers["cache-control"] == "no-store"
 
 

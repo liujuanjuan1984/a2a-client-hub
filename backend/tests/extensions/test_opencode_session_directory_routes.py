@@ -495,16 +495,29 @@ async def test_opencode_sessions_directory_releases_short_session_before_upstrea
         async_db_session, user_id=user.id, card_url="https://personal.example.com"
     )
 
-    original_run_with_new_session = (
-        opencode_session_directory_service_module.run_with_new_session
+    original_run_in_read_session = (
+        opencode_session_directory_service_module.run_in_read_session
+    )
+    original_run_in_write_session = (
+        opencode_session_directory_service_module.run_in_write_session
     )
     active_session_scopes = 0
 
-    async def tracked_run_with_new_session(operation, *, session_factory):
+    async def tracked_run_in_read_session(operation, *, session_factory):
         nonlocal active_session_scopes
         active_session_scopes += 1
         try:
-            return await original_run_with_new_session(
+            return await original_run_in_read_session(
+                operation, session_factory=session_factory
+            )
+        finally:
+            active_session_scopes -= 1
+
+    async def tracked_run_in_write_session(operation, *, session_factory):
+        nonlocal active_session_scopes
+        active_session_scopes += 1
+        try:
+            return await original_run_in_write_session(
                 operation, session_factory=session_factory
             )
         finally:
@@ -523,8 +536,13 @@ async def test_opencode_sessions_directory_releases_short_session_before_upstrea
 
     monkeypatch.setattr(
         opencode_session_directory_service_module,
-        "run_with_new_session",
-        tracked_run_with_new_session,
+        "run_in_read_session",
+        tracked_run_in_read_session,
+    )
+    monkeypatch.setattr(
+        opencode_session_directory_service_module,
+        "run_in_write_session",
+        tracked_run_in_write_session,
     )
     monkeypatch.setattr(
         "app.features.opencode_sessions.service.get_a2a_extensions_service",

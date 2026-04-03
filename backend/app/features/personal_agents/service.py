@@ -15,7 +15,7 @@ from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.session import AsyncSessionLocal
-from app.db.transaction import commit_safely
+from app.db.transaction import commit_safely, run_in_read_session, run_in_write_session
 from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
 from app.features.agents_shared.common import (
     ALLOWED_AUTH_TYPES,
@@ -816,7 +816,7 @@ class A2AAgentService(AgentValidationMixin):
         user_id: UUID,
         agent_id: UUID | None,
     ) -> list[_A2AAgentHealthSnapshot]:
-        async with AsyncSessionLocal() as read_db:
+        async def _read(read_db: AsyncSession) -> list[_A2AAgentHealthSnapshot]:
             filters = [
                 A2AAgent.user_id == user_id,
                 A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
@@ -863,13 +863,15 @@ class A2AAgentService(AgentValidationMixin):
                 for agent, credential in rows
             ]
 
+        return await run_in_read_session(_read, session_factory=AsyncSessionLocal)
+
     async def _persist_health_updates(
         self,
         *,
         user_id: UUID,
         updates: list[tuple[UUID, dict[str, Any]]],
     ) -> None:
-        async with AsyncSessionLocal() as write_db:
+        async def _write(write_db: AsyncSession) -> None:
             for agent_id, values in updates:
                 stmt = (
                     update(A2AAgent)
@@ -884,7 +886,8 @@ class A2AAgentService(AgentValidationMixin):
                     .values(**values)
                 )
                 await write_db.execute(stmt)
-            await commit_safely(write_db)
+
+        await run_in_write_session(_write, session_factory=AsyncSessionLocal)
 
     def _resolve_failure_status(self, failures: int) -> tuple[str, int]:
         next_failures = failures + 1

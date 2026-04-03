@@ -24,7 +24,7 @@ from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
 from app.db.session import AsyncSessionLocal
-from app.db.transaction import commit_safely, run_with_new_session
+from app.db.transaction import run_in_read_session, run_in_write_session
 from app.features.hub_agents.runtime import hub_a2a_runtime_builder
 from app.features.hub_agents.service import hub_a2a_agent_service
 from app.features.personal_agents.runtime import a2a_runtime_builder
@@ -202,7 +202,7 @@ class OpencodeSessionDirectoryService:
         user_id: UUID,
         refresh: bool,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        agents, cache_entries = await run_with_new_session(
+        agents, cache_entries = await run_in_read_session(
             lambda db: self._load_agents_and_cache_entries(db, user_id=user_id),
             session_factory=AsyncSessionLocal,
         )
@@ -226,7 +226,7 @@ class OpencodeSessionDirectoryService:
         refreshed_agents = 0
         partial_failures = 0
         if agents_to_refresh:
-            credentials_by_agent_id = await run_with_new_session(
+            credentials_by_agent_id = await run_in_read_session(
                 lambda db: self._load_credentials_by_agent_id(
                     db, agents=agents_to_refresh
                 ),
@@ -297,7 +297,7 @@ class OpencodeSessionDirectoryService:
             (
                 refreshed_agents,
                 write_partial_failures,
-            ) = await run_with_new_session(
+            ) = await run_in_write_session(
                 lambda db: self._persist_refresh_results(
                     db,
                     user_id=user_id,
@@ -310,7 +310,7 @@ class OpencodeSessionDirectoryService:
             partial_failures += write_partial_failures
 
             # Reload cache entries after refresh attempts.
-            cache_entries = await run_with_new_session(
+            cache_entries = await run_in_read_session(
                 lambda db: self._load_cache_entries(db, user_id=user_id, agents=agents),
                 session_factory=AsyncSessionLocal,
             )
@@ -580,7 +580,6 @@ class OpencodeSessionDirectoryService:
                 continue
             refreshed_agents += 1 if ok else 0
 
-        await commit_safely(db)
         return refreshed_agents, partial_failures
 
     def _build_runtime_from_prefetched(
