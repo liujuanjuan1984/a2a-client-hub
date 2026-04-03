@@ -24,7 +24,7 @@ from app.db.locking import (
 )
 from app.db.models.ws_ticket import WsTicket
 from app.db.session import AsyncSessionLocal
-from app.db.transaction import commit_safely
+from app.db.transaction import commit_safely, run_with_new_session
 from app.utils.timezone_util import utc_now
 
 _WS_TICKET_CLEANUP_BATCH_SIZE = 500
@@ -256,8 +256,10 @@ async def cleanup_ws_tickets_job() -> None:
     total_deleted = 0
     batches = 0
     while True:
-        async with AsyncSessionLocal() as db:
-            deleted = await ws_ticket_service.cleanup_tickets(db)
+        deleted = await run_with_new_session(
+            ws_ticket_service.cleanup_tickets,
+            session_factory=AsyncSessionLocal,
+        )
         if deleted <= 0:
             break
         total_deleted += deleted

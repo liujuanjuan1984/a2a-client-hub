@@ -16,7 +16,7 @@ from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.session import AsyncSessionLocal
-from app.db.transaction import commit_safely
+from app.db.transaction import commit_safely, run_with_new_session
 from app.features.schedules.common import (
     A2A_MANUAL_SOURCE,
     A2A_SCHEDULE_SOURCE,
@@ -412,11 +412,13 @@ async def cleanup_a2a_schedule_executions_job() -> None:
     total_deleted = 0
     batches = 0
     while True:
-        async with AsyncSessionLocal() as db:
-            deleted = await a2a_schedule_service.cleanup_terminal_executions(
+        deleted = await run_with_new_session(
+            lambda db: a2a_schedule_service.cleanup_terminal_executions(
                 db,
                 batch_size=_A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE,
-            )
+            ),
+            session_factory=AsyncSessionLocal,
+        )
         if deleted <= 0:
             break
         total_deleted += deleted
