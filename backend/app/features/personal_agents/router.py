@@ -296,7 +296,6 @@ async def delete_agent(
 )
 async def check_agents_health(
     *,
-    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     force: bool = Query(
         False,
@@ -312,7 +311,6 @@ async def check_agents_health(
         },
     )
     summary, items = await a2a_agent_service.check_agents_health(
-        db,
         user_id=current_user_id,
         force=force,
     )
@@ -347,7 +345,6 @@ async def check_agents_health(
 async def check_single_agent_health(
     *,
     agent_id: UUID,
-    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     force: bool = Query(
         True,
@@ -365,7 +362,6 @@ async def check_single_agent_health(
     )
     try:
         summary, items = await a2a_agent_service.check_agents_health(
-            db,
             user_id=current_user_id,
             agent_id=agent_id,
             force=force,

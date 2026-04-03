@@ -562,7 +562,6 @@ async def test_personal_agents_health_check_routes_return_summary_and_items(
     captured_calls: list[dict[str, Any]] = []
 
     async def _fake_check_agents_health(
-        _db,
         *,
         user_id,
         force: bool = False,

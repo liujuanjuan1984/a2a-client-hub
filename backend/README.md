@@ -110,7 +110,8 @@ Engineering rules:
 
 - Do not keep an active `AsyncSession` open across external network I/O, streaming, polling, retries, scheduler waits, or other long-running background steps.
 - Split complex flows into explicit phases such as `load/lock -> commit -> external I/O -> reopen -> finalize`.
-- Request-scoped dependencies may provide a session for validation and local DB work, but route handlers should close any read-only transaction before entering long-lived invoke or streaming flows.
+- Request-scoped dependencies may provide a session for validation and local DB work, but route handlers should close any read-only transaction before entering long-lived invoke, extension, card-validation, or streaming flows. Prefer `app.db.transaction.close_read_only_transaction(...)` for this boundary.
+- If a handler only triggers a service that already manages its own short-lived sessions before and after upstream I/O, do not inject a request-scoped DB session into that route at all.
 - Background jobs should prefer bounded per-batch sessions instead of reusing one session across an entire drain loop when repeated batches are possible.
 - When a background task only needs a short standalone DB unit of work, prefer the shared helper in `app.db.transaction.run_with_new_session(...)` so the session boundary stays explicit and reusable.
 

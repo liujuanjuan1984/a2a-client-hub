@@ -262,13 +262,11 @@ class A2AAgentService(AgentValidationMixin):
 
     async def check_agents_health(
         self,
-        db: AsyncSession,
         *,
         user_id: UUID,
         force: bool = False,
         agent_id: UUID | None = None,
     ) -> tuple[A2AAgentHealthCheckSummaryRecord, list[A2AAgentHealthCheckItemRecord]]:
-        del db
         snapshots = await self._load_health_snapshots(
             user_id=user_id, agent_id=agent_id
         )
