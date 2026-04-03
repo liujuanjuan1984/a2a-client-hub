@@ -99,6 +99,19 @@ const createDeferred = <T>() => {
   };
 };
 
+let consoleWarnSpy: jest.SpyInstance;
+let consoleInfoSpy: jest.SpyInstance;
+
+beforeAll(() => {
+  consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  consoleInfoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+});
+
+afterAll(() => {
+  consoleWarnSpy.mockRestore();
+  consoleInfoSpy.mockRestore();
+});
+
 describe("executeChatRuntime empty-content recovery", () => {
   beforeEach(() => {
     jest.clearAllMocks();
