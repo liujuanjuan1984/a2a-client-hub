@@ -177,7 +177,14 @@ Endpoints:
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
   - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
-  - The same capability response now also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. In the current phase the Hub does not proxy these Codex-specific surfaces; it only distinguishes `unsupported`, `declared_not_consumed`, and `unsupported_by_design` so downstream UI and follow-up work can tell the difference between "not declared" and "declared but intentionally not consumed".
+  - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
+- Read Codex discovery lists through Hub-stable APIs:
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/skills`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/apps`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins`
+- Read Codex plugin details through a Hub-stable API:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins:read`
+    - body: `{ "pluginId": "planner" }`
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body: `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`

@@ -36,6 +36,9 @@ from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileEntry,
 )
 from app.schemas.a2a_extension import (
+    A2ACodexDiscoveryListResponse,
+    A2ACodexDiscoveryPluginReadRequest,
+    A2ACodexDiscoveryPluginReadResponse,
     A2ADeclaredMethodCapabilityResponse,
     A2ADeclaredMethodCollectionCapabilitiesResponse,
     A2ADeclaredSingleMethodCapabilitiesResponse,
@@ -291,7 +294,13 @@ def _build_declared_method_collection_response(
 ) -> A2ADeclaredMethodCollectionCapabilitiesResponse:
     methods = dict(getattr(capability, "methods", {}) or {})
     status = cast(
-        Literal["unsupported", "declared_not_consumed", "unsupported_by_design"],
+        Literal[
+            "unsupported",
+            "declared_not_consumed",
+            "partially_consumed",
+            "supported",
+            "unsupported_by_design",
+        ],
         getattr(capability, "status", "unsupported"),
     )
     return A2ADeclaredMethodCollectionCapabilitiesResponse(
@@ -511,6 +520,115 @@ def create_extension_capability_router(
                 runtime=runtime,
                 provider_id=payload.provider_id,
                 session_metadata=payload.session_metadata,
+            )
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/codex/skills",
+        response_model=A2ACodexDiscoveryListResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_codex_skills(
+        *,
+        agent_id: UUID,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery skills list requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().list_codex_skills(runtime=runtime)
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/codex/apps",
+        response_model=A2ACodexDiscoveryListResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_codex_apps(
+        *,
+        agent_id: UUID,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery apps list requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().list_codex_apps(runtime=runtime)
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/codex/plugins",
+        response_model=A2ACodexDiscoveryListResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_codex_plugins(
+        *,
+        agent_id: UUID,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery plugins list requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().list_codex_plugins(runtime=runtime)
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/codex/plugins:read",
+        response_model=A2ACodexDiscoveryPluginReadResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def read_codex_plugin(
+        *,
+        agent_id: UUID,
+        payload: A2ACodexDiscoveryPluginReadRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery plugin read requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "plugin_id": payload.plugin_id,
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().read_codex_plugin(
+                runtime=runtime,
+                plugin_id=payload.plugin_id,
             )
         )
 

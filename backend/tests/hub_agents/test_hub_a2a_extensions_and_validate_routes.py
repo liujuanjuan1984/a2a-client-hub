@@ -456,6 +456,96 @@ class _FakeExtensionsService:
             meta={"extension_uri": "urn:opencode-a2a:provider-discovery/v1"},
         )
 
+    async def list_codex_skills(self, *, runtime):
+        self.calls.append({"fn": "list_codex_skills", "runtime": runtime})
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "items": [
+                    {
+                        "id": "skill-1",
+                        "kind": "skill",
+                        "name": "planning",
+                        "title": "Planning",
+                        "summary": "Summarize plans.",
+                        "description": None,
+                        "tags": ["analysis"],
+                        "metadata": {"source": "codex"},
+                    }
+                ],
+                "nextCursor": "cursor-2",
+            },
+            meta={"capability_area": "codex_discovery"},
+        )
+
+    async def list_codex_apps(self, *, runtime):
+        self.calls.append({"fn": "list_codex_apps", "runtime": runtime})
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "items": [
+                    {
+                        "id": "app-1",
+                        "kind": "app",
+                        "name": "workspace",
+                        "title": "Workspace",
+                        "summary": "Manage files.",
+                        "description": None,
+                        "tags": [],
+                        "metadata": {},
+                    }
+                ]
+            },
+            meta={"capability_area": "codex_discovery"},
+        )
+
+    async def list_codex_plugins(self, *, runtime):
+        self.calls.append({"fn": "list_codex_plugins", "runtime": runtime})
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "items": [
+                    {
+                        "id": "plugin-1",
+                        "kind": "plugin",
+                        "name": "planner",
+                        "title": "Planner",
+                        "summary": "Coordinates work.",
+                        "description": None,
+                        "tags": ["planning"],
+                        "metadata": {"version": "1.0"},
+                    }
+                ]
+            },
+            meta={"capability_area": "codex_discovery"},
+        )
+
+    async def read_codex_plugin(self, *, runtime, plugin_id: str):
+        self.calls.append(
+            {
+                "fn": "read_codex_plugin",
+                "runtime": runtime,
+                "plugin_id": plugin_id,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "plugin": {
+                    "id": plugin_id,
+                    "kind": "plugin",
+                    "name": "planner",
+                    "title": "Planner",
+                    "summary": None,
+                    "description": "Coordinates work.",
+                    "tags": [],
+                    "metadata": {"version": "1.0"},
+                    "content": {"readme": "Use for planning"},
+                }
+            },
+            meta={"capability_area": "codex_discovery"},
+        )
+
     async def reject_question_interrupt(
         self,
         *,
@@ -1498,6 +1588,12 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                     "shared.sessions.command",
                     "providers.list",
                     "models.list",
+                    "codex.discovery.skills.list",
+                    "codex.discovery.plugins.list",
+                    "codex.discovery.plugins.read",
+                    "codex.threads.watch",
+                    "codex.exec.start",
+                    "codex.exec.terminate",
                 ),
                 extension_uris=(
                     "urn:opencode-a2a:provider-discovery/v1",
@@ -1555,12 +1651,12 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         ),
         codex_discovery=SimpleNamespace(
             declared=True,
-            consumed_by_hub=False,
-            status="declared_not_consumed",
+            consumed_by_hub=True,
+            status="supported",
             methods={
                 "skillsList": SimpleNamespace(
                     declared=True,
-                    consumed_by_hub=False,
+                    consumed_by_hub=True,
                     method="codex.discovery.skills.list",
                 ),
                 "appsList": SimpleNamespace(
@@ -1570,12 +1666,12 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 ),
                 "pluginsList": SimpleNamespace(
                     declared=True,
-                    consumed_by_hub=False,
+                    consumed_by_hub=True,
                     method="codex.discovery.plugins.list",
                 ),
                 "pluginsRead": SimpleNamespace(
                     declared=True,
-                    consumed_by_hub=False,
+                    consumed_by_hub=True,
                     method="codex.discovery.plugins.read",
                 ),
                 "watch": SimpleNamespace(
@@ -1709,6 +1805,12 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 "shared.sessions.command",
                 "providers.list",
                 "models.list",
+                "codex.discovery.skills.list",
+                "codex.discovery.plugins.list",
+                "codex.discovery.plugins.read",
+                "codex.threads.watch",
+                "codex.exec.start",
+                "codex.exec.terminate",
             ],
             "extensionUris": [
                 "urn:opencode-a2a:provider-discovery/v1",
@@ -1765,12 +1867,12 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         },
         "codexDiscovery": {
             "declared": True,
-            "consumedByHub": False,
-            "status": "declared_not_consumed",
+            "consumedByHub": True,
+            "status": "supported",
             "methods": {
                 "skillsList": {
                     "declared": True,
-                    "consumedByHub": False,
+                    "consumedByHub": True,
                     "method": "codex.discovery.skills.list",
                 },
                 "appsList": {
@@ -1780,12 +1882,12 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 },
                 "pluginsList": {
                     "declared": True,
-                    "consumedByHub": False,
+                    "consumedByHub": True,
                     "method": "codex.discovery.plugins.list",
                 },
                 "pluginsRead": {
                     "declared": True,
-                    "consumedByHub": False,
+                    "consumedByHub": True,
                     "method": "codex.discovery.plugins.read",
                 },
                 "watch": {
@@ -2263,6 +2365,59 @@ async def test_hub_generic_model_discovery_routes_forward_session_metadata(
         assert resolved.headers["Authorization"].endswith(
             "secret-token-model-discovery"
         )
+
+
+@pytest.mark.asyncio
+async def test_hub_codex_discovery_routes_return_normalized_results(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_codex_discovery@example.com",
+        user_email="alice_codex_discovery@example.com",
+        token="secret-token-codex-discovery",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        skills_resp = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/codex/skills"
+        )
+        assert skills_resp.status_code == 200
+        skills_payload = skills_resp.json()
+        assert skills_payload["success"] is True
+        assert skills_payload["result"]["items"][0]["kind"] == "skill"
+        assert skills_payload["result"]["nextCursor"] == "cursor-2"
+
+        plugin_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/codex/plugins:read",
+            json={"pluginId": "planner"},
+        )
+        assert plugin_resp.status_code == 200
+        plugin_payload = plugin_resp.json()
+        assert plugin_payload["success"] is True
+        assert plugin_payload["result"]["plugin"]["id"] == "planner"
+        assert plugin_payload["result"]["plugin"]["content"] == {
+            "readme": "Use for planning"
+        }
+
+    assert fake_extensions.calls[0]["fn"] == "list_codex_skills"
+    assert fake_extensions.calls[1]["fn"] == "read_codex_plugin"
+    assert fake_extensions.calls[1]["plugin_id"] == "planner"
 
 
 @pytest.mark.asyncio

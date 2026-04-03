@@ -245,6 +245,12 @@ class A2AModelDiscoveryRequest(BaseModel):
     )
 
 
+class A2ACodexDiscoveryPluginReadRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    plugin_id: str = Field(..., alias="pluginId", min_length=1)
+
+
 class A2ASessionControlMethodResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -329,7 +335,13 @@ class A2ADeclaredMethodCollectionCapabilitiesResponse(BaseModel):
 
     declared: bool
     consumed_by_hub: bool = Field(..., alias="consumedByHub")
-    status: Literal["unsupported", "declared_not_consumed", "unsupported_by_design"]
+    status: Literal[
+        "unsupported",
+        "declared_not_consumed",
+        "partially_consumed",
+        "supported",
+        "unsupported_by_design",
+    ]
     methods: Dict[str, A2ADeclaredMethodCapabilityResponse] = Field(
         default_factory=dict
     )
@@ -390,6 +402,43 @@ class A2AInterruptRecoveryResponse(BaseModel):
     items: List[A2AInterruptRecoveryItemResponse] = Field(default_factory=list)
 
 
+class A2ACodexDiscoveryItemResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    kind: Literal["skill", "app", "plugin"]
+    name: Optional[str] = None
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class A2ACodexDiscoveryPluginResponse(A2ACodexDiscoveryItemResponse):
+    kind: Literal["plugin"] = "plugin"
+    content: Any = None
+
+
+class A2ACodexDiscoveryListResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: List[A2ACodexDiscoveryItemResponse] = Field(default_factory=list)
+    next_cursor: Optional[str] = Field(default=None, alias="nextCursor")
+
+
+class A2ACodexDiscoveryListResponse(A2AExtensionResponse):
+    result: Optional[A2ACodexDiscoveryListResult] = None
+
+
+class A2ACodexDiscoveryPluginReadResult(BaseModel):
+    plugin: A2ACodexDiscoveryPluginResponse
+
+
+class A2ACodexDiscoveryPluginReadResponse(A2AExtensionResponse):
+    result: Optional[A2ACodexDiscoveryPluginReadResult] = None
+
+
 class A2AExtensionCapabilitiesResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -446,7 +495,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="codexDiscovery",
         description=(
             "Codex discovery methods declared via wire-contract that the hub "
-            "currently diagnoses but does not consume."
+            "diagnoses and incrementally consumes through stable Hub APIs."
         ),
     )
     codex_thread_watch: A2ADeclaredSingleMethodCapabilitiesResponse = Field(
@@ -473,6 +522,13 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
 
 
 __all__ = [
+    "A2ACodexDiscoveryItemResponse",
+    "A2ACodexDiscoveryListResponse",
+    "A2ACodexDiscoveryListResult",
+    "A2ACodexDiscoveryPluginReadRequest",
+    "A2ACodexDiscoveryPluginReadResponse",
+    "A2ACodexDiscoveryPluginReadResult",
+    "A2ACodexDiscoveryPluginResponse",
     "A2ADeclaredMethodCapabilityResponse",
     "A2ADeclaredMethodCollectionCapabilitiesResponse",
     "A2ADeclaredSingleMethodCapabilitiesResponse",
