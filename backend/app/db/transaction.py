@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
@@ -28,6 +29,35 @@ async def rollback_safely(db: AsyncSession) -> None:
     await await_cancel_safe_suppressed(db.rollback())
 
 
+async def close_read_only_transaction(db: AsyncSession) -> None:
+    """Commit an open read-only transaction without touching pending ORM writes."""
+
+    in_transaction = getattr(db, "in_transaction", None)
+    commit = getattr(db, "commit", None)
+    if not callable(in_transaction) or not callable(commit):
+        return
+    if not in_transaction():
+        return
+
+    for attribute_name in ("new", "dirty", "deleted"):
+        collection = getattr(db, attribute_name, None)
+        if collection is None:
+            continue
+        try:
+            if len(collection) > 0:
+                return
+        except Exception:
+            try:
+                if bool(collection):
+                    return
+            except Exception:
+                return
+
+    commit_outcome = commit()
+    if inspect.isawaitable(commit_outcome):
+        await commit_outcome
+
+
 async def cleanup_session_safely(db: AsyncSession) -> None:
     """Rollback any open transaction and then close the session safely."""
 
@@ -50,6 +80,7 @@ async def run_with_new_session(
 
 
 __all__ = [
+    "close_read_only_transaction",
     "cleanup_session_safely",
     "commit_safely",
     "rollback_safely",

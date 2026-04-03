@@ -24,6 +24,14 @@ from tests.support.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
+class _FakeCard:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._payload = payload
+
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        return dict(self._payload)
+
+
 class _FakeGateway:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -64,6 +72,28 @@ class _FakeGateway:
 
         for event_payload in self.stream_events:
             yield _MockMessage(event_payload)
+
+    async def fetch_agent_card_detail(
+        self,
+        *,
+        resolved,  # noqa: ARG002
+        raise_on_failure: bool,  # noqa: ARG002
+        policy=None,  # noqa: ARG002
+        card_fetch_timeout=None,  # noqa: ARG002
+    ):
+        self.calls.append({"card_fetch": True})
+        return _FakeCard(
+            {
+                "name": "Example Agent",
+                "description": "Example",
+                "url": "https://example.com",
+                "version": "1.0",
+                "capabilities": {"extensions": []},
+                "defaultInputModes": [],
+                "defaultOutputModes": [],
+                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+            }
+        )
 
 
 class _FakeA2AService:
@@ -118,6 +148,56 @@ async def test_personal_agent_http_invoke_works_with_dependency_injected_db(
     assert response.status_code == 200
     assert response.json()["success"] is True
     assert len(fake_gateway.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_personal_agent_card_validate_closes_read_only_transaction_before_remote_fetch(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(async_db_session, email="personal-card-close@example.com")
+    record = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="Personal Card Agent",
+        card_url="https://example.com/.well-known/agent-card.json",
+        auth_type="none",
+        enabled=True,
+        tags=[],
+        extra_headers={},
+    )
+
+    call_order: list[str] = []
+
+    async def fake_close_read_only_transaction(_db) -> None:
+        call_order.append("close_tx")
+
+    class _OrderedGateway(_FakeGateway):
+        async def fetch_agent_card_detail(self, **kwargs):
+            call_order.append("fetch_card")
+            return await super().fetch_agent_card_detail(**kwargs)
+
+    monkeypatch.setattr(
+        personal_router,
+        "close_read_only_transaction",
+        fake_close_read_only_transaction,
+    )
+    monkeypatch.setattr(
+        personal_router, "get_a2a_service", lambda: _FakeA2AService(_OrderedGateway())
+    )
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/card:validate"
+        )
+
+    assert response.status_code == 200
+    assert call_order == ["close_tx", "fetch_card"]
 
 
 @pytest.mark.asyncio

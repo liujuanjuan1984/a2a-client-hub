@@ -246,6 +246,27 @@ async def test_close_open_transaction_does_not_commit_when_session_has_pending_w
 
 
 @pytest.mark.asyncio
+async def test_close_open_transaction_delegates_to_shared_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+
+    async def fake_close_read_only_transaction(db) -> None:
+        calls.append(db)
+
+    session = object()
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "close_read_only_transaction",
+        fake_close_read_only_transaction,
+    )
+
+    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+
+    assert calls == [session]
+
+
+@pytest.mark.asyncio
 async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

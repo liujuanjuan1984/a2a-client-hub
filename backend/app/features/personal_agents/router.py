@@ -13,6 +13,7 @@ from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
+from app.db.transaction import close_read_only_transaction
 from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
 from app.features.invoke.route_runner import (
     run_http_invoke_route,
@@ -415,6 +416,7 @@ async def validate_agent_card(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except A2ARuntimeValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await close_read_only_transaction(db)
 
     logger.info(
         "A2A agent card validation requested",
