@@ -13,6 +13,7 @@ from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
+from app.db.transaction import load_for_external_call
 from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
 from app.features.invoke.route_runner import (
     run_http_invoke_route,
@@ -295,7 +296,6 @@ async def delete_agent(
 )
 async def check_agents_health(
     *,
-    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     force: bool = Query(
         False,
@@ -311,7 +311,6 @@ async def check_agents_health(
         },
     )
     summary, items = await a2a_agent_service.check_agents_health(
-        db,
         user_id=current_user_id,
         force=force,
     )
@@ -346,7 +345,6 @@ async def check_agents_health(
 async def check_single_agent_health(
     *,
     agent_id: UUID,
-    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     force: bool = Query(
         True,
@@ -364,7 +362,6 @@ async def check_single_agent_health(
     )
     try:
         summary, items = await a2a_agent_service.check_agents_health(
-            db,
             user_id=current_user_id,
             agent_id=agent_id,
             force=force,
@@ -408,8 +405,13 @@ async def validate_agent_card(
 ) -> A2AAgentCardValidationResponse:
     current_user_id = cast(UUID, current_user.id)
     try:
-        runtime = await a2a_runtime_builder.build(
-            db, user_id=current_user_id, agent_id=agent_id
+        runtime = await load_for_external_call(
+            db,
+            lambda session: a2a_runtime_builder.build(
+                session,
+                user_id=current_user_id,
+                agent_id=agent_id,
+            ),
         )
     except A2ARuntimeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -16,7 +16,7 @@ from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.session import AsyncSessionLocal
-from app.db.transaction import commit_safely
+from app.db.transaction import commit_safely, run_with_new_session
 from app.features.schedules.common import (
     A2A_MANUAL_SOURCE,
     A2A_SCHEDULE_SOURCE,
@@ -233,14 +233,12 @@ class A2AScheduleService:
 
     async def recover_stale_running_tasks(
         self,
-        db: AsyncSession,
         *,
         now: datetime | None = None,
         timeout_seconds: int = 600,
         hard_timeout_seconds: int | None = None,
     ) -> int:
         return await self._dispatch.recover_stale_running_tasks(
-            db,
             now=now,
             timeout_seconds=timeout_seconds,
             hard_timeout_seconds=hard_timeout_seconds,
@@ -409,20 +407,22 @@ a2a_schedule_service = A2AScheduleService()
 async def cleanup_a2a_schedule_executions_job() -> None:
     """Delete old terminal schedule execution history in bounded batches."""
 
-    async with AsyncSessionLocal() as db:
-        total_deleted = 0
-        batches = 0
-        while True:
-            deleted = await a2a_schedule_service.cleanup_terminal_executions(
+    total_deleted = 0
+    batches = 0
+    while True:
+        deleted = await run_with_new_session(
+            lambda db: a2a_schedule_service.cleanup_terminal_executions(
                 db,
                 batch_size=_A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE,
-            )
-            if deleted <= 0:
-                break
-            total_deleted += deleted
-            batches += 1
-            if deleted < _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE:
-                break
+            ),
+            session_factory=AsyncSessionLocal,
+        )
+        if deleted <= 0:
+            break
+        total_deleted += deleted
+        batches += 1
+        if deleted < _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE:
+            break
 
     if total_deleted > 0:
         logger.info(

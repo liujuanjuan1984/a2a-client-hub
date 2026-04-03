@@ -790,6 +790,54 @@ async def test_hub_card_validate_success_for_allowlisted_user(
 
 
 @pytest.mark.asyncio
+async def test_hub_card_validate_closes_read_only_transaction_before_remote_fetch(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_validate_close_tx@example.com",
+        user_email="alice_validate_close_tx@example.com",
+        token="secret-token-validate-close",
+    )
+
+    call_order: list[str] = []
+
+    async def fake_load_for_external_call(_db, operation):
+        call_order.append("prepare_external_call")
+        return await operation(_db)
+
+    class _OrderedGateway(_FakeGateway):
+        async def fetch_agent_card_detail(self, **kwargs):
+            call_order.append("fetch_card")
+            return await super().fetch_agent_card_detail(**kwargs)
+
+    monkeypatch.setattr(
+        hub_router,
+        "load_for_external_call",
+        fake_load_for_external_call,
+    )
+    monkeypatch.setattr(
+        hub_router, "get_a2a_service", lambda: _FakeA2AService(_OrderedGateway())
+    )
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/card:validate"
+        )
+
+    assert resp.status_code == 200
+    assert call_order == ["prepare_external_call", "fetch_card"]
+
+
+@pytest.mark.asyncio
 async def test_hub_card_validate_returns_warning_for_empty_skills(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1788,6 +1836,64 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         },
         "runtimeStatus": runtime_status_contract_payload(),
     }
+
+
+@pytest.mark.asyncio
+async def test_hub_extension_capabilities_closes_read_only_transaction_before_upstream_call(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_cap_close@example.com",
+        user_email="alice_opencode_cap_close@example.com",
+        token="secret-token-opencode-cap-close",
+    )
+
+    call_order: list[str] = []
+    fake_extensions = _FakeExtensionsService()
+
+    async def fake_load_for_external_call(_db, operation):
+        call_order.append("prepare_external_call")
+        return await operation(_db)
+
+    async def fake_resolve_capability_snapshot(*, runtime):
+        call_order.append("resolve_capability_snapshot")
+        return await _FakeExtensionsService.resolve_capability_snapshot(
+            fake_extensions,
+            runtime=runtime,
+        )
+
+    monkeypatch.setattr(
+        extension_router_common,
+        "load_for_external_call",
+        fake_load_for_external_call,
+    )
+    monkeypatch.setattr(
+        fake_extensions,
+        "resolve_capability_snapshot",
+        fake_resolve_capability_snapshot,
+    )
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/capabilities"
+        )
+
+    assert response.status_code == 200
+    assert call_order == ["prepare_external_call", "resolve_capability_snapshot"]
     assert response.headers["cache-control"] == "no-store"
 
 

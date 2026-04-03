@@ -21,6 +21,7 @@ from app.api.error_handlers import build_error_detail, build_error_response
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
+from app.db.transaction import load_for_external_call
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -297,6 +298,16 @@ def create_extension_capability_router(
                 status_code=runtime_validation_status_code, detail=str(exc)
             ) from exc
 
+    async def _get_runtime_for_external_call(
+        db: AsyncSession,
+        current_user: User,
+        agent_id: UUID,
+    ) -> Any:
+        return await load_for_external_call(
+            db,
+            lambda session: _get_runtime(session, current_user, agent_id),
+        )
+
     def _to_extension_response(result: Any) -> A2AExtensionResponse:
         return A2AExtensionResponse(
             success=result.success,
@@ -352,7 +363,7 @@ def create_extension_capability_router(
         current_user: User = Depends(get_current_user),
     ) -> A2AExtensionCapabilitiesResponse:
         response.headers["Cache-Control"] = "no-store"
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         snapshot = await _extensions_service().resolve_capability_snapshot(
             runtime=runtime
         )
@@ -393,7 +404,7 @@ def create_extension_capability_router(
         current_user: User = Depends(get_current_user),
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Generic model provider discovery requested"),
             extra={
@@ -426,7 +437,7 @@ def create_extension_capability_router(
         current_user: User = Depends(get_current_user),
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Generic model discovery requested"),
             extra={
@@ -563,7 +574,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         query_obj = _parse_query_param(query)
         filter_obj = _build_session_list_filters(
             directory=directory,
@@ -611,7 +622,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension session continue requested"),
             extra={
@@ -645,7 +656,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         request_keys = sorted(payload.request.keys())[:20]
         metadata_keys = _summarize_metadata_keys(payload.metadata)
         logger.info(
@@ -690,7 +701,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         request_keys = sorted(payload.request.keys())[:20]
         metadata_keys = _summarize_metadata_keys(payload.metadata)
         logger.info(
@@ -730,7 +741,7 @@ def create_extension_capability_router(
     ) -> A2AInterruptRecoveryResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension interrupt recovery requested"),
             extra={
@@ -772,7 +783,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension permission interrupt reply requested"),
             extra={
@@ -808,7 +819,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension question interrupt reply requested"),
             extra={
@@ -844,7 +855,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension question interrupt reject requested"),
             extra={
@@ -878,7 +889,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension permissions interrupt reply requested"),
             extra={
@@ -916,7 +927,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension elicitation interrupt reply requested"),
             extra={
@@ -955,7 +966,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         filters = (
             payload.filters.model_dump(exclude_none=True)
             if payload.filters is not None
@@ -1021,7 +1032,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         query_obj = _parse_query_param(query)
         logger.info(
             _scope_message("Shared extension session messages requested"),
@@ -1067,7 +1078,7 @@ def create_extension_capability_router(
     ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
-        runtime = await _get_runtime(db, current_user, agent_id)
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
             _scope_message("Shared extension session messages requested (POST)"),
             extra={

@@ -64,7 +64,6 @@ async def test_check_agents_health_skips_agents_inside_cooldown(
     )
 
     summary, items = await a2a_agent_service.check_agents_health(
-        async_db_session,
         user_id=user.id,
         force=False,
     )
@@ -133,7 +132,6 @@ async def test_check_agents_health_marks_agent_unavailable_after_threshold(
     )
 
     summary, items = await a2a_agent_service.check_agents_health(
-        async_db_session,
         user_id=user.id,
         force=True,
     )
@@ -204,7 +202,6 @@ async def test_check_agents_health_marks_agent_healthy_and_resets_failures(
     )
 
     summary, items = await a2a_agent_service.check_agents_health(
-        async_db_session,
         user_id=user.id,
         force=True,
     )

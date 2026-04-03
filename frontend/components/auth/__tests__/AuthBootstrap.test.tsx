@@ -51,14 +51,19 @@ jest.mock("@/lib/api/client", () => {
 
 jest.mock("react-native", () => {
   const actual = jest.requireActual("react-native");
-  return {
-    ...actual,
-    AppState: {
-      addEventListener: jest.fn(() => ({
-        remove: jest.fn(),
-      })),
-    },
+  const AppState = {
+    addEventListener: jest.fn(() => ({
+      remove: jest.fn(),
+    })),
   };
+  return new Proxy(actual, {
+    get(target, prop, receiver) {
+      if (prop === "AppState") {
+        return AppState;
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
 });
 
 describe("AuthBootstrap", () => {

@@ -102,6 +102,26 @@ uv run bash scripts/mypy_changed.sh app/features/auth/schemas.py
 - If the check fails, update `backend/uv.lock` in an explicit lockfile change instead of letting `uv run` rewrite the file during normal lint/test execution.
 - For routine verification, prefer `uv run --locked ...` so local checks fail fast on lock drift without mutating the worktree.
 
+## AsyncSession Lifecycle
+
+The backend treats `AsyncSession` as a short-lived unit-of-work boundary, not as a long-running workflow container.
+
+Engineering rules:
+
+- Do not keep an active `AsyncSession` open across external network I/O, streaming, polling, retries, scheduler waits, or other long-running background steps.
+- Split complex flows into explicit phases such as `load/lock -> commit -> external I/O -> reopen -> finalize`.
+- Request-scoped dependencies may provide a session for validation and local DB work, but route handlers should release any read-only transaction before entering long-lived invoke, extension, card-validation, or streaming flows. Prefer the higher-level helpers `app.db.transaction.prepare_for_external_call(...)` and `app.db.transaction.load_for_external_call(...)` for this boundary instead of hand-rolling `commit()` / `close_read_only_transaction(...)` inline.
+- If a handler only triggers a service that already manages its own short-lived sessions before and after upstream I/O, do not inject a request-scoped DB session into that route at all.
+- Background jobs should prefer bounded per-batch sessions instead of reusing one session across an entire drain loop when repeated batches are possible.
+- When a background task or service only needs a short standalone DB unit of work, prefer the shared helpers in `app.db.transaction.run_in_read_session(...)` and `app.db.transaction.run_in_write_session(...)` so the session boundary stays explicit and reusable.
+- Pool checkout metrics now capture long-hold attribution. Use `DATABASE_ASYNC_CONNECTION_HOLD_WARN_MS` to tune the threshold for recording the last/longest checked-out connection source in runtime health snapshots.
+
+Recent examples:
+
+- `app/features/schedules/job.py` keeps scheduler claim/finalize work in short sessions and releases DB state before remote invoke.
+- `app/features/invoke/route_runner.py` keeps session recovery in short transactions instead of tying invoke lifetime to request-scoped DB state.
+- `app/features/opencode_sessions/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
+
 ## A2A Outbound Allowlist
 
 This backend requires an allowlist for all outbound A2A HTTP requests (agent card fetching, transport negotiation, and extensions).

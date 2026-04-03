@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal, async_engine
+from app.db.transaction import run_with_new_session
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.metrics import a2a_metrics
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
@@ -47,8 +48,10 @@ async def _check_database() -> Dict[str, Any]:
     timestamp = utc_now_iso()
 
     try:
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
+        await run_with_new_session(
+            lambda session: session.execute(text("SELECT 1")),
+            session_factory=AsyncSessionLocal,
+        )
         refresh_db_pool_checked_out(async_engine.sync_engine.pool)
         return _format_result(
             "database",

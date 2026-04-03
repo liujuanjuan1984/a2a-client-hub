@@ -103,6 +103,11 @@ class Settings(BaseSettings):
         alias="DATABASE_ASYNC_POOL_TIMEOUT",
         description="Seconds to wait for a free async connection before timing out",
     )
+    async_db_connection_hold_warn_ms: float = Field(
+        default=500.0,
+        alias="DATABASE_ASYNC_CONNECTION_HOLD_WARN_MS",
+        description="Warn-attribution threshold in milliseconds for one checked-out async DB connection",
+    )
     schema_name: str = Field(
         default="a2a_client_hub_schema",
         alias="SCHEMA_NAME",

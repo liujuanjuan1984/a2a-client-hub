@@ -95,11 +95,17 @@ jest.mock("react-native", () => {
 
   const RefreshControl = () => null;
 
-  return {
-    ...actual,
-    FlatList,
-    RefreshControl,
-  };
+  return new Proxy(actual, {
+    get(target, prop, receiver) {
+      if (prop === "FlatList") {
+        return FlatList;
+      }
+      if (prop === "RefreshControl") {
+        return RefreshControl;
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
 });
 
 let mockRenderedCardProps: any[] = [];

@@ -23,13 +23,13 @@ from app.db.locking import (
 )
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
+from app.db.transaction import cleanup_session_safely, run_with_new_session
 from app.features.auth import service as auth_service
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ws_ticket import (
     WsTicketError,
     ws_ticket_service,
 )
-from app.utils.async_cleanup import await_cancel_safe
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
@@ -51,7 +51,7 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     try:
         yield session
     finally:
-        await await_cancel_safe(session.close())
+        await cleanup_session_safely(session)
 
 
 async def get_current_user(
@@ -85,13 +85,19 @@ async def get_current_user(
         )
 
     try:
-        async with AsyncSessionLocal() as db:
-            user = await auth_service.get_active_user(
+
+        async def _load_current_user(db: AsyncSession) -> User:
+            return await auth_service.get_active_user(
                 db,
                 user_id=user_uuid,
             )
-            set_user_context(str(user.id))
-            return user
+
+        user = await run_with_new_session(
+            _load_current_user,
+            session_factory=AsyncSessionLocal,
+        )
+        set_user_context(str(user.id))
+        return user
     except auth_service.UserNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -193,7 +199,8 @@ async def get_ws_ticket_user(
         )
 
     try:
-        async with AsyncSessionLocal() as db:
+
+        async def _consume_ws_ticket_user(db: AsyncSession) -> User:
             consumed = await ws_ticket_service.consume_ticket(
                 db,
                 token=ticket,
@@ -205,11 +212,15 @@ async def get_ws_ticket_user(
                 db,
                 user_id=consumed_user_id,
             )
-            websocket.state.selected_subprotocol = (
-                protocol_selection.accepted_subprotocol
-            )
-            set_user_context(str(user.id))
             return user
+
+        user = await run_with_new_session(
+            _consume_ws_ticket_user,
+            session_factory=AsyncSessionLocal,
+        )
+        websocket.state.selected_subprotocol = protocol_selection.accepted_subprotocol
+        set_user_context(str(user.id))
+        return user
     except RetryableDbLockError as exc:
         ops_metrics.increment_ws_ticket_lock_conflicts()
         logger.warning(

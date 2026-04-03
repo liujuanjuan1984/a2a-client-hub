@@ -23,8 +23,11 @@ from app.db.locking import (
     to_retryable_db_query_timeout_error,
 )
 from app.db.models.ws_ticket import WsTicket
-from app.db.transaction import commit_safely
+from app.db.session import AsyncSessionLocal
+from app.db.transaction import commit_safely, run_with_new_session
 from app.utils.timezone_util import utc_now
+
+_WS_TICKET_CLEANUP_BATCH_SIZE = 500
 
 
 class WsTicketError(RuntimeError):
@@ -225,30 +228,54 @@ class WsTicketService:
         retention_days = max(settings.ws_ticket_retention_days, 0)
         retention_cutoff = now - timedelta(days=retention_days)
 
-        stmt = delete(WsTicket).where(
-            or_(
-                WsTicket.expires_at < now,
-                WsTicket.used_at < retention_cutoff,
-                WsTicket.scope_type.is_(None),
+        stale_ticket_ids = (
+            select(WsTicket.id)
+            .where(
+                or_(
+                    WsTicket.expires_at < now,
+                    WsTicket.used_at < retention_cutoff,
+                    WsTicket.scope_type.is_(None),
+                )
             )
+            .order_by(WsTicket.expires_at.asc(), WsTicket.id.asc())
+            .limit(_WS_TICKET_CLEANUP_BATCH_SIZE)
         )
+        stmt = delete(WsTicket).where(WsTicket.id.in_(stale_ticket_ids))
         result = cast(CursorResult[Any], await db.execute(stmt))
+        deleted_count = int(result.rowcount or 0)
+        if deleted_count <= 0:
+            await db.rollback()
+            return 0
         await commit_safely(db)
-        return result.rowcount or 0
+        return deleted_count
 
 
 async def cleanup_ws_tickets_job() -> None:
     """Scheduled job to clean up WS tickets."""
-    from app.db.session import AsyncSessionLocal
 
-    async with AsyncSessionLocal() as db:
-        deleted = await ws_ticket_service.cleanup_tickets(db)
+    total_deleted = 0
+    batches = 0
+    while True:
+        deleted = await run_with_new_session(
+            ws_ticket_service.cleanup_tickets,
+            session_factory=AsyncSessionLocal,
+        )
+        if deleted <= 0:
+            break
+        total_deleted += deleted
+        batches += 1
+        if deleted < _WS_TICKET_CLEANUP_BATCH_SIZE:
+            break
 
-    if deleted > 0:
+    if total_deleted > 0:
         from app.core.logging import get_logger
 
         logger = get_logger(__name__)
-        logger.info("Cleaned up %d WS ticket(s).", deleted)
+        logger.info(
+            "Cleaned up %d WS ticket(s) across %d batch(es).",
+            total_deleted,
+            batches,
+        )
 
 
 def ensure_ws_ticket_cleanup_job() -> None:

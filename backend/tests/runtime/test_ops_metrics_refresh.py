@@ -1,8 +1,10 @@
 import sqlite3
 
+import pytest
 from sqlalchemy import event
 from sqlalchemy.pool import QueuePool
 
+from app.core.config import settings
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ops_metrics_refresh import refresh_db_pool_checked_out
 
@@ -66,3 +68,39 @@ def test_db_pool_metric_handlers_do_not_double_decrement_after_invalidate() -> N
         event.remove(pool, "checkout", session_module._pool_checkout)
         event.remove(pool, "checkin", session_module._pool_checkin)
         pool.dispose()
+
+
+def test_db_pool_metric_handlers_record_long_hold_source_and_latency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.db import session as session_module
+
+    class _FakeConnectionRecord:
+        def __init__(self) -> None:
+            self.info: dict[str, object] = {}
+
+    record = _FakeConnectionRecord()
+    counters = iter([10.0, 10.9])
+
+    ops_metrics.set_db_pool_checked_out(0)
+    ops_metrics.reset_db_connection_hold_metrics()
+    monkeypatch.setattr(settings, "async_db_connection_hold_warn_ms", 500.0)
+    monkeypatch.setattr(
+        session_module,
+        "_capture_db_checkout_source",
+        lambda: "app/features/example.py:12:load_runtime",
+    )
+    monkeypatch.setattr(session_module.time, "perf_counter", lambda: next(counters))
+
+    session_module._pool_checkout(None, record)
+    session_module._pool_checkin(None, record)
+
+    snapshot = ops_metrics.snapshot()["db_connection_hold"]
+    assert ops_metrics.snapshot()["db_pool_checked_out"] == 0
+    assert snapshot["count"] == 1
+    assert snapshot["last_ms"] == 900.0
+    assert snapshot["long_hold_count"] == 1
+    assert (
+        snapshot["last_long_hold_source"] == "app/features/example.py:12:load_runtime"
+    )
+    assert snapshot["longest_hold_source"] == "app/features/example.py:12:load_runtime"

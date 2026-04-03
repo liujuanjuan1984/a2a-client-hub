@@ -5,6 +5,7 @@ jest.mock("react-native", () => ({
 }));
 
 const OriginalWebSocket = globalThis.WebSocket;
+let consoleInfoSpy: jest.SpyInstance;
 
 beforeAll(() => {
   const MockWebSocket = jest.fn() as unknown as typeof WebSocket;
@@ -16,6 +17,14 @@ afterAll(() => {
 });
 
 describe("ChatTransportHealth", () => {
+  beforeEach(() => {
+    consoleInfoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleInfoSpy.mockRestore();
+  });
+
   it("prefers ws, then sse, then http_json based on health state", () => {
     const { ChatTransportHealth } =
       require("@/services/chatTransportHealth") as {

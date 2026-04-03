@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -22,7 +21,7 @@ from app.db.locking import (
     RetryableDbQueryTimeoutError,
 )
 from app.db.session import AsyncSessionLocal
-from app.db.transaction import commit_safely
+from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke.guard import (
     _invoke_inflight_keys as _invoke_inflight_keys_impl,
 )
@@ -270,30 +269,7 @@ async def _unregister_inflight_invoke(
 
 
 async def _close_open_transaction(db: AsyncSession) -> None:
-    in_transaction = getattr(db, "in_transaction", None)
-    commit = getattr(db, "commit", None)
-    if not callable(in_transaction) or not callable(commit):
-        return
-    if not in_transaction():
-        return
-    # Never auto-commit when there are pending ORM writes in the session.
-    # Route-level closing here is only for read-only transactions.
-    for attribute_name in ("new", "dirty", "deleted"):
-        collection = getattr(db, attribute_name, None)
-        if collection is None:
-            continue
-        try:
-            if len(collection) > 0:
-                return
-        except Exception:
-            try:
-                if bool(collection):
-                    return
-            except Exception:
-                return
-    commit_outcome = commit()
-    if inspect.isawaitable(commit_outcome):
-        await commit_outcome
+    await prepare_for_external_call(db)
 
 
 async def _continue_session_with_short_transaction(
@@ -994,7 +970,6 @@ def _build_consume_stream_callbacks(
 
 async def run_http_invoke_with_session_recovery(
     *,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1012,7 +987,6 @@ async def run_http_invoke_with_session_recovery(
 
     while True:
         response = await run_http_invoke(
-            db=db,
             gateway=gateway,
             runtime=runtime,
             user_id=user_id,
@@ -1051,7 +1025,6 @@ async def run_http_invoke_with_session_recovery(
 
 async def run_http_invoke(
     *,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1184,7 +1157,6 @@ async def run_http_invoke(
 
 async def run_background_invoke(
     *,
-    db: AsyncSession,
     gateway: Any,
     invoke_session: Any | None = None,
     runtime: Any,
@@ -1304,7 +1276,6 @@ async def run_background_invoke(
 async def run_ws_invoke(
     *,
     websocket: WebSocket,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1410,7 +1381,6 @@ async def run_ws_invoke(
 async def run_ws_invoke_with_session_recovery(
     *,
     websocket: WebSocket,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1448,7 +1418,6 @@ async def run_ws_invoke_with_session_recovery(
 
         await run_ws_invoke(
             websocket=websocket,
-            db=db,
             gateway=gateway,
             runtime=runtime,
             user_id=user_id,
@@ -1584,7 +1553,6 @@ async def run_ws_invoke_route(
             async with _guard_inflight_invoke(guard_key):
                 await run_ws_invoke_with_session_recovery(
                     websocket=websocket,
-                    db=db,
                     gateway=gateway,
                     runtime=runtime,
                     user_id=user_id,
@@ -1694,7 +1662,6 @@ async def run_http_invoke_route(
             )
         try:
             response = await run_http_invoke_with_session_recovery(
-                db=db,
                 gateway=gateway,
                 runtime=runtime,
                 user_id=user_id,
@@ -1752,7 +1719,6 @@ async def run_http_invoke_route(
     try:
         async with _guard_inflight_invoke(guard_key):
             response = await run_http_invoke_with_session_recovery(
-                db=db,
                 gateway=gateway,
                 runtime=runtime,
                 user_id=user_id,

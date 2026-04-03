@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.http_client import close_global_http_client, init_global_http_client
 from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
+from app.db.transaction import run_with_new_session
 from app.features.schedules.job import ensure_a2a_schedule_job
 from app.features.schedules.service import (
     ensure_a2a_schedule_execution_cleanup_job,
@@ -93,8 +94,10 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
         async def _refresh_proxy_cache() -> None:
             # Initialise A2A proxy allowlist cache.
-            async with AsyncSessionLocal() as db:
-                await a2a_proxy_service.prime_cache(db)
+            await run_with_new_session(
+                a2a_proxy_service.prime_cache,
+                session_factory=AsyncSessionLocal,
+            )
 
         await _run_startup_step(
             name="a2a_proxy_allowlist_cache_init",

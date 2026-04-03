@@ -20,6 +20,12 @@ class _OpsMetricsStore:
         self._lock = threading.Lock()
         self._db_idle_in_tx_count: int = 0
         self._db_pool_checked_out: int = 0
+        self._db_connection_hold = _LatencyStats()
+        self._db_connection_long_hold_count: int = 0
+        self._db_connection_last_long_hold_ms: float = 0.0
+        self._db_connection_last_long_hold_source: str = ""
+        self._db_connection_longest_hold_ms: float = 0.0
+        self._db_connection_longest_hold_source: str = ""
         self._schedule_running_task_count: int = 0
         self._schedule_finalize_lock_conflicts: int = 0
         self._schedule_recovery_lock_skipped_tasks: int = 0
@@ -45,6 +51,42 @@ class _OpsMetricsStore:
     def decrement_db_pool_checked_out(self) -> None:
         with self._lock:
             self._db_pool_checked_out = max(self._db_pool_checked_out - 1, 0)
+
+    def reset_db_connection_hold_metrics(self) -> None:
+        with self._lock:
+            self._db_connection_hold = _LatencyStats()
+            self._db_connection_long_hold_count = 0
+            self._db_connection_last_long_hold_ms = 0.0
+            self._db_connection_last_long_hold_source = ""
+            self._db_connection_longest_hold_ms = 0.0
+            self._db_connection_longest_hold_source = ""
+
+    def observe_db_connection_hold(
+        self,
+        *,
+        latency_ms: float,
+        source: str,
+        long_hold_threshold_ms: float,
+    ) -> None:
+        if latency_ms < 0:
+            return
+        normalized_source = str(source or "unknown")
+        with self._lock:
+            stats = self._db_connection_hold
+            stats.count += 1
+            stats.total_ms += float(latency_ms)
+            stats.last_ms = float(latency_ms)
+            if latency_ms > stats.max_ms:
+                stats.max_ms = float(latency_ms)
+
+            if latency_ms > self._db_connection_longest_hold_ms:
+                self._db_connection_longest_hold_ms = float(latency_ms)
+                self._db_connection_longest_hold_source = normalized_source
+
+            if latency_ms >= float(long_hold_threshold_ms):
+                self._db_connection_long_hold_count += 1
+                self._db_connection_last_long_hold_ms = float(latency_ms)
+                self._db_connection_last_long_hold_source = normalized_source
 
     def set_schedule_running_task_count(self, value: int) -> None:
         with self._lock:
@@ -91,11 +133,30 @@ class _OpsMetricsStore:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
+            connection_hold = self._db_connection_hold
+            connection_hold_avg_ms = (
+                connection_hold.total_ms / connection_hold.count
+                if connection_hold.count > 0
+                else 0.0
+            )
             latency = self._schedule_finalize_latency
             avg_ms = latency.total_ms / latency.count if latency.count > 0 else 0.0
             return {
                 "db_idle_in_tx_count": self._db_idle_in_tx_count,
                 "db_pool_checked_out": self._db_pool_checked_out,
+                "db_connection_hold": {
+                    "count": connection_hold.count,
+                    "avg_ms": round(connection_hold_avg_ms, 3),
+                    "max_ms": round(connection_hold.max_ms, 3),
+                    "last_ms": round(connection_hold.last_ms, 3),
+                    "long_hold_count": self._db_connection_long_hold_count,
+                    "last_long_hold_ms": round(
+                        self._db_connection_last_long_hold_ms, 3
+                    ),
+                    "last_long_hold_source": self._db_connection_last_long_hold_source,
+                    "longest_hold_ms": round(self._db_connection_longest_hold_ms, 3),
+                    "longest_hold_source": self._db_connection_longest_hold_source,
+                },
                 "schedule_running_task_count": self._schedule_running_task_count,
                 "schedule_finalize_lock_conflicts": self._schedule_finalize_lock_conflicts,
                 "schedule_recovery_lock_skipped_tasks": self._schedule_recovery_lock_skipped_tasks,

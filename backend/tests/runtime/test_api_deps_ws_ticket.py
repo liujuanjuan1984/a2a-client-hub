@@ -159,11 +159,15 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_db_statement_timeou
 async def test_get_async_db_closes_session_even_if_dependency_cleanup_is_cancelled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    rollback_finished = asyncio.Event()
     close_started = asyncio.Event()
     close_released = asyncio.Event()
     close_finished = asyncio.Event()
 
     class _FakeSession:
+        async def rollback(self) -> None:
+            rollback_finished.set()
+
         async def close(self) -> None:
             close_started.set()
             await close_released.wait()
@@ -184,4 +188,5 @@ async def test_get_async_db_closes_session_even_if_dependency_cleanup_is_cancell
     close_released.set()
     with pytest.raises(asyncio.CancelledError):
         await close_task
+    assert rollback_finished.is_set() is True
     assert close_finished.is_set() is True

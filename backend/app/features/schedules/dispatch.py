@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -16,7 +17,8 @@ from app.db.locking import to_retryable_db_lock_error
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
-from app.db.transaction import commit_safely
+from app.db.session import AsyncSessionLocal
+from app.db.transaction import commit_safely, run_with_new_session
 from app.features.schedules.common import (
     A2AScheduleValidationError,
     ClaimedA2AScheduleTask,
@@ -29,6 +31,12 @@ from app.runtime.ops_metrics import ops_metrics
 from app.utils.timezone_util import ensure_utc, utc_now
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _StaleRecoveryStepResult:
+    status: str
+    stale_remaining: int = 0
 
 
 class A2AScheduleDispatchService:
@@ -273,7 +281,6 @@ class A2AScheduleDispatchService:
 
     async def recover_stale_running_tasks(
         self,
-        db: AsyncSession,
         *,
         now: datetime | None = None,
         timeout_seconds: int = 600,
@@ -306,96 +313,125 @@ class A2AScheduleDispatchService:
         error_code = "timeout"
         recovered_count = 0
         while True:
-            await self._support.apply_skip_locked_write_timeouts(db)
-            stale_where = and_(
-                A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
-                A2AScheduleTask.deleted_at.is_(None),
-                or_(*stale_predicates),
+            result = await run_with_new_session(
+                lambda recovery_db: self._recover_one_stale_running_task(
+                    recovery_db,
+                    now_utc=now_utc,
+                    stale_predicates=stale_predicates,
+                    failure_threshold=failure_threshold,
+                    error_message=error_message,
+                    error_code=error_code,
+                ),
+                session_factory=AsyncSessionLocal,
             )
-            stmt = (
-                select(A2AScheduleExecution)
+            if result.status == "recovered":
+                recovered_count += 1
+                continue
+            if result.status == "retry":
+                continue
+            if result.stale_remaining > 0:
+                ops_metrics.increment_schedule_recovery_lock_skipped_tasks(
+                    result.stale_remaining
+                )
+                logger.warning(
+                    "Skipped recovery for %d stale schedule task(s) due to row lock contention; retry next cycle.",
+                    result.stale_remaining,
+                    extra={
+                        "phase": "recovery",
+                        "stale_task_count": result.stale_remaining,
+                    },
+                )
+            break
+        return recovered_count
+
+    async def _recover_one_stale_running_task(
+        self,
+        db: AsyncSession,
+        *,
+        now_utc: datetime,
+        stale_predicates: list[Any],
+        failure_threshold: int,
+        error_message: str,
+        error_code: str,
+    ) -> _StaleRecoveryStepResult:
+        await self._support.apply_skip_locked_write_timeouts(db)
+        stale_where = and_(
+            A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
+            A2AScheduleTask.deleted_at.is_(None),
+            or_(*stale_predicates),
+        )
+        stmt = (
+            select(A2AScheduleExecution)
+            .join(A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id)
+            .where(stale_where)
+            .order_by(
+                A2AScheduleExecution.started_at.asc(),
+                A2AScheduleExecution.id.asc(),
+            )
+            .limit(1)
+            .with_for_update(of=A2AScheduleExecution, skip_locked=True)
+        )
+        execution = cast(A2AScheduleExecution | None, await db.scalar(stmt))
+        if execution is None:
+            stale_count_stmt = (
+                select(func.count(A2AScheduleExecution.id))
                 .join(
-                    A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id
+                    A2AScheduleTask,
+                    A2AScheduleTask.id == A2AScheduleExecution.task_id,
                 )
                 .where(stale_where)
-                .order_by(
-                    A2AScheduleExecution.started_at.asc(),
-                    A2AScheduleExecution.id.asc(),
-                )
-                .limit(1)
-                .with_for_update(of=A2AScheduleExecution, skip_locked=True)
             )
-            execution = cast(A2AScheduleExecution | None, await db.scalar(stmt))
-            if execution is None:
-                stale_count_stmt = (
-                    select(func.count(A2AScheduleExecution.id))
-                    .join(
-                        A2AScheduleTask,
-                        A2AScheduleTask.id == A2AScheduleExecution.task_id,
-                    )
-                    .where(stale_where)
-                )
-                stale_remaining = int(await db.scalar(stale_count_stmt) or 0)
-                if stale_remaining > 0:
-                    ops_metrics.increment_schedule_recovery_lock_skipped_tasks(
-                        stale_remaining
-                    )
-                    logger.warning(
-                        "Skipped recovery for %d stale schedule task(s) due to row lock contention; retry next cycle.",
-                        stale_remaining,
-                        extra={
-                            "phase": "recovery",
-                            "stale_task_count": stale_remaining,
-                        },
-                    )
-                break
-
-            task_stmt = (
-                select(A2AScheduleTask)
-                .where(A2AScheduleTask.id == execution.task_id)
-                .with_for_update(nowait=True)
+            stale_remaining = int(await db.scalar(stale_count_stmt) or 0)
+            return _StaleRecoveryStepResult(
+                status="done",
+                stale_remaining=stale_remaining,
             )
-            try:
-                task = cast(A2AScheduleTask | None, await db.scalar(task_stmt))
-            except DBAPIError as exc:
-                if (
-                    to_retryable_db_lock_error(
-                        exc,
-                        lock_message="Schedule task row is locked during stale recovery.",
-                    )
-                    is not None
-                ):
-                    await db.rollback()
-                    continue
-                raise
 
-            if task is None:
-                await commit_safely(db)
-                continue
-
-            setattr(execution, "status", A2AScheduleExecution.STATUS_FAILED)
-            setattr(execution, "finished_at", now_utc)
-            setattr(execution, "error_message", error_message)
-            setattr(execution, "error_code", error_code)
-            conversation_id = cast(UUID | None, execution.conversation_id)
-            if conversation_id is None:
-                setattr(
-                    execution,
-                    "conversation_id",
-                    cast(UUID | None, task.conversation_id),
+        task_stmt = (
+            select(A2AScheduleTask)
+            .where(A2AScheduleTask.id == execution.task_id)
+            .with_for_update(nowait=True)
+        )
+        try:
+            task = cast(A2AScheduleTask | None, await db.scalar(task_stmt))
+        except DBAPIError as exc:
+            if (
+                to_retryable_db_lock_error(
+                    exc,
+                    lock_message="Schedule task row is locked during stale recovery.",
                 )
+                is not None
+            ):
+                await db.rollback()
+                return _StaleRecoveryStepResult(status="retry")
+            raise
 
-            self._projection.apply_task_terminal_projection(
-                task,
-                final_status=A2AScheduleTask.STATUS_FAILED,
-                finished_at=now_utc,
-                failure_threshold=failure_threshold,
-                conversation_id=cast(UUID | None, execution.conversation_id),
-            )
-            recovered_count += 1
-
+        if task is None:
             await commit_safely(db)
-        return recovered_count
+            return _StaleRecoveryStepResult(status="retry")
+
+        setattr(execution, "status", A2AScheduleExecution.STATUS_FAILED)
+        setattr(execution, "finished_at", now_utc)
+        setattr(execution, "error_message", error_message)
+        setattr(execution, "error_code", error_code)
+        conversation_id = cast(UUID | None, execution.conversation_id)
+        if conversation_id is None:
+            setattr(
+                execution,
+                "conversation_id",
+                cast(UUID | None, task.conversation_id),
+            )
+
+        self._projection.apply_task_terminal_projection(
+            task,
+            final_status=A2AScheduleTask.STATUS_FAILED,
+            finished_at=now_utc,
+            failure_threshold=failure_threshold,
+            conversation_id=cast(UUID | None, execution.conversation_id),
+        )
+
+        await commit_safely(db)
+        return _StaleRecoveryStepResult(status="recovered")
 
     @map_retryable_db_errors("Schedule task finalize")
     async def finalize_task_run(

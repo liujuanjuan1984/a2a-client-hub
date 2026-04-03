@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple, cast
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -23,7 +23,8 @@ from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
-from app.db.transaction import commit_safely
+from app.db.session import AsyncSessionLocal
+from app.db.transaction import run_in_read_session, run_in_write_session
 from app.features.hub_agents.runtime import hub_a2a_runtime_builder
 from app.features.hub_agents.service import hub_a2a_agent_service
 from app.features.personal_agents.runtime import a2a_runtime_builder
@@ -197,17 +198,15 @@ class _DirectoryRuntime:
 class OpencodeSessionDirectoryService:
     async def _build_directory_snapshot(
         self,
-        db: AsyncSession,
         *,
         user_id: UUID,
         refresh: bool,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        agents = await self._list_visible_agents(db, user_id=user_id)
-        total_agents = len(agents)
-
-        cache_entries = await self._load_cache_entries(
-            db, user_id=user_id, agents=agents
+        agents, cache_entries = await run_in_read_session(
+            lambda db: self._load_agents_and_cache_entries(db, user_id=user_id),
+            session_factory=AsyncSessionLocal,
         )
+        total_agents = len(agents)
         now = _utc_now()
 
         expired: list[_AgentRef] = []
@@ -227,8 +226,11 @@ class OpencodeSessionDirectoryService:
         refreshed_agents = 0
         partial_failures = 0
         if agents_to_refresh:
-            credentials_by_agent_id = await self._load_credentials_by_agent_id(
-                db, agents=agents_to_refresh
+            credentials_by_agent_id = await run_in_read_session(
+                lambda db: self._load_credentials_by_agent_id(
+                    db, agents=agents_to_refresh
+                ),
+                session_factory=AsyncSessionLocal,
             )
             runtime_targets: list[tuple[_AgentRef, _DirectoryRuntime]] = []
             for agent in agents_to_refresh:
@@ -292,39 +294,25 @@ class OpencodeSessionDirectoryService:
             expires_at = now + timedelta(
                 seconds=int(settings.opencode_sessions_cache_ttl_seconds)
             )
-            for item in results:
-                if isinstance(item, BaseException):
-                    partial_failures += 1
-                    continue
-                agent, result = item
-                try:
-                    ok = await self._write_cache_entry(
-                        db,
-                        user_id=user_id,
-                        agent=agent,
-                        now=now,
-                        expires_at=expires_at,
-                        result=result,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    partial_failures += 1
-                    logger.warning(
-                        "OpenCode sessions cache write failed",
-                        extra={
-                            "user_id": str(user_id),
-                            "agent_id": str(agent.agent_id),
-                            "agent_source": agent.agent_source,
-                            "error_type": type(exc).__name__,
-                        },
-                    )
-                    continue
-                refreshed_agents += 1 if ok else 0
-
-            await commit_safely(db)
+            (
+                refreshed_agents,
+                write_partial_failures,
+            ) = await run_in_write_session(
+                lambda db: self._persist_refresh_results(
+                    db,
+                    user_id=user_id,
+                    now=now,
+                    expires_at=expires_at,
+                    results=results,
+                ),
+                session_factory=AsyncSessionLocal,
+            )
+            partial_failures += write_partial_failures
 
             # Reload cache entries after refresh attempts.
-            cache_entries = await self._load_cache_entries(
-                db, user_id=user_id, agents=agents
+            cache_entries = await run_in_read_session(
+                lambda db: self._load_cache_entries(db, user_id=user_id, agents=agents),
+                session_factory=AsyncSessionLocal,
             )
 
         directory_items: list[Dict[str, Any]] = []
@@ -395,7 +383,6 @@ class OpencodeSessionDirectoryService:
 
     async def list_directory(
         self,
-        db: AsyncSession,
         *,
         user_id: UUID,
         page: int,
@@ -403,7 +390,6 @@ class OpencodeSessionDirectoryService:
         refresh: bool,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         directory_items, meta = await self._build_directory_snapshot(
-            db,
             user_id=user_id,
             refresh=refresh,
         )
@@ -422,6 +408,20 @@ class OpencodeSessionDirectoryService:
             "pages": pages,
         }
         return page_items, {"pagination": pagination, "meta": meta}
+
+    async def _load_agents_and_cache_entries(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+    ) -> Tuple[
+        List[_AgentRef], Dict[Tuple[str, UUID], ExternalSessionDirectoryCacheEntry]
+    ]:
+        agents = await self._list_visible_agents(db, user_id=user_id)
+        cache_entries = await self._load_cache_entries(
+            db, user_id=user_id, agents=agents
+        )
+        return agents, cache_entries
 
     async def _list_visible_agents(
         self, db: AsyncSession, *, user_id: UUID
@@ -540,6 +540,47 @@ class OpencodeSessionDirectoryService:
             last_error_at=None,
         )
         return True
+
+    async def _persist_refresh_results(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        now: datetime,
+        expires_at: datetime,
+        results: Sequence[tuple[_AgentRef, ExtensionCallResult] | BaseException],
+    ) -> tuple[int, int]:
+        refreshed_agents = 0
+        partial_failures = 0
+        for item in results:
+            if isinstance(item, BaseException):
+                partial_failures += 1
+                continue
+            agent, result = item
+            try:
+                ok = await self._write_cache_entry(
+                    db,
+                    user_id=user_id,
+                    agent=agent,
+                    now=now,
+                    expires_at=expires_at,
+                    result=result,
+                )
+            except Exception as exc:  # noqa: BLE001
+                partial_failures += 1
+                logger.warning(
+                    "OpenCode sessions cache write failed",
+                    extra={
+                        "user_id": str(user_id),
+                        "agent_id": str(agent.agent_id),
+                        "agent_source": agent.agent_source,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                continue
+            refreshed_agents += 1 if ok else 0
+
+        return refreshed_agents, partial_failures
 
     def _build_runtime_from_prefetched(
         self,
