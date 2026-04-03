@@ -64,6 +64,32 @@ export const queryKeys = {
         input.source,
         input.agentId,
       ] as const,
+    codexDiscoveryList: (input: {
+      agentId: string;
+      source: "personal" | "shared";
+      kind: "skills" | "apps" | "plugins";
+    }) =>
+      [
+        "agents",
+        "codex-discovery",
+        "list",
+        input.source,
+        input.agentId,
+        input.kind,
+      ] as const,
+    codexDiscoveryPlugin: (input: {
+      agentId: string;
+      source: "personal" | "shared";
+      pluginId: string;
+    }) =>
+      [
+        "agents",
+        "codex-discovery",
+        "plugin",
+        input.source,
+        input.agentId,
+        input.pluginId,
+      ] as const,
   },
   schedules: {
     listRoot: () => ["scheduled-jobs", "list"] as const,

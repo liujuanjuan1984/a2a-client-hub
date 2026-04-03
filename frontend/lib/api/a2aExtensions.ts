@@ -59,6 +59,25 @@ type A2AExtensionCapabilities = {
     }[];
   };
   runtimeStatus: RuntimeStatusContract;
+  codexDiscovery?: {
+    declared: boolean;
+    consumedByHub: boolean;
+    status:
+      | "unsupported"
+      | "declared_not_consumed"
+      | "partially_consumed"
+      | "supported";
+    methods: Partial<
+      Record<
+        "skillsList" | "appsList" | "pluginsList" | "pluginsRead" | "watch",
+        {
+          declared: boolean;
+          consumedByHub: boolean;
+          method?: string | null;
+        }
+      >
+    >;
+  } | null;
 };
 
 export class A2AExtensionCallError extends Error {
@@ -148,6 +167,40 @@ export type ModelSummary = {
   connected?: boolean;
 };
 
+export type CodexDiscoveryStatus =
+  | "unknown"
+  | "unsupported"
+  | "declared_not_consumed"
+  | "partially_consumed"
+  | "supported";
+
+export type CodexDiscoveryListKind = "skills" | "apps" | "plugins";
+
+export type CodexDiscoveryItem = {
+  id: string;
+  kind: "skill" | "app" | "plugin";
+  name?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  tags: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type CodexDiscoveryPlugin = CodexDiscoveryItem & {
+  kind: "plugin";
+  content?: unknown;
+};
+
+export type CodexDiscoveryListResult = {
+  items: CodexDiscoveryItem[];
+  nextCursor: string | null;
+};
+
+export type CodexDiscoveryCapability = NonNullable<
+  A2AExtensionCapabilities["codexDiscovery"]
+>;
+
 type InterruptAckResult = {
   ok: true;
   requestId: string;
@@ -199,6 +252,16 @@ const buildModelDiscoveryPath = (
     agentId,
     suffix === "providers:list" ? "models/providers:list" : "models:list",
   );
+
+const buildCodexDiscoveryPath = (
+  source: ExtensionAgentSource,
+  agentId: string,
+  suffix:
+    | "codex/skills"
+    | "codex/apps"
+    | "codex/plugins"
+    | "codex/plugins:read",
+) => buildExtensionPath(source, agentId, suffix);
 
 const assertInterruptAckResult = (
   response: A2AExtensionResponse,
@@ -673,6 +736,82 @@ const asModelItems = (value: unknown): ModelSummary[] => {
   );
 };
 
+const asStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
+  );
+};
+
+const asCodexDiscoveryItem = (value: unknown): CodexDiscoveryItem | null => {
+  const item = asRecord(value);
+  if (!item || typeof item.id !== "string" || typeof item.kind !== "string") {
+    return null;
+  }
+  if (item.kind !== "skill" && item.kind !== "app" && item.kind !== "plugin") {
+    return null;
+  }
+  return {
+    id: item.id,
+    kind: item.kind,
+    name: typeof item.name === "string" ? item.name : null,
+    title: typeof item.title === "string" ? item.title : null,
+    summary: typeof item.summary === "string" ? item.summary : null,
+    description: typeof item.description === "string" ? item.description : null,
+    tags: asStringArray(item.tags),
+    metadata: asRecord(item.metadata) ?? {},
+  };
+};
+
+const asCodexDiscoveryItems = (value: unknown): CodexDiscoveryItem[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => asCodexDiscoveryItem(item))
+    .filter((item): item is CodexDiscoveryItem => Boolean(item));
+};
+
+const asCodexDiscoveryPlugin = (
+  value: unknown,
+): CodexDiscoveryPlugin | null => {
+  const item = asRecord(value);
+  const normalized = asCodexDiscoveryItem(item);
+  if (!normalized || normalized.kind !== "plugin") {
+    return null;
+  }
+  return {
+    ...normalized,
+    kind: "plugin",
+    content: item?.content,
+  };
+};
+
+const listCodexDiscovery = async (
+  input: {
+    source: ExtensionAgentSource;
+    agentId: string;
+  },
+  suffix: "codex/skills" | "codex/apps" | "codex/plugins",
+): Promise<CodexDiscoveryListResult> => {
+  const response = await apiRequest<A2AExtensionResponse>(
+    buildCodexDiscoveryPath(input.source, input.agentId, suffix),
+    {
+      method: "GET",
+    },
+  );
+  assertExtensionSuccess(response);
+  const result = asRecord(response.result) ?? {};
+  return {
+    items: asCodexDiscoveryItems(result.items),
+    nextCursor:
+      typeof result.nextCursor === "string" ? result.nextCursor : null,
+  };
+};
+
 export const getExtensionCapabilities = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
@@ -769,5 +908,46 @@ export const listModels = async (input: {
             typeof item === "string" && item.trim().length > 0,
         )
       : [],
+  };
+};
+
+export const listCodexSkills = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}) => await listCodexDiscovery(input, "codex/skills");
+
+export const listCodexApps = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}) => await listCodexDiscovery(input, "codex/apps");
+
+export const listCodexPlugins = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}) => await listCodexDiscovery(input, "codex/plugins");
+
+export const readCodexPlugin = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+  pluginId: string;
+}) => {
+  const response = await apiRequest<
+    A2AExtensionResponse,
+    {
+      pluginId: string;
+    }
+  >(
+    buildCodexDiscoveryPath(input.source, input.agentId, "codex/plugins:read"),
+    {
+      method: "POST",
+      body: {
+        pluginId: input.pluginId.trim(),
+      },
+    },
+  );
+  assertExtensionSuccess(response);
+  const result = asRecord(response.result) ?? {};
+  return {
+    plugin: asCodexDiscoveryPlugin(result.plugin),
   };
 };

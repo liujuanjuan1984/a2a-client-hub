@@ -3,9 +3,13 @@ import {
   assertExtensionSuccess,
   commandSession,
   getExtensionCapabilities,
+  listCodexApps,
+  listCodexPlugins,
+  listCodexSkills,
   listModelProviders,
   listModels,
   promptSessionAsync,
+  readCodexPlugin,
   recoverInterrupts,
   replyElicitationInterrupt,
   replyPermissionInterrupt,
@@ -339,6 +343,23 @@ describe("assertExtensionSuccess", () => {
           },
         ],
       },
+      codexDiscovery: {
+        declared: true,
+        consumedByHub: true,
+        status: "supported",
+        methods: {
+          skillsList: {
+            declared: true,
+            consumedByHub: true,
+            method: "codex.discovery.skills.list",
+          },
+          pluginsRead: {
+            declared: true,
+            consumedByHub: true,
+            method: "codex.discovery.plugins.read",
+          },
+        },
+      },
       runtimeStatus: {
         version: "v1",
         canonicalStates: [
@@ -387,8 +408,122 @@ describe("assertExtensionSuccess", () => {
     expect(result.sessionControl.shell.availability).toBe("conditional");
     expect(result.invokeMetadata.metadataField).toBe("metadata.shared.invoke");
     expect(result.invokeMetadata.fields[0]?.name).toBe("project_id");
+    expect(result.codexDiscovery?.status).toBe("supported");
+    expect(result.codexDiscovery?.methods.skillsList?.method).toBe(
+      "codex.discovery.skills.list",
+    );
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
+  });
+
+  it("calls codex discovery list endpoints and normalizes responses", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      success: true,
+      result: {
+        items: [
+          {
+            id: "skill-1",
+            kind: "skill",
+            title: "Planning",
+            summary: "Summarize plans.",
+            tags: ["analysis"],
+            metadata: { source: "codex" },
+          },
+        ],
+        nextCursor: "cursor-2",
+      },
+    });
+    mockedApiRequest.mockResolvedValueOnce({
+      success: true,
+      result: {
+        items: [
+          {
+            id: "app-1",
+            kind: "app",
+            name: "workspace",
+            metadata: {},
+          },
+        ],
+      },
+    });
+    mockedApiRequest.mockResolvedValueOnce({
+      success: true,
+      result: {
+        items: [
+          {
+            id: "plugin-1",
+            kind: "plugin",
+            title: "Planner",
+            metadata: { version: "1.0" },
+          },
+        ],
+      },
+    });
+
+    const skills = await listCodexSkills({
+      source: "shared",
+      agentId: "agent-1",
+    });
+    const apps = await listCodexApps({
+      source: "shared",
+      agentId: "agent-1",
+    });
+    const plugins = await listCodexPlugins({
+      source: "personal",
+      agentId: "agent-1",
+    });
+
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      1,
+      "/a2a/agents/agent-1/extensions/codex/skills",
+      { method: "GET" },
+    );
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "/a2a/agents/agent-1/extensions/codex/apps",
+      { method: "GET" },
+    );
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      3,
+      "/me/a2a/agents/agent-1/extensions/codex/plugins",
+      { method: "GET" },
+    );
+    expect(skills.items[0]?.id).toBe("skill-1");
+    expect(skills.nextCursor).toBe("cursor-2");
+    expect(apps.items[0]?.kind).toBe("app");
+    expect(plugins.items[0]?.kind).toBe("plugin");
+  });
+
+  it("calls codex plugin read endpoint and normalizes plugin details", async () => {
+    mockedApiRequest.mockResolvedValue({
+      success: true,
+      result: {
+        plugin: {
+          id: "planner",
+          kind: "plugin",
+          title: "Planner",
+          description: "Coordinates work.",
+          metadata: { version: "1.0" },
+          content: { readme: "Use for planning" },
+        },
+      },
+    });
+
+    const result = await readCodexPlugin({
+      source: "shared",
+      agentId: "agent-1",
+      pluginId: "planner",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/a2a/agents/agent-1/extensions/codex/plugins:read",
+      {
+        method: "POST",
+        body: { pluginId: "planner" },
+      },
+    );
+    expect(result.plugin?.id).toBe("planner");
+    expect(result.plugin?.content).toEqual({ readme: "Use for planning" });
   });
 
   it("calls model discovery endpoint with provider filter", async () => {
