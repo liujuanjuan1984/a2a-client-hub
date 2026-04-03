@@ -316,6 +316,34 @@ class A2AWireContractUnsupportedMethodErrorResponse(BaseModel):
     data_fields: List[str] = Field(default_factory=list, alias="dataFields")
 
 
+class A2ADeclaredMethodCapabilityResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    method: Optional[str] = None
+
+
+class A2ADeclaredMethodCollectionCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    status: Literal["unsupported", "declared_not_consumed", "unsupported_by_design"]
+    methods: Dict[str, A2ADeclaredMethodCapabilityResponse] = Field(
+        default_factory=dict
+    )
+
+
+class A2ADeclaredSingleMethodCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    status: Literal["unsupported", "unsupported_by_design"]
+    method: Optional[str] = None
+
+
 class A2AWireContractCapabilitiesResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -413,6 +441,30 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
             "for compatibility diagnostics."
         ),
     )
+    codex_discovery: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
+        ...,
+        alias="codexDiscovery",
+        description=(
+            "Codex discovery methods declared via wire-contract that the hub "
+            "currently diagnoses but does not consume."
+        ),
+    )
+    codex_thread_watch: A2ADeclaredSingleMethodCapabilitiesResponse = Field(
+        ...,
+        alias="codexThreadWatch",
+        description=(
+            "Codex thread watch capability declaration surface that remains "
+            "unsupported by design in the hub."
+        ),
+    )
+    codex_exec: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
+        ...,
+        alias="codexExec",
+        description=(
+            "Codex interactive exec methods declared via wire-contract that the "
+            "hub currently leaves unsupported by design."
+        ),
+    )
     runtime_status: A2ARuntimeStatusContractResponse = Field(
         ...,
         alias="runtimeStatus",
@@ -421,6 +473,9 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
 
 
 __all__ = [
+    "A2ADeclaredMethodCapabilityResponse",
+    "A2ADeclaredMethodCollectionCapabilitiesResponse",
+    "A2ADeclaredSingleMethodCapabilitiesResponse",
     "A2AExtensionInterruptRecoveryRequest",
     "A2AInvokeMetadataCapabilitiesResponse",
     "A2AInvokeMetadataFieldResponse",

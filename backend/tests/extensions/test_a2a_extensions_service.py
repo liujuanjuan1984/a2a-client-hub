@@ -10,6 +10,9 @@ from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     CompatibilityProfileCapabilitySnapshot,
+    DeclaredMethodCapabilitySnapshot,
+    DeclaredMethodCollectionCapabilitySnapshot,
+    DeclaredSingleMethodCapabilitySnapshot,
     ExtensionCallResult,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
@@ -247,6 +250,23 @@ def _capability_snapshot(
         wire_contract=wire_contract or _wire_contract_snapshot(),
         compatibility_profile=compatibility_profile
         or _compatibility_profile_snapshot(),
+        codex_discovery=DeclaredMethodCollectionCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+            methods={},
+        ),
+        codex_thread_watch=DeclaredSingleMethodCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+        ),
+        codex_exec=DeclaredMethodCollectionCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+            methods={},
+        ),
     )
 
 
@@ -2786,3 +2806,95 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
     assert snapshot.ext is not None
     assert snapshot.ext.extension_retention == {}
     assert snapshot.ext.method_retention == {}
+
+
+def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
+    service = A2AExtensionsService()
+    wire_contract = _wire_contract_snapshot(
+        status="supported",
+        ext=_wire_contract_extension_fixture(
+            all_jsonrpc_methods=(
+                "shared.sessions.prompt_async",
+                "codex.discovery.skills.list",
+                "codex.discovery.plugins.read",
+                "codex.threads.watch",
+                "codex.exec.start",
+                "codex.exec.terminate",
+            )
+        ),
+    )
+
+    discovery = service._build_codex_discovery_snapshot(wire_contract)
+    thread_watch = service._build_codex_thread_watch_snapshot(wire_contract)
+    exec_capability = service._build_codex_exec_snapshot(wire_contract)
+
+    assert discovery.declared is True
+    assert discovery.consumed_by_hub is False
+    assert discovery.status == "declared_not_consumed"
+    assert discovery.methods["skillsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.skills.list",
+    )
+    assert discovery.methods["appsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+    assert discovery.methods["pluginsRead"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.plugins.read",
+    )
+
+    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        status="unsupported_by_design",
+        method="codex.threads.watch",
+    )
+
+    assert exec_capability.declared is True
+    assert exec_capability.consumed_by_hub is False
+    assert exec_capability.status == "unsupported_by_design"
+    assert exec_capability.methods["start"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.exec.start",
+    )
+    assert exec_capability.methods["write"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+    assert exec_capability.methods["terminate"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.exec.terminate",
+    )
+
+
+def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract() -> (
+    None
+):
+    service = A2AExtensionsService()
+    wire_contract = _wire_contract_snapshot(status="unsupported")
+
+    discovery = service._build_codex_discovery_snapshot(wire_contract)
+    thread_watch = service._build_codex_thread_watch_snapshot(wire_contract)
+    exec_capability = service._build_codex_exec_snapshot(wire_contract)
+
+    assert discovery.declared is False
+    assert discovery.status == "unsupported"
+    assert all(method.declared is False for method in discovery.methods.values())
+
+    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        status="unsupported",
+        method=None,
+    )
+
+    assert exec_capability.declared is False
+    assert exec_capability.status == "unsupported"
+    assert all(method.declared is False for method in exec_capability.methods.values())

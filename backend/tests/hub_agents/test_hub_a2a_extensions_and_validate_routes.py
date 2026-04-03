@@ -1553,6 +1553,71 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 ),
             ),
         ),
+        codex_discovery=SimpleNamespace(
+            declared=True,
+            consumed_by_hub=False,
+            status="declared_not_consumed",
+            methods={
+                "skillsList": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.discovery.skills.list",
+                ),
+                "appsList": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+                "pluginsList": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.discovery.plugins.list",
+                ),
+                "pluginsRead": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.discovery.plugins.read",
+                ),
+                "watch": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+            },
+        ),
+        codex_thread_watch=SimpleNamespace(
+            declared=True,
+            consumed_by_hub=False,
+            status="unsupported_by_design",
+            method="codex.threads.watch",
+        ),
+        codex_exec=SimpleNamespace(
+            declared=True,
+            consumed_by_hub=False,
+            status="unsupported_by_design",
+            methods={
+                "start": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.exec.start",
+                ),
+                "write": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+                "resize": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+                "terminate": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.exec.terminate",
+                ),
+            },
+        ),
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
@@ -1698,6 +1763,71 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             ],
             "error": None,
         },
+        "codexDiscovery": {
+            "declared": True,
+            "consumedByHub": False,
+            "status": "declared_not_consumed",
+            "methods": {
+                "skillsList": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.discovery.skills.list",
+                },
+                "appsList": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+                "pluginsList": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.discovery.plugins.list",
+                },
+                "pluginsRead": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.discovery.plugins.read",
+                },
+                "watch": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+            },
+        },
+        "codexThreadWatch": {
+            "declared": True,
+            "consumedByHub": False,
+            "status": "unsupported_by_design",
+            "method": "codex.threads.watch",
+        },
+        "codexExec": {
+            "declared": True,
+            "consumedByHub": False,
+            "status": "unsupported_by_design",
+            "methods": {
+                "start": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.exec.start",
+                },
+                "write": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+                "resize": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+                "terminate": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.exec.terminate",
+                },
+            },
+        },
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"
@@ -1833,6 +1963,24 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             "serviceBehaviors": {},
             "consumerGuidance": [],
             "error": "Compatibility profile extension not found",
+        },
+        "codexDiscovery": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+        },
+        "codexThreadWatch": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "method": None,
+        },
+        "codexExec": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
         },
         "runtimeStatus": runtime_status_contract_payload(),
     }
@@ -2028,6 +2176,24 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             "serviceBehaviors": {},
             "consumerGuidance": [],
             "error": "Extension contract missing/invalid 'params.method_retention'",
+        },
+        "codexDiscovery": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+        },
+        "codexThreadWatch": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "method": None,
+        },
+        "codexExec": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
         },
         "runtimeStatus": runtime_status_contract_payload(),
     }

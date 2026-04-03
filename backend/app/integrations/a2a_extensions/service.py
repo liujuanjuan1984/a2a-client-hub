@@ -66,6 +66,43 @@ from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
 
 logger = get_logger(__name__)
 _CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS = 300.0
+_CODEX_DISCOVERY_METHODS = {
+    "skillsList": "codex.discovery.skills.list",
+    "appsList": "codex.discovery.apps.list",
+    "pluginsList": "codex.discovery.plugins.list",
+    "pluginsRead": "codex.discovery.plugins.read",
+    "watch": "codex.discovery.watch",
+}
+_CODEX_EXEC_METHODS = {
+    "start": "codex.exec.start",
+    "write": "codex.exec.write",
+    "resize": "codex.exec.resize",
+    "terminate": "codex.exec.terminate",
+}
+_CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredMethodCapabilitySnapshot:
+    declared: bool
+    consumed_by_hub: bool
+    method: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredMethodCollectionCapabilitySnapshot:
+    declared: bool
+    consumed_by_hub: bool
+    status: Literal["unsupported", "declared_not_consumed", "unsupported_by_design"]
+    methods: dict[str, DeclaredMethodCapabilitySnapshot]
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredSingleMethodCapabilitySnapshot:
+    declared: bool
+    consumed_by_hub: bool
+    status: Literal["unsupported", "unsupported_by_design"]
+    method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +208,9 @@ class ResolvedCapabilitySnapshot:
     stream_hints: StreamHintsCapabilitySnapshot
     wire_contract: WireContractCapabilitySnapshot
     compatibility_profile: CompatibilityProfileCapabilitySnapshot
+    codex_discovery: DeclaredMethodCollectionCapabilitySnapshot
+    codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot
+    codex_exec: DeclaredMethodCollectionCapabilitySnapshot
 
 
 @dataclass(slots=True)
@@ -489,6 +529,75 @@ class A2AExtensionsService:
             ext=ext,
         )
 
+    @staticmethod
+    def _declared_wire_contract_methods(
+        snapshot: WireContractCapabilitySnapshot,
+    ) -> frozenset[str]:
+        if snapshot.status != "supported" or snapshot.ext is None:
+            return frozenset()
+        return frozenset(snapshot.ext.all_jsonrpc_methods)
+
+    @classmethod
+    def _build_declared_method_collection_snapshot(
+        cls,
+        *,
+        wire_contract: WireContractCapabilitySnapshot,
+        method_map: dict[str, str],
+        status_when_declared: Literal["declared_not_consumed", "unsupported_by_design"],
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        declared_methods = cls._declared_wire_contract_methods(wire_contract)
+        methods = {
+            key: DeclaredMethodCapabilitySnapshot(
+                declared=method_name in declared_methods,
+                consumed_by_hub=False,
+                method=method_name if method_name in declared_methods else None,
+            )
+            for key, method_name in method_map.items()
+        }
+        declared = any(item.declared for item in methods.values())
+        return DeclaredMethodCollectionCapabilitySnapshot(
+            declared=declared,
+            consumed_by_hub=False,
+            status=status_when_declared if declared else "unsupported",
+            methods=methods,
+        )
+
+    @classmethod
+    def _build_codex_discovery_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            method_map=_CODEX_DISCOVERY_METHODS,
+            status_when_declared="declared_not_consumed",
+        )
+
+    @classmethod
+    def _build_codex_exec_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            method_map=_CODEX_EXEC_METHODS,
+            status_when_declared="unsupported_by_design",
+        )
+
+    @classmethod
+    def _build_codex_thread_watch_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+    ) -> DeclaredSingleMethodCapabilitySnapshot:
+        declared_methods = cls._declared_wire_contract_methods(wire_contract)
+        declared = _CODEX_THREAD_WATCH_METHOD in declared_methods
+        return DeclaredSingleMethodCapabilitySnapshot(
+            declared=declared,
+            consumed_by_hub=False,
+            status="unsupported_by_design" if declared else "unsupported",
+            method=_CODEX_THREAD_WATCH_METHOD if declared else None,
+        )
+
     async def resolve_capability_snapshot(
         self,
         *,
@@ -502,6 +611,7 @@ class A2AExtensionsService:
                 return cached.snapshot
 
         card = await self._support.fetch_card(runtime)
+        wire_contract = self._build_wire_contract_snapshot(card)
         snapshot = ResolvedCapabilitySnapshot(
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
@@ -511,8 +621,11 @@ class A2AExtensionsService:
             model_selection=self._build_model_selection_snapshot(card),
             provider_discovery=self._build_provider_discovery_snapshot(card),
             stream_hints=self._build_stream_hints_snapshot(card),
-            wire_contract=self._build_wire_contract_snapshot(card),
+            wire_contract=wire_contract,
             compatibility_profile=self._build_compatibility_profile_snapshot(card),
+            codex_discovery=self._build_codex_discovery_snapshot(wire_contract),
+            codex_thread_watch=self._build_codex_thread_watch_snapshot(wire_contract),
+            codex_exec=self._build_codex_exec_snapshot(wire_contract),
         )
         async with self._capability_snapshot_cache_lock:
             self._capability_snapshot_cache[cache_key] = _CapabilitySnapshotCacheEntry(

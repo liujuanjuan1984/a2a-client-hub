@@ -177,6 +177,7 @@ Endpoints:
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
   - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
+  - The same capability response now also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. In the current phase the Hub does not proxy these Codex-specific surfaces; it only distinguishes `unsupported`, `declared_not_consumed`, and `unsupported_by_design` so downstream UI and follow-up work can tell the difference between "not declared" and "declared but intentionally not consumed".
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body: `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`

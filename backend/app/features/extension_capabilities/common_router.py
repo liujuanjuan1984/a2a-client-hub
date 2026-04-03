@@ -36,6 +36,9 @@ from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileEntry,
 )
 from app.schemas.a2a_extension import (
+    A2ADeclaredMethodCapabilityResponse,
+    A2ADeclaredMethodCollectionCapabilitiesResponse,
+    A2ADeclaredSingleMethodCapabilitiesResponse,
     A2AExtensionCapabilitiesResponse,
     A2AExtensionElicitationReplyRequest,
     A2AExtensionInterruptRecoveryRequest,
@@ -273,6 +276,50 @@ def _build_wire_contract_response(
     )
 
 
+def _build_declared_method_capability_response(
+    capability: Any,
+) -> A2ADeclaredMethodCapabilityResponse:
+    return A2ADeclaredMethodCapabilityResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        method=getattr(capability, "method", None),
+    )
+
+
+def _build_declared_method_collection_response(
+    capability: Any,
+) -> A2ADeclaredMethodCollectionCapabilitiesResponse:
+    methods = dict(getattr(capability, "methods", {}) or {})
+    status = cast(
+        Literal["unsupported", "declared_not_consumed", "unsupported_by_design"],
+        getattr(capability, "status", "unsupported"),
+    )
+    return A2ADeclaredMethodCollectionCapabilitiesResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        status=status,
+        methods={
+            name: _build_declared_method_capability_response(item)
+            for name, item in methods.items()
+        },
+    )
+
+
+def _build_declared_single_method_response(
+    capability: Any,
+) -> A2ADeclaredSingleMethodCapabilitiesResponse:
+    status = cast(
+        Literal["unsupported", "unsupported_by_design"],
+        getattr(capability, "status", "unsupported"),
+    )
+    return A2ADeclaredSingleMethodCapabilitiesResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        status=status,
+        method=getattr(capability, "method", None),
+    )
+
+
 def create_extension_capability_router(
     *,
     prefix: str,
@@ -385,6 +432,15 @@ def create_extension_capability_router(
             invokeMetadata=_build_invoke_metadata_response(snapshot),
             wireContract=_build_wire_contract_response(snapshot),
             compatibilityProfile=_build_compatibility_profile_response(snapshot),
+            codexDiscovery=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_discovery", None)
+            ),
+            codexThreadWatch=_build_declared_single_method_response(
+                getattr(snapshot, "codex_thread_watch", None)
+            ),
+            codexExec=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_exec", None)
+            ),
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()
             ),
