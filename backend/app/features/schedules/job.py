@@ -965,12 +965,10 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
             heartbeat_timeout_seconds, hard_timeout_seconds = (
                 _derive_recovery_timeouts()
             )
-            async with AsyncSessionLocal() as db:
-                recovered = await a2a_schedule_service.recover_stale_running_tasks(
-                    db,
-                    timeout_seconds=heartbeat_timeout_seconds,
-                    hard_timeout_seconds=hard_timeout_seconds,
-                )
+            recovered = await a2a_schedule_service.recover_stale_running_tasks(
+                timeout_seconds=heartbeat_timeout_seconds,
+                hard_timeout_seconds=hard_timeout_seconds,
+            )
         except Exception as exc:
             if _is_db_lock_contention_issue(exc):
                 logger.warning(

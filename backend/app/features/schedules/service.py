@@ -233,14 +233,12 @@ class A2AScheduleService:
 
     async def recover_stale_running_tasks(
         self,
-        db: AsyncSession,
         *,
         now: datetime | None = None,
         timeout_seconds: int = 600,
         hard_timeout_seconds: int | None = None,
     ) -> int:
         return await self._dispatch.recover_stale_running_tasks(
-            db,
             now=now,
             timeout_seconds=timeout_seconds,
             hard_timeout_seconds=hard_timeout_seconds,

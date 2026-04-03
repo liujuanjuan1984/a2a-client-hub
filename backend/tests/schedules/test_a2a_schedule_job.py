@@ -1773,7 +1773,6 @@ async def test_recover_stale_running_task_finalizes_matching_run(
     execution_id = execution.id
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
-        async_db_session,
         now=now,
         timeout_seconds=60,
     )
@@ -1831,7 +1830,6 @@ async def test_recover_stale_running_task_soft_deletes_when_delete_was_requested
     await async_db_session.commit()
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
-        async_db_session,
         now=now,
         timeout_seconds=60,
     )
@@ -1888,7 +1886,6 @@ async def test_recover_stale_running_task_skips_when_heartbeat_recent(
     execution_id = execution.id
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
-        async_db_session,
         now=now,
         timeout_seconds=60,
         hard_timeout_seconds=3600,
@@ -1943,7 +1940,6 @@ async def test_recover_stale_running_task_hard_timeout_wins_over_recent_heartbea
     execution_id = execution.id
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
-        async_db_session,
         now=now,
         timeout_seconds=60,
         hard_timeout_seconds=60,
@@ -1984,7 +1980,6 @@ async def test_recover_stale_running_task_requires_execution_row(
     task_id = task.id
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
-        async_db_session,
         now=now,
         timeout_seconds=60,
     )
@@ -2036,7 +2031,6 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
     await async_db_session.commit()
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
-        async_db_session,
         now=now,
         timeout_seconds=60,
     )
@@ -2056,6 +2050,7 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
 
 async def test_recover_stale_running_tasks_commits_per_recovered_task(
     async_db_session,
+    async_session_maker,
     monkeypatch,
 ) -> None:
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -2085,6 +2080,7 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
 
     commit_call_count = 0
     timeout_apply_call_count = 0
+    session_entries = 0
 
     async def _counting_commit(db):
         nonlocal commit_call_count
@@ -2095,9 +2091,25 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
         nonlocal timeout_apply_call_count
         timeout_apply_call_count += 1
 
+    class _CountingSessionContext:
+        def __init__(self) -> None:
+            self._context = async_session_maker()
+
+        async def __aenter__(self):
+            nonlocal session_entries
+            session_entries += 1
+            return await self._context.__aenter__()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return await self._context.__aexit__(exc_type, exc, tb)
+
     monkeypatch.setattr(
         "app.features.schedules.dispatch.commit_safely",
         _counting_commit,
+    )
+    monkeypatch.setattr(
+        "app.features.schedules.dispatch.AsyncSessionLocal",
+        lambda: _CountingSessionContext(),
     )
     monkeypatch.setattr(
         "app.features.schedules.support.set_postgres_local_timeouts",
@@ -2105,12 +2117,13 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
     )
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
-        async_db_session,
         now=now,
         timeout_seconds=60,
     )
     assert recovered == 2
     assert commit_call_count >= recovered
+    # One short-lived session per recovered task plus one terminating loop iteration.
+    assert session_entries == recovered + 1
     # Two recovered tasks plus one terminating loop iteration (no row found).
     assert timeout_apply_call_count >= recovered + 1
 
