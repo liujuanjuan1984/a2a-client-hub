@@ -409,20 +409,20 @@ a2a_schedule_service = A2AScheduleService()
 async def cleanup_a2a_schedule_executions_job() -> None:
     """Delete old terminal schedule execution history in bounded batches."""
 
-    async with AsyncSessionLocal() as db:
-        total_deleted = 0
-        batches = 0
-        while True:
+    total_deleted = 0
+    batches = 0
+    while True:
+        async with AsyncSessionLocal() as db:
             deleted = await a2a_schedule_service.cleanup_terminal_executions(
                 db,
                 batch_size=_A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE,
             )
-            if deleted <= 0:
-                break
-            total_deleted += deleted
-            batches += 1
-            if deleted < _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE:
-                break
+        if deleted <= 0:
+            break
+        total_deleted += deleted
+        batches += 1
+        if deleted < _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE:
+            break
 
     if total_deleted > 0:
         logger.info(

@@ -575,7 +575,6 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     )
 
     response = await invoke_route_runner.run_http_invoke(
-        db=object(),
         gateway=_Gateway(),
         runtime=runtime,
         user_id=uuid4(),
@@ -648,7 +647,6 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
     )
 
     response = await invoke_route_runner.run_http_invoke(
-        db=object(),
         gateway=object(),
         runtime=runtime,
         user_id=uuid4(),
@@ -724,7 +722,6 @@ async def test_run_http_invoke_returns_structured_error_details(
     )
 
     response = await invoke_route_runner.run_http_invoke(
-        db=object(),
         gateway=_Gateway(),
         runtime=runtime,
         user_id=uuid4(),
@@ -1889,7 +1886,6 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
     )
 
     response = await invoke_route_runner.run_http_invoke(
-        db=object(),
         gateway=object(),
         runtime=runtime,
         user_id=uuid4(),
@@ -1988,7 +1984,6 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
 
     await invoke_route_runner.run_ws_invoke(
         websocket=_NoopWebSocket(),
-        db=object(),
         gateway=object(),
         runtime=runtime,
         user_id=uuid4(),
@@ -2314,7 +2309,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
 
     await invoke_route_runner.run_ws_invoke_with_session_recovery(
         websocket=websocket,
-        db=object(),
         gateway=object(),
         runtime=runtime,
         user_id=uuid4(),
@@ -2464,7 +2458,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
 
     await invoke_route_runner.run_ws_invoke_with_session_recovery(
         websocket=websocket,
-        db=object(),
         gateway=object(),
         runtime=runtime,
         user_id=uuid4(),
@@ -2726,7 +2719,6 @@ async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_wi
     )
 
     response = await invoke_route_runner.run_http_invoke_with_session_recovery(
-        db=object(),
         gateway=object(),
         runtime=runtime,
         user_id=uuid4(),
@@ -3138,7 +3130,6 @@ async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_with
 
     await invoke_route_runner.run_ws_invoke_with_session_recovery(
         websocket=websocket,
-        db=object(),
         gateway=object(),
         runtime=runtime,
         user_id=uuid4(),

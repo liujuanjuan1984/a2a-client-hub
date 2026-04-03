@@ -994,7 +994,6 @@ def _build_consume_stream_callbacks(
 
 async def run_http_invoke_with_session_recovery(
     *,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1012,7 +1011,6 @@ async def run_http_invoke_with_session_recovery(
 
     while True:
         response = await run_http_invoke(
-            db=db,
             gateway=gateway,
             runtime=runtime,
             user_id=user_id,
@@ -1051,7 +1049,6 @@ async def run_http_invoke_with_session_recovery(
 
 async def run_http_invoke(
     *,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1303,7 +1300,6 @@ async def run_background_invoke(
 async def run_ws_invoke(
     *,
     websocket: WebSocket,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1409,7 +1405,6 @@ async def run_ws_invoke(
 async def run_ws_invoke_with_session_recovery(
     *,
     websocket: WebSocket,
-    db: AsyncSession,
     gateway: Any,
     runtime: Any,
     user_id: UUID,
@@ -1447,7 +1442,6 @@ async def run_ws_invoke_with_session_recovery(
 
         await run_ws_invoke(
             websocket=websocket,
-            db=db,
             gateway=gateway,
             runtime=runtime,
             user_id=user_id,
@@ -1583,7 +1577,6 @@ async def run_ws_invoke_route(
             async with _guard_inflight_invoke(guard_key):
                 await run_ws_invoke_with_session_recovery(
                     websocket=websocket,
-                    db=db,
                     gateway=gateway,
                     runtime=runtime,
                     user_id=user_id,
@@ -1693,7 +1686,6 @@ async def run_http_invoke_route(
             )
         try:
             response = await run_http_invoke_with_session_recovery(
-                db=db,
                 gateway=gateway,
                 runtime=runtime,
                 user_id=user_id,
@@ -1751,7 +1743,6 @@ async def run_http_invoke_route(
     try:
         async with _guard_inflight_invoke(guard_key):
             response = await run_http_invoke_with_session_recovery(
-                db=db,
                 gateway=gateway,
                 runtime=runtime,
                 user_id=user_id,

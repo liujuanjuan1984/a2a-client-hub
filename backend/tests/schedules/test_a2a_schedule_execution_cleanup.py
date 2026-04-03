@@ -208,9 +208,12 @@ async def test_cleanup_schedule_execution_job_drains_all_batches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cleanup_mock = AsyncMock(side_effect=[500, 500, 12])
+    session_entries = 0
 
     class _DummySessionContext:
         async def __aenter__(self) -> object:
+            nonlocal session_entries
+            session_entries += 1
             return object()
 
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
@@ -230,6 +233,7 @@ async def test_cleanup_schedule_execution_job_drains_all_batches(
     await a2a_schedule_service_module.cleanup_a2a_schedule_executions_job()
 
     assert cleanup_mock.await_count == 3
+    assert session_entries == 3
     assert all(
         call.kwargs["batch_size"] == 500 for call in cleanup_mock.await_args_list
     )
