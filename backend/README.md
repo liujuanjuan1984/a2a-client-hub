@@ -178,6 +178,7 @@ Endpoints:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
   - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
   - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
+  - `codexDiscovery` also reports `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints can be surfaced without incorrectly promoting them to Hub-consumable support.
 - Read Codex discovery lists through Hub-stable APIs:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/skills`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/apps`

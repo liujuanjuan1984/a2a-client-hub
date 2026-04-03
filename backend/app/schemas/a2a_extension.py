@@ -345,6 +345,22 @@ class A2ADeclaredMethodCollectionCapabilitiesResponse(BaseModel):
     methods: Dict[str, A2ADeclaredMethodCapabilityResponse] = Field(
         default_factory=dict
     )
+    declaration_source: Optional[
+        Literal[
+            "none",
+            "wire_contract",
+            "wire_contract_fallback",
+            "extension_method_hint",
+            "extension_uri_hint",
+        ]
+    ] = Field(default=None, alias="declarationSource")
+    declaration_confidence: Optional[Literal["none", "fallback", "authoritative"]] = (
+        Field(default=None, alias="declarationConfidence")
+    )
+    negotiation_state: Optional[
+        Literal["supported", "missing", "invalid", "unsupported"]
+    ] = Field(default=None, alias="negotiationState")
+    diagnostic_note: Optional[str] = Field(default=None, alias="diagnosticNote")
 
 
 class A2ADeclaredSingleMethodCapabilitiesResponse(BaseModel):

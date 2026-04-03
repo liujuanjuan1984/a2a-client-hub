@@ -1653,6 +1653,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             declared=True,
             consumed_by_hub=True,
             status="supported",
+            declaration_source="wire_contract",
+            declaration_confidence="authoritative",
+            negotiation_state="supported",
+            diagnostic_note=None,
             methods={
                 "skillsList": SimpleNamespace(
                     declared=True,
@@ -1869,6 +1873,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             "declared": True,
             "consumedByHub": True,
             "status": "supported",
+            "declarationSource": "wire_contract",
+            "declarationConfidence": "authoritative",
+            "negotiationState": "supported",
+            "diagnosticNote": None,
             "methods": {
                 "skillsList": {
                     "declared": True,
@@ -1907,6 +1915,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             "declared": True,
             "consumedByHub": False,
             "status": "unsupported_by_design",
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
             "methods": {
                 "start": {
                     "declared": True,
@@ -2071,6 +2083,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             "consumedByHub": False,
             "status": "unsupported",
             "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
         },
         "codexThreadWatch": {
             "declared": False,
@@ -2082,6 +2098,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             "declared": False,
             "consumedByHub": False,
             "status": "unsupported",
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
             "methods": {},
         },
         "runtimeStatus": runtime_status_contract_payload(),
@@ -2284,6 +2304,10 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             "consumedByHub": False,
             "status": "unsupported",
             "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
         },
         "codexThreadWatch": {
             "declared": False,
@@ -2295,6 +2319,10 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             "declared": False,
             "consumedByHub": False,
             "status": "unsupported",
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
             "methods": {},
         },
         "runtimeStatus": runtime_status_contract_payload(),

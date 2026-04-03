@@ -9,6 +9,9 @@ from typing import Any, Dict, Literal, Optional
 
 from app.core.logging import get_logger
 from app.features.personal_agents.runtime import A2ARuntime
+from app.integrations.a2a_extensions.codex_declaration_diagnostics import (
+    diagnose_codex_discovery_fallback,
+)
 from app.integrations.a2a_extensions.codex_discovery_service import (
     CodexDiscoveryService,
 )
@@ -113,6 +116,21 @@ class DeclaredMethodCollectionCapabilitySnapshot:
     ]
     methods: dict[str, DeclaredMethodCapabilitySnapshot]
     jsonrpc_url: str | None = None
+    declaration_source: (
+        Literal[
+            "none",
+            "wire_contract",
+            "wire_contract_fallback",
+            "extension_method_hint",
+            "extension_uri_hint",
+        ]
+        | None
+    ) = None
+    declaration_confidence: Literal["none", "fallback", "authoritative"] | None = None
+    negotiation_state: (
+        Literal["supported", "missing", "invalid", "unsupported"] | None
+    ) = None
+    diagnostic_note: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,6 +586,23 @@ class A2AExtensionsService:
             "declared_not_consumed", "unsupported_by_design"
         ],
         jsonrpc_url: str | None,
+        declaration_source: (
+            Literal[
+                "none",
+                "wire_contract",
+                "wire_contract_fallback",
+                "extension_method_hint",
+                "extension_uri_hint",
+            ]
+            | None
+        ) = None,
+        declaration_confidence: (
+            Literal["none", "fallback", "authoritative"] | None
+        ) = None,
+        negotiation_state: (
+            Literal["supported", "missing", "invalid", "unsupported"] | None
+        ) = None,
+        diagnostic_note: str | None = None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
         declared_methods = cls._declared_wire_contract_methods(wire_contract)
         methods = {
@@ -606,21 +641,69 @@ class A2AExtensionsService:
             status=status,
             methods=methods,
             jsonrpc_url=jsonrpc_url,
+            declaration_source=declaration_source,
+            declaration_confidence=declaration_confidence,
+            negotiation_state=negotiation_state,
+            diagnostic_note=diagnostic_note,
         )
 
     @classmethod
     def _build_codex_discovery_snapshot(
         cls,
+        card: Any,
         wire_contract: WireContractCapabilitySnapshot,
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        if wire_contract.status == "supported":
+            return cls._build_declared_method_collection_snapshot(
+                wire_contract=wire_contract,
+                method_map=_CODEX_DISCOVERY_METHODS,
+                hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
+                unsupported_status_when_declared="declared_not_consumed",
+                jsonrpc_url=jsonrpc_url,
+                declaration_source="wire_contract",
+                declaration_confidence="authoritative",
+                negotiation_state="supported",
+            )
+
+        fallback = diagnose_codex_discovery_fallback(
+            card,
+            wire_contract_status=wire_contract.status,
+        )
+        if fallback.declared:
+            methods = {
+                key: DeclaredMethodCapabilitySnapshot(
+                    declared=method_name in fallback.method_names,
+                    consumed_by_hub=False,
+                    method=(
+                        method_name if method_name in fallback.method_names else None
+                    ),
+                )
+                for key, method_name in _CODEX_DISCOVERY_METHODS.items()
+            }
+            return DeclaredMethodCollectionCapabilitySnapshot(
+                declared=True,
+                consumed_by_hub=False,
+                status="unsupported",
+                methods=methods,
+                jsonrpc_url=None,
+                declaration_source=fallback.source,
+                declaration_confidence=fallback.confidence,
+                negotiation_state=fallback.negotiation_state,
+                diagnostic_note=fallback.note,
+            )
+
         return cls._build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
             method_map=_CODEX_DISCOVERY_METHODS,
             hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
             unsupported_status_when_declared="declared_not_consumed",
-            jsonrpc_url=jsonrpc_url,
+            jsonrpc_url=None,
+            declaration_source=fallback.source,
+            declaration_confidence=fallback.confidence,
+            negotiation_state=fallback.negotiation_state,
+            diagnostic_note=fallback.note,
         )
 
     @classmethod
@@ -689,7 +772,7 @@ class A2AExtensionsService:
             wire_contract=wire_contract,
             compatibility_profile=self._build_compatibility_profile_snapshot(card),
             codex_discovery=self._build_codex_discovery_snapshot(
-                wire_contract, jsonrpc_url=jsonrpc_url
+                card, wire_contract, jsonrpc_url=jsonrpc_url
             ),
             codex_thread_watch=self._build_codex_thread_watch_snapshot(
                 wire_contract, jsonrpc_url=jsonrpc_url

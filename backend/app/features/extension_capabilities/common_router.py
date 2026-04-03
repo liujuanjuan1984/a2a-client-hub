@@ -311,6 +311,10 @@ def _build_declared_method_collection_response(
             name: _build_declared_method_capability_response(item)
             for name, item in methods.items()
         },
+        declarationSource=getattr(capability, "declaration_source", None),
+        declarationConfidence=getattr(capability, "declaration_confidence", None),
+        negotiationState=getattr(capability, "negotiation_state", None),
+        diagnosticNote=getattr(capability, "diagnostic_note", None),
     )
 
 

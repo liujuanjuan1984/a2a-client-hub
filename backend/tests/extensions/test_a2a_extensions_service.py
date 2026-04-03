@@ -2969,6 +2969,7 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
 
 def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     service = A2AExtensionsService()
+    card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(
         status="supported",
         ext=_wire_contract_extension_fixture(
@@ -2984,6 +2985,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     )
 
     discovery = service._build_codex_discovery_snapshot(
+        card,
         wire_contract,
         jsonrpc_url="https://example.com/jsonrpc",
     )
@@ -2999,6 +3001,9 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     assert discovery.declared is True
     assert discovery.consumed_by_hub is True
     assert discovery.status == "supported"
+    assert discovery.declaration_source == "wire_contract"
+    assert discovery.declaration_confidence == "authoritative"
+    assert discovery.negotiation_state == "supported"
     assert discovery.methods["skillsList"] == DeclaredMethodCapabilitySnapshot(
         declared=True,
         consumed_by_hub=True,
@@ -3047,9 +3052,12 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     None
 ):
     service = A2AExtensionsService()
+    card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
-    discovery = service._build_codex_discovery_snapshot(wire_contract, jsonrpc_url=None)
+    discovery = service._build_codex_discovery_snapshot(
+        card, wire_contract, jsonrpc_url=None
+    )
     thread_watch = service._build_codex_thread_watch_snapshot(
         wire_contract, jsonrpc_url=None
     )
@@ -3059,6 +3067,9 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
 
     assert discovery.declared is False
     assert discovery.status == "unsupported"
+    assert discovery.declaration_source == "none"
+    assert discovery.declaration_confidence == "none"
+    assert discovery.negotiation_state == "unsupported"
     assert all(method.declared is False for method in discovery.methods.values())
 
     assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
@@ -3072,3 +3083,83 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     assert exec_capability.declared is False
     assert exec_capability.status == "unsupported"
     assert all(method.declared is False for method in exec_capability.methods.values())
+
+
+def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
+    service = A2AExtensionsService()
+    card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=OPENCODE_WIRE_CONTRACT_URI,
+                    params={
+                        "all_jsonrpc_methods": [
+                            "codex.discovery.skills.list",
+                            "codex.discovery.plugins.read",
+                        ]
+                    },
+                )
+            ]
+        )
+    )
+    wire_contract = _wire_contract_snapshot(
+        status="invalid",
+        error="Extension contract missing/invalid 'params.protocol_version'",
+    )
+
+    discovery = service._build_codex_discovery_snapshot(
+        card, wire_contract, jsonrpc_url="https://example.com/jsonrpc"
+    )
+
+    assert discovery.declared is True
+    assert discovery.consumed_by_hub is False
+    assert discovery.status == "unsupported"
+    assert discovery.jsonrpc_url is None
+    assert discovery.declaration_source == "wire_contract_fallback"
+    assert discovery.declaration_confidence == "fallback"
+    assert discovery.negotiation_state == "invalid"
+    assert discovery.methods["skillsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.skills.list",
+    )
+    assert discovery.methods["pluginsRead"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.plugins.read",
+    )
+
+
+def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
+    service = A2AExtensionsService()
+    card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri="urn:example:codex-discovery:v1",
+                    params={
+                        "methods": {
+                            "appsList": "codex.discovery.apps.list",
+                        }
+                    },
+                )
+            ]
+        )
+    )
+    wire_contract = _wire_contract_snapshot(status="unsupported")
+
+    discovery = service._build_codex_discovery_snapshot(
+        card, wire_contract, jsonrpc_url="https://example.com/jsonrpc"
+    )
+
+    assert discovery.declared is True
+    assert discovery.consumed_by_hub is False
+    assert discovery.status == "unsupported"
+    assert discovery.declaration_source == "extension_method_hint"
+    assert discovery.declaration_confidence == "fallback"
+    assert discovery.negotiation_state == "missing"
+    assert discovery.methods["appsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.apps.list",
+    )
