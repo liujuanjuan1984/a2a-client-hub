@@ -1,10 +1,12 @@
 from datetime import timedelta
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 
 from app.db.models.ws_ticket import WsTicket
+from app.runtime import ws_ticket as ws_ticket_module
 from app.runtime.ws_ticket import WsTicketScopeError, ws_ticket_service
 from app.utils.timezone_util import utc_now
 from tests.support.utils import create_user
@@ -114,3 +116,69 @@ async def test_cleanup_tickets(async_db_session):
     assert "valid" in remaining_scopes
     assert "recent_used" in remaining_scopes
     assert len(remaining) == 2
+
+
+@pytest.mark.asyncio
+async def test_cleanup_tickets_honors_batch_size(async_db_session, monkeypatch):
+    now = utc_now()
+    user = await create_user(async_db_session)
+    user_id = user.id
+
+    for index in range(2):
+        async_db_session.add(
+            WsTicket(
+                user_id=user_id,
+                scope_type=f"expired-{index}",
+                scope_id=uuid4(),
+                token_hash=f"expired-hash-{index}",
+                expires_at=now - timedelta(minutes=index + 1),
+            )
+        )
+    await async_db_session.commit()
+
+    monkeypatch.setattr(ws_ticket_module, "_WS_TICKET_CLEANUP_BATCH_SIZE", 1)
+
+    deleted_count = await ws_ticket_service.cleanup_tickets(async_db_session)
+    assert deleted_count == 1
+
+    remaining = (await async_db_session.scalars(select(WsTicket))).all()
+    assert len(remaining) == 1
+
+
+@pytest.mark.asyncio
+async def test_cleanup_ws_tickets_job_drains_all_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_mock = AsyncMock(side_effect=[500, 500, 12])
+    session_entries = 0
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            nonlocal session_entries
+            session_entries += 1
+            return object()
+
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+    monkeypatch.setattr(
+        ws_ticket_module,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ws_ticket_module,
+        "_WS_TICKET_CLEANUP_BATCH_SIZE",
+        500,
+    )
+    monkeypatch.setattr(
+        ws_ticket_module.ws_ticket_service,
+        "cleanup_tickets",
+        cleanup_mock,
+    )
+
+    await ws_ticket_module.cleanup_ws_tickets_job()
+
+    assert cleanup_mock.await_count == 3
+    assert session_entries == 3
