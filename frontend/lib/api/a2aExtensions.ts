@@ -16,6 +16,45 @@ type A2AExtensionResponse = {
   meta?: Record<string, unknown>;
 };
 
+type DeclaredMethodCapability = {
+  declared: boolean;
+  consumedByHub: boolean;
+  method?: string | null;
+};
+
+type DeclaredMethodCollectionCapability<MethodKey extends string> = {
+  declared: boolean;
+  consumedByHub: boolean;
+  status:
+    | "unsupported"
+    | "declared_not_consumed"
+    | "partially_consumed"
+    | "supported"
+    | "unsupported_by_design";
+  declarationSource?:
+    | "none"
+    | "wire_contract"
+    | "wire_contract_fallback"
+    | "extension_method_hint"
+    | "extension_uri_hint"
+    | null;
+  declarationConfidence?: "none" | "fallback" | "authoritative" | null;
+  negotiationState?: "supported" | "missing" | "invalid" | "unsupported" | null;
+  diagnosticNote?: string | null;
+  methods: Partial<Record<MethodKey, DeclaredMethodCapability>>;
+};
+
+type DiscoveryMethodCollectionCapability<MethodKey extends string> = Omit<
+  DeclaredMethodCollectionCapability<MethodKey>,
+  "status"
+> & {
+  status:
+    | "unsupported"
+    | "declared_not_consumed"
+    | "partially_consumed"
+    | "supported";
+};
+
 type A2AExtensionCapabilities = {
   modelSelection: boolean;
   providerDiscovery: boolean;
@@ -58,7 +97,32 @@ type A2AExtensionCapabilities = {
       description?: string | null;
     }[];
   };
+  requestExecutionOptions?: {
+    declared: boolean;
+    consumedByHub: boolean;
+    status: "unsupported" | "declared_not_consumed" | "invalid";
+    metadataField?: string | null;
+    fields: string[];
+    persistsForThread?: boolean | null;
+    sourceExtensions: string[];
+    notes: string[];
+    error?: string | null;
+  } | null;
   runtimeStatus: RuntimeStatusContract;
+  codexDiscovery?: DiscoveryMethodCollectionCapability<
+    "skillsList" | "appsList" | "pluginsList" | "pluginsRead" | "watch"
+  > | null;
+  codexThreads?: DeclaredMethodCollectionCapability<
+    "fork" | "archive" | "unarchive" | "metadataUpdate" | "watch"
+  > | null;
+  codexTurns?: DeclaredMethodCollectionCapability<"steer"> | null;
+  codexReview?: DeclaredMethodCollectionCapability<"start" | "watch"> | null;
+  codexExec?: DeclaredMethodCollectionCapability<
+    "start" | "write" | "resize" | "terminate"
+  > | null;
+  codexThreadWatch?: DeclaredMethodCapability & {
+    status?: "unsupported" | "unsupported_by_design";
+  };
 };
 
 export class A2AExtensionCallError extends Error {
@@ -148,6 +212,132 @@ export type ModelSummary = {
   connected?: boolean;
 };
 
+export type CodexDiscoveryStatus =
+  | "unknown"
+  | "unsupported"
+  | "declared_not_consumed"
+  | "partially_consumed"
+  | "supported";
+
+export type CodexDiscoveryListKind = "skills" | "apps" | "plugins";
+
+export type CodexDiscoverySkill = {
+  name: string;
+  path: string;
+  description: string;
+  enabled: boolean;
+  scope: string;
+  interface: Record<string, unknown> | null;
+  codex: Record<string, unknown>;
+};
+
+export type CodexDiscoverySkillScope = {
+  cwd: string;
+  skills: CodexDiscoverySkill[];
+  errors: Record<string, unknown>[];
+  codex: Record<string, unknown>;
+};
+
+export type CodexDiscoveryApp = {
+  id: string;
+  name: string;
+  description: string | null;
+  isAccessible: boolean;
+  isEnabled: boolean;
+  installUrl: string | null;
+  mentionPath: string;
+  branding: Record<string, unknown> | null;
+  labels: Record<string, unknown>[];
+  codex: Record<string, unknown>;
+};
+
+export type CodexDiscoveryPluginSummary = {
+  name: string;
+  description: string | null;
+  enabled: boolean | null;
+  interface: Record<string, unknown> | null;
+  mentionPath: string;
+  codex: Record<string, unknown>;
+};
+
+export type CodexDiscoveryPluginMarketplace = {
+  marketplaceName: string;
+  marketplacePath: string;
+  interface: Record<string, unknown> | null;
+  plugins: CodexDiscoveryPluginSummary[];
+  codex: Record<string, unknown>;
+};
+
+export type CodexDiscoveryPluginDetail = {
+  name: string;
+  marketplaceName: string;
+  marketplacePath: string;
+  mentionPath: string;
+  summary: string[];
+  skills: Record<string, unknown>[];
+  apps: Record<string, unknown>[];
+  mcpServers: string[];
+  interface: Record<string, unknown> | null;
+  codex: Record<string, unknown>;
+};
+
+export type CodexDiscoverySkillsListResult = {
+  items: CodexDiscoverySkillScope[];
+};
+
+export type CodexDiscoveryAppsListResult = {
+  items: CodexDiscoveryApp[];
+  nextCursor: string | null;
+};
+
+export type CodexDiscoveryPluginsListResult = {
+  items: CodexDiscoveryPluginMarketplace[];
+  featuredPluginIds: string[];
+  marketplaceLoadErrors: Record<string, unknown>[];
+  remoteSyncError: string | null;
+};
+
+export type CodexDiscoveryListResult =
+  | CodexDiscoverySkillsListResult
+  | CodexDiscoveryAppsListResult
+  | CodexDiscoveryPluginsListResult;
+
+export type CodexDiscoveryPluginReadResult = {
+  item: CodexDiscoveryPluginDetail | null;
+};
+
+export type CodexDiscoveryListEntry = {
+  id: string;
+  kind: "skill" | "app" | "plugin";
+  title: string;
+  description: string | null;
+  subtitle: string | null;
+  badge: string | null;
+  pluginRef?: {
+    marketplacePath: string;
+    pluginName: string;
+  } | null;
+};
+
+export type CodexDiscoveryCapability = NonNullable<
+  A2AExtensionCapabilities["codexDiscovery"]
+>;
+export type CodexThreadsCapability = NonNullable<
+  A2AExtensionCapabilities["codexThreads"]
+>;
+export type CodexTurnsCapability = NonNullable<
+  A2AExtensionCapabilities["codexTurns"]
+>;
+export type CodexReviewCapability = NonNullable<
+  A2AExtensionCapabilities["codexReview"]
+>;
+export type CodexExecCapability = NonNullable<
+  A2AExtensionCapabilities["codexExec"]
+>;
+export type RequestExecutionOptionsCapability = NonNullable<
+  A2AExtensionCapabilities["requestExecutionOptions"]
+>;
+
 type InterruptAckResult = {
   ok: true;
   requestId: string;
@@ -199,6 +389,16 @@ const buildModelDiscoveryPath = (
     agentId,
     suffix === "providers:list" ? "models/providers:list" : "models:list",
   );
+
+const buildCodexDiscoveryPath = (
+  source: ExtensionAgentSource,
+  agentId: string,
+  suffix:
+    | "codex/skills"
+    | "codex/apps"
+    | "codex/plugins"
+    | "codex/plugins:read",
+) => buildExtensionPath(source, agentId, suffix);
 
 const assertInterruptAckResult = (
   response: A2AExtensionResponse,
@@ -673,6 +873,298 @@ const asModelItems = (value: unknown): ModelSummary[] => {
   );
 };
 
+const asStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
+  );
+};
+
+const asRecordArray = (value: unknown): Record<string, unknown>[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+};
+
+const asCodexEnvelope = (value: unknown): Record<string, unknown> =>
+  asRecord(value) ?? {};
+
+const asCodexDiscoverySkill = (value: unknown): CodexDiscoverySkill | null => {
+  const item = asRecord(value);
+  if (
+    !item ||
+    typeof item.name !== "string" ||
+    typeof item.path !== "string" ||
+    typeof item.description !== "string" ||
+    typeof item.enabled !== "boolean" ||
+    typeof item.scope !== "string"
+  ) {
+    return null;
+  }
+  return {
+    name: item.name,
+    path: item.path,
+    description: item.description,
+    enabled: item.enabled,
+    scope: item.scope,
+    interface: asRecord(item.interface),
+    codex: asCodexEnvelope(item.codex),
+  };
+};
+
+const asCodexDiscoverySkillScope = (
+  value: unknown,
+): CodexDiscoverySkillScope | null => {
+  const item = asRecord(value);
+  if (!item || typeof item.cwd !== "string") {
+    return null;
+  }
+  return {
+    cwd: item.cwd,
+    skills: Array.isArray(item.skills)
+      ? item.skills
+          .map((skill) => asCodexDiscoverySkill(skill))
+          .filter((skill): skill is CodexDiscoverySkill => Boolean(skill))
+      : [],
+    errors: asRecordArray(item.errors),
+    codex: asCodexEnvelope(item.codex),
+  };
+};
+
+const asCodexDiscoveryApp = (value: unknown): CodexDiscoveryApp | null => {
+  const item = asRecord(value);
+  if (
+    !item ||
+    typeof item.id !== "string" ||
+    typeof item.name !== "string" ||
+    typeof item.mentionPath !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    description: typeof item.description === "string" ? item.description : null,
+    isAccessible: item.isAccessible === true,
+    isEnabled: item.isEnabled === true,
+    installUrl: typeof item.installUrl === "string" ? item.installUrl : null,
+    mentionPath: item.mentionPath,
+    branding: asRecord(item.branding),
+    labels: asRecordArray(item.labels),
+    codex: asCodexEnvelope(item.codex),
+  };
+};
+
+const asCodexDiscoveryPluginSummary = (
+  value: unknown,
+): CodexDiscoveryPluginSummary | null => {
+  const item = asRecord(value);
+  if (
+    !item ||
+    typeof item.name !== "string" ||
+    typeof item.mentionPath !== "string"
+  ) {
+    return null;
+  }
+  return {
+    name: item.name,
+    description: typeof item.description === "string" ? item.description : null,
+    enabled: typeof item.enabled === "boolean" ? item.enabled : null,
+    interface: asRecord(item.interface),
+    mentionPath: item.mentionPath,
+    codex: asCodexEnvelope(item.codex),
+  };
+};
+
+const asCodexDiscoveryPluginMarketplace = (
+  value: unknown,
+): CodexDiscoveryPluginMarketplace | null => {
+  const item = asRecord(value);
+  if (
+    !item ||
+    typeof item.marketplaceName !== "string" ||
+    typeof item.marketplacePath !== "string"
+  ) {
+    return null;
+  }
+  return {
+    marketplaceName: item.marketplaceName,
+    marketplacePath: item.marketplacePath,
+    interface: asRecord(item.interface),
+    plugins: Array.isArray(item.plugins)
+      ? item.plugins
+          .map((plugin) => asCodexDiscoveryPluginSummary(plugin))
+          .filter((plugin): plugin is CodexDiscoveryPluginSummary =>
+            Boolean(plugin),
+          )
+      : [],
+    codex: asCodexEnvelope(item.codex),
+  };
+};
+
+const asCodexDiscoveryPluginDetail = (
+  value: unknown,
+): CodexDiscoveryPluginDetail | null => {
+  const item = asRecord(value);
+  if (
+    !item ||
+    typeof item.name !== "string" ||
+    typeof item.marketplacePath !== "string" ||
+    typeof item.marketplaceName !== "string" ||
+    typeof item.mentionPath !== "string"
+  ) {
+    return null;
+  }
+  return {
+    name: item.name,
+    marketplaceName: item.marketplaceName,
+    marketplacePath: item.marketplacePath,
+    mentionPath: item.mentionPath,
+    summary: asStringArray(item.summary),
+    skills: asRecordArray(item.skills),
+    apps: asRecordArray(item.apps),
+    mcpServers: asStringArray(item.mcpServers),
+    interface: asRecord(item.interface),
+    codex: asCodexEnvelope(item.codex),
+  };
+};
+
+export const toCodexDiscoveryEntries = (
+  kind: CodexDiscoveryListKind,
+  result: CodexDiscoveryListResult | null | undefined,
+): CodexDiscoveryListEntry[] => {
+  if (!result) {
+    return [];
+  }
+  if (kind === "skills") {
+    return result.items.flatMap((scope) =>
+      "cwd" in scope
+        ? scope.skills.map((skill) => ({
+            id: skill.path,
+            kind: "skill" as const,
+            title: skill.name,
+            description: skill.description,
+            subtitle: scope.cwd,
+            badge: skill.scope,
+            pluginRef: null,
+          }))
+        : [],
+    );
+  }
+  if (kind === "apps") {
+    return result.items.flatMap((app) =>
+      "mentionPath" in app
+        ? [
+            {
+              id: app.id,
+              kind: "app" as const,
+              title: app.name,
+              description: app.description,
+              subtitle: app.mentionPath,
+              badge: app.isEnabled ? "enabled" : "disabled",
+              pluginRef: null,
+            },
+          ]
+        : [],
+    );
+  }
+  return result.items.flatMap((marketplace) =>
+    "marketplacePath" in marketplace
+      ? marketplace.plugins.map((plugin) => ({
+          id: `${marketplace.marketplacePath}:${plugin.name}`,
+          kind: "plugin" as const,
+          title: plugin.name,
+          description: plugin.description,
+          subtitle: marketplace.marketplaceName,
+          badge: plugin.enabled === true ? "enabled" : null,
+          pluginRef: {
+            marketplacePath: marketplace.marketplacePath,
+            pluginName: plugin.name,
+          },
+        }))
+      : [],
+  );
+};
+
+const listCodexSkillsRequest = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}): Promise<CodexDiscoverySkillsListResult> => {
+  const response = await apiRequest<A2AExtensionResponse>(
+    buildCodexDiscoveryPath(input.source, input.agentId, "codex/skills"),
+    {
+      method: "GET",
+    },
+  );
+  assertExtensionSuccess(response);
+  const result = asRecord(response.result) ?? {};
+  return {
+    items: Array.isArray(result.items)
+      ? result.items
+          .map((item) => asCodexDiscoverySkillScope(item))
+          .filter((item): item is CodexDiscoverySkillScope => Boolean(item))
+      : [],
+  };
+};
+
+const listCodexAppsRequest = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}): Promise<CodexDiscoveryAppsListResult> => {
+  const response = await apiRequest<A2AExtensionResponse>(
+    buildCodexDiscoveryPath(input.source, input.agentId, "codex/apps"),
+    {
+      method: "GET",
+    },
+  );
+  assertExtensionSuccess(response);
+  const result = asRecord(response.result) ?? {};
+  return {
+    items: Array.isArray(result.items)
+      ? result.items
+          .map((item) => asCodexDiscoveryApp(item))
+          .filter((item): item is CodexDiscoveryApp => Boolean(item))
+      : [],
+    nextCursor:
+      typeof result.nextCursor === "string" ? result.nextCursor : null,
+  };
+};
+
+const listCodexPluginsRequest = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}): Promise<CodexDiscoveryPluginsListResult> => {
+  const response = await apiRequest<A2AExtensionResponse>(
+    buildCodexDiscoveryPath(input.source, input.agentId, "codex/plugins"),
+    {
+      method: "GET",
+    },
+  );
+  assertExtensionSuccess(response);
+  const result = asRecord(response.result) ?? {};
+  return {
+    items: Array.isArray(result.items)
+      ? result.items
+          .map((item) => asCodexDiscoveryPluginMarketplace(item))
+          .filter((item): item is CodexDiscoveryPluginMarketplace =>
+            Boolean(item),
+          )
+      : [],
+    featuredPluginIds: asStringArray(result.featuredPluginIds),
+    marketplaceLoadErrors: asRecordArray(result.marketplaceLoadErrors),
+    remoteSyncError:
+      typeof result.remoteSyncError === "string"
+        ? result.remoteSyncError
+        : null,
+  };
+};
+
 export const getExtensionCapabilities = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
@@ -769,5 +1261,49 @@ export const listModels = async (input: {
             typeof item === "string" && item.trim().length > 0,
         )
       : [],
+  };
+};
+
+export const listCodexSkills = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}) => await listCodexSkillsRequest(input);
+
+export const listCodexApps = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}) => await listCodexAppsRequest(input);
+
+export const listCodexPlugins = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}) => await listCodexPluginsRequest(input);
+
+export const readCodexPlugin = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+  marketplacePath: string;
+  pluginName: string;
+}): Promise<CodexDiscoveryPluginReadResult> => {
+  const response = await apiRequest<
+    A2AExtensionResponse,
+    {
+      marketplacePath: string;
+      pluginName: string;
+    }
+  >(
+    buildCodexDiscoveryPath(input.source, input.agentId, "codex/plugins:read"),
+    {
+      method: "POST",
+      body: {
+        marketplacePath: input.marketplacePath.trim(),
+        pluginName: input.pluginName.trim(),
+      },
+    },
+  );
+  assertExtensionSuccess(response);
+  const result = asRecord(response.result) ?? {};
+  return {
+    item: asCodexDiscoveryPluginDetail(result.item),
   };
 };

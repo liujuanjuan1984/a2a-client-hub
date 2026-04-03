@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
 import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
+import { CodexDiscoveryModal } from "@/components/chat/CodexDiscoveryModal";
 import { InvokeMetadataModal } from "@/components/chat/InvokeMetadataModal";
 import { ModelPickerModal } from "@/components/chat/ModelPickerModal";
 import { OpencodeDirectoryModal } from "@/components/chat/OpencodeDirectoryModal";
@@ -56,6 +57,9 @@ export function ChatScreen({
         onOpenSessionPicker={controller.openSessionPicker}
         onTestConnection={controller.handleTest}
         testingConnection={controller.testingConnection}
+        codexDiscoveryStatus={controller.codexDiscoveryStatus}
+        canBrowseCodexDiscovery={controller.canBrowseCodexDiscovery}
+        onOpenCodexDiscovery={controller.openCodexDiscovery}
       />
 
       <ChatTimelinePanel
@@ -115,6 +119,17 @@ export function ChatScreen({
         selectedModel={controller.selectedModel}
         onSelectModel={controller.handleModelSelect}
         onClearModelSelection={controller.clearModelSelection}
+      />
+
+      <CodexDiscoveryModal
+        visible={controller.showCodexDiscovery}
+        onClose={controller.closeCodexDiscovery}
+        agentId={controller.activeAgentId}
+        source={controller.agent.source}
+        codexDiscoveryStatus={controller.codexDiscoveryStatus}
+        codexDiscovery={controller.codexDiscovery}
+        availableTabs={controller.codexDiscoveryAvailableTabs}
+        canReadPlugins={controller.canReadCodexPlugins}
       />
 
       <OpencodeDirectoryModal

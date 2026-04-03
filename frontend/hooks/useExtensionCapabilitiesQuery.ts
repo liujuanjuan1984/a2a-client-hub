@@ -1,6 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getExtensionCapabilities } from "@/lib/api/a2aExtensions";
+import {
+  type CodexExecCapability,
+  getExtensionCapabilities,
+  type CodexDiscoveryCapability,
+  type CodexReviewCapability,
+  type CodexDiscoveryStatus,
+  type CodexThreadsCapability,
+  type CodexTurnsCapability,
+  type RequestExecutionOptionsCapability,
+} from "@/lib/api/a2aExtensions";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentSource } from "@/store/agents";
 
@@ -20,6 +29,10 @@ type InvokeMetadataCapability = {
     description?: string | null;
   }[];
 };
+type DeclaredMethodCapability = {
+  declared: boolean;
+  consumedByHub: boolean;
+};
 
 const resolveSessionControlStatus = (
   method?: SessionControlMethodCapability | null,
@@ -29,6 +42,9 @@ const resolveSessionControlStatus = (
   }
   return method.declared && method.consumedByHub ? "supported" : "unsupported";
 };
+
+const isConsumedMethod = (method?: DeclaredMethodCapability | null) =>
+  Boolean(method?.declared && method.consumedByHub);
 
 export const useExtensionCapabilitiesQuery = ({
   agentId,
@@ -102,6 +118,36 @@ export const useExtensionCapabilitiesQuery = ({
         ? "supported"
         : "unsupported"
       : "unknown";
+  const codexDiscoveryStatus: CodexDiscoveryStatus =
+    query.data?.codexDiscovery?.status ?? "unknown";
+  const codexDiscovery =
+    (query.data?.codexDiscovery as
+      | CodexDiscoveryCapability
+      | null
+      | undefined) ?? null;
+  const codexDiscoveryAvailableTabs = [
+    isConsumedMethod(codexDiscovery?.methods.skillsList) ? "skills" : null,
+    isConsumedMethod(codexDiscovery?.methods.appsList) ? "apps" : null,
+    isConsumedMethod(codexDiscovery?.methods.pluginsList) ? "plugins" : null,
+  ].filter((item): item is "skills" | "apps" | "plugins" => Boolean(item));
+  const canReadCodexPlugins = isConsumedMethod(
+    codexDiscovery?.methods.pluginsRead,
+  );
+  const codexThreads =
+    (query.data?.codexThreads as CodexThreadsCapability | null | undefined) ??
+    null;
+  const codexTurns =
+    (query.data?.codexTurns as CodexTurnsCapability | null | undefined) ?? null;
+  const codexReview =
+    (query.data?.codexReview as CodexReviewCapability | null | undefined) ??
+    null;
+  const codexExec =
+    (query.data?.codexExec as CodexExecCapability | null | undefined) ?? null;
+  const requestExecutionOptions =
+    (query.data?.requestExecutionOptions as
+      | RequestExecutionOptionsCapability
+      | null
+      | undefined) ?? null;
 
   return {
     ...query,
@@ -113,9 +159,19 @@ export const useExtensionCapabilitiesQuery = ({
     sessionCommandStatus,
     sessionShellStatus,
     invokeMetadataStatus,
+    codexDiscoveryStatus,
     sessionControl: query.data?.sessionControl ?? null,
     invokeMetadata:
       (query.data?.invokeMetadata as InvokeMetadataCapability) ?? null,
+    codexDiscovery,
+    codexThreads,
+    codexTurns,
+    codexReview,
+    codexExec,
+    requestExecutionOptions,
+    codexDiscoveryAvailableTabs,
+    canShowCodexDiscovery: codexDiscoveryAvailableTabs.length > 0,
+    canReadCodexPlugins,
     canShowModelPicker: modelSelectionStatus !== "unsupported",
   };
 };

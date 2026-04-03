@@ -14,6 +14,7 @@ Use this index to find the right document instead of repeating the same guidance
 ## Cross-Cutting Docs
 
 - Architecture overview and API examples: [`architecture-and-api.md`](architecture-and-api.md)
+- Codex discovery watch design boundary: [`codex-discovery-watch-design.md`](codex-discovery-watch-design.md)
 - Compatibility notes and non-goals: [`compatibility-and-non-goals.md`](compatibility-and-non-goals.md)
 - Authentication and session model: [`authentication.md`](authentication.md)
 - Release automation and version synchronization: [`release-workflow.md`](release-workflow.md)
