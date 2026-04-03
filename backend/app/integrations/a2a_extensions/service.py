@@ -18,7 +18,11 @@ from app.integrations.a2a_extensions.codex_discovery_service import (
 from app.integrations.a2a_extensions.compatibility_profile import (
     resolve_compatibility_profile,
 )
-from app.integrations.a2a_extensions.contract_utils import resolve_jsonrpc_interface
+from app.integrations.a2a_extensions.contract_utils import (
+    as_dict,
+    require_str,
+    resolve_jsonrpc_interface,
+)
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
@@ -52,6 +56,11 @@ from app.integrations.a2a_extensions.session_extension_service import (
 from app.integrations.a2a_extensions.session_query_runtime_selection import (
     ResolvedSessionQueryRuntimeCapability,
     resolve_runtime_session_query,
+)
+from app.integrations.a2a_extensions.shared_contract import (
+    SUPPORTED_SESSION_BINDING_URIS,
+    SUPPORTED_SESSION_QUERY_URIS,
+    normalize_known_extension_uri,
 )
 from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
@@ -93,7 +102,22 @@ _CODEX_EXEC_METHODS = {
     "resize": "codex.exec.resize",
     "terminate": "codex.exec.terminate",
 }
+_CODEX_THREADS_METHODS = {
+    "fork": "codex.threads.fork",
+    "archive": "codex.threads.archive",
+    "unarchive": "codex.threads.unarchive",
+    "metadataUpdate": "codex.threads.metadata.update",
+    "watch": "codex.threads.watch",
+}
+_CODEX_TURNS_METHODS = {
+    "steer": "codex.turns.steer",
+}
+_CODEX_REVIEW_METHODS = {
+    "start": "codex.review.start",
+    "watch": "codex.review.watch",
+}
 _CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
+_CODEX_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +204,19 @@ class InvokeMetadataCapabilitySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestExecutionOptionsCapabilitySnapshot:
+    status: Literal["unsupported", "declared_not_consumed", "invalid"]
+    declared: bool
+    consumed_by_hub: bool
+    metadata_field: str | None = None
+    fields: tuple[str, ...] = ()
+    persists_for_thread: bool | None = None
+    source_extensions: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class InterruptCallbackCapabilitySnapshot:
     status: Literal["supported", "unsupported", "invalid"]
     ext: ResolvedInterruptCallbackExtension | None = None
@@ -238,6 +275,7 @@ class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
     invoke_metadata: InvokeMetadataCapabilitySnapshot
+    request_execution_options: RequestExecutionOptionsCapabilitySnapshot
     interrupt_callback: InterruptCallbackCapabilitySnapshot
     interrupt_recovery: InterruptRecoveryCapabilitySnapshot
     model_selection: ModelSelectionCapabilitySnapshot
@@ -246,6 +284,9 @@ class ResolvedCapabilitySnapshot:
     wire_contract: WireContractCapabilitySnapshot
     compatibility_profile: CompatibilityProfileCapabilitySnapshot
     codex_discovery: DeclaredMethodCollectionCapabilitySnapshot
+    codex_threads: DeclaredMethodCollectionCapabilitySnapshot
+    codex_turns: DeclaredMethodCollectionCapabilitySnapshot
+    codex_review: DeclaredMethodCollectionCapabilitySnapshot
     codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot
     codex_exec: DeclaredMethodCollectionCapabilitySnapshot
 
@@ -375,6 +416,155 @@ class A2AExtensionsService:
                 "invoke_metadata_uri": ext.uri,
                 "invoke_metadata_field_count": len(ext.fields),
             },
+        )
+
+    @staticmethod
+    def _normalize_optional_string_list(
+        value: Any,
+        *,
+        field: str,
+    ) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if not isinstance(value, list):
+            raise A2AExtensionContractError(
+                f"Extension contract missing/invalid '{field}'"
+            )
+        items: list[str] = []
+        for index, item in enumerate(value):
+            normalized = require_str(item, field=f"{field}[{index}]")
+            if normalized not in items:
+                items.append(normalized)
+        return tuple(items)
+
+    @classmethod
+    def _build_request_execution_options_snapshot(
+        cls,
+        card: Any,
+    ) -> RequestExecutionOptionsCapabilitySnapshot:
+        capabilities = getattr(card, "capabilities", None)
+        extensions = getattr(capabilities, "extensions", None) if capabilities else None
+        if not extensions:
+            return RequestExecutionOptionsCapabilitySnapshot(
+                status="unsupported",
+                declared=False,
+                consumed_by_hub=False,
+            )
+
+        metadata_field: str | None = None
+        persists_for_thread: bool | None = None
+        fields: list[str] = []
+        notes: list[str] = []
+        source_extensions: list[str] = []
+        found = False
+        supported_sources = {
+            *SUPPORTED_SESSION_BINDING_URIS,
+            *SUPPORTED_SESSION_QUERY_URIS,
+        }
+
+        try:
+            for ext in extensions:
+                raw_uri = getattr(ext, "uri", None)
+                if (
+                    not isinstance(raw_uri, str)
+                    or raw_uri.strip() not in supported_sources
+                ):
+                    continue
+                params = as_dict(getattr(ext, "params", None))
+                if "request_execution_options" not in params:
+                    continue
+                found = True
+                contract = as_dict(params.get("request_execution_options"))
+                if not contract:
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options'"
+                    )
+                current_metadata_field = require_str(
+                    contract.get("metadata_field"),
+                    field="params.request_execution_options.metadata_field",
+                )
+                if current_metadata_field != _CODEX_REQUEST_EXECUTION_METADATA_FIELD:
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options.metadata_field'"
+                    )
+                current_fields = cls._normalize_optional_string_list(
+                    contract.get("fields"),
+                    field="params.request_execution_options.fields",
+                )
+                if not current_fields:
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options.fields'"
+                    )
+                raw_persists_for_thread = contract.get("persists_for_thread")
+                if raw_persists_for_thread is not None and not isinstance(
+                    raw_persists_for_thread, bool
+                ):
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options.persists_for_thread'"
+                    )
+                current_notes = cls._normalize_optional_string_list(
+                    contract.get("notes"),
+                    field="params.request_execution_options.notes",
+                )
+                if metadata_field is None:
+                    metadata_field = current_metadata_field
+                elif metadata_field != current_metadata_field:
+                    raise A2AExtensionContractError(
+                        "Extension contract has conflicting "
+                        "'params.request_execution_options.metadata_field'"
+                    )
+                if raw_persists_for_thread is not None:
+                    if persists_for_thread is None:
+                        persists_for_thread = raw_persists_for_thread
+                    elif persists_for_thread != raw_persists_for_thread:
+                        raise A2AExtensionContractError(
+                            "Extension contract has conflicting "
+                            "'params.request_execution_options.persists_for_thread'"
+                        )
+                for item in current_fields:
+                    if item not in fields:
+                        fields.append(item)
+                for item in current_notes:
+                    if item not in notes:
+                        notes.append(item)
+                normalized_uri = (
+                    normalize_known_extension_uri(raw_uri) or raw_uri.strip()
+                )
+                if normalized_uri not in source_extensions:
+                    source_extensions.append(normalized_uri)
+        except A2AExtensionContractError as exc:
+            return RequestExecutionOptionsCapabilitySnapshot(
+                status="invalid",
+                declared=found,
+                consumed_by_hub=False,
+                metadata_field=metadata_field,
+                fields=tuple(fields),
+                persists_for_thread=persists_for_thread,
+                source_extensions=tuple(source_extensions),
+                notes=tuple(notes),
+                error=str(exc),
+            )
+
+        if not found:
+            return RequestExecutionOptionsCapabilitySnapshot(
+                status="unsupported",
+                declared=False,
+                consumed_by_hub=False,
+            )
+
+        return RequestExecutionOptionsCapabilitySnapshot(
+            status="declared_not_consumed",
+            declared=True,
+            consumed_by_hub=False,
+            metadata_field=metadata_field,
+            fields=tuple(fields),
+            persists_for_thread=persists_for_thread,
+            source_extensions=tuple(source_extensions),
+            notes=tuple(notes),
         )
 
     def _build_interrupt_callback_snapshot(
@@ -722,6 +912,51 @@ class A2AExtensionsService:
         )
 
     @classmethod
+    def _build_codex_threads_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            method_map=_CODEX_THREADS_METHODS,
+            hub_consumption={},
+            unsupported_status_when_declared="unsupported_by_design",
+            jsonrpc_url=jsonrpc_url,
+        )
+
+    @classmethod
+    def _build_codex_turns_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            method_map=_CODEX_TURNS_METHODS,
+            hub_consumption={},
+            unsupported_status_when_declared="unsupported_by_design",
+            jsonrpc_url=jsonrpc_url,
+        )
+
+    @classmethod
+    def _build_codex_review_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            method_map=_CODEX_REVIEW_METHODS,
+            hub_consumption={},
+            unsupported_status_when_declared="unsupported_by_design",
+            jsonrpc_url=jsonrpc_url,
+        )
+
+    @classmethod
     def _build_codex_thread_watch_snapshot(
         cls,
         wire_contract: WireContractCapabilitySnapshot,
@@ -764,6 +999,9 @@ class A2AExtensionsService:
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
             invoke_metadata=self._build_invoke_metadata_snapshot(card),
+            request_execution_options=self._build_request_execution_options_snapshot(
+                card
+            ),
             interrupt_callback=self._build_interrupt_callback_snapshot(card),
             interrupt_recovery=self._build_interrupt_recovery_snapshot(card),
             model_selection=self._build_model_selection_snapshot(card),
@@ -773,6 +1011,15 @@ class A2AExtensionsService:
             compatibility_profile=self._build_compatibility_profile_snapshot(card),
             codex_discovery=self._build_codex_discovery_snapshot(
                 card, wire_contract, jsonrpc_url=jsonrpc_url
+            ),
+            codex_threads=self._build_codex_threads_snapshot(
+                wire_contract, jsonrpc_url=jsonrpc_url
+            ),
+            codex_turns=self._build_codex_turns_snapshot(
+                wire_contract, jsonrpc_url=jsonrpc_url
+            ),
+            codex_review=self._build_codex_review_snapshot(
+                wire_contract, jsonrpc_url=jsonrpc_url
             ),
             codex_thread_watch=self._build_codex_thread_watch_snapshot(
                 wire_contract, jsonrpc_url=jsonrpc_url
@@ -1220,12 +1467,10 @@ class A2AExtensionsService:
         )
         if preflight is not None:
             return preflight
-        return await self._codex_discovery.list_items(
+        return await self._codex_discovery.list_skills(
             runtime=runtime,
             jsonrpc_url=jsonrpc_url,
             method_name=method.method or _CODEX_DISCOVERY_METHODS["skillsList"],
-            kind="skill",
-            list_key="skills",
             meta={
                 "extension_uri": (
                     snapshot.wire_contract.ext.uri
@@ -1263,12 +1508,10 @@ class A2AExtensionsService:
         )
         if preflight is not None:
             return preflight
-        return await self._codex_discovery.list_items(
+        return await self._codex_discovery.list_apps(
             runtime=runtime,
             jsonrpc_url=jsonrpc_url,
             method_name=method.method or _CODEX_DISCOVERY_METHODS["appsList"],
-            kind="app",
-            list_key="apps",
             meta={
                 "extension_uri": (
                     snapshot.wire_contract.ext.uri
@@ -1306,12 +1549,10 @@ class A2AExtensionsService:
         )
         if preflight is not None:
             return preflight
-        return await self._codex_discovery.list_items(
+        return await self._codex_discovery.list_plugins(
             runtime=runtime,
             jsonrpc_url=jsonrpc_url,
             method_name=method.method or _CODEX_DISCOVERY_METHODS["pluginsList"],
-            kind="plugin",
-            list_key="plugins",
             meta={
                 "extension_uri": (
                     snapshot.wire_contract.ext.uri
@@ -1327,11 +1568,15 @@ class A2AExtensionsService:
         self,
         *,
         runtime: A2ARuntime,
-        plugin_id: str,
+        marketplace_path: str,
+        plugin_name: str,
     ) -> ExtensionCallResult:
-        resolved_plugin_id = plugin_id.strip()
-        if not resolved_plugin_id:
-            raise ValueError("plugin_id must be a non-empty string")
+        resolved_marketplace_path = marketplace_path.strip()
+        resolved_plugin_name = plugin_name.strip()
+        if not resolved_marketplace_path:
+            raise ValueError("marketplace_path must be a non-empty string")
+        if not resolved_plugin_name:
+            raise ValueError("plugin_name must be a non-empty string")
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         capability, jsonrpc_url = self._require_declared_method_collection_capability(
             snapshot.codex_discovery,
@@ -1357,7 +1602,8 @@ class A2AExtensionsService:
             runtime=runtime,
             jsonrpc_url=jsonrpc_url,
             method_name=method.method or _CODEX_DISCOVERY_METHODS["pluginsRead"],
-            plugin_id=resolved_plugin_id,
+            marketplace_path=resolved_marketplace_path,
+            plugin_name=resolved_plugin_name,
             meta={
                 "extension_uri": (
                     snapshot.wire_contract.ext.uri
@@ -1366,7 +1612,8 @@ class A2AExtensionsService:
                 ),
                 "capability_area": "codex_discovery",
                 "method_name": method.method,
-                "plugin_id": resolved_plugin_id,
+                "marketplace_path": resolved_marketplace_path,
+                "plugin_name": resolved_plugin_name,
             },
         )
 

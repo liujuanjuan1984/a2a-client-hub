@@ -463,17 +463,22 @@ class _FakeExtensionsService:
             result={
                 "items": [
                     {
-                        "id": "skill-1",
-                        "kind": "skill",
-                        "name": "planning",
-                        "title": "Planning",
-                        "summary": "Summarize plans.",
-                        "description": None,
-                        "tags": ["analysis"],
-                        "metadata": {"source": "codex"},
+                        "cwd": "/workspace/project",
+                        "skills": [
+                            {
+                                "name": "planning",
+                                "path": "/workspace/project/.codex/skills/PLANNING/SKILL.md",
+                                "description": "Summarize plans.",
+                                "enabled": True,
+                                "scope": "project",
+                                "interface": {"input": "rich-text"},
+                                "codex": {"raw": {"name": "planning"}},
+                            }
+                        ],
+                        "errors": [],
+                        "codex": {"raw": {"cwd": "/workspace/project"}},
                     }
-                ],
-                "nextCursor": "cursor-2",
+                ]
             },
             meta={"capability_area": "codex_discovery"},
         )
@@ -486,15 +491,18 @@ class _FakeExtensionsService:
                 "items": [
                     {
                         "id": "app-1",
-                        "kind": "app",
                         "name": "workspace",
-                        "title": "Workspace",
-                        "summary": "Manage files.",
-                        "description": None,
-                        "tags": [],
-                        "metadata": {},
+                        "description": "Manage files.",
+                        "isAccessible": True,
+                        "isEnabled": True,
+                        "installUrl": "https://example.com/install",
+                        "mentionPath": "app://app-1",
+                        "branding": {"icon": "workspace"},
+                        "labels": [],
+                        "codex": {"raw": {"id": "app-1"}},
                     }
-                ]
+                ],
+                "nextCursor": None,
             },
             meta={"capability_area": "codex_discovery"},
         )
@@ -506,41 +514,53 @@ class _FakeExtensionsService:
             result={
                 "items": [
                     {
-                        "id": "plugin-1",
-                        "kind": "plugin",
-                        "name": "planner",
-                        "title": "Planner",
-                        "summary": "Coordinates work.",
-                        "description": None,
-                        "tags": ["planning"],
-                        "metadata": {"version": "1.0"},
+                        "marketplaceName": "test",
+                        "marketplacePath": "/workspace/project/.codex/plugins/marketplace.json",
+                        "interface": {"transport": "mcp"},
+                        "plugins": [
+                            {
+                                "name": "planner",
+                                "description": "Coordinates work.",
+                                "enabled": True,
+                                "mentionPath": "plugin://planner@test",
+                                "codex": {"raw": {"name": "planner"}},
+                            }
+                        ],
+                        "codex": {"raw": {"name": "test"}},
                     }
-                ]
+                ],
+                "featuredPluginIds": ["test:planner"],
+                "marketplaceLoadErrors": [],
+                "remoteSyncError": None,
             },
             meta={"capability_area": "codex_discovery"},
         )
 
-    async def read_codex_plugin(self, *, runtime, plugin_id: str):
+    async def read_codex_plugin(
+        self, *, runtime, marketplace_path: str, plugin_name: str
+    ):
         self.calls.append(
             {
                 "fn": "read_codex_plugin",
                 "runtime": runtime,
-                "plugin_id": plugin_id,
+                "marketplace_path": marketplace_path,
+                "plugin_name": plugin_name,
             }
         )
         return _FakeExtensionResult(
             success=True,
             result={
-                "plugin": {
-                    "id": plugin_id,
-                    "kind": "plugin",
-                    "name": "planner",
-                    "title": "Planner",
-                    "summary": None,
-                    "description": "Coordinates work.",
-                    "tags": [],
-                    "metadata": {"version": "1.0"},
-                    "content": {"readme": "Use for planning"},
+                "item": {
+                    "name": plugin_name,
+                    "marketplaceName": "test",
+                    "marketplacePath": marketplace_path,
+                    "mentionPath": "plugin://planner@test",
+                    "summary": ["Use for planning"],
+                    "skills": [{"name": "planning"}],
+                    "apps": [{"id": "app-1"}],
+                    "mcpServers": ["planner-server"],
+                    "interface": {"transport": "mcp"},
+                    "codex": {"raw": {"name": plugin_name}},
                 }
             },
             meta={"capability_area": "codex_discovery"},
@@ -1576,6 +1596,21 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="supported"),
         interrupt_recovery=SimpleNamespace(status="supported"),
+        invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
+        request_execution_options=SimpleNamespace(
+            declared=True,
+            consumed_by_hub=False,
+            status="declared_not_consumed",
+            metadata_field="metadata.codex.execution",
+            fields=("model", "effort", "summary", "personality"),
+            persists_for_thread=True,
+            source_extensions=(
+                "urn:a2a:session-binding/v1",
+                "urn:opencode-a2a:session-query/v1",
+            ),
+            notes=("Execution overrides are provider-private.",),
+            error=None,
+        ),
         wire_contract=SimpleNamespace(
             status="supported",
             error=None,
@@ -1591,7 +1626,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                     "codex.discovery.skills.list",
                     "codex.discovery.plugins.list",
                     "codex.discovery.plugins.read",
+                    "codex.threads.archive",
                     "codex.threads.watch",
+                    "codex.turns.steer",
+                    "codex.review.watch",
                     "codex.exec.start",
                     "codex.exec.terminate",
                 ),
@@ -1682,6 +1720,67 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                     declared=False,
                     consumed_by_hub=False,
                     method=None,
+                ),
+            },
+        ),
+        codex_threads=SimpleNamespace(
+            declared=True,
+            consumed_by_hub=False,
+            status="unsupported_by_design",
+            methods={
+                "fork": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+                "archive": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.threads.archive",
+                ),
+                "unarchive": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+                "metadataUpdate": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+                "watch": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.threads.watch",
+                ),
+            },
+        ),
+        codex_turns=SimpleNamespace(
+            declared=True,
+            consumed_by_hub=False,
+            status="unsupported_by_design",
+            methods={
+                "steer": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.turns.steer",
+                ),
+            },
+        ),
+        codex_review=SimpleNamespace(
+            declared=True,
+            consumed_by_hub=False,
+            status="unsupported_by_design",
+            methods={
+                "start": SimpleNamespace(
+                    declared=False,
+                    consumed_by_hub=False,
+                    method=None,
+                ),
+                "watch": SimpleNamespace(
+                    declared=True,
+                    consumed_by_hub=False,
+                    method="codex.review.watch",
                 ),
             },
         ),
@@ -1797,6 +1896,20 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             "appliesToMethods": [],
             "fields": [],
         },
+        "requestExecutionOptions": {
+            "declared": True,
+            "consumedByHub": False,
+            "status": "declared_not_consumed",
+            "metadataField": "metadata.codex.execution",
+            "fields": ["model", "effort", "summary", "personality"],
+            "persistsForThread": True,
+            "sourceExtensions": [
+                "urn:a2a:session-binding/v1",
+                "urn:opencode-a2a:session-query/v1",
+            ],
+            "notes": ["Execution overrides are provider-private."],
+            "error": None,
+        },
         "wireContract": {
             "declared": True,
             "consumedByHub": True,
@@ -1812,7 +1925,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 "codex.discovery.skills.list",
                 "codex.discovery.plugins.list",
                 "codex.discovery.plugins.read",
+                "codex.threads.archive",
                 "codex.threads.watch",
+                "codex.turns.steer",
+                "codex.review.watch",
                 "codex.exec.start",
                 "codex.exec.terminate",
             ],
@@ -1902,6 +2018,79 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                     "declared": False,
                     "consumedByHub": False,
                     "method": None,
+                },
+            },
+        },
+        "codexThreads": {
+            "declared": True,
+            "consumedByHub": False,
+            "status": "unsupported_by_design",
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+            "methods": {
+                "fork": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+                "archive": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.threads.archive",
+                },
+                "unarchive": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+                "metadataUpdate": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+                "watch": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.threads.watch",
+                },
+            },
+        },
+        "codexTurns": {
+            "declared": True,
+            "consumedByHub": False,
+            "status": "unsupported_by_design",
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+            "methods": {
+                "steer": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.turns.steer",
+                }
+            },
+        },
+        "codexReview": {
+            "declared": True,
+            "consumedByHub": False,
+            "status": "unsupported_by_design",
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+            "methods": {
+                "start": {
+                    "declared": False,
+                    "consumedByHub": False,
+                    "method": None,
+                },
+                "watch": {
+                    "declared": True,
+                    "consumedByHub": False,
+                    "method": "codex.review.watch",
                 },
             },
         },
@@ -2055,6 +2244,17 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             "appliesToMethods": [],
             "fields": [],
         },
+        "requestExecutionOptions": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "metadataField": None,
+            "fields": [],
+            "persistsForThread": None,
+            "sourceExtensions": [],
+            "notes": [],
+            "error": None,
+        },
         "wireContract": {
             "declared": False,
             "consumedByHub": True,
@@ -2079,6 +2279,36 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             "error": "Compatibility profile extension not found",
         },
         "codexDiscovery": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+        },
+        "codexThreads": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+        },
+        "codexTurns": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+        },
+        "codexReview": {
             "declared": False,
             "consumedByHub": False,
             "status": "unsupported",
@@ -2276,6 +2506,17 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             "appliesToMethods": [],
             "fields": [],
         },
+        "requestExecutionOptions": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "metadataField": None,
+            "fields": [],
+            "persistsForThread": None,
+            "sourceExtensions": [],
+            "notes": [],
+            "error": None,
+        },
         "wireContract": {
             "declared": True,
             "consumedByHub": True,
@@ -2300,6 +2541,36 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             "error": "Extension contract missing/invalid 'params.method_retention'",
         },
         "codexDiscovery": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+        },
+        "codexThreads": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+        },
+        "codexTurns": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "methods": {},
+            "declarationSource": None,
+            "declarationConfidence": None,
+            "negotiationState": None,
+            "diagnosticNote": None,
+        },
+        "codexReview": {
             "declared": False,
             "consumedByHub": False,
             "status": "unsupported",
@@ -2428,24 +2699,33 @@ async def test_hub_codex_discovery_routes_return_normalized_results(
         assert skills_resp.status_code == 200
         skills_payload = skills_resp.json()
         assert skills_payload["success"] is True
-        assert skills_payload["result"]["items"][0]["kind"] == "skill"
-        assert skills_payload["result"]["nextCursor"] == "cursor-2"
+        assert (
+            skills_payload["result"]["items"][0]["skills"][0]["path"]
+            == "/workspace/project/.codex/skills/PLANNING/SKILL.md"
+        )
 
         plugin_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/codex/plugins:read",
-            json={"pluginId": "planner"},
+            json={
+                "marketplacePath": "/workspace/project/.codex/plugins/marketplace.json",
+                "pluginName": "planner",
+            },
         )
         assert plugin_resp.status_code == 200
         plugin_payload = plugin_resp.json()
         assert plugin_payload["success"] is True
-        assert plugin_payload["result"]["plugin"]["id"] == "planner"
-        assert plugin_payload["result"]["plugin"]["content"] == {
-            "readme": "Use for planning"
-        }
+        assert plugin_payload["result"]["item"]["name"] == "planner"
+        assert plugin_payload["result"]["item"]["marketplacePath"] == (
+            "/workspace/project/.codex/plugins/marketplace.json"
+        )
+        assert plugin_payload["result"]["item"]["summary"] == ["Use for planning"]
 
     assert fake_extensions.calls[0]["fn"] == "list_codex_skills"
     assert fake_extensions.calls[1]["fn"] == "read_codex_plugin"
-    assert fake_extensions.calls[1]["plugin_id"] == "planner"
+    assert fake_extensions.calls[1]["marketplace_path"] == (
+        "/workspace/project/.codex/plugins/marketplace.json"
+    )
+    assert fake_extensions.calls[1]["plugin_name"] == "planner"
 
 
 @pytest.mark.asyncio

@@ -248,7 +248,8 @@ class A2AModelDiscoveryRequest(BaseModel):
 class A2ACodexDiscoveryPluginReadRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    plugin_id: str = Field(..., alias="pluginId", min_length=1)
+    marketplace_path: str = Field(..., alias="marketplacePath", min_length=1)
+    plugin_name: str = Field(..., alias="pluginName", min_length=1)
 
 
 class A2ASessionControlMethodResponse(BaseModel):
@@ -307,6 +308,20 @@ class A2AInvokeMetadataCapabilitiesResponse(BaseModel):
         default_factory=list, alias="appliesToMethods"
     )
     fields: List[A2AInvokeMetadataFieldResponse] = Field(default_factory=list)
+
+
+class A2ARequestExecutionOptionsCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    status: Literal["unsupported", "declared_not_consumed", "invalid"]
+    metadata_field: Optional[str] = Field(default=None, alias="metadataField")
+    fields: List[str] = Field(default_factory=list)
+    persists_for_thread: Optional[bool] = Field(default=None, alias="persistsForThread")
+    source_extensions: List[str] = Field(default_factory=list, alias="sourceExtensions")
+    notes: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
 
 
 class A2AWireContractConditionalMethodResponse(BaseModel):
@@ -418,37 +433,120 @@ class A2AInterruptRecoveryResponse(BaseModel):
     items: List[A2AInterruptRecoveryItemResponse] = Field(default_factory=list)
 
 
-class A2ACodexDiscoveryItemResponse(BaseModel):
+class A2ACodexDiscoverySkillResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    path: str
+    description: str
+    enabled: bool
+    scope: str
+    interface: Optional[Dict[str, Any]] = None
+    codex: Dict[str, Any] = Field(default_factory=dict)
+
+
+class A2ACodexDiscoverySkillScopeResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cwd: str
+    skills: List[A2ACodexDiscoverySkillResponse] = Field(default_factory=list)
+    errors: List[Dict[str, Any]] = Field(default_factory=list)
+    codex: Dict[str, Any] = Field(default_factory=dict)
+
+
+class A2ACodexDiscoverySkillsListResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: List[A2ACodexDiscoverySkillScopeResponse] = Field(default_factory=list)
+
+
+class A2ACodexDiscoverySkillsListResponse(A2AExtensionResponse):
+    result: Optional[A2ACodexDiscoverySkillsListResult] = None
+
+
+class A2ACodexDiscoveryAppResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
-    kind: Literal["skill", "app", "plugin"]
-    name: Optional[str] = None
-    title: Optional[str] = None
-    summary: Optional[str] = None
+    name: str
     description: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    is_accessible: bool = Field(..., alias="isAccessible")
+    is_enabled: bool = Field(..., alias="isEnabled")
+    install_url: Optional[str] = Field(default=None, alias="installUrl")
+    mention_path: str = Field(..., alias="mentionPath")
+    branding: Optional[Dict[str, Any]] = None
+    labels: List[Dict[str, Any]] = Field(default_factory=list)
+    codex: Dict[str, Any] = Field(default_factory=dict)
 
 
-class A2ACodexDiscoveryPluginResponse(A2ACodexDiscoveryItemResponse):
-    kind: Literal["plugin"] = "plugin"
-    content: Any = None
-
-
-class A2ACodexDiscoveryListResult(BaseModel):
+class A2ACodexDiscoveryAppsListResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    items: List[A2ACodexDiscoveryItemResponse] = Field(default_factory=list)
+    items: List[A2ACodexDiscoveryAppResponse] = Field(default_factory=list)
     next_cursor: Optional[str] = Field(default=None, alias="nextCursor")
 
 
-class A2ACodexDiscoveryListResponse(A2AExtensionResponse):
-    result: Optional[A2ACodexDiscoveryListResult] = None
+class A2ACodexDiscoveryAppsListResponse(A2AExtensionResponse):
+    result: Optional[A2ACodexDiscoveryAppsListResult] = None
+
+
+class A2ACodexDiscoveryPluginSummaryResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+    interface: Optional[Dict[str, Any]] = None
+    mention_path: str = Field(..., alias="mentionPath")
+    codex: Dict[str, Any] = Field(default_factory=dict)
+
+
+class A2ACodexDiscoveryPluginMarketplaceResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    marketplace_name: str = Field(..., alias="marketplaceName")
+    marketplace_path: str = Field(..., alias="marketplacePath")
+    interface: Optional[Dict[str, Any]] = None
+    plugins: List[A2ACodexDiscoveryPluginSummaryResponse] = Field(default_factory=list)
+    codex: Dict[str, Any] = Field(default_factory=dict)
+
+
+class A2ACodexDiscoveryPluginsListResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: List[A2ACodexDiscoveryPluginMarketplaceResponse] = Field(
+        default_factory=list
+    )
+    featured_plugin_ids: List[str] = Field(
+        default_factory=list, alias="featuredPluginIds"
+    )
+    marketplace_load_errors: List[Dict[str, Any]] = Field(
+        default_factory=list, alias="marketplaceLoadErrors"
+    )
+    remote_sync_error: Optional[str] = Field(default=None, alias="remoteSyncError")
+
+
+class A2ACodexDiscoveryPluginsListResponse(A2AExtensionResponse):
+    result: Optional[A2ACodexDiscoveryPluginsListResult] = None
+
+
+class A2ACodexDiscoveryPluginReadItemResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    marketplace_name: str = Field(..., alias="marketplaceName")
+    marketplace_path: str = Field(..., alias="marketplacePath")
+    mention_path: str = Field(..., alias="mentionPath")
+    summary: List[str] = Field(default_factory=list)
+    skills: List[Dict[str, Any]] = Field(default_factory=list)
+    apps: List[Dict[str, Any]] = Field(default_factory=list)
+    mcp_servers: List[str] = Field(default_factory=list, alias="mcpServers")
+    interface: Optional[Dict[str, Any]] = None
+    codex: Dict[str, Any] = Field(default_factory=dict)
 
 
 class A2ACodexDiscoveryPluginReadResult(BaseModel):
-    plugin: A2ACodexDiscoveryPluginResponse
+    item: A2ACodexDiscoveryPluginReadItemResponse
 
 
 class A2ACodexDiscoveryPluginReadResponse(A2AExtensionResponse):
@@ -490,6 +588,14 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="invokeMetadata",
         description="Hub-stable invoke metadata declaration and consumption contract.",
     )
+    request_execution_options: A2ARequestExecutionOptionsCapabilitiesResponse = Field(
+        ...,
+        alias="requestExecutionOptions",
+        description=(
+            "Codex-private request execution override contract diagnostics "
+            "surfaced from session binding/session query extension params."
+        ),
+    )
     wire_contract: A2AWireContractCapabilitiesResponse = Field(
         ...,
         alias="wireContract",
@@ -514,12 +620,35 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
             "diagnoses and incrementally consumes through stable Hub APIs."
         ),
     )
+    codex_threads: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
+        ...,
+        alias="codexThreads",
+        description=(
+            "Codex thread lifecycle methods declared via wire-contract that the "
+            "hub currently leaves unsupported by design."
+        ),
+    )
+    codex_turns: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
+        ...,
+        alias="codexTurns",
+        description=(
+            "Codex turn control methods declared via wire-contract that the hub "
+            "currently leaves unsupported by design."
+        ),
+    )
+    codex_review: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
+        ...,
+        alias="codexReview",
+        description=(
+            "Codex review control methods declared via wire-contract that the "
+            "hub currently leaves unsupported by design."
+        ),
+    )
     codex_thread_watch: A2ADeclaredSingleMethodCapabilitiesResponse = Field(
         ...,
         alias="codexThreadWatch",
         description=(
-            "Codex thread watch capability declaration surface that remains "
-            "unsupported by design in the hub."
+            "Compatibility alias for the declared codex.threads.watch method."
         ),
     )
     codex_exec: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
@@ -538,18 +667,27 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
 
 
 __all__ = [
-    "A2ACodexDiscoveryItemResponse",
-    "A2ACodexDiscoveryListResponse",
-    "A2ACodexDiscoveryListResult",
+    "A2ACodexDiscoveryAppResponse",
+    "A2ACodexDiscoveryAppsListResponse",
+    "A2ACodexDiscoveryAppsListResult",
     "A2ACodexDiscoveryPluginReadRequest",
     "A2ACodexDiscoveryPluginReadResponse",
+    "A2ACodexDiscoveryPluginReadItemResponse",
     "A2ACodexDiscoveryPluginReadResult",
-    "A2ACodexDiscoveryPluginResponse",
+    "A2ACodexDiscoveryPluginMarketplaceResponse",
+    "A2ACodexDiscoveryPluginSummaryResponse",
+    "A2ACodexDiscoveryPluginsListResponse",
+    "A2ACodexDiscoveryPluginsListResult",
+    "A2ACodexDiscoverySkillResponse",
+    "A2ACodexDiscoverySkillScopeResponse",
+    "A2ACodexDiscoverySkillsListResponse",
+    "A2ACodexDiscoverySkillsListResult",
     "A2ADeclaredMethodCapabilityResponse",
     "A2ADeclaredMethodCollectionCapabilitiesResponse",
     "A2ADeclaredSingleMethodCapabilitiesResponse",
     "A2AExtensionInterruptRecoveryRequest",
     "A2AInvokeMetadataCapabilitiesResponse",
+    "A2ARequestExecutionOptionsCapabilitiesResponse",
     "A2AInvokeMetadataFieldResponse",
     "A2AWireContractCapabilitiesResponse",
     "A2AWireContractConditionalMethodResponse",

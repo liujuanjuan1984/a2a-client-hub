@@ -7,6 +7,18 @@ from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 
 
+def _require_dict(value: Any, *, field: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"Upstream payload contains invalid '{field}'")
+    return dict(value)
+
+
+def _require_list(value: Any, *, field: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError(f"Upstream payload contains invalid '{field}'")
+    return list(value)
+
+
 def _extract_string(value: Any, *, field: str) -> str | None:
     if value is None:
         return None
@@ -16,107 +28,195 @@ def _extract_string(value: Any, *, field: str) -> str | None:
     return normalized or None
 
 
-def _extract_string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise ValueError("Upstream payload contains invalid 'tags'")
-    tags: list[str] = []
-    for item in value:
-        tag = _extract_string(item, field="tags.*")
-        if tag:
-            tags.append(tag)
-    return tags
-
-
-def _extract_metadata(value: Any) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError("Upstream payload contains invalid 'metadata'")
-    return dict(value)
-
-
-def _first_string(payload: Dict[str, Any], *keys: str) -> str | None:
-    for key in keys:
-        resolved = _extract_string(payload.get(key), field=key)
-        if resolved:
-            return resolved
-    return None
-
-
-def _normalize_summary_item(
-    payload: Dict[str, Any],
-    *,
-    kind: str,
-) -> Dict[str, Any]:
-    item_id = _first_string(payload, "id", "slug", "name", "key")
-    if item_id is None:
-        raise ValueError(f"Upstream payload missing identifier for {kind}")
-
-    return {
-        "id": item_id,
-        "kind": kind,
-        "name": _first_string(payload, "name", "slug", "key"),
-        "title": _first_string(payload, "title", "displayName", "display_name"),
-        "summary": _first_string(payload, "summary", "shortDescription"),
-        "description": _first_string(payload, "description", "details"),
-        "tags": _extract_string_list(payload.get("tags")),
-        "metadata": _extract_metadata(payload.get("metadata")),
-    }
-
-
-def _extract_list_payload(
-    result: Any,
-    *,
-    kind: str,
-    list_key: str,
-) -> Dict[str, Any]:
-    if isinstance(result, dict):
-        if isinstance(result.get("items"), list):
-            items = result.get("items")
-        elif isinstance(result.get(list_key), list):
-            items = result.get(list_key)
-        else:
-            raise ValueError(f"Upstream payload missing list for {kind}")
-        next_cursor = _first_string(result, "nextCursor", "next_cursor", "cursor")
-        return {"items": items, "next_cursor": next_cursor}
-    if isinstance(result, list):
-        return {"items": result, "next_cursor": None}
-    raise ValueError(f"Upstream payload missing list for {kind}")
-
-
-def _normalize_list_result(
-    result: Any,
-    *,
-    kind: str,
-    list_key: str,
-) -> Dict[str, Any]:
-    payload = _extract_list_payload(result, kind=kind, list_key=list_key)
-    items = payload["items"]
-    assert isinstance(items, list)
-    normalized_items = []
-    for item in items:
-        if not isinstance(item, dict):
-            raise ValueError(f"Upstream payload contains invalid {kind} item")
-        normalized_items.append(_normalize_summary_item(item, kind=kind))
-    normalized = {"items": normalized_items}
-    if payload["next_cursor"] is not None:
-        normalized["nextCursor"] = payload["next_cursor"]
+def _require_string(value: Any, *, field: str) -> str:
+    normalized = _extract_string(value, field=field)
+    if normalized is None:
+        raise ValueError(f"Upstream payload missing '{field}'")
     return normalized
 
 
-def _normalize_plugin_read_result(result: Any) -> Dict[str, Any]:
-    if isinstance(result, dict) and isinstance(result.get("plugin"), dict):
-        payload = dict(result["plugin"])
-    elif isinstance(result, dict):
-        payload = dict(result)
-    else:
-        raise ValueError("Upstream payload missing plugin object")
+def _extract_bool(value: Any, *, field: str) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ValueError(f"Upstream payload contains invalid '{field}'")
+    return value
 
-    normalized = _normalize_summary_item(payload, kind="plugin")
-    normalized["content"] = payload.get("content", payload.get("details"))
-    return {"plugin": normalized}
+
+def _extract_dict(value: Any, *, field: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"Upstream payload contains invalid '{field}'")
+    return dict(value)
+
+
+def _extract_dict_list(value: Any, *, field: str) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    items = _require_list(value, field=field)
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"Upstream payload contains invalid '{field}[{index}]'")
+        normalized.append(dict(item))
+    return normalized
+
+
+def _extract_string_list(value: Any, *, field: str) -> list[str]:
+    if value is None:
+        return []
+    items = _require_list(value, field=field)
+    normalized: list[str] = []
+    for index, item in enumerate(items):
+        resolved = _extract_string(item, field=f"{field}[{index}]")
+        if resolved is not None:
+            normalized.append(resolved)
+    return normalized
+
+
+def _normalize_codex_envelope(payload: dict[str, Any], *, field: str) -> dict[str, Any]:
+    codex = _extract_dict(payload.get("codex"), field=field)
+    return codex or {}
+
+
+def _normalize_skill_item(payload: Any) -> dict[str, Any]:
+    item = _require_dict(payload, field="items[].skills[]")
+    return {
+        "name": _require_string(item.get("name"), field="items[].skills[].name"),
+        "path": _require_string(item.get("path"), field="items[].skills[].path"),
+        "description": _require_string(
+            item.get("description"), field="items[].skills[].description"
+        ),
+        "enabled": bool(
+            _extract_bool(item.get("enabled"), field="items[].skills[].enabled")
+        ),
+        "scope": _require_string(item.get("scope"), field="items[].skills[].scope"),
+        "interface": _extract_dict(
+            item.get("interface"), field="items[].skills[].interface"
+        ),
+        "codex": _normalize_codex_envelope(item, field="items[].skills[].codex"),
+    }
+
+
+def _normalize_skill_scope(payload: Any) -> dict[str, Any]:
+    scope = _require_dict(payload, field="items[]")
+    skills = _require_list(scope.get("skills"), field="items[].skills")
+    return {
+        "cwd": _require_string(scope.get("cwd"), field="items[].cwd"),
+        "skills": [_normalize_skill_item(item) for item in skills],
+        "errors": _extract_dict_list(scope.get("errors"), field="items[].errors"),
+        "codex": _normalize_codex_envelope(scope, field="items[].codex"),
+    }
+
+
+def _normalize_app_item(payload: Any) -> dict[str, Any]:
+    item = _require_dict(payload, field="items[]")
+    app_id = _require_string(item.get("id"), field="items[].id")
+    mention_path = _extract_string(
+        item.get("mention_path"), field="items[].mention_path"
+    )
+    return {
+        "id": app_id,
+        "name": _require_string(item.get("name"), field="items[].name"),
+        "description": _extract_string(
+            item.get("description"), field="items[].description"
+        ),
+        "isAccessible": bool(
+            _extract_bool(item.get("is_accessible"), field="items[].is_accessible")
+            if "is_accessible" in item
+            else _extract_bool(item.get("isAccessible"), field="items[].isAccessible")
+        ),
+        "isEnabled": bool(
+            _extract_bool(item.get("is_enabled"), field="items[].is_enabled")
+            if "is_enabled" in item
+            else _extract_bool(item.get("isEnabled"), field="items[].isEnabled")
+        ),
+        "installUrl": (
+            _extract_string(item.get("install_url"), field="items[].install_url")
+            if "install_url" in item
+            else _extract_string(item.get("installUrl"), field="items[].installUrl")
+        ),
+        "mentionPath": mention_path or f"app://{app_id}",
+        "branding": _extract_dict(item.get("branding"), field="items[].branding"),
+        "labels": _extract_dict_list(item.get("labels"), field="items[].labels"),
+        "codex": _normalize_codex_envelope(item, field="items[].codex"),
+    }
+
+
+def _normalize_plugin_summary(payload: Any, *, marketplace_name: str) -> dict[str, Any]:
+    item = _require_dict(payload, field="items[].plugins[]")
+    name = _require_string(item.get("name"), field="items[].plugins[].name")
+    mention_path = _extract_string(
+        item.get("mention_path"),
+        field="items[].plugins[].mention_path",
+    )
+    return {
+        "name": name,
+        "description": _extract_string(
+            item.get("description"), field="items[].plugins[].description"
+        ),
+        "enabled": _extract_bool(
+            item.get("enabled"), field="items[].plugins[].enabled"
+        ),
+        "interface": _extract_dict(
+            item.get("interface"), field="items[].plugins[].interface"
+        ),
+        "mentionPath": mention_path or f"plugin://{name}@{marketplace_name}",
+        "codex": _normalize_codex_envelope(item, field="items[].plugins[].codex"),
+    }
+
+
+def _normalize_plugin_marketplace(payload: Any) -> dict[str, Any]:
+    item = _require_dict(payload, field="items[]")
+    marketplace_name = _require_string(
+        item.get("marketplace_name"), field="items[].marketplace_name"
+    )
+    marketplace_path = _require_string(
+        item.get("marketplace_path"), field="items[].marketplace_path"
+    )
+    plugins = _require_list(item.get("plugins"), field="items[].plugins")
+    return {
+        "marketplaceName": marketplace_name,
+        "marketplacePath": marketplace_path,
+        "interface": _extract_dict(item.get("interface"), field="items[].interface"),
+        "plugins": [
+            _normalize_plugin_summary(plugin, marketplace_name=marketplace_name)
+            for plugin in plugins
+        ],
+        "codex": _normalize_codex_envelope(item, field="items[].codex"),
+    }
+
+
+def _normalize_plugin_detail(payload: Any) -> dict[str, Any]:
+    item = _require_dict(payload, field="item")
+    name = _require_string(item.get("name"), field="item.name")
+    marketplace_name = _require_string(
+        item.get("marketplace_name"), field="item.marketplace_name"
+    )
+    marketplace_path = _require_string(
+        item.get("marketplace_path"), field="item.marketplace_path"
+    )
+    mention_path = _extract_string(item.get("mention_path"), field="item.mention_path")
+    return {
+        "name": name,
+        "marketplaceName": marketplace_name,
+        "marketplacePath": marketplace_path,
+        "mentionPath": mention_path or f"plugin://{name}@{marketplace_name}",
+        "summary": _extract_string_list(item.get("summary"), field="item.summary"),
+        "skills": _extract_dict_list(item.get("skills"), field="item.skills"),
+        "apps": _extract_dict_list(item.get("apps"), field="item.apps"),
+        "mcpServers": _extract_string_list(
+            (
+                item.get("mcp_servers")
+                if "mcp_servers" in item
+                else item.get("mcpServers")
+            ),
+            field="item.mcpServers",
+        ),
+        "interface": _extract_dict(item.get("interface"), field="item.interface"),
+        "codex": _normalize_codex_envelope(item, field="item.codex"),
+    }
 
 
 class CodexDiscoveryService:
@@ -144,19 +244,7 @@ class CodexDiscoveryService:
             self._support.record_extension_metric(
                 metric_key, success=True, error_code=None
             )
-            return ExtensionCallResult(
-                success=True,
-                result=(
-                    dict(resp.result)
-                    if isinstance(resp.result, dict)
-                    else (
-                        {"items": list(resp.result)}
-                        if isinstance(resp.result, list)
-                        else {"raw": resp.result}
-                    )
-                ),
-                meta=meta,
-            )
+            return ExtensionCallResult(success=True, result=resp.result, meta=meta)
 
         error = resp.error or {}
         error_details = self._support.build_upstream_error_details(
@@ -177,11 +265,7 @@ class CodexDiscoveryService:
         )
 
     @staticmethod
-    def _payload_error(
-        *,
-        message: str,
-        meta: Dict[str, Any],
-    ) -> ExtensionCallResult:
+    def _payload_error(*, message: str, meta: Dict[str, Any]) -> ExtensionCallResult:
         return ExtensionCallResult(
             success=False,
             error_code="upstream_payload_error",
@@ -190,14 +274,12 @@ class CodexDiscoveryService:
             meta=meta,
         )
 
-    async def list_items(
+    async def list_skills(
         self,
         *,
         runtime: A2ARuntime,
         jsonrpc_url: str,
         method_name: str,
-        kind: str,
-        list_key: str,
         meta: Dict[str, Any],
     ) -> ExtensionCallResult:
         result = await self.invoke_method(
@@ -210,9 +292,95 @@ class CodexDiscoveryService:
         if not result.success:
             return result
         try:
-            normalized = _normalize_list_result(
-                result.result, kind=kind, list_key=list_key
-            )
+            payload = _require_dict(result.result, field="result")
+            items = _require_list(payload.get("items"), field="result.items")
+            normalized = {"items": [_normalize_skill_scope(item) for item in items]}
+        except ValueError as exc:
+            return self._payload_error(message=str(exc), meta=meta)
+        return ExtensionCallResult(success=True, result=normalized, meta=meta)
+
+    async def list_apps(
+        self,
+        *,
+        runtime: A2ARuntime,
+        jsonrpc_url: str,
+        method_name: str,
+        meta: Dict[str, Any],
+    ) -> ExtensionCallResult:
+        result = await self.invoke_method(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params={},
+            meta=meta,
+        )
+        if not result.success:
+            return result
+        try:
+            payload = _require_dict(result.result, field="result")
+            items = _require_list(payload.get("items"), field="result.items")
+            normalized = {
+                "items": [_normalize_app_item(item) for item in items],
+                "nextCursor": _extract_string(
+                    (
+                        payload.get("next_cursor")
+                        if "next_cursor" in payload
+                        else payload.get("nextCursor")
+                    ),
+                    field="result.nextCursor",
+                ),
+            }
+        except ValueError as exc:
+            return self._payload_error(message=str(exc), meta=meta)
+        return ExtensionCallResult(success=True, result=normalized, meta=meta)
+
+    async def list_plugins(
+        self,
+        *,
+        runtime: A2ARuntime,
+        jsonrpc_url: str,
+        method_name: str,
+        meta: Dict[str, Any],
+    ) -> ExtensionCallResult:
+        result = await self.invoke_method(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params={},
+            meta=meta,
+        )
+        if not result.success:
+            return result
+        try:
+            payload = _require_dict(result.result, field="result")
+            items = _require_list(payload.get("items"), field="result.items")
+            normalized = {
+                "items": [_normalize_plugin_marketplace(item) for item in items],
+                "featuredPluginIds": _extract_string_list(
+                    (
+                        payload.get("featured_plugin_ids")
+                        if "featured_plugin_ids" in payload
+                        else payload.get("featuredPluginIds")
+                    ),
+                    field="result.featuredPluginIds",
+                ),
+                "marketplaceLoadErrors": _extract_dict_list(
+                    (
+                        payload.get("marketplace_load_errors")
+                        if "marketplace_load_errors" in payload
+                        else payload.get("marketplaceLoadErrors")
+                    ),
+                    field="result.marketplaceLoadErrors",
+                ),
+                "remoteSyncError": _extract_string(
+                    (
+                        payload.get("remote_sync_error")
+                        if "remote_sync_error" in payload
+                        else payload.get("remoteSyncError")
+                    ),
+                    field="result.remoteSyncError",
+                ),
+            }
         except ValueError as exc:
             return self._payload_error(message=str(exc), meta=meta)
         return ExtensionCallResult(success=True, result=normalized, meta=meta)
@@ -223,20 +391,40 @@ class CodexDiscoveryService:
         runtime: A2ARuntime,
         jsonrpc_url: str,
         method_name: str,
-        plugin_id: str,
+        marketplace_path: str,
+        plugin_name: str,
         meta: Dict[str, Any],
     ) -> ExtensionCallResult:
         result = await self.invoke_method(
             runtime=runtime,
             jsonrpc_url=jsonrpc_url,
             method_name=method_name,
-            params={"id": plugin_id},
+            params={
+                "marketplacePath": marketplace_path,
+                "pluginName": plugin_name,
+            },
             meta=meta,
         )
         if not result.success:
             return result
         try:
-            normalized = _normalize_plugin_read_result(result.result)
+            payload = _require_dict(result.result, field="result")
+            item = payload.get("item")
+            if item is None and isinstance(payload.get("plugin"), dict):
+                plugin_payload = dict(payload["plugin"])
+                item = {
+                    "name": plugin_payload.get("name"),
+                    "marketplace_name": plugin_payload.get("marketplaceName"),
+                    "marketplace_path": plugin_payload.get("marketplacePath"),
+                    "mention_path": plugin_payload.get("mentionPath"),
+                    "summary": plugin_payload.get("summary"),
+                    "skills": plugin_payload.get("skills"),
+                    "apps": plugin_payload.get("apps"),
+                    "mcp_servers": plugin_payload.get("mcpServers"),
+                    "interface": plugin_payload.get("interface"),
+                    "codex": plugin_payload.get("codex"),
+                }
+            normalized = {"item": _normalize_plugin_detail(item)}
         except ValueError as exc:
             return self._payload_error(message=str(exc), meta=meta)
         return ExtensionCallResult(success=True, result=normalized, meta=meta)

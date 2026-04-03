@@ -422,12 +422,39 @@ describe("assertExtensionSuccess", () => {
       result: {
         items: [
           {
-            id: "skill-1",
-            kind: "skill",
-            title: "Planning",
-            summary: "Summarize plans.",
-            tags: ["analysis"],
-            metadata: { source: "codex" },
+            cwd: "/workspace/project",
+            skills: [
+              {
+                name: "Planning",
+                path: "/workspace/project/.codex/skills/PLANNING/SKILL.md",
+                description: "Summarize plans.",
+                enabled: true,
+                scope: "project",
+                interface: null,
+                codex: { source: "codex" },
+              },
+            ],
+            errors: [],
+            codex: {},
+          },
+        ],
+      },
+    });
+    mockedApiRequest.mockResolvedValueOnce({
+      success: true,
+      result: {
+        items: [
+          {
+            id: "app-1",
+            name: "workspace",
+            description: "Manage files.",
+            isAccessible: true,
+            isEnabled: true,
+            installUrl: null,
+            mentionPath: "app://app-1",
+            branding: null,
+            labels: [],
+            codex: {},
           },
         ],
         nextCursor: "cursor-2",
@@ -438,25 +465,25 @@ describe("assertExtensionSuccess", () => {
       result: {
         items: [
           {
-            id: "app-1",
-            kind: "app",
-            name: "workspace",
-            metadata: {},
+            marketplaceName: "test",
+            marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+            interface: null,
+            plugins: [
+              {
+                name: "Planner",
+                description: "Coordinates work.",
+                enabled: true,
+                interface: null,
+                mentionPath: "plugin://planner@test",
+                codex: { version: "1.0" },
+              },
+            ],
+            codex: {},
           },
         ],
-      },
-    });
-    mockedApiRequest.mockResolvedValueOnce({
-      success: true,
-      result: {
-        items: [
-          {
-            id: "plugin-1",
-            kind: "plugin",
-            title: "Planner",
-            metadata: { version: "1.0" },
-          },
-        ],
+        featuredPluginIds: ["test:Planner"],
+        marketplaceLoadErrors: [],
+        remoteSyncError: null,
       },
     });
 
@@ -488,23 +515,27 @@ describe("assertExtensionSuccess", () => {
       "/me/a2a/agents/agent-1/extensions/codex/plugins",
       { method: "GET" },
     );
-    expect(skills.items[0]?.id).toBe("skill-1");
-    expect(skills.nextCursor).toBe("cursor-2");
-    expect(apps.items[0]?.kind).toBe("app");
-    expect(plugins.items[0]?.kind).toBe("plugin");
+    expect(skills.items[0]?.cwd).toBe("/workspace/project");
+    expect(apps.nextCursor).toBe("cursor-2");
+    expect(apps.items[0]?.mentionPath).toBe("app://app-1");
+    expect(plugins.items[0]?.marketplaceName).toBe("test");
   });
 
   it("calls codex plugin read endpoint and normalizes plugin details", async () => {
     mockedApiRequest.mockResolvedValue({
       success: true,
       result: {
-        plugin: {
-          id: "planner",
-          kind: "plugin",
-          title: "Planner",
-          description: "Coordinates work.",
-          metadata: { version: "1.0" },
-          content: { readme: "Use for planning" },
+        item: {
+          name: "planner",
+          marketplaceName: "test",
+          marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+          mentionPath: "plugin://planner@test",
+          summary: ["Use for planning"],
+          skills: [{ name: "planning" }],
+          apps: [{ id: "demo-app" }],
+          mcpServers: ["planner-server"],
+          interface: { transport: "mcp" },
+          codex: { version: "1.0" },
         },
       },
     });
@@ -512,18 +543,22 @@ describe("assertExtensionSuccess", () => {
     const result = await readCodexPlugin({
       source: "shared",
       agentId: "agent-1",
-      pluginId: "planner",
+      marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+      pluginName: "planner",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
       "/a2a/agents/agent-1/extensions/codex/plugins:read",
       {
         method: "POST",
-        body: { pluginId: "planner" },
+        body: {
+          marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+          pluginName: "planner",
+        },
       },
     );
-    expect(result.plugin?.id).toBe("planner");
-    expect(result.plugin?.content).toEqual({ readme: "Use for planning" });
+    expect(result.item?.name).toBe("planner");
+    expect(result.item?.summary).toEqual(["Use for planning"]);
   });
 
   it("calls model discovery endpoint with provider filter", async () => {

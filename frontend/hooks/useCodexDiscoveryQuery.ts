@@ -56,34 +56,48 @@ export const useCodexDiscoveryListQuery = ({
 export const useCodexPluginReadQuery = ({
   agentId,
   source,
-  pluginId,
+  marketplacePath,
+  pluginName,
   enabled = true,
 }: {
   agentId?: string | null;
   source?: AgentSource | null;
-  pluginId?: string | null;
+  marketplacePath?: string | null;
+  pluginName?: string | null;
   enabled?: boolean;
 }) => {
   const resolvedAgentId = agentId?.trim() || null;
   const resolvedSource = source ?? null;
-  const resolvedPluginId = pluginId?.trim() || null;
+  const resolvedMarketplacePath = marketplacePath?.trim() || null;
+  const resolvedPluginName = pluginName?.trim() || null;
 
   return useQuery({
     enabled:
-      enabled && Boolean(resolvedAgentId && resolvedSource && resolvedPluginId),
+      enabled &&
+      Boolean(
+        resolvedAgentId &&
+        resolvedSource &&
+        resolvedMarketplacePath &&
+        resolvedPluginName,
+      ),
     queryKey:
-      resolvedAgentId && resolvedSource && resolvedPluginId
+      resolvedAgentId &&
+      resolvedSource &&
+      resolvedMarketplacePath &&
+      resolvedPluginName
         ? queryKeys.agents.codexDiscoveryPlugin({
             agentId: resolvedAgentId,
             source: resolvedSource,
-            pluginId: resolvedPluginId,
+            marketplacePath: resolvedMarketplacePath,
+            pluginName: resolvedPluginName,
           })
         : (["agents", "codex-discovery", "plugin", "idle"] as const),
     queryFn: async () =>
       await readCodexPlugin({
         source: resolvedSource as AgentSource,
         agentId: resolvedAgentId as string,
-        pluginId: resolvedPluginId as string,
+        marketplacePath: resolvedMarketplacePath as string,
+        pluginName: resolvedPluginName as string,
       }),
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: true,

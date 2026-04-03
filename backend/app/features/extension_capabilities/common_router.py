@@ -36,9 +36,11 @@ from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileEntry,
 )
 from app.schemas.a2a_extension import (
-    A2ACodexDiscoveryListResponse,
+    A2ACodexDiscoveryAppsListResponse,
     A2ACodexDiscoveryPluginReadRequest,
     A2ACodexDiscoveryPluginReadResponse,
+    A2ACodexDiscoveryPluginsListResponse,
+    A2ACodexDiscoverySkillsListResponse,
     A2ADeclaredMethodCapabilityResponse,
     A2ADeclaredMethodCollectionCapabilitiesResponse,
     A2ADeclaredSingleMethodCapabilitiesResponse,
@@ -59,6 +61,7 @@ from app.schemas.a2a_extension import (
     A2AInvokeMetadataCapabilitiesResponse,
     A2AInvokeMetadataFieldResponse,
     A2AModelDiscoveryRequest,
+    A2ARequestExecutionOptionsCapabilitiesResponse,
     A2ARuntimeStatusContractResponse,
     A2ASessionControlCapabilitiesResponse,
     A2ASessionControlMethodResponse,
@@ -233,6 +236,26 @@ def _build_invoke_metadata_response(
             )
             for item in fields
         ],
+    )
+
+
+def _build_request_execution_options_response(
+    snapshot: Any,
+) -> A2ARequestExecutionOptionsCapabilitiesResponse:
+    capability = getattr(snapshot, "request_execution_options", None)
+    return A2ARequestExecutionOptionsCapabilitiesResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        status=cast(
+            Literal["unsupported", "declared_not_consumed", "invalid"],
+            getattr(capability, "status", "unsupported"),
+        ),
+        metadataField=getattr(capability, "metadata_field", None),
+        fields=list(getattr(capability, "fields", ()) or ()),
+        persistsForThread=getattr(capability, "persists_for_thread", None),
+        sourceExtensions=list(getattr(capability, "source_extensions", ()) or ()),
+        notes=list(getattr(capability, "notes", ()) or ()),
+        error=getattr(capability, "error", None),
     )
 
 
@@ -443,10 +466,20 @@ def create_extension_capability_router(
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
             invokeMetadata=_build_invoke_metadata_response(snapshot),
+            requestExecutionOptions=_build_request_execution_options_response(snapshot),
             wireContract=_build_wire_contract_response(snapshot),
             compatibilityProfile=_build_compatibility_profile_response(snapshot),
             codexDiscovery=_build_declared_method_collection_response(
                 getattr(snapshot, "codex_discovery", None)
+            ),
+            codexThreads=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_threads", None)
+            ),
+            codexTurns=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_turns", None)
+            ),
+            codexReview=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_review", None)
             ),
             codexThreadWatch=_build_declared_single_method_response(
                 getattr(snapshot, "codex_thread_watch", None)
@@ -529,7 +562,7 @@ def create_extension_capability_router(
 
     @router.get(
         "/{agent_id}/extensions/codex/skills",
-        response_model=A2ACodexDiscoveryListResponse,
+        response_model=A2ACodexDiscoverySkillsListResponse,
         status_code=status.HTTP_200_OK,
     )
     async def list_codex_skills(
@@ -555,7 +588,7 @@ def create_extension_capability_router(
 
     @router.get(
         "/{agent_id}/extensions/codex/apps",
-        response_model=A2ACodexDiscoveryListResponse,
+        response_model=A2ACodexDiscoveryAppsListResponse,
         status_code=status.HTTP_200_OK,
     )
     async def list_codex_apps(
@@ -581,7 +614,7 @@ def create_extension_capability_router(
 
     @router.get(
         "/{agent_id}/extensions/codex/plugins",
-        response_model=A2ACodexDiscoveryListResponse,
+        response_model=A2ACodexDiscoveryPluginsListResponse,
         status_code=status.HTTP_200_OK,
     )
     async def list_codex_plugins(
@@ -626,13 +659,15 @@ def create_extension_capability_router(
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
-                "plugin_id": payload.plugin_id,
+                "marketplace_path": payload.marketplace_path,
+                "plugin_name": payload.plugin_name,
             },
         )
         return await _run_extension_call(
             _extensions_service().read_codex_plugin(
                 runtime=runtime,
-                plugin_id=payload.plugin_id,
+                marketplace_path=payload.marketplace_path,
+                plugin_name=payload.plugin_name,
             )
         )
 

@@ -10,10 +10,11 @@ import {
 import {
   A2AExtensionCallError,
   type CodexDiscoveryCapability,
-  type CodexDiscoveryItem,
+  type CodexDiscoveryListEntry,
   type CodexDiscoveryListKind,
-  type CodexDiscoveryPlugin,
+  type CodexDiscoveryPluginDetail,
   type CodexDiscoveryStatus,
+  toCodexDiscoveryEntries,
 } from "@/lib/api/a2aExtensions";
 import { type AgentSource } from "@/store/agents";
 
@@ -46,22 +47,14 @@ const resolveQueryError = (error: unknown, fallback: string) => {
   return error instanceof Error ? error.message : fallback;
 };
 
-const resolvePluginContentPreview = (plugin: CodexDiscoveryPlugin | null) => {
+const resolvePluginContentPreview = (
+  plugin: CodexDiscoveryPluginDetail | null,
+) => {
   if (!plugin) {
     return null;
   }
-  if (typeof plugin.content === "string" && plugin.content.trim()) {
-    return plugin.content.trim();
-  }
-  if (
-    plugin.content &&
-    typeof plugin.content === "object" &&
-    !Array.isArray(plugin.content)
-  ) {
-    const readme = (plugin.content as Record<string, unknown>).readme;
-    if (typeof readme === "string" && readme.trim()) {
-      return readme.trim();
-    }
+  if (plugin.summary.length > 0) {
+    return plugin.summary.join("\n");
   }
   return null;
 };
@@ -81,7 +74,7 @@ const DiscoveryRow = React.memo(function DiscoveryRow({
   active,
   onPress,
 }: {
-  item: CodexDiscoveryItem;
+  item: CodexDiscoveryListEntry;
   active: boolean;
   onPress?: (() => void) | null;
 }) {
@@ -93,9 +86,7 @@ const DiscoveryRow = React.memo(function DiscoveryRow({
       onPress={onPress ?? undefined}
       disabled={!onPress}
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={
-        onPress ? `Open ${item.title ?? item.name ?? item.id}` : undefined
-      }
+      accessibilityLabel={onPress ? `Open ${item.title}` : undefined}
     >
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
@@ -104,18 +95,18 @@ const DiscoveryRow = React.memo(function DiscoveryRow({
               active ? "font-medium text-primary" : "font-medium text-white"
             }
           >
-            {item.title?.trim() || item.name?.trim() || item.id}
+            {item.title}
           </Text>
           <Text className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
             {item.kind} · {item.id}
           </Text>
-          {item.summary ? (
-            <Text className="mt-2 text-sm text-slate-300">{item.summary}</Text>
-          ) : null}
           {item.description ? (
             <Text className="mt-2 text-xs text-slate-400">
               {item.description}
             </Text>
+          ) : null}
+          {item.subtitle ? (
+            <Text className="mt-2 text-xs text-slate-500">{item.subtitle}</Text>
           ) : null}
         </View>
         {onPress ? (
@@ -127,16 +118,11 @@ const DiscoveryRow = React.memo(function DiscoveryRow({
         ) : null}
       </View>
 
-      {item.tags.length > 0 ? (
+      {item.badge ? (
         <View className="mt-3 flex-row flex-wrap gap-2">
-          {item.tags.map((tag) => (
-            <View
-              key={`${item.id}:${tag}`}
-              className="rounded-full bg-slate-800 px-2.5 py-1"
-            >
-              <Text className="text-[10px] text-slate-300">{tag}</Text>
-            </View>
-          ))}
+          <View className="rounded-full bg-slate-800 px-2.5 py-1">
+            <Text className="text-[10px] text-slate-300">{item.badge}</Text>
+          </View>
         </View>
       ) : null}
     </Pressable>
@@ -166,11 +152,14 @@ export function CodexDiscoveryModal({
   const [activeTab, setActiveTab] = useState<CodexDiscoveryListKind | null>(
     null,
   );
-  const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null);
+  const [selectedPluginRef, setSelectedPluginRef] = useState<{
+    marketplacePath: string;
+    pluginName: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!visible) {
-      setSelectedPluginId(null);
+      setSelectedPluginRef(null);
       return;
     }
     if (!activeTab || !availableTabs.includes(activeTab)) {
@@ -199,7 +188,8 @@ export function CodexDiscoveryModal({
   const pluginQuery = useCodexPluginReadQuery({
     agentId,
     source,
-    pluginId: selectedPluginId,
+    marketplacePath: selectedPluginRef?.marketplacePath,
+    pluginName: selectedPluginRef?.pluginName,
     enabled: visible && activeTab === "plugins" && canReadPlugins,
   });
 
@@ -209,9 +199,12 @@ export function CodexDiscoveryModal({
       : activeTab === "apps"
         ? appsQuery
         : pluginsQuery;
-  const activeItems = activeListQuery.data?.items ?? [];
+  const activeItems =
+    activeTab != null
+      ? toCodexDiscoveryEntries(activeTab, activeListQuery.data)
+      : [];
   const selectedPlugin =
-    (pluginQuery.data?.plugin as CodexDiscoveryPlugin | null | undefined) ??
+    (pluginQuery.data?.item as CodexDiscoveryPluginDetail | null | undefined) ??
     null;
   const pluginPreview = resolvePluginContentPreview(selectedPlugin);
   const statusMessage = resolveStatusMessage(codexDiscoveryStatus);
@@ -296,7 +289,7 @@ export function CodexDiscoveryModal({
                       onPress={() => {
                         setActiveTab(tab);
                         if (tab !== "plugins") {
-                          setSelectedPluginId(null);
+                          setSelectedPluginRef(null);
                         }
                       }}
                     />
@@ -332,10 +325,17 @@ export function CodexDiscoveryModal({
                     <DiscoveryRow
                       key={`${item.kind}:${item.id}`}
                       item={item}
-                      active={item.id === selectedPluginId}
+                      active={
+                        item.kind === "plugin" &&
+                        item.pluginRef != null &&
+                        item.pluginRef.marketplacePath ===
+                          selectedPluginRef?.marketplacePath &&
+                        item.pluginRef.pluginName ===
+                          selectedPluginRef?.pluginName
+                      }
                       onPress={
                         activeTab === "plugins" && canReadPlugins
-                          ? () => setSelectedPluginId(item.id)
+                          ? () => setSelectedPluginRef(item.pluginRef ?? null)
                           : null
                       }
                     />
@@ -361,7 +361,7 @@ export function CodexDiscoveryModal({
                         upstream does not declare a consumable plugin read
                         method.
                       </Text>
-                    ) : !selectedPluginId ? (
+                    ) : !selectedPluginRef ? (
                       <Text className="text-sm text-slate-400">
                         Select a plugin to inspect normalized details.
                       </Text>
@@ -383,36 +383,18 @@ export function CodexDiscoveryModal({
                     ) : (
                       <View>
                         <Text className="text-base font-medium text-white">
-                          {selectedPlugin.title?.trim() ||
-                            selectedPlugin.name?.trim() ||
-                            selectedPlugin.id}
+                          {selectedPlugin.name}
                         </Text>
                         <Text className="mt-1 text-[11px] uppercase tracking-wider text-slate-500">
-                          plugin · {selectedPlugin.id}
+                          plugin · {selectedPlugin.marketplaceName}
                         </Text>
-                        {selectedPlugin.summary ? (
+                        <Text className="mt-2 text-xs text-slate-500">
+                          {selectedPlugin.mentionPath}
+                        </Text>
+                        {selectedPlugin.summary.length > 0 ? (
                           <Text className="mt-3 text-sm text-slate-300">
-                            {selectedPlugin.summary}
+                            {selectedPlugin.summary.join("\n")}
                           </Text>
-                        ) : null}
-                        {selectedPlugin.description ? (
-                          <Text className="mt-2 text-sm text-slate-400">
-                            {selectedPlugin.description}
-                          </Text>
-                        ) : null}
-                        {selectedPlugin.tags.length > 0 ? (
-                          <View className="mt-3 flex-row flex-wrap gap-2">
-                            {selectedPlugin.tags.map((tag) => (
-                              <View
-                                key={`${selectedPlugin.id}:detail:${tag}`}
-                                className="rounded-full bg-slate-800 px-2.5 py-1"
-                              >
-                                <Text className="text-[10px] text-slate-300">
-                                  {tag}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
                         ) : null}
                         {pluginPreview ? (
                           <View className="mt-4 rounded-2xl bg-black/20 px-4 py-4">
@@ -426,22 +408,44 @@ export function CodexDiscoveryModal({
                         ) : (
                           <View className="mt-4 rounded-2xl bg-black/20 px-4 py-4">
                             <Text className="text-sm text-slate-400">
-                              This plugin exposes structured detail content that
-                              is not rendered as free-form text in the current
-                              minimal UI.
+                              This plugin exposes structured detail fields
+                              without a text summary preview.
                             </Text>
                           </View>
                         )}
-                        {Object.keys(selectedPlugin.metadata).length > 0 ? (
+                        <View className="mt-4 rounded-2xl bg-black/20 px-4 py-4">
+                          <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                            Stable Identifiers
+                          </Text>
+                          <View className="mt-3 gap-2">
+                            <View className="flex-row items-start justify-between gap-3">
+                              <Text className="flex-1 text-xs text-slate-500">
+                                marketplacePath
+                              </Text>
+                              <Text className="flex-1 text-right text-xs text-slate-300">
+                                {selectedPlugin.marketplacePath}
+                              </Text>
+                            </View>
+                            <View className="flex-row items-start justify-between gap-3">
+                              <Text className="flex-1 text-xs text-slate-500">
+                                pluginName
+                              </Text>
+                              <Text className="flex-1 text-right text-xs text-slate-300">
+                                {selectedPlugin.name}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                        {Object.keys(selectedPlugin.codex).length > 0 ? (
                           <View className="mt-4 rounded-2xl bg-black/20 px-4 py-4">
                             <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                              Metadata
+                              Codex Envelope
                             </Text>
                             <View className="mt-3 gap-2">
-                              {Object.entries(selectedPlugin.metadata).map(
+                              {Object.entries(selectedPlugin.codex).map(
                                 ([key, value]) => (
                                   <View
-                                    key={`${selectedPlugin.id}:meta:${key}`}
+                                    key={`${selectedPlugin.name}:codex:${key}`}
                                     className="flex-row items-start justify-between gap-3"
                                   >
                                     <Text className="flex-1 text-xs text-slate-500">

@@ -7,6 +7,9 @@ import {
   useCodexPluginReadQuery,
 } from "@/hooks/useCodexDiscoveryQuery";
 import {
+  type CodexDiscoveryAppsListResult,
+  type CodexDiscoveryPluginsListResult,
+  type CodexDiscoverySkillsListResult,
   listCodexApps,
   listCodexPlugins,
   listCodexSkills,
@@ -49,16 +52,64 @@ describe("useCodexDiscoveryQuery", () => {
 
   it("queries codex discovery lists by kind", async () => {
     mockedListCodexSkills.mockResolvedValue({
-      items: [{ id: "skill-1", kind: "skill", tags: [], metadata: {} }],
-      nextCursor: null,
+      items: [
+        {
+          cwd: "/workspace/project",
+          skills: [
+            {
+              name: "Planning",
+              path: "/workspace/project/.codex/skills/PLANNING/SKILL.md",
+              description: "Summarize plans.",
+              enabled: true,
+              scope: "project",
+              interface: null,
+              codex: {},
+            },
+          ],
+          errors: [],
+          codex: {},
+        },
+      ],
     });
     mockedListCodexApps.mockResolvedValue({
-      items: [{ id: "app-1", kind: "app", tags: [], metadata: {} }],
+      items: [
+        {
+          id: "app-1",
+          name: "Workspace",
+          description: "Manage files.",
+          isAccessible: true,
+          isEnabled: true,
+          installUrl: null,
+          mentionPath: "app://app-1",
+          branding: null,
+          labels: [],
+          codex: {},
+        },
+      ],
       nextCursor: null,
     });
     mockedListCodexPlugins.mockResolvedValue({
-      items: [{ id: "plugin-1", kind: "plugin", tags: [], metadata: {} }],
-      nextCursor: null,
+      items: [
+        {
+          marketplaceName: "test",
+          marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+          interface: null,
+          plugins: [
+            {
+              name: "planner",
+              description: "Coordinates work.",
+              enabled: true,
+              interface: null,
+              mentionPath: "plugin://planner@test",
+              codex: {},
+            },
+          ],
+          codex: {},
+        },
+      ],
+      featuredPluginIds: [],
+      marketplaceLoadErrors: [],
+      remoteSyncError: null,
     });
 
     const { result: skillsResult } = renderHook(
@@ -90,13 +141,28 @@ describe("useCodexDiscoveryQuery", () => {
     );
 
     await waitFor(() => {
-      expect(skillsResult.current.data?.items[0]?.id).toBe("skill-1");
+      expect(
+        (
+          skillsResult.current.data as
+            | CodexDiscoverySkillsListResult
+            | undefined
+        )?.items[0]?.cwd,
+      ).toBe("/workspace/project");
     });
     await waitFor(() => {
-      expect(appsResult.current.data?.items[0]?.id).toBe("app-1");
+      expect(
+        (appsResult.current.data as CodexDiscoveryAppsListResult | undefined)
+          ?.items[0]?.id,
+      ).toBe("app-1");
     });
     await waitFor(() => {
-      expect(pluginsResult.current.data?.items[0]?.id).toBe("plugin-1");
+      expect(
+        (
+          pluginsResult.current.data as
+            | CodexDiscoveryPluginsListResult
+            | undefined
+        )?.items[0]?.marketplaceName,
+      ).toBe("test");
     });
 
     expect(mockedListCodexSkills).toHaveBeenCalledWith({
@@ -113,14 +179,19 @@ describe("useCodexDiscoveryQuery", () => {
     });
   });
 
-  it("queries plugin details when a plugin id is present", async () => {
+  it("queries plugin details when marketplace path and plugin name are present", async () => {
     mockedReadCodexPlugin.mockResolvedValue({
-      plugin: {
-        id: "planner",
-        kind: "plugin",
-        tags: [],
-        metadata: {},
-        content: { readme: "Use for planning" },
+      item: {
+        name: "planner",
+        marketplaceName: "test",
+        marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+        mentionPath: "plugin://planner@test",
+        summary: ["Use for planning"],
+        skills: [],
+        apps: [],
+        mcpServers: [],
+        interface: null,
+        codex: {},
       },
     });
 
@@ -129,19 +200,21 @@ describe("useCodexDiscoveryQuery", () => {
         useCodexPluginReadQuery({
           agentId: "agent-1",
           source: "personal",
-          pluginId: "planner",
+          marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+          pluginName: "planner",
         }),
       { wrapper: createWrapper(queryClient) },
     );
 
     await waitFor(() => {
-      expect(result.current.data?.plugin?.id).toBe("planner");
+      expect(result.current.data?.item?.name).toBe("planner");
     });
 
     expect(mockedReadCodexPlugin).toHaveBeenCalledWith({
       source: "personal",
       agentId: "agent-1",
-      pluginId: "planner",
+      marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+      pluginName: "planner",
     });
   });
 });

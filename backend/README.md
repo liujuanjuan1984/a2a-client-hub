@@ -179,14 +179,17 @@ Endpoints:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
   - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
   - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
+  - The capability response also surfaces `codexThreads`, `codexTurns`, and `codexReview` collection diagnostics so newer upstream lifecycle/control families remain visible even before Hub consumes them.
   - `codexDiscovery` also reports `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints can be surfaced without incorrectly promoting them to Hub-consumable support.
+  - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions without yet promoting them to a Hub-consumed feature surface.
 - Read Codex discovery lists through Hub-stable APIs:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/skills`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/apps`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins`
 - Read Codex plugin details through a Hub-stable API:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins:read`
-    - body: `{ "pluginId": "planner" }`
+    - body: `{ "marketplacePath": "plugin://marketplace/codex-default", "pluginName": "planner" }`
+  - Codex discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body: `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`

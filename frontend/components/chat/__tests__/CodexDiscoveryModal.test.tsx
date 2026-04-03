@@ -45,6 +45,36 @@ jest.mock("@/lib/api/a2aExtensions", () => {
 
   return {
     A2AExtensionCallError: MockA2AExtensionCallError,
+    toCodexDiscoveryEntries: (kind: string, result: { items?: unknown[] }) => {
+      if (kind !== "plugins") {
+        return [];
+      }
+      return (result.items ?? []).flatMap((marketplace) => {
+        const item = marketplace as {
+          marketplacePath?: string;
+          plugins?: {
+            name?: string;
+            description?: string | null;
+            mentionPath?: string | null;
+          }[];
+        };
+        return (item.plugins ?? []).map((plugin) => ({
+          id: plugin.name ?? "plugin",
+          kind: "plugin",
+          title: plugin.name ?? "plugin",
+          description: plugin.description ?? null,
+          subtitle: plugin.mentionPath ?? null,
+          badge: null,
+          pluginRef:
+            item.marketplacePath && plugin.name
+              ? {
+                  marketplacePath: item.marketplacePath,
+                  pluginName: plugin.name,
+                }
+              : null,
+        }));
+      });
+    },
   };
 });
 
@@ -152,12 +182,21 @@ describe("CodexDiscoveryModal", () => {
                 data: {
                   items: [
                     {
-                      id: "planner",
-                      kind: "plugin",
-                      title: "Planner",
-                      summary: "Coordinates work.",
-                      tags: ["planning"],
-                      metadata: { version: "1.0" },
+                      marketplaceName: "test",
+                      marketplacePath:
+                        "/workspace/.codex/plugins/marketplace.json",
+                      interface: null,
+                      plugins: [
+                        {
+                          name: "Planner",
+                          description: "Coordinates work.",
+                          enabled: true,
+                          interface: null,
+                          mentionPath: "plugin://planner@test",
+                          codex: { version: "1.0" },
+                        },
+                      ],
+                      codex: {},
                     },
                   ],
                 },
@@ -168,14 +207,17 @@ describe("CodexDiscoveryModal", () => {
     mockedUseCodexPluginReadQuery.mockReturnValue(
       createQueryResult({
         data: {
-          plugin: {
-            id: "planner",
-            kind: "plugin",
-            title: "Planner",
-            description: "Coordinates work.",
-            tags: ["planning"],
-            metadata: { version: "1.0" },
-            content: { readme: "Use for planning" },
+          item: {
+            name: "Planner",
+            marketplaceName: "test",
+            marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+            mentionPath: "plugin://planner@test",
+            summary: ["Use for planning"],
+            skills: [],
+            apps: [],
+            mcpServers: [],
+            interface: null,
+            codex: { version: "1.0" },
           },
         },
       }) as ReturnType<typeof useCodexPluginReadQuery>,

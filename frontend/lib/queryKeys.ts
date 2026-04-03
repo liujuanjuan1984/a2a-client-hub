@@ -80,7 +80,8 @@ export const queryKeys = {
     codexDiscoveryPlugin: (input: {
       agentId: string;
       source: "personal" | "shared";
-      pluginId: string;
+      marketplacePath: string;
+      pluginName: string;
     }) =>
       [
         "agents",
@@ -88,7 +89,8 @@ export const queryKeys = {
         "plugin",
         input.source,
         input.agentId,
-        input.pluginId,
+        input.marketplacePath,
+        input.pluginName,
       ] as const,
   },
   schedules: {
