@@ -1221,6 +1221,93 @@ async def test_execute_claimed_task_reuses_preflight_client_for_invoke(
     preflight_client.close.assert_awaited_once()
 
 
+async def test_execute_claimed_task_releases_schedule_session_before_invoke(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="session-release",
+    )
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=utc_now(),
+    )
+
+    active_schedule_sessions = 0
+    original_session_maker = async_session_maker
+
+    class _TrackedSessionContext:
+        def __init__(self) -> None:
+            self._context = original_session_maker()
+
+        async def __aenter__(self):
+            nonlocal active_schedule_sessions
+            active_schedule_sessions += 1
+            return await self._context.__aenter__()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            nonlocal active_schedule_sessions
+            try:
+                return await self._context.__aexit__(exc_type, exc, tb)
+            finally:
+                active_schedule_sessions -= 1
+
+    monkeypatch.setattr(
+        "app.features.schedules.job.AsyncSessionLocal",
+        lambda: _TrackedSessionContext(),
+    )
+    monkeypatch.setattr(
+        "app.features.schedules.job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+
+    preflight_client = SimpleNamespace(close=AsyncMock())
+
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        try:
+            yield SimpleNamespace(
+                client=preflight_client,
+                policy=SimpleNamespace(value="fresh_snapshot"),
+                is_shared=False,
+            )
+        finally:
+            await preflight_client.close()
+
+    async def _fake_run_background_invoke(**_kwargs):
+        assert active_schedule_sessions == 0
+        return {
+            "success": True,
+            "response_content": "ok",
+            "conversation_id": None,
+            "message_refs": {},
+            "context_id": None,
+        }
+
+    monkeypatch.setattr(
+        "app.features.schedules.job.get_a2a_service",
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(open_invoke_session=_open_invoke_session)
+        ),
+    )
+    monkeypatch.setattr(
+        "app.features.schedules.job.run_background_invoke",
+        _fake_run_background_invoke,
+    )
+
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
+
+    assert active_schedule_sessions == 0
+    preflight_client.close.assert_awaited_once()
+
+
 async def test_execute_claimed_task_binds_external_session_identity_when_present(
     async_db_session,
     async_session_maker,

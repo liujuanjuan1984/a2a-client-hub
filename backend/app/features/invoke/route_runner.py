@@ -1184,7 +1184,6 @@ async def run_http_invoke(
 
 async def run_background_invoke(
     *,
-    db: AsyncSession,
     gateway: Any,
     invoke_session: Any | None = None,
     runtime: Any,
