@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Dict, Mapping, Optional
 
 from pydantic import ValidationError
@@ -22,6 +23,26 @@ _MISSING = object()
 class SessionExtensionService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
+
+    @staticmethod
+    def prepare_session_lookup(*, session_id: str) -> str:
+        resolved_session_id = (session_id or "").strip()
+        if not resolved_session_id:
+            raise ValueError("session_id is required")
+        return resolved_session_id
+
+    @classmethod
+    def prepare_session_message_lookup(
+        cls,
+        *,
+        session_id: str,
+        message_id: str,
+    ) -> tuple[str, str]:
+        resolved_session_id = cls.prepare_session_lookup(session_id=session_id)
+        resolved_message_id = (message_id or "").strip()
+        if not resolved_message_id:
+            raise ValueError("message_id is required")
+        return resolved_session_id, resolved_message_id
 
     def prepare_prompt_session_async(
         self,
@@ -49,6 +70,73 @@ class SessionExtensionService:
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
         return resolved_session_id, params
+
+    def prepare_session_action(
+        self,
+        *,
+        session_id: str,
+        request_payload: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, Dict[str, Any]]:
+        resolved_session_id = self.prepare_session_lookup(session_id=session_id)
+        params: Dict[str, Any] = {"session_id": resolved_session_id}
+
+        if request_payload is not None:
+            if not isinstance(request_payload, dict):
+                raise ValueError("request must be an object")
+            params["request"] = dict(request_payload)
+
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+        return resolved_session_id, params
+
+    def prepare_session_summarize(
+        self,
+        *,
+        session_id: str,
+        request_payload: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, Dict[str, Any]]:
+        if request_payload is not None and not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+        if isinstance(request_payload, dict):
+            for key in ("providerID", "modelID"):
+                value = request_payload.get(key)
+                if value is not None and not isinstance(value, str):
+                    raise ValueError(f"request.{key} must be a string")
+            auto = request_payload.get("auto")
+            if auto is not None and not isinstance(auto, bool):
+                raise ValueError("request.auto must be a boolean")
+        return self.prepare_session_action(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+
+    def prepare_session_revert(
+        self,
+        *,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, Dict[str, Any]]:
+        if not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+
+        message_id = request_payload.get("messageID")
+        if not isinstance(message_id, str) or not message_id.strip():
+            raise ValueError("request.messageID must be a non-empty string")
+
+        part_id = request_payload.get("partID")
+        if part_id is not None and not isinstance(part_id, str):
+            raise ValueError("request.partID must be a string")
+
+        return self.prepare_session_action(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
 
     def prepare_session_command(
         self,
@@ -398,6 +486,86 @@ class SessionExtensionService:
             meta.update(meta_extra)
         return meta
 
+    @staticmethod
+    def _extract_raw_result(result: Dict[str, Any]) -> Any:
+        if set(result.keys()) == {"raw"}:
+            return result.get("raw")
+        return result
+
+    @classmethod
+    def _normalize_items_payload(
+        cls,
+        result: Any,
+        *,
+        include_raw: bool = False,
+    ) -> Dict[str, Any]:
+        raw_result = result
+        if isinstance(result, dict):
+            items = result.get("items")
+        elif isinstance(result, list):
+            items = result
+        else:
+            raise A2AExtensionContractError("Extension result envelope missing items")
+
+        if not isinstance(items, list):
+            raise A2AExtensionContractError("Extension result envelope missing items")
+
+        payload: Dict[str, Any] = {"items": items}
+        if include_raw:
+            payload["raw"] = raw_result
+        return payload
+
+    @classmethod
+    def _normalize_item_payload(
+        cls,
+        result: Any,
+        *,
+        include_raw: bool = False,
+    ) -> Dict[str, Any]:
+        raw_result = result
+        if isinstance(result, dict) and "item" in result:
+            item = result.get("item")
+        else:
+            item = result
+
+        if not isinstance(item, dict):
+            raise A2AExtensionContractError("Extension result envelope missing item")
+
+        payload: Dict[str, Any] = {"item": dict(item)}
+        if include_raw:
+            payload["raw"] = raw_result
+        return payload
+
+    @classmethod
+    def _normalize_ack_payload(
+        cls,
+        result: Any,
+        *,
+        include_raw: bool = False,
+    ) -> Dict[str, Any]:
+        if not isinstance(result, dict):
+            raise A2AExtensionContractError(
+                "Extension acknowledge result must be an object"
+            )
+
+        raw_ok = result.get("ok")
+        if raw_ok is not None and not isinstance(raw_ok, bool):
+            raise A2AExtensionContractError(
+                "Extension acknowledge result field 'ok' must be a boolean"
+            )
+
+        payload: Dict[str, Any] = {"ok": True if raw_ok is None else raw_ok}
+        raw_session_id = result.get("session_id")
+        if raw_session_id is not None:
+            if not isinstance(raw_session_id, str) or not raw_session_id.strip():
+                raise A2AExtensionContractError(
+                    "Extension acknowledge result field 'session_id' must be a string"
+                )
+            payload["sessionId"] = raw_session_id.strip()
+        if include_raw:
+            payload["raw"] = result
+        return payload
+
     async def invoke_method(
         self,
         *,
@@ -476,6 +644,114 @@ class SessionExtensionService:
             missing_params=list(error_details.missing_params or []) or None,
             upstream_error=error_details.upstream_error,
             meta=meta,
+        )
+
+    async def invoke_items_method(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        method_key: str,
+        params: Dict[str, Any],
+        include_raw: bool = False,
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        result = await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=self._support.ensure_outbound_allowed(
+                ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+            ),
+            selection_meta=selection_meta,
+            method_key=method_key,
+            params=params,
+            page=1,
+            size=1,
+            include_raw=False,
+            normalize_envelope=False,
+            meta_extra=meta_extra,
+        )
+        if not result.success or not isinstance(result.result, dict):
+            return result
+        return replace(
+            result,
+            result=self._normalize_items_payload(
+                self._extract_raw_result(result.result),
+                include_raw=include_raw,
+            ),
+        )
+
+    async def invoke_item_method(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        method_key: str,
+        params: Dict[str, Any],
+        include_raw: bool = False,
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        result = await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=self._support.ensure_outbound_allowed(
+                ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+            ),
+            selection_meta=selection_meta,
+            method_key=method_key,
+            params=params,
+            page=1,
+            size=1,
+            include_raw=False,
+            normalize_envelope=False,
+            meta_extra=meta_extra,
+        )
+        if not result.success or not isinstance(result.result, dict):
+            return result
+        return replace(
+            result,
+            result=self._normalize_item_payload(
+                self._extract_raw_result(result.result),
+                include_raw=include_raw,
+            ),
+        )
+
+    async def invoke_ack_method(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        method_key: str,
+        params: Dict[str, Any],
+        include_raw: bool = False,
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        result = await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=self._support.ensure_outbound_allowed(
+                ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+            ),
+            selection_meta=selection_meta,
+            method_key=method_key,
+            params=params,
+            page=1,
+            size=1,
+            include_raw=False,
+            normalize_envelope=False,
+            meta_extra=meta_extra,
+        )
+        if not result.success or not isinstance(result.result, dict):
+            return result
+        return replace(
+            result,
+            result=self._normalize_ack_payload(
+                self._extract_raw_result(result.result),
+                include_raw=include_raw,
+            ),
         )
 
     async def list_sessions(
@@ -793,4 +1069,260 @@ class SessionExtensionService:
                 "session_id": resolved_session_id,
                 "control_method": "command",
             },
+        )
+
+    async def get_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        resolved_session_id = self.prepare_session_lookup(session_id=session_id)
+        return await self.invoke_item_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="get_session",
+            params={"session_id": resolved_session_id},
+            include_raw=include_raw,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def get_session_children(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        resolved_session_id = self.prepare_session_lookup(session_id=session_id)
+        return await self.invoke_items_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="get_session_children",
+            params={"session_id": resolved_session_id},
+            include_raw=include_raw,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def get_session_todo(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        resolved_session_id = self.prepare_session_lookup(session_id=session_id)
+        return await self.invoke_items_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="get_session_todo",
+            params={"session_id": resolved_session_id},
+            include_raw=include_raw,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def get_session_diff(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        message_id: str | None = None,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        resolved_session_id = self.prepare_session_lookup(session_id=session_id)
+        params: Dict[str, Any] = {"session_id": resolved_session_id}
+        resolved_message_id = (message_id or "").strip() or None
+        if resolved_message_id is not None:
+            params["message_id"] = resolved_message_id
+        return await self.invoke_items_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="get_session_diff",
+            params=params,
+            include_raw=include_raw,
+            meta_extra={
+                "session_id": resolved_session_id,
+                "message_id": resolved_message_id,
+            },
+        )
+
+    async def get_session_message(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        message_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        resolved_session_id, resolved_message_id = self.prepare_session_message_lookup(
+            session_id=session_id,
+            message_id=message_id,
+        )
+        return await self.invoke_item_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="get_session_message",
+            params={
+                "session_id": resolved_session_id,
+                "message_id": resolved_message_id,
+            },
+            include_raw=include_raw,
+            meta_extra={
+                "session_id": resolved_session_id,
+                "message_id": resolved_message_id,
+            },
+        )
+
+    async def fork_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        request_payload: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id, params = self.prepare_session_action(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+        return await self.invoke_item_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="fork",
+            params=params,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def share_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id, params = self.prepare_session_action(
+            session_id=session_id,
+            metadata=metadata,
+        )
+        return await self.invoke_item_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="share",
+            params=params,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def unshare_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id, params = self.prepare_session_action(
+            session_id=session_id,
+            metadata=metadata,
+        )
+        return await self.invoke_item_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="unshare",
+            params=params,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def summarize_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        request_payload: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id, params = self.prepare_session_summarize(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+        return await self.invoke_ack_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="summarize",
+            params=params,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def revert_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id, params = self.prepare_session_revert(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+        return await self.invoke_item_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="revert",
+            params=params,
+            meta_extra={"session_id": resolved_session_id},
+        )
+
+    async def unrevert_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id, params = self.prepare_session_action(
+            session_id=session_id,
+            metadata=metadata,
+        )
+        return await self.invoke_item_method(
+            runtime=runtime,
+            ext=ext,
+            selection_meta=selection_meta,
+            method_key="unrevert",
+            params=params,
+            meta_extra={"session_id": resolved_session_id},
         )

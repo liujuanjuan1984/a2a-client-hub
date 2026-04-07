@@ -1319,6 +1319,15 @@ class A2AExtensionsService:
             wire_contract=wire_contract,
         )
 
+    async def _resolve_session_extension_runtime(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> tuple[ResolvedCapabilitySnapshot, ResolvedSessionQueryRuntimeCapability]:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        capability = self._require_session_query_capability(snapshot.session_query)
+        return snapshot, capability
+
     async def resolve_session_binding(
         self,
         *,
@@ -1363,8 +1372,9 @@ class A2AExtensionsService:
         filters: Optional[Dict[str, Any]] = None,
         include_raw: bool = False,
     ) -> ExtensionCallResult:
-        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        capability = self._require_session_query_capability(snapshot.session_query)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
         preflight = self._preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -1394,8 +1404,9 @@ class A2AExtensionsService:
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
-        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        capability = self._require_session_query_capability(snapshot.session_query)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
         preflight = self._preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -1421,8 +1432,9 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         session_id: str,
     ) -> ExtensionCallResult:
-        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        capability = self._require_session_query_capability(snapshot.session_query)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
         preflight = self._preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -1451,8 +1463,9 @@ class A2AExtensionsService:
             request_payload=request_payload,
             metadata=metadata,
         )
-        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        capability = self._require_session_query_capability(snapshot.session_query)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
         preflight = self._preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -1482,8 +1495,9 @@ class A2AExtensionsService:
             request_payload=request_payload,
             metadata=metadata,
         )
-        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        capability = self._require_session_query_capability(snapshot.session_query)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
         preflight = self._preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -1497,6 +1511,326 @@ class A2AExtensionsService:
             selection_meta=snapshot.session_query.selection_meta,
             session_id=session_id,
             request_payload=request_payload,
+            metadata=metadata,
+        )
+
+    async def get_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_lookup(session_id=session_id)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("get_session"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.get_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            include_raw=include_raw,
+        )
+
+    async def get_session_children(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_lookup(session_id=session_id)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("get_session_children"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.get_session_children(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            include_raw=include_raw,
+        )
+
+    async def get_session_todo(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_lookup(session_id=session_id)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("get_session_todo"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.get_session_todo(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            include_raw=include_raw,
+        )
+
+    async def get_session_diff(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        message_id: str | None = None,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_lookup(session_id=session_id)
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("get_session_diff"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.get_session_diff(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            message_id=message_id,
+            include_raw=include_raw,
+        )
+
+    async def get_session_message(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        message_id: str,
+        include_raw: bool = False,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_message_lookup(
+            session_id=session_id,
+            message_id=message_id,
+        )
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("get_session_message"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.get_session_message(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            message_id=message_id,
+            include_raw=include_raw,
+        )
+
+    async def fork_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        request_payload: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_action(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("fork"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.fork_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+
+    async def share_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_action(
+            session_id=session_id,
+            metadata=metadata,
+        )
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("share"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.share_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            metadata=metadata,
+        )
+
+    async def unshare_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_action(
+            session_id=session_id,
+            metadata=metadata,
+        )
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("unshare"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.unshare_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            metadata=metadata,
+        )
+
+    async def summarize_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        request_payload: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_summarize(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("summarize"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.summarize_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+
+    async def revert_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_revert(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("revert"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.revert_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+
+    async def unrevert_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_action(
+            session_id=session_id,
+            metadata=metadata,
+        )
+        snapshot, capability = await self._resolve_session_extension_runtime(
+            runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("unrevert"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.unrevert_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
             metadata=metadata,
         )
 

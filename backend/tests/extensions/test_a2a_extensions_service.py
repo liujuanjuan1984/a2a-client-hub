@@ -350,9 +350,20 @@ def _resolved_extension(
         ),
         methods={
             "list_sessions": "shared.sessions.list",
+            "get_session": "shared.sessions.get",
+            "get_session_children": "shared.sessions.children",
+            "get_session_todo": "shared.sessions.todo",
+            "get_session_diff": "shared.sessions.diff",
+            "get_session_message": "shared.sessions.messages.get",
             "get_session_messages": "shared.sessions.messages.list",
             "prompt_async": "shared.sessions.prompt_async",
             "command": "shared.sessions.command",
+            "fork": "shared.sessions.fork",
+            "share": "shared.sessions.share",
+            "unshare": "shared.sessions.unshare",
+            "summarize": "shared.sessions.summarize",
+            "revert": "shared.sessions.revert",
+            "unrevert": "shared.sessions.unrevert",
             "shell": None,
         },
         pagination=PageSizePagination(
@@ -453,9 +464,20 @@ def _wire_contract_extension_fixture(
     *,
     all_jsonrpc_methods: tuple[str, ...] = (
         "shared.sessions.list",
+        "shared.sessions.get",
+        "shared.sessions.children",
+        "shared.sessions.todo",
+        "shared.sessions.diff",
+        "shared.sessions.messages.get",
         "shared.sessions.messages.list",
         "shared.sessions.prompt_async",
         "shared.sessions.command",
+        "shared.sessions.fork",
+        "shared.sessions.share",
+        "shared.sessions.unshare",
+        "shared.sessions.summarize",
+        "shared.sessions.revert",
+        "shared.sessions.unrevert",
         "providers.list",
         "models.list",
     ),
@@ -474,9 +496,20 @@ def _wire_contract_extension_fixture(
         core_http_endpoints=("GET /v1/tasks",),
         extension_jsonrpc_methods=(
             "shared.sessions.list",
+            "shared.sessions.get",
+            "shared.sessions.children",
+            "shared.sessions.todo",
+            "shared.sessions.diff",
+            "shared.sessions.messages.get",
             "shared.sessions.messages.list",
             "shared.sessions.prompt_async",
             "shared.sessions.command",
+            "shared.sessions.fork",
+            "shared.sessions.share",
+            "shared.sessions.unshare",
+            "shared.sessions.summarize",
+            "shared.sessions.revert",
+            "shared.sessions.unrevert",
             "providers.list",
             "models.list",
         ),
@@ -508,6 +541,10 @@ def _interrupt_recovery_extension_fixture() -> ResolvedInterruptRecoveryExtensio
             "list_questions": "opencode.questions.list",
         },
         business_code_map={},
+        recovery_data_source="local_interrupt_binding_registry",
+        identity_scope="current_authenticated_caller",
+        implementation_scope="adapter-local",
+        empty_result_when_identity_unavailable=True,
     )
 
 
@@ -1921,6 +1958,201 @@ async def test_command_session_rejects_non_object_metadata() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("service_method", "delegate_name", "call_kwargs", "delegate_result"),
+    [
+        (
+            "get_session",
+            "get_session",
+            {"session_id": "ses_123", "include_raw": True},
+            {
+                "item": {"id": "ses_123"},
+                "raw": {"id": "ses_123", "provider": "opencode"},
+            },
+        ),
+        (
+            "get_session_children",
+            "get_session_children",
+            {"session_id": "ses_123", "include_raw": True},
+            {"items": [{"id": "ses-child-1"}], "raw": [{"id": "ses-child-1"}]},
+        ),
+        (
+            "get_session_todo",
+            "get_session_todo",
+            {"session_id": "ses_123"},
+            {"items": [{"id": "todo-1"}]},
+        ),
+        (
+            "get_session_diff",
+            "get_session_diff",
+            {"session_id": "ses_123", "message_id": "msg-9", "include_raw": True},
+            {
+                "items": [{"path": "README.md"}],
+                "raw": [{"path": "README.md", "provider": "opencode"}],
+            },
+        ),
+        (
+            "get_session_message",
+            "get_session_message",
+            {"session_id": "ses_123", "message_id": "msg-9"},
+            {"item": {"id": "msg-9", "text": "hello"}},
+        ),
+        (
+            "fork_session",
+            "fork_session",
+            {
+                "session_id": "ses_123",
+                "request_payload": {"messageID": "msg-1"},
+                "metadata": {"provider": "opencode"},
+            },
+            {"item": {"id": "ses_456", "parentId": "ses_123"}},
+        ),
+        (
+            "share_session",
+            "share_session",
+            {"session_id": "ses_123", "metadata": {"provider": "opencode"}},
+            {"item": {"id": "ses_123", "shared": True}},
+        ),
+        (
+            "unshare_session",
+            "unshare_session",
+            {"session_id": "ses_123"},
+            {"item": {"id": "ses_123", "shared": False}},
+        ),
+        (
+            "summarize_session",
+            "summarize_session",
+            {
+                "session_id": "ses_123",
+                "request_payload": {"providerID": "openai", "auto": True},
+            },
+            {"ok": True, "sessionId": "ses_123"},
+        ),
+        (
+            "revert_session",
+            "revert_session",
+            {
+                "session_id": "ses_123",
+                "request_payload": {"messageID": "msg-1", "partID": "part-2"},
+            },
+            {"item": {"id": "ses_123", "revertedTo": "msg-1"}},
+        ),
+        (
+            "unrevert_session",
+            "unrevert_session",
+            {"session_id": "ses_123"},
+            {"item": {"id": "ses_123", "reverted": False}},
+        ),
+    ],
+)
+async def test_extended_session_management_methods_delegate_to_session_service(
+    monkeypatch: pytest.MonkeyPatch,
+    service_method: str,
+    delegate_name: str,
+    call_kwargs: dict[str, Any],
+    delegate_result: dict[str, Any],
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(supports_offset=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    captured: dict[str, Any] = {}
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            wire_contract=_wire_contract_snapshot(
+                status="supported",
+                ext=_wire_contract_extension_fixture(),
+            ),
+        )
+
+    async def _fake_delegate(**kwargs):
+        captured.update(kwargs)
+        return ExtensionCallResult(success=True, result=delegate_result, meta={})
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._session_extensions, delegate_name, _fake_delegate)
+
+    result = await getattr(service, service_method)(runtime=runtime, **call_kwargs)
+
+    assert result.success is True
+    assert result.result == delegate_result
+    assert captured["ext"] is ext
+    assert captured["selection_meta"] == {
+        "session_query_declared_contract_family": "opencode",
+        "session_query_normalized_contract_family": "a2a_client_hub",
+        "session_query_selection_mode": "direct",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_session_returns_method_not_supported_when_wire_contract_disallows_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension()
+    wire_contract = _wire_contract_extension_fixture(
+        all_jsonrpc_methods=(
+            "shared.sessions.list",
+            "shared.sessions.messages.list",
+            "shared.sessions.prompt_async",
+            "shared.sessions.command",
+        ),
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            wire_contract=_wire_contract_snapshot(
+                status="supported",
+                ext=wire_contract,
+            ),
+        )
+
+    async def _unexpected_call(**_kwargs):
+        raise AssertionError("method should be rejected during wire-contract preflight")
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._session_extensions, "get_session", _unexpected_call)
+
+    result = await service.get_session(runtime=runtime, session_id="ses_123")
+
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.source == "wire_contract"
+    assert result.meta == {
+        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_preflight": "unsupported_method",
+        "method_name": "shared.sessions.get",
+    }
+
+
+@pytest.mark.asyncio
+async def test_revert_session_requires_request_message_id() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    with pytest.raises(
+        ValueError, match="request.messageID must be a non-empty string"
+    ):
+        await service.revert_session(
+            runtime=runtime,
+            session_id="ses_123",
+            request_payload={"partID": "part-1"},
+        )
+
+
+@pytest.mark.asyncio
 async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2920,6 +3152,51 @@ async def test_recover_interrupts_returns_method_not_supported_when_upstream_mis
     assert result.error_code == "method_not_supported"
 
 
+def test_build_interrupt_recovery_snapshot_preserves_scope_metadata() -> None:
+    service = A2AExtensionsService()
+    card = AgentCard.model_validate(
+        {
+            "name": "Example Agent",
+            "description": "Example",
+            "url": "https://example.com",
+            "version": "1.0",
+            "capabilities": {
+                "extensions": [
+                    {
+                        "uri": INTERRUPT_RECOVERY_URI,
+                        "required": False,
+                        "params": {
+                            "provider": "opencode",
+                            "methods": {
+                                "list_permissions": "opencode.permissions.list",
+                                "list_questions": "opencode.questions.list",
+                            },
+                            "recovery_scope": {
+                                "data_source": "local_interrupt_binding_registry",
+                                "identity_scope": "current_authenticated_caller",
+                                "empty_result_when_identity_unavailable": True,
+                            },
+                            "errors": {"business_codes": {}},
+                        },
+                    }
+                ]
+            },
+            "defaultInputModes": [],
+            "defaultOutputModes": [],
+            "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+        }
+    )
+
+    service._support.ensure_outbound_allowed = lambda url, *, purpose: url
+    snapshot = service._build_interrupt_recovery_snapshot(card)
+
+    assert snapshot.status == "supported"
+    assert snapshot.ext is not None
+    assert snapshot.ext.recovery_data_source == "local_interrupt_binding_registry"
+    assert snapshot.ext.identity_scope == "current_authenticated_caller"
+    assert snapshot.ext.empty_result_when_identity_unavailable is True
+
+
 def test_build_compatibility_profile_snapshot_returns_supported_status() -> None:
     service = A2AExtensionsService()
     card = AgentCard.model_validate(
@@ -2939,7 +3216,14 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
                                     "surface": "jsonrpc-extension",
                                     "availability": "always",
                                     "retention": "stable",
-                                }
+                                },
+                                INTERRUPT_RECOVERY_URI: {
+                                    "surface": "jsonrpc-extension",
+                                    "availability": "always",
+                                    "retention": "stable",
+                                    "implementation_scope": "adapter-local",
+                                    "identity_scope": "current_authenticated_caller",
+                                },
                             },
                             "method_retention": {
                                 "opencode.sessions.command": {
@@ -2947,7 +3231,16 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
                                     "availability": "always",
                                     "retention": "stable",
                                     "extension_uri": SHARED_SESSION_QUERY_URI,
-                                }
+                                },
+                                "opencode.permissions.list": {
+                                    "surface": "extension",
+                                    "availability": "always",
+                                    "retention": "stable",
+                                    "extension_uri": INTERRUPT_RECOVERY_URI,
+                                    "implementation_scope": "adapter-local",
+                                    "identity_scope": "current_authenticated_caller",
+                                    "upstream_stability": "stable",
+                                },
                             },
                             "service_behaviors": {
                                 "classification": "stable-service-semantics",
@@ -2972,6 +3265,18 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
     assert snapshot.ext is not None
     assert snapshot.ext.method_retention["opencode.sessions.command"].retention == (
         "stable"
+    )
+    assert (
+        snapshot.ext.extension_retention[INTERRUPT_RECOVERY_URI].implementation_scope
+        == "adapter-local"
+    )
+    assert (
+        snapshot.ext.method_retention["opencode.permissions.list"].identity_scope
+        == "current_authenticated_caller"
+    )
+    assert (
+        snapshot.ext.method_retention["opencode.permissions.list"].upstream_stability
+        == "stable"
     )
 
 

@@ -57,6 +57,8 @@ from app.schemas.a2a_extension import (
     A2AExtensionSessionCommandRequest,
     A2AExtensionSessionListQueryRequest,
     A2AExtensionSessionMessagesQueryRequest,
+    A2AExtensionSessionMutationRequest,
+    A2AInterruptRecoveryCapabilitiesResponse,
     A2AInterruptRecoveryResponse,
     A2AInvokeMetadataCapabilitiesResponse,
     A2AInvokeMetadataFieldResponse,
@@ -65,6 +67,7 @@ from app.schemas.a2a_extension import (
     A2ARuntimeStatusContractResponse,
     A2ASessionControlCapabilitiesResponse,
     A2ASessionControlMethodResponse,
+    A2AStreamHintsCapabilitiesResponse,
     A2AWireContractCapabilitiesResponse,
     A2AWireContractConditionalMethodResponse,
     A2AWireContractUnsupportedMethodErrorResponse,
@@ -255,6 +258,93 @@ def _build_request_execution_options_response(
         persistsForThread=getattr(capability, "persists_for_thread", None),
         sourceExtensions=list(getattr(capability, "source_extensions", ()) or ()),
         notes=list(getattr(capability, "notes", ()) or ()),
+        error=getattr(capability, "error", None),
+    )
+
+
+def _build_stream_hints_response(
+    snapshot: Any,
+) -> A2AStreamHintsCapabilitiesResponse:
+    capability = getattr(snapshot, "stream_hints", None)
+    ext = getattr(capability, "ext", None)
+    meta = dict(getattr(capability, "meta", {}) or {})
+    return A2AStreamHintsCapabilitiesResponse(
+        declared=bool(meta.get("stream_hints_declared", ext is not None)),
+        consumedByHub=ext is not None,
+        status=cast(
+            Literal["supported", "unsupported", "invalid"],
+            getattr(capability, "status", "unsupported"),
+        ),
+        streamField=getattr(ext, "stream_field", None),
+        usageField=getattr(ext, "usage_field", None),
+        interruptField=getattr(ext, "interrupt_field", None),
+        sessionField=getattr(ext, "session_field", None),
+        mode=cast(Optional[str], meta.get("stream_hints_mode")),
+        fallbackUsed=cast(Optional[bool], meta.get("stream_hints_fallback_used")),
+        error=getattr(capability, "error", None),
+    )
+
+
+def _build_interrupt_recovery_details_response(
+    snapshot: Any,
+) -> A2AInterruptRecoveryCapabilitiesResponse:
+    capability = getattr(snapshot, "interrupt_recovery", None)
+    ext = getattr(capability, "ext", None)
+    compatibility = getattr(
+        getattr(snapshot, "compatibility_profile", None), "ext", None
+    )
+
+    extension_entry = None
+    if compatibility is not None:
+        extension_entry = dict(
+            getattr(compatibility, "extension_retention", {}) or {}
+        ).get(getattr(ext, "uri", None))
+
+    methods = dict(getattr(ext, "methods", {}) or {})
+    non_null_methods = {
+        key: value for key, value in methods.items() if isinstance(value, str) and value
+    }
+    method_entries = []
+    if compatibility is not None:
+        retention_map = dict(getattr(compatibility, "method_retention", {}) or {})
+        method_entries = [
+            retention_map.get(method_name)
+            for method_name in non_null_methods.values()
+            if retention_map.get(method_name) is not None
+        ]
+
+    implementation_scope = getattr(ext, "implementation_scope", None) or getattr(
+        extension_entry, "implementation_scope", None
+    )
+    identity_scope = getattr(ext, "identity_scope", None) or getattr(
+        extension_entry, "identity_scope", None
+    )
+    if identity_scope is None:
+        for entry in method_entries:
+            if getattr(entry, "identity_scope", None):
+                identity_scope = getattr(entry, "identity_scope", None)
+                break
+    if implementation_scope is None:
+        for entry in method_entries:
+            if getattr(entry, "implementation_scope", None):
+                implementation_scope = getattr(entry, "implementation_scope", None)
+                break
+
+    return A2AInterruptRecoveryCapabilitiesResponse(
+        declared=ext is not None,
+        consumedByHub=ext is not None,
+        status=cast(
+            Literal["supported", "unsupported", "invalid"],
+            getattr(capability, "status", "unsupported"),
+        ),
+        provider=getattr(ext, "provider", None),
+        methods=non_null_methods,
+        recoveryDataSource=getattr(ext, "recovery_data_source", None),
+        identityScope=identity_scope,
+        implementationScope=implementation_scope,
+        emptyResultWhenIdentityUnavailable=getattr(
+            ext, "empty_result_when_identity_unavailable", None
+        ),
         error=getattr(capability, "error", None),
     )
 
@@ -479,10 +569,14 @@ def create_extension_capability_router(
             modelSelection=model_selection,
             providerDiscovery=provider_discovery,
             interruptRecovery=interrupt_recovery,
+            interruptRecoveryDetails=_build_interrupt_recovery_details_response(
+                snapshot
+            ),
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
             invokeMetadata=_build_invoke_metadata_response(snapshot),
             requestExecutionOptions=_build_request_execution_options_response(snapshot),
+            streamHints=_build_stream_hints_response(snapshot),
             wireContract=_build_wire_contract_response(snapshot),
             compatibilityProfile=_build_compatibility_profile_response(snapshot),
             codexDiscovery=_build_declared_method_collection_response(
@@ -950,6 +1044,434 @@ def create_extension_capability_router(
                 runtime=runtime,
                 session_id=session_id,
                 request_payload=payload.request,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/sessions/{session_id}",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def get_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+        include_raw: bool = Query(
+            False,
+            description="Whether to include the upstream raw payload in the response",
+        ),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session detail requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "include_raw": include_raw,
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().get_session(
+                runtime=runtime,
+                session_id=session_id,
+                include_raw=include_raw,
+            )
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/sessions/{session_id}/children",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def get_external_session_children(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+        include_raw: bool = Query(
+            False,
+            description="Whether to include the upstream raw payload in the response",
+        ),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session children requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "include_raw": include_raw,
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().get_session_children(
+                runtime=runtime,
+                session_id=session_id,
+                include_raw=include_raw,
+            )
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/sessions/{session_id}/todo",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def get_external_session_todo(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+        include_raw: bool = Query(
+            False,
+            description="Whether to include the upstream raw payload in the response",
+        ),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session todo requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "include_raw": include_raw,
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().get_session_todo(
+                runtime=runtime,
+                session_id=session_id,
+                include_raw=include_raw,
+            )
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/sessions/{session_id}/diff",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def get_external_session_diff(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+        message_id: Optional[str] = Query(
+            None,
+            alias="messageId",
+            min_length=1,
+            description="Optional message id used to narrow the diff lookup",
+        ),
+        include_raw: bool = Query(
+            False,
+            description="Whether to include the upstream raw payload in the response",
+        ),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session diff requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "message_id": message_id,
+                "include_raw": include_raw,
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().get_session_diff(
+                runtime=runtime,
+                session_id=session_id,
+                message_id=message_id,
+                include_raw=include_raw,
+            )
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/sessions/{session_id}/messages/{message_id}",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def get_external_session_message(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        message_id: str,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+        include_raw: bool = Query(
+            False,
+            description="Whether to include the upstream raw payload in the response",
+        ),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session message requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "message_id": message_id,
+                "include_raw": include_raw,
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().get_session_message(
+                runtime=runtime,
+                session_id=session_id,
+                message_id=message_id,
+                include_raw=include_raw,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/sessions/{session_id}:fork",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def fork_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionSessionMutationRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session fork requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "request_keys": sorted((payload.request or {}).keys())[:20],
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().fork_session(
+                runtime=runtime,
+                session_id=session_id,
+                request_payload=payload.request,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/sessions/{session_id}:share",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def share_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionSessionMutationRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session share requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().share_session(
+                runtime=runtime,
+                session_id=session_id,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/sessions/{session_id}:unshare",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def unshare_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionSessionMutationRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session unshare requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().unshare_session(
+                runtime=runtime,
+                session_id=session_id,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/sessions/{session_id}:summarize",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def summarize_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionSessionMutationRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session summarize requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "request_keys": sorted((payload.request or {}).keys())[:20],
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().summarize_session(
+                runtime=runtime,
+                session_id=session_id,
+                request_payload=payload.request,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/sessions/{session_id}:revert",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def revert_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionSessionMutationRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session revert requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "request_keys": sorted((payload.request or {}).keys())[:20],
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().revert_session(
+                runtime=runtime,
+                session_id=session_id,
+                request_payload=payload.request or {},
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/sessions/{session_id}:unrevert",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def unrevert_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionSessionMutationRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension session unrevert requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().unrevert_session(
+                runtime=runtime,
+                session_id=session_id,
                 metadata=payload.metadata,
             )
         )
