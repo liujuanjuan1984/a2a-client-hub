@@ -23,20 +23,7 @@ This project is designed for the A2A ecosystem first.
 - Current repository examples still use OpenCode-flavored contracts heavily because that profile is one of the most fully exercised in this codebase.
 - The Hub is not intended to replace MCP. MCP is an agent-internal tool/context protocol; this project focuses on agent-to-agent integration and control-plane concerns.
 - The intended product role is a user-facing control plane around downstream agents, not a thin single-provider chat shell.
-
-Current compatibility framing:
-
-- First-class today: A2A peers that expose standard Agent Cards plus the shared session / interrupt capabilities consumed by the Hub.
-- Explicitly exercised in this repository: OpenCode-compatible peers and other coding-agent peers, including Codex-family deployments, when they publish a compatible A2A surface.
-- Partial compatibility: standard A2A peers that only support invoke / stream without the shared extension workflows used for session continuity.
-
-Repository-level A2A service references that match the current target profile:
-
-- [`Intelligent-Internet/opencode-a2a`](https://github.com/Intelligent-Internet/opencode-a2a)
-- [`liujuanjuan1984/codex-a2a`](https://github.com/liujuanjuan1984/codex-a2a)
-- [`Swival/swival`](https://github.com/Swival/swival)
-
-See [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md) for the maintained compatibility notes and explicit non-goals.
+- Compatibility tiers, exercised peer profiles, and explicit non-goals are maintained in [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md).
 
 ## Why A2A Client Hub?
 

@@ -4,6 +4,7 @@ Backend tests are organized by either feature or shared concern.
 
 ## Feature Groups
 
+- `api/`
 - `auth/`
 - `shortcuts/`
 - `personal_agents/`
