@@ -113,11 +113,20 @@ _CODEX_THREADS_METHODS = {
 _CODEX_TURNS_METHODS = {
     "steer": "codex.turns.steer",
 }
+_CODEX_TURNS_HUB_CONSUMPTION = {
+    "steer": True,
+}
 _CODEX_REVIEW_METHODS = {
     "start": "codex.review.start",
     "watch": "codex.review.watch",
 }
 _CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
+_CODEX_TURN_CONTROL_URI = "urn:codex-a2a:codex-turn-control/v1"
+_CODEX_TURN_CONTROL_BUSINESS_CODE_MAP = {
+    -32007: "authorization_forbidden",
+    -32012: "turn_not_steerable",
+    -32013: "turn_forbidden",
+}
 _CODEX_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
 
 
@@ -1031,8 +1040,8 @@ class A2AExtensionsService:
             wire_contract=wire_contract,
             compatibility_profile=compatibility_profile,
             method_map=_CODEX_TURNS_METHODS,
-            hub_consumption={},
-            unsupported_status_when_declared="unsupported_by_design",
+            hub_consumption=_CODEX_TURNS_HUB_CONSUMPTION,
+            unsupported_status_when_declared="declared_not_consumed",
             jsonrpc_url=jsonrpc_url,
         )
 
@@ -1328,6 +1337,135 @@ class A2AExtensionsService:
         capability = self._require_session_query_capability(snapshot.session_query)
         return snapshot, capability
 
+    @staticmethod
+    def _pick_optional_text(
+        source: dict[str, Any],
+        *,
+        keys: tuple[str, ...],
+    ) -> str | None:
+        for key in keys:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    @classmethod
+    def _resolve_shared_stream_turn_identity(
+        cls,
+        metadata: Dict[str, Any] | None,
+    ) -> tuple[str | None, str | None]:
+        normalized_metadata = as_dict(metadata)
+        shared = as_dict(normalized_metadata.get("shared"))
+        stream = as_dict(shared.get("stream"))
+
+        thread_id = cls._pick_optional_text(
+            stream,
+            keys=("thread_id", "threadId"),
+        )
+        turn_id = cls._pick_optional_text(
+            stream,
+            keys=("turn_id", "turnId"),
+        )
+        return thread_id, turn_id
+
+    def _prepare_codex_turn_steer(
+        self,
+        *,
+        thread_id: str,
+        turn_id: str,
+        request_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        resolved_thread_id = (thread_id or "").strip()
+        if not resolved_thread_id:
+            raise ValueError("thread_id is required")
+        resolved_turn_id = (turn_id or "").strip()
+        if not resolved_turn_id:
+            raise ValueError("expected_turn_id is required")
+        if not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+
+        parts = request_payload.get("parts")
+        if not isinstance(parts, list) or len(parts) == 0:
+            raise ValueError("request.parts must be a non-empty array")
+
+        return {
+            "thread_id": resolved_thread_id,
+            "expected_turn_id": resolved_turn_id,
+            "request": {
+                "parts": list(parts),
+            },
+        }
+
+    async def _steer_codex_turn(
+        self,
+        *,
+        runtime: A2ARuntime,
+        jsonrpc_url: str,
+        session_id: str,
+        thread_id: str,
+        turn_id: str,
+        request_payload: Dict[str, Any],
+    ) -> ExtensionCallResult:
+        method_name = _CODEX_TURNS_METHODS["steer"]
+        params = self._prepare_codex_turn_steer(
+            thread_id=thread_id,
+            turn_id=turn_id,
+            request_payload=request_payload,
+        )
+        resp = await self._support.perform_jsonrpc_call(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params=params,
+        )
+
+        metric_key = f"{_CODEX_TURN_CONTROL_URI}:{method_name}"
+        meta = {
+            "extension_uri": _CODEX_TURN_CONTROL_URI,
+            "method_name": method_name,
+            "control_method": "codex_turns_steer",
+            "session_id": session_id,
+            "thread_id": thread_id,
+            "expected_turn_id": turn_id,
+        }
+        if resp.ok:
+            self._support.record_extension_metric(
+                metric_key,
+                success=True,
+                error_code=None,
+            )
+            result_payload = as_dict(resp.result)
+            normalized_result = dict(result_payload)
+            normalized_result.setdefault("ok", True)
+            normalized_result.setdefault("session_id", session_id)
+            normalized_result.setdefault("thread_id", thread_id)
+            normalized_result.setdefault("turn_id", turn_id)
+            return ExtensionCallResult(
+                success=True,
+                result=normalized_result,
+                meta=meta,
+            )
+
+        error = resp.error or {}
+        error_details = self._support.build_upstream_error_details(
+            error=error,
+            business_code_map=_CODEX_TURN_CONTROL_BUSINESS_CODE_MAP,
+        )
+        self._support.record_extension_metric(
+            metric_key,
+            success=False,
+            error_code=error_details.error_code,
+        )
+        return ExtensionCallResult(
+            success=False,
+            error_code=error_details.error_code,
+            source=error_details.source,
+            jsonrpc_code=error_details.jsonrpc_code,
+            missing_params=list(error_details.missing_params or []) or None,
+            upstream_error=error_details.upstream_error,
+            meta=meta,
+        )
+
     async def resolve_session_binding(
         self,
         *,
@@ -1465,6 +1603,68 @@ class A2AExtensionsService:
         )
         snapshot, capability = await self._resolve_session_extension_runtime(
             runtime=runtime
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=capability.ext.uri,
+            method_name=capability.ext.methods.get("prompt_async"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._session_extensions.prompt_session_async(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+
+    async def append_session_control(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        if not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        thread_id, turn_id = self._resolve_shared_stream_turn_identity(metadata)
+        steer_capability = snapshot.codex_turns.methods.get("steer")
+
+        if (
+            steer_capability is not None
+            and steer_capability.declared
+            and steer_capability.consumed_by_hub
+            and steer_capability.method
+            and snapshot.codex_turns.jsonrpc_url
+            and thread_id
+            and turn_id
+        ):
+            preflight = self._preflight_wire_contract_method(
+                snapshot=snapshot.wire_contract,
+                extension_uri=_CODEX_TURN_CONTROL_URI,
+                method_name=steer_capability.method,
+            )
+            if preflight is not None:
+                return preflight
+            return await self._steer_codex_turn(
+                runtime=runtime,
+                jsonrpc_url=snapshot.codex_turns.jsonrpc_url,
+                session_id=session_id,
+                thread_id=thread_id,
+                turn_id=turn_id,
+                request_payload=request_payload,
+            )
+
+        capability = self._require_session_query_capability(snapshot.session_query)
+        self._session_extensions.prepare_prompt_session_async(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
         )
         preflight = self._preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,

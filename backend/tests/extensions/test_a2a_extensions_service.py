@@ -537,6 +537,7 @@ def _interrupt_recovery_extension_fixture() -> ResolvedInterruptRecoveryExtensio
             url="https://example.com/jsonrpc", fallback_used=False
         ),
         methods={
+            "list": None,
             "list_permissions": "opencode.permissions.list",
             "list_questions": "opencode.questions.list",
         },
@@ -1627,6 +1628,162 @@ async def test_prompt_session_async_rejects_non_object_metadata() -> None:
             request_payload={"parts": [{"type": "text", "text": "continue"}]},
             metadata=[],
         )
+
+
+@pytest.mark.asyncio
+async def test_append_session_control_prefers_codex_turn_steer_when_stream_identity_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension()
+    codex_turns = DeclaredMethodCollectionCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=True,
+        status="supported",
+        methods={
+            "steer": DeclaredMethodCapabilitySnapshot(
+                declared=True,
+                consumed_by_hub=True,
+                method="codex.turns.steer",
+                availability="always",
+            )
+        },
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+            codex_turns=codex_turns,
+            wire_contract=_wire_contract_snapshot(
+                status="supported",
+                ext=_wire_contract_extension_fixture(
+                    all_jsonrpc_methods=("codex.turns.steer",),
+                ),
+            ),
+        )
+
+    async def _unexpected_prompt_async(**_kwargs):
+        raise AssertionError("prompt_async should not be used when steer is available")
+
+    async def _fake_jsonrpc_call(**kwargs):
+        assert kwargs["method_name"] == "codex.turns.steer"
+        assert kwargs["params"] == {
+            "thread_id": "thread-1",
+            "expected_turn_id": "turn-1",
+            "request": {
+                "parts": [{"type": "text", "text": "continue"}],
+            },
+        }
+        return SimpleNamespace(ok=True, result={"ok": True, "turn_id": "turn-2"})
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._session_extensions,
+        "prompt_session_async",
+        _unexpected_prompt_async,
+    )
+    monkeypatch.setattr(
+        service._support,
+        "perform_jsonrpc_call",
+        _fake_jsonrpc_call,
+    )
+
+    result = await service.append_session_control(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={
+            "parts": [{"type": "text", "text": "continue"}],
+            "messageID": "msg-1",
+        },
+        metadata={
+            "shared": {
+                "stream": {
+                    "thread_id": "thread-1",
+                    "turn_id": "turn-1",
+                }
+            }
+        },
+    )
+
+    assert result.success is True
+    assert result.result == {
+        "ok": True,
+        "session_id": "ses_123",
+        "thread_id": "thread-1",
+        "turn_id": "turn-2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_append_session_control_falls_back_to_prompt_async_without_stream_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension()
+    codex_turns = DeclaredMethodCollectionCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=True,
+        status="supported",
+        methods={
+            "steer": DeclaredMethodCapabilitySnapshot(
+                declared=True,
+                consumed_by_hub=True,
+                method="codex.turns.steer",
+                availability="always",
+            )
+        },
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+            codex_turns=codex_turns,
+        )
+
+    async def _fake_prompt_async(**kwargs):
+        assert kwargs["session_id"] == "ses_123"
+        assert kwargs["request_payload"] == {
+            "parts": [{"type": "text", "text": "continue"}],
+            "messageID": "msg-1",
+        }
+        assert kwargs["metadata"] == {"locale": "en"}
+        return ExtensionCallResult(
+            success=True,
+            result={"ok": True, "session_id": "ses_123"},
+            meta={},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._session_extensions,
+        "prompt_session_async",
+        _fake_prompt_async,
+    )
+
+    result = await service.append_session_control(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={
+            "parts": [{"type": "text", "text": "continue"}],
+            "messageID": "msg-1",
+        },
+        metadata={"locale": "en"},
+    )
+
+    assert result.success is True
+    assert result.result == {"ok": True, "session_id": "ses_123"}
 
 
 @pytest.mark.asyncio
@@ -3152,6 +3309,98 @@ async def test_recover_interrupts_returns_method_not_supported_when_upstream_mis
     assert result.error_code == "method_not_supported"
 
 
+@pytest.mark.asyncio
+async def test_recover_interrupts_supports_single_list_method_and_properties_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+    ext = ResolvedInterruptRecoveryExtension(
+        uri="urn:codex-a2a:codex-interrupt-recovery/v1",
+        required=False,
+        provider="codex",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={
+            "list": "codex.interrupts.list",
+            "list_permissions": None,
+            "list_questions": None,
+        },
+        business_code_map={},
+    )
+
+    async def _fake_snapshot(*, runtime):
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_recovery=_interrupt_recovery_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _fake_jsonrpc_call(**kwargs):
+        assert kwargs["method_name"] == "codex.interrupts.list"
+        return SimpleNamespace(
+            ok=True,
+            result={
+                "items": [
+                    {
+                        "request_id": "q-1",
+                        "session_id": "sess-1",
+                        "interrupt_type": "question",
+                        "properties": {"questions": []},
+                        "expires_at": 10,
+                    },
+                    {
+                        "request_id": "perm-1",
+                        "session_id": "sess-1",
+                        "interrupt_type": "permission",
+                        "properties": {"permission": "write"},
+                        "expires_at": 20,
+                    },
+                    {
+                        "request_id": "perm-2",
+                        "session_id": "sess-2",
+                        "interrupt_type": "permission",
+                        "properties": {"permission": "read"},
+                        "expires_at": 30,
+                    },
+                ]
+            },
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._support,
+        "perform_jsonrpc_call",
+        _fake_jsonrpc_call,
+    )
+
+    result = await service.recover_interrupts(runtime=runtime, session_id="sess-1")
+
+    assert result.success is True
+    assert result.result == {
+        "items": [
+            {
+                "request_id": "q-1",
+                "session_id": "sess-1",
+                "type": "question",
+                "details": {"questions": []},
+                "expires_at": 10,
+            },
+            {
+                "request_id": "perm-1",
+                "session_id": "sess-1",
+                "type": "permission",
+                "details": {"permission": "write"},
+                "expires_at": 20,
+            },
+        ]
+    }
+
+
 def test_build_interrupt_recovery_snapshot_preserves_scope_metadata() -> None:
     service = A2AExtensionsService()
     card = AgentCard.model_validate(
@@ -3330,6 +3579,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
                 "shared.sessions.prompt_async",
                 "codex.discovery.skills.list",
                 "codex.discovery.plugins.read",
+                "codex.turns.steer",
                 "codex.threads.watch",
                 "codex.exec.start",
                 "codex.exec.terminate",
@@ -3408,13 +3658,14 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         availability="always",
     )
 
-    assert turns.declared is False
-    assert turns.consumed_by_hub is False
-    assert turns.status == "unsupported"
+    assert turns.declared is True
+    assert turns.consumed_by_hub is True
+    assert turns.status == "supported"
     assert turns.methods["steer"] == DeclaredMethodCapabilitySnapshot(
-        declared=False,
-        consumed_by_hub=False,
-        method=None,
+        declared=True,
+        consumed_by_hub=True,
+        method="codex.turns.steer",
+        availability="always",
     )
 
     assert review.declared is False
@@ -3637,7 +3888,8 @@ def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
     )
 
     assert turns.declared is True
-    assert turns.status == "unsupported_by_design"
+    assert turns.consumed_by_hub is False
+    assert turns.status == "declared_not_consumed"
     assert turns.methods["steer"] == DeclaredMethodCapabilitySnapshot(
         declared=True,
         consumed_by_hub=False,

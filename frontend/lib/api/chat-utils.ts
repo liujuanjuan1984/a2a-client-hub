@@ -351,10 +351,24 @@ const isRuntimeInterrupt = (value: unknown): value is RuntimeInterrupt => {
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
   const session = getPreferredSessionMetadata(data);
+  const properties = asRecord(data.properties);
+  const metadata = asRecord(data.metadata);
+  const shared = asRecord(metadata?.shared);
+  const sharedStream = asRecord(shared?.stream);
   const externalSessionId =
     pickString(session, ["id", "externalSessionId"]) ?? undefined;
   const rawProvider = pickString(session, ["provider"]);
   const provider = rawProvider?.trim().toLowerCase() ?? undefined;
+  const streamThreadId =
+    pickString(properties, ["thread_id", "threadId"]) ??
+    pickString(sharedStream, ["thread_id", "threadId"]) ??
+    pickString(asRecord(data), ["thread_id", "threadId"]) ??
+    undefined;
+  const streamTurnId =
+    pickString(properties, ["turn_id", "turnId"]) ??
+    pickString(sharedStream, ["turn_id", "turnId"]) ??
+    pickString(asRecord(data), ["turn_id", "turnId"]) ??
+    undefined;
   const transport =
     typeof data.transport === "string" ? data.transport : undefined;
   const inputModes =
@@ -365,6 +379,8 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   return {
     provider,
     externalSessionId,
+    streamThreadId,
+    streamTurnId,
     transport,
     inputModes,
     outputModes,

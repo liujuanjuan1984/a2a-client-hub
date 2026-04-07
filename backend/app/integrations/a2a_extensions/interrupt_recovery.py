@@ -16,6 +16,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_INTERRUPT_RECOVERY_URI,
     INTERRUPT_RECOVERY_URI,
     SUPPORTED_INTERRUPT_RECOVERY_URIS,
     is_supported_extension_uri,
@@ -44,15 +45,22 @@ def resolve_interrupt_recovery(
     if ext is None:
         raise A2AExtensionNotSupportedError("Interrupt recovery extension not found")
 
+    resolved_uri = str(getattr(ext, "uri", INTERRUPT_RECOVERY_URI)).strip()
     required = bool(getattr(ext, "required", False))
     params = as_dict(getattr(ext, "params", None))
     raw_provider = params.get("provider")
     if raw_provider is None:
-        provider = "opencode"
+        provider = (
+            "codex" if resolved_uri == CODEX_INTERRUPT_RECOVERY_URI else "opencode"
+        )
     else:
         provider = require_str(raw_provider, field="params.provider").lower()
 
     methods = as_dict(params.get("methods"))
+    list_method = normalize_method_name(
+        methods.get("list"),
+        field="methods.list",
+    )
     list_permissions_method = normalize_method_name(
         methods.get("list_permissions"),
         field="methods.list_permissions",
@@ -98,11 +106,12 @@ def resolve_interrupt_recovery(
     )
 
     return ResolvedInterruptRecoveryExtension(
-        uri=str(getattr(ext, "uri", INTERRUPT_RECOVERY_URI)),
+        uri=resolved_uri or str(getattr(ext, "uri", INTERRUPT_RECOVERY_URI)),
         required=required,
         provider=provider,
         jsonrpc=resolve_jsonrpc_interface(card),
         methods={
+            "list": list_method,
             "list_permissions": list_permissions_method,
             "list_questions": list_questions_method,
         },

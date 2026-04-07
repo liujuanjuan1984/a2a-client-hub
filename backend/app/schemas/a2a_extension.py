@@ -703,7 +703,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="codexTurns",
         description=(
             "Codex turn control methods declared via wire-contract that the hub "
-            "currently leaves unsupported by design."
+            "incrementally consumes through stable Hub session-control append routing."
         ),
     )
     codex_review: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(

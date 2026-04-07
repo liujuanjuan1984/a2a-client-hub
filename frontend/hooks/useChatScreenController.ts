@@ -54,7 +54,10 @@ import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { parseComposerInput } from "@/lib/sessionCommand";
 import { mapA2AMessageToChatMessage } from "@/lib/sessionHistory";
-import { readSharedSessionBinding } from "@/lib/sharedMetadata";
+import {
+  readSharedSessionBinding,
+  readSharedStreamIdentity,
+} from "@/lib/sharedMetadata";
 import { toast } from "@/lib/toast";
 import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -189,6 +192,10 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
+  const codexTurnSteerStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.codexTurnSteerStatus;
   const invokeMetadataStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
@@ -342,6 +349,7 @@ export function useChatScreenController({
       currentSession:
         | {
             streamState?: string | null;
+            metadata?: Record<string, unknown>;
             externalSessionRef?: { externalSessionId?: string | null } | null;
           }
         | null
@@ -352,11 +360,18 @@ export function useChatScreenController({
       }
       const externalSessionId =
         currentSession.externalSessionRef?.externalSessionId?.trim() ?? "";
+      const streamIdentity = readSharedStreamIdentity(currentSession?.metadata);
+      const canSteerRunningTurn = Boolean(
+        codexTurnSteerStatus === "supported" &&
+        streamIdentity.threadId &&
+        streamIdentity.turnId,
+      );
       return (
-        sessionPromptAsyncStatus === "supported" && Boolean(externalSessionId)
+        Boolean(externalSessionId) &&
+        (sessionPromptAsyncStatus === "supported" || canSteerRunningTurn)
       );
     },
-    [pendingInterrupt, sessionPromptAsyncStatus],
+    [codexTurnSteerStatus, pendingInterrupt, sessionPromptAsyncStatus],
   );
 
   const appendMessageToRunningSession = useCallback(
@@ -380,7 +395,7 @@ export function useChatScreenController({
           "Append requires an active stream with a bound upstream session.",
         );
       }
-      if (sessionPromptAsyncStatus !== "supported") {
+      if (!isAppendAvailableForSession(currentSession)) {
         throw new Error(
           "The agent is still working. Interrupt it before sending a new message.",
         );
@@ -416,7 +431,7 @@ export function useChatScreenController({
         "Your message was sent to the running upstream session.",
       );
     },
-    [invokeSessionControl, sessionPromptAsyncStatus],
+    [invokeSessionControl, isAppendAvailableForSession],
   );
 
   const preemptRunningSession = useCallback(

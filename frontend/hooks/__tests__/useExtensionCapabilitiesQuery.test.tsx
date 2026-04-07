@@ -131,6 +131,32 @@ const createCodexDiscovery = (overrides?: {
   ...overrides,
 });
 
+const createCodexTurns = (overrides?: {
+  declared?: boolean;
+  consumedByHub?: boolean;
+  status?:
+    | "unsupported"
+    | "declared_not_consumed"
+    | "partially_consumed"
+    | "supported"
+    | "unsupported_by_design";
+  methods?: Record<
+    string,
+    {
+      declared: boolean;
+      consumedByHub: boolean;
+      method?: string | null;
+      availability?: "always" | "enabled" | "disabled" | "unsupported";
+    }
+  >;
+}) => ({
+  declared: false,
+  consumedByHub: false,
+  status: "unsupported" as const,
+  methods: {},
+  ...overrides,
+});
+
 describe("useExtensionCapabilitiesQuery", () => {
   let queryClient: QueryClient;
 
@@ -168,6 +194,19 @@ describe("useExtensionCapabilitiesQuery", () => {
           },
         },
       }),
+      codexTurns: createCodexTurns({
+        declared: true,
+        consumedByHub: true,
+        status: "supported",
+        methods: {
+          steer: {
+            declared: true,
+            consumedByHub: true,
+            method: "codex.turns.steer",
+            availability: "always",
+          },
+        },
+      }),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -191,6 +230,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.sessionShellStatus).toBe("unsupported");
     expect(result.current.invokeMetadataStatus).toBe("unsupported");
     expect(result.current.codexDiscoveryStatus).toBe("supported");
+    expect(result.current.codexTurnSteerStatus).toBe("supported");
     expect(result.current.canShowCodexDiscovery).toBe(true);
     expect(result.current.canReadCodexPlugins).toBe(true);
     expect(result.current.codexDiscoveryAvailableTabs).toEqual(["skills"]);
@@ -217,6 +257,19 @@ describe("useExtensionCapabilitiesQuery", () => {
       }),
       invokeMetadata: createInvokeMetadata(),
       codexDiscovery: createCodexDiscovery(),
+      codexTurns: createCodexTurns({
+        declared: true,
+        consumedByHub: true,
+        status: "declared_not_consumed",
+        methods: {
+          steer: {
+            declared: true,
+            consumedByHub: true,
+            method: "codex.turns.steer",
+            availability: "disabled",
+          },
+        },
+      }),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -235,6 +288,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.providerDiscoveryStatus).toBe("unsupported");
     expect(result.current.interruptRecoveryStatus).toBe("unsupported");
     expect(result.current.sessionPromptAsyncStatus).toBe("unsupported");
+    expect(result.current.codexTurnSteerStatus).toBe("unsupported");
     expect(result.current.codexDiscoveryStatus).toBe("unsupported");
     expect(result.current.canShowCodexDiscovery).toBe(false);
   });
@@ -316,5 +370,6 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.sessionShellStatus).toBe("unknown");
     expect(result.current.invokeMetadataStatus).toBe("unknown");
     expect(result.current.codexDiscoveryStatus).toBe("unknown");
+    expect(result.current.codexTurnSteerStatus).toBe("unknown");
   });
 });

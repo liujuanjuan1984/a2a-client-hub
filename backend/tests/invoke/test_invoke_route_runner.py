@@ -1173,7 +1173,7 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
     async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
         return kwargs["payload"]
 
-    async def fake_prompt_session_async(**kwargs):  # noqa: ARG001
+    async def fake_append_session_control(**kwargs):  # noqa: ARG001
         return SimpleNamespace(
             success=True,
             result={"ok": True, "session_id": "ses-upstream-next"},
@@ -1191,8 +1191,8 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
     )
     monkeypatch.setattr(
         invoke_route_runner.get_a2a_extensions_service(),
-        "prompt_session_async",
-        fake_prompt_session_async,
+        "append_session_control",
+        fake_append_session_control,
     )
 
     runtime = SimpleNamespace(
@@ -1276,6 +1276,80 @@ async def test_run_http_invoke_append_requires_bound_session(
     assert response.session_control is not None
     assert response.session_control.intent == "append"
     assert response.session_control.status == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_append_turn_forbidden_returns_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+        return kwargs["payload"]
+
+    async def fake_append_session_control(**kwargs):  # noqa: ARG001
+        return SimpleNamespace(
+            success=False,
+            result=None,
+            error_code="turn_forbidden",
+            source="upstream_a2a",
+            jsonrpc_code=-32013,
+            missing_params=None,
+            upstream_error={"message": "Turn does not belong to caller"},
+        )
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload",
+        fake_finalize_outbound_invoke_payload,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.get_a2a_extensions_service(),
+        "append_session_control",
+        fake_append_session_control,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "append this",
+            "conversationId": str(uuid4()),
+            "userMessageId": str(uuid4()),
+            "sessionBinding": {
+                "provider": "codex",
+                "externalSessionId": "ses-upstream-current",
+            },
+            "sessionControl": {"intent": "append"},
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "thread_id": "thread-1",
+                        "turn_id": "turn-1",
+                    }
+                }
+            },
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="personal",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is False
+    assert response.error_code == "turn_forbidden"
+    assert response.error == "Append failed."
+    assert response.session_control is not None
+    assert response.session_control.intent == "append"
+    assert response.session_control.status == "failed"
 
 
 @pytest.mark.asyncio

@@ -215,6 +215,9 @@ __marimo__/
 backend/docs/
 backend/temp/
 *.pem
+.codex-a2a/
+opencode-a2a.db-shm
+opencode-a2a.db-wal
 
 # Frontend (Expo / React Native)
 frontend/node_modules/

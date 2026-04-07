@@ -112,7 +112,12 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
 )
 _STREAM_HINTS_WARNING_TTL_SECONDS = 300.0
 _APPEND_UNAVAILABLE_EXTENSION_ERROR_CODES = frozenset(
-    {"method_not_supported", "method_disabled", "not_supported"}
+    {
+        "method_not_supported",
+        "method_disabled",
+        "not_supported",
+        "turn_not_steerable",
+    }
 )
 _stream_hints_warning_cache: dict[
     tuple[str, tuple[tuple[str, str], ...], str],
@@ -379,7 +384,7 @@ async def _run_append_session_control(
             runtime=runtime,
         )
 
-    result = await get_a2a_extensions_service().prompt_session_async(
+    result = await get_a2a_extensions_service().append_session_control(
         runtime=runtime,
         session_id=session_id,
         request_payload=_build_append_request_payload(payload),
