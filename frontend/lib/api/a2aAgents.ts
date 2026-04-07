@@ -37,6 +37,7 @@ export type A2AAgentResponse = {
   last_health_check_error?: string | null;
   tags: string[];
   extra_headers: Record<string, string>;
+  invoke_metadata_defaults: Record<string, string>;
   token_last4?: string | null;
   username_hint?: string | null;
   created_at: string;
@@ -92,6 +93,7 @@ export type A2AAgentCreateRequest = {
   enabled: boolean;
   tags: string[];
   extra_headers: Record<string, string>;
+  invoke_metadata_defaults: Record<string, string>;
 };
 
 type A2AAgentUpdateRequest = Partial<A2AAgentCreateRequest>;

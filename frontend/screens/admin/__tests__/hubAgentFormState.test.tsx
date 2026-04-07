@@ -29,6 +29,9 @@ describe("hubAgentFormState", () => {
         { id: "1", key: " X-Trace-Id ", value: " 123 " },
         { id: "2", key: "   ", value: "ignored" },
       ],
+      invokeMetadataDefaults: [
+        { id: "d1", key: " project_id ", value: " p1 " },
+      ],
     };
 
     expect(buildHubAgentComparablePayload(values)).toEqual({
@@ -42,6 +45,7 @@ describe("hubAgentFormState", () => {
       auth_scheme: null,
       tags: ["alpha", "beta"],
       extra_headers: { "X-Trace-Id": "123" },
+      invoke_metadata_defaults: { project_id: "p1" },
     });
   });
 
@@ -60,6 +64,9 @@ describe("hubAgentFormState", () => {
       basicPassword: "",
       tagsText: "prod, stable",
       extraHeaders: [{ id: "1", key: "X-Env", value: "prod" }],
+      invokeMetadataDefaults: [
+        { id: "d1", key: "project_id", value: "proj-1" },
+      ],
     };
 
     expect(buildHubAgentPayload(values)).toEqual({
@@ -73,6 +80,7 @@ describe("hubAgentFormState", () => {
       enabled: false,
       tags: ["prod", "stable"],
       extra_headers: { "X-Env": "prod" },
+      invoke_metadata_defaults: { project_id: "proj-1" },
     });
   });
 
@@ -89,6 +97,7 @@ describe("hubAgentFormState", () => {
       enabled: true,
       tags: ["internal"],
       extra_headers: {},
+      invoke_metadata_defaults: {},
       has_credential: false,
       token_last4: null,
       username_hint: null,
@@ -120,9 +129,12 @@ describe("hubAgentFormState", () => {
     expect(hydrated).toMatchObject({
       ...expected,
       extraHeaders: [{ key: "", value: "" }],
+      invokeMetadataDefaults: [{ key: "", value: "" }],
     });
     expect(hydrated.extraHeaders).toHaveLength(1);
     expect(hydrated.extraHeaders[0]?.id).toBeTruthy();
+    expect(hydrated.invokeMetadataDefaults).toHaveLength(1);
+    expect(hydrated.invokeMetadataDefaults[0]?.id).toBeTruthy();
     expect(result.current.errors).toEqual({});
   });
 
@@ -139,6 +151,7 @@ describe("hubAgentFormState", () => {
       enabled: true,
       tags: [],
       extra_headers: {},
+      invoke_metadata_defaults: {},
       has_credential: true,
       token_last4: null,
       username_hint: "alice",

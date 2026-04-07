@@ -35,6 +35,7 @@ export type HubAgentFormValues = {
   basicPassword: string;
   tagsText: string;
   extraHeaders: HeaderRow[];
+  invokeMetadataDefaults: HeaderRow[];
 };
 
 const createDefaultHubAgentFormValues = (): HubAgentFormValues => ({
@@ -51,6 +52,7 @@ const createDefaultHubAgentFormValues = (): HubAgentFormValues => ({
   basicPassword: "",
   tagsText: "",
   extraHeaders: recordToHeaderRows({}),
+  invokeMetadataDefaults: recordToHeaderRows({}),
 });
 
 export const createHubAgentFormValuesFromRecord = (
@@ -69,6 +71,9 @@ export const createHubAgentFormValuesFromRecord = (
   basicPassword: "",
   tagsText: (record.tags ?? []).join(", "),
   extraHeaders: recordToHeaderRows(record.extra_headers ?? {}),
+  invokeMetadataDefaults: recordToHeaderRows(
+    record.invoke_metadata_defaults ?? {},
+  ),
 });
 
 type HubAgentComparablePayload = {
@@ -82,6 +87,7 @@ type HubAgentComparablePayload = {
   auth_scheme: string | null;
   tags: string[];
   extra_headers: Record<string, string>;
+  invoke_metadata_defaults: Record<string, string>;
 };
 
 export const buildHubAgentComparablePayload = (
@@ -103,6 +109,7 @@ export const buildHubAgentComparablePayload = (
       : null,
   tags: parseTags(values.tagsText),
   extra_headers: headerRowsToRecord(values.extraHeaders),
+  invoke_metadata_defaults: headerRowsToRecord(values.invokeMetadataDefaults),
 });
 
 export const buildHubAgentComparablePayloadFromRecord = (
@@ -118,6 +125,7 @@ export const buildHubAgentComparablePayloadFromRecord = (
   auth_scheme: record.auth_scheme ?? null,
   tags: record.tags ?? [],
   extra_headers: record.extra_headers ?? {},
+  invoke_metadata_defaults: record.invoke_metadata_defaults ?? {},
 });
 
 export const buildHubAgentPayload = (
@@ -140,6 +148,7 @@ export const buildHubAgentPayload = (
     enabled: values.enabled,
     tags: parseTags(values.tagsText),
     extra_headers: headerRowsToRecord(values.extraHeaders),
+    invoke_metadata_defaults: headerRowsToRecord(values.invokeMetadataDefaults),
   };
   const trimmedToken = values.token.trim();
   if (trimmedToken) {
@@ -163,7 +172,10 @@ const hasDraftValue = (values: HubAgentFormValues): boolean =>
   values.token.trim().length > 0 ||
   values.basicUsername.trim().length > 0 ||
   values.basicPassword.trim().length > 0 ||
-  values.extraHeaders.some((row) => row.key.trim() || row.value.trim());
+  values.extraHeaders.some((row) => row.key.trim() || row.value.trim()) ||
+  values.invokeMetadataDefaults.some(
+    (row) => row.key.trim() || row.value.trim(),
+  );
 
 export const useHubAgentFormState = () => {
   const [values, setValues] = useState<HubAgentFormValues>(
@@ -264,6 +276,38 @@ export const useHubAgentFormState = () => {
     }));
   }, []);
 
+  const setInvokeMetadataDefaultRow = useCallback(
+    (id: string, field: "key" | "value", value: string) => {
+      setValues((prev) => ({
+        ...prev,
+        invokeMetadataDefaults: prev.invokeMetadataDefaults.map((row) =>
+          row.id === id ? { ...row, [field]: value } : row,
+        ),
+      }));
+    },
+    [],
+  );
+
+  const removeInvokeMetadataDefaultRow = useCallback((id: string) => {
+    setValues((prev) => {
+      const next = prev.invokeMetadataDefaults.filter((row) => row.id !== id);
+      return {
+        ...prev,
+        invokeMetadataDefaults: next.length ? next : recordToHeaderRows({}),
+      };
+    });
+  }, []);
+
+  const addInvokeMetadataDefaultRow = useCallback(() => {
+    setValues((prev) => ({
+      ...prev,
+      invokeMetadataDefaults: [
+        ...prev.invokeMetadataDefaults,
+        { id: generateId(), key: "", value: "" },
+      ],
+    }));
+  }, []);
+
   const hydrateFromRecord = useCallback((record: HubA2AAgentAdminResponse) => {
     setValues(createHubAgentFormValuesFromRecord(record));
     setErrors({});
@@ -317,6 +361,9 @@ export const useHubAgentFormState = () => {
     setHeaderRow,
     removeHeaderRow,
     addHeaderRow,
+    setInvokeMetadataDefaultRow,
+    removeInvokeMetadataDefaultRow,
+    addInvokeMetadataDefaultRow,
     hydrateFromRecord,
     validate,
     buildPayload,

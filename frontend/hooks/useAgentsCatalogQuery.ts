@@ -56,6 +56,9 @@ const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
   basicUsername: "",
   basicPassword: "",
   extraHeaders: headersToEntries(agent.extra_headers ?? {}),
+  invokeMetadataDefaults: headersToEntries(
+    agent.invoke_metadata_defaults ?? {},
+  ),
   status: "idle",
 });
 
@@ -71,6 +74,7 @@ const toSharedAgentConfig = (agent: HubA2AAgentUserResponse): AgentConfig => ({
   basicUsername: "",
   basicPassword: "",
   extraHeaders: [],
+  invokeMetadataDefaults: [],
   status: "idle",
 });
 
@@ -86,6 +90,7 @@ const toUpsertPayload = (input: {
   basicUsername: string;
   basicPassword: string;
   extraHeaders: AgentConfig["extraHeaders"];
+  invokeMetadataDefaults: AgentConfig["invokeMetadataDefaults"];
 }) =>
   buildAgentUpsertPayload({
     name: input.name,
@@ -97,6 +102,7 @@ const toUpsertPayload = (input: {
     basicUsername: input.basicUsername,
     basicPassword: input.basicPassword,
     extraHeaders: input.extraHeaders,
+    invokeMetadataDefaults: input.invokeMetadataDefaults,
   });
 
 const refreshActiveCatalogQuery = async (

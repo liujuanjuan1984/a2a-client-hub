@@ -129,6 +129,9 @@ jest.mock("@/screens/admin/hubAgentFormState", () => ({
     setHeaderRow: jest.fn(),
     removeHeaderRow: jest.fn(),
     addHeaderRow: jest.fn(),
+    setInvokeMetadataDefaultRow: jest.fn(),
+    removeInvokeMetadataDefaultRow: jest.fn(),
+    addInvokeMetadataDefaultRow: jest.fn(),
     validate: () => true,
     buildPayload: () => ({
       name: "Shared Agent",
@@ -138,6 +141,7 @@ jest.mock("@/screens/admin/hubAgentFormState", () => ({
       enabled: true,
       tags: [],
       extra_headers: {},
+      invoke_metadata_defaults: {},
     }),
   }),
 }));

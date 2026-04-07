@@ -93,6 +93,7 @@ const createSessionControl = (overrides?: {
 const createInvokeMetadata = (overrides?: {
   declared?: boolean;
   consumedByHub?: boolean;
+  status?: "supported" | "unsupported" | "invalid";
   metadataField?: string | null;
   appliesToMethods?: string[];
   fields?: {
@@ -103,6 +104,7 @@ const createInvokeMetadata = (overrides?: {
 }) => ({
   declared: false,
   consumedByHub: true,
+  status: "unsupported" as const,
   metadataField: null,
   appliesToMethods: [],
   fields: [],
@@ -248,6 +250,7 @@ describe("useExtensionCapabilitiesQuery", () => {
       }),
       invokeMetadata: createInvokeMetadata({
         declared: true,
+        status: "supported",
         fields: [{ name: "project_id", required: true }],
       }),
       codexDiscovery: createCodexDiscovery({

@@ -141,6 +141,11 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=True,
         comment="Additional headers to include when fetching card/invoking",
     )
+    invoke_metadata_defaults = Column(
+        JSON,
+        nullable=True,
+        comment="Agent-level default invoke metadata merged during outbound invoke",
+    )
     created_by_user_id = Column(
         UUID(as_uuid=True),
         ForeignKey(f"{SCHEMA_NAME}.users.id", ondelete="RESTRICT"),

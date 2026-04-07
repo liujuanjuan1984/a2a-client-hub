@@ -13,6 +13,7 @@ describe("ChatComposer clear button", () => {
     modelSelectionStatus: "supported" as const,
     currentDirectory: null,
     hasInvokeMetadata: false,
+    showInvokeMetadataControl: false,
     invokeMetadataRequiredCount: 0,
     pendingInterrupt: null,
     pendingInterruptCount: 0,

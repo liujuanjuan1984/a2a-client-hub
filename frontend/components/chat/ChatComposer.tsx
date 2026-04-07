@@ -18,6 +18,7 @@ export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
   currentDirectory,
   hasInvokeMetadata,
+  showInvokeMetadataControl,
   invokeMetadataRequiredCount,
   pendingInterrupt,
   pendingInterruptCount,
@@ -48,6 +49,7 @@ export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus: GenericCapabilityStatus;
   currentDirectory?: string | null;
   hasInvokeMetadata: boolean;
+  showInvokeMetadataControl: boolean;
   invokeMetadataRequiredCount: number;
   pendingInterrupt: PendingRuntimeInterrupt | null;
   pendingInterruptCount: number;
@@ -157,21 +159,23 @@ export const ChatComposer = memo(function ChatComposer({
             />
           </Pressable>
 
-          <Pressable
-            className={`h-9 w-14 items-center justify-center rounded-xl ${
-              hasInvokeMetadata ? "bg-primary" : "bg-slate-800/40"
-            }`}
-            onPress={onOpenInvokeMetadata}
-            accessibilityRole="button"
-            accessibilityLabel="Configure invoke metadata"
-            accessibilityHint={invokeMetadataHint}
-          >
-            <Ionicons
-              name={hasInvokeMetadata ? "key" : "key-outline"}
-              size={18}
-              color={hasInvokeMetadata ? "#000000" : "#FFFFFF"}
-            />
-          </Pressable>
+          {showInvokeMetadataControl ? (
+            <Pressable
+              className={`h-9 w-14 items-center justify-center rounded-xl ${
+                hasInvokeMetadata ? "bg-primary" : "bg-slate-800/40"
+              }`}
+              onPress={onOpenInvokeMetadata}
+              accessibilityRole="button"
+              accessibilityLabel="Configure invoke metadata"
+              accessibilityHint={invokeMetadataHint}
+            >
+              <Ionicons
+                name={hasInvokeMetadata ? "key" : "key-outline"}
+                size={18}
+                color={hasInvokeMetadata ? "#000000" : "#FFFFFF"}
+              />
+            </Pressable>
+          ) : null}
 
           <Pressable
             className={`h-9 w-14 items-center justify-center rounded-xl ${

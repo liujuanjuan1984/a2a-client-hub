@@ -30,6 +30,17 @@ def _has_bound_value(value: Any) -> bool:
     return True
 
 
+def extract_invoke_metadata_defaults(
+    defaults: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    root = _as_dict(defaults)
+    return {
+        str(key): value
+        for key, value in root.items()
+        if isinstance(key, str) and key.strip() and _has_bound_value(value)
+    }
+
+
 def extract_invoke_metadata_bindings(
     metadata: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -68,6 +79,7 @@ def strip_invoke_metadata_bindings(
 class ResolvedInvokeMetadataApplication:
     metadata: dict[str, Any]
     injected_fields: tuple[str, ...]
+    injected_default_fields: tuple[str, ...]
     missing_required_fields: tuple[str, ...]
 
 
@@ -75,17 +87,26 @@ def apply_invoke_metadata_bindings(
     *,
     metadata: Mapping[str, Any] | None,
     ext: ResolvedInvokeMetadataExtension | None,
+    defaults: Mapping[str, Any] | None = None,
 ) -> ResolvedInvokeMetadataApplication:
     cleaned_metadata = strip_invoke_metadata_bindings(metadata)
     bound = extract_invoke_metadata_bindings(metadata)
+    default_values = extract_invoke_metadata_defaults(defaults)
     next_metadata = dict(cleaned_metadata)
     injected_fields: list[str] = []
+    injected_default_fields: list[str] = []
 
     for key, value in bound.items():
         if _has_bound_value(next_metadata.get(key)):
             continue
         next_metadata[key] = value
         injected_fields.append(key)
+
+    for key, value in default_values.items():
+        if _has_bound_value(next_metadata.get(key)):
+            continue
+        next_metadata[key] = value
+        injected_default_fields.append(key)
 
     missing_required_fields: list[str] = []
     if ext is not None:
@@ -99,6 +120,7 @@ def apply_invoke_metadata_bindings(
     return ResolvedInvokeMetadataApplication(
         metadata=next_metadata,
         injected_fields=tuple(injected_fields),
+        injected_default_fields=tuple(injected_default_fields),
         missing_required_fields=tuple(missing_required_fields),
     )
 
@@ -120,6 +142,7 @@ __all__ = [
     "ResolvedInvokeMetadataApplication",
     "apply_invoke_metadata_bindings",
     "extract_invoke_metadata_bindings",
+    "extract_invoke_metadata_defaults",
     "strip_invoke_metadata_bindings",
     "summarize_invoke_metadata_fields",
 ]

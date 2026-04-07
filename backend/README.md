@@ -150,6 +150,9 @@ Endpoints:
 Credentials:
 
 - Configure `HUB_A2A_TOKEN_ENCRYPTION_KEY` (falls back to `USER_LLM_TOKEN_ENCRYPTION_KEY`).
+- Personal-agent and hub-agent create/update payloads also accept
+  `invoke_metadata_defaults`, which stores agent-level fallback values for
+  declared invoke-metadata contracts.
 
 ## Shared Session Query / Interrupt Callback Compatibility
 
@@ -236,6 +239,11 @@ Validation:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:revert`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:unrevert`
   - The Hub still does not expose `opencode.sessions.shell`; upstream treats it as a deployment-conditional, boundary-sensitive surface and Hub keeps it diagnostics-only.
+- When an upstream declares invoke-metadata fields, Hub now applies values in
+  this order before outbound invoke: direct request metadata, then
+  session-scoped bindings, then agent-level `invoke_metadata_defaults`.
+- `invokeMetadata` capability diagnostics now expose `status` and `error` so
+  invalid upstream contracts can be distinguished from unsupported runtimes.
 - Reply interrupt callbacks:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts:recover`
     - body: `{ "sessionId": "ses-123" }`

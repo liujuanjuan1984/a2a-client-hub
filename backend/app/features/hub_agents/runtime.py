@@ -41,6 +41,7 @@ class HubA2ARuntime:
     agent_name: str
     agent_url: str
     agent_enabled: bool
+    invoke_metadata_defaults: dict[str, str]
     resolved: ResolvedAgent
 
 
@@ -99,6 +100,9 @@ class HubA2ARuntimeBuilder:
             agent_name=cast(str, agent.name),
             agent_url=cast(str, agent.card_url),
             agent_enabled=bool(getattr(agent, "enabled", True)),
+            invoke_metadata_defaults=cast(
+                dict[str, str], agent.invoke_metadata_defaults or {}
+            ),
             resolved=resolved,
         )
 

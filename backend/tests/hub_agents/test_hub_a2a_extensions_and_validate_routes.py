@@ -2357,9 +2357,11 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         "invokeMetadata": {
             "declared": False,
             "consumedByHub": True,
+            "status": "unsupported",
             "metadataField": None,
             "appliesToMethods": [],
             "fields": [],
+            "error": None,
         },
         "requestExecutionOptions": {
             "declared": True,
@@ -2813,9 +2815,11 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         "invokeMetadata": {
             "declared": False,
             "consumedByHub": True,
+            "status": "unsupported",
             "metadataField": None,
             "appliesToMethods": [],
             "fields": [],
+            "error": None,
         },
         "requestExecutionOptions": {
             "declared": False,
@@ -3099,9 +3103,11 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         "invokeMetadata": {
             "declared": False,
             "consumedByHub": True,
+            "status": "unsupported",
             "metadataField": None,
             "appliesToMethods": [],
             "fields": [],
+            "error": None,
         },
         "requestExecutionOptions": {
             "declared": False,

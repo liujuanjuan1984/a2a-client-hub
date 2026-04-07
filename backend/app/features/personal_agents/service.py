@@ -64,6 +64,7 @@ class A2AAgentRecord:
     last_health_check_error: str | None
     tags: list[str]
     extra_headers: dict[str, str]
+    invoke_metadata_defaults: dict[str, str]
     created_at: object
     updated_at: object
     token_last4: Optional[str]
@@ -159,6 +160,9 @@ class A2AAgentService(AgentValidationMixin):
             ),
             tags=cast(list[str], agent.tags or []),
             extra_headers=cast(dict[str, str], agent.extra_headers or {}),
+            invoke_metadata_defaults=cast(
+                dict[str, str], agent.invoke_metadata_defaults or {}
+            ),
             created_at=cast(object, agent.created_at),
             updated_at=cast(object, agent.updated_at),
             token_last4=token_last4,
@@ -468,6 +472,7 @@ class A2AAgentService(AgentValidationMixin):
         enabled: bool = True,
         tags: Optional[Iterable[str]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
+        invoke_metadata_defaults: Optional[Dict[str, str]] = None,
         token: Optional[str] = None,
         basic_username: Optional[str] = None,
         basic_password: Optional[str] = None,
@@ -479,6 +484,9 @@ class A2AAgentService(AgentValidationMixin):
         normalized_auth_type = self._normalize_auth_type(auth_type)
         normalized_tags = self._normalize_tags(tags)
         normalized_headers = self._normalize_headers(extra_headers)
+        normalized_invoke_metadata_defaults = self._normalize_invoke_metadata_defaults(
+            invoke_metadata_defaults
+        )
 
         auth_header_value, auth_scheme_value = self._resolve_auth_fields(
             normalized_auth_type, auth_header, auth_scheme, existing=None
@@ -496,6 +504,7 @@ class A2AAgentService(AgentValidationMixin):
             enabled=enabled,
             tags=normalized_tags or None,
             extra_headers=normalized_headers or None,
+            invoke_metadata_defaults=normalized_invoke_metadata_defaults or None,
         )
         db.add(agent)
         await db.flush()
@@ -545,6 +554,7 @@ class A2AAgentService(AgentValidationMixin):
         enabled: Optional[bool] = None,
         tags: Optional[Iterable[str]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
+        invoke_metadata_defaults: Optional[Dict[str, str]] = None,
         token: Optional[str] = None,
         basic_username: Optional[str] = None,
         basic_password: Optional[str] = None,
@@ -571,6 +581,11 @@ class A2AAgentService(AgentValidationMixin):
         if extra_headers is not None:
             normalized_headers = self._normalize_headers(extra_headers)
             setattr(agent, "extra_headers", normalized_headers or None)
+        if invoke_metadata_defaults is not None:
+            normalized_defaults = self._normalize_invoke_metadata_defaults(
+                invoke_metadata_defaults
+            )
+            setattr(agent, "invoke_metadata_defaults", normalized_defaults or None)
 
         if auth_type is not None:
             setattr(agent, "auth_type", self._normalize_auth_type(auth_type))
@@ -949,6 +964,29 @@ class A2AAgentService(AgentValidationMixin):
                 raise A2AAgentValidationError("extra_headers contains empty key")
             header_value = "" if value is None else str(value).strip()
             normalized[header_key] = header_value
+        return normalized
+
+    def _normalize_invoke_metadata_defaults(
+        self,
+        defaults: Optional[Dict[str, str]],
+    ) -> Dict[str, str]:
+        if defaults is None:
+            return {}
+        if not isinstance(defaults, dict):
+            raise A2AAgentValidationError(
+                "invoke_metadata_defaults must be a dictionary"
+            )
+        normalized: Dict[str, str] = {}
+        for key, value in defaults.items():
+            default_key = str(key).strip()
+            if not default_key:
+                raise A2AAgentValidationError(
+                    "invoke_metadata_defaults contains empty key"
+                )
+            default_value = "" if value is None else str(value).strip()
+            if not default_value:
+                continue
+            normalized[default_key] = default_value
         return normalized
 
 

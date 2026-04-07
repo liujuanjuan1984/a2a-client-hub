@@ -62,6 +62,7 @@ class HubA2AAgentRecord:
     enabled: bool
     tags: list[str]
     extra_headers: dict[str, str]
+    invoke_metadata_defaults: dict[str, str]
     has_credential: bool
     token_last4: Optional[str]
     username_hint: Optional[str]
@@ -136,6 +137,9 @@ class HubA2AAgentService(AgentValidationMixin):
             enabled=bool(getattr(agent, "enabled", True)),
             tags=cast(list[str], agent.tags or []),
             extra_headers=cast(dict[str, str], agent.extra_headers or {}),
+            invoke_metadata_defaults=cast(
+                dict[str, str], agent.invoke_metadata_defaults or {}
+            ),
             has_credential=has_credential,
             token_last4=token_last4,
             username_hint=username_hint,
@@ -252,6 +256,7 @@ class HubA2AAgentService(AgentValidationMixin):
         enabled: bool,
         tags: Optional[Iterable[str]],
         extra_headers: Optional[Dict[str, str]],
+        invoke_metadata_defaults: Optional[Dict[str, str]],
         token: Optional[str],
         basic_username: Optional[str],
         basic_password: Optional[str],
@@ -281,6 +286,10 @@ class HubA2AAgentService(AgentValidationMixin):
             enabled=bool(enabled),
             tags=self._normalize_tags(tags) or None,
             extra_headers=self._normalize_headers(extra_headers) or None,
+            invoke_metadata_defaults=(
+                self._normalize_invoke_metadata_defaults(invoke_metadata_defaults)
+                or None
+            ),
             created_by_user_id=admin_user_id,
             updated_by_user_id=None,
         )
@@ -334,6 +343,7 @@ class HubA2AAgentService(AgentValidationMixin):
         enabled: Optional[bool] = None,
         tags: Optional[Sequence[str]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
+        invoke_metadata_defaults: Optional[Dict[str, str]] = None,
         token: Optional[str] = None,
         basic_username: Optional[str] = None,
         basic_password: Optional[str] = None,
@@ -358,6 +368,13 @@ class HubA2AAgentService(AgentValidationMixin):
         if extra_headers is not None:
             setattr(
                 agent, "extra_headers", self._normalize_headers(extra_headers) or None
+            )
+        if invoke_metadata_defaults is not None:
+            setattr(
+                agent,
+                "invoke_metadata_defaults",
+                self._normalize_invoke_metadata_defaults(invoke_metadata_defaults)
+                or None,
             )
 
         if auth_type is not None:
@@ -1068,6 +1085,25 @@ class HubA2AAgentService(AgentValidationMixin):
             if not k:
                 continue
             v = "" if header_value is None else str(header_value)
+            normalized[k] = v
+        return normalized
+
+    def _normalize_invoke_metadata_defaults(
+        self,
+        value: Optional[Dict[str, str]],
+    ) -> Dict[str, str]:
+        if value is None:
+            return {}
+        normalized: dict[str, str] = {}
+        for key, default_value in value.items():
+            k = str(key).strip()
+            if not k:
+                raise HubA2AAgentValidationError(
+                    "invoke_metadata_defaults contains empty key"
+                )
+            v = "" if default_value is None else str(default_value).strip()
+            if not v:
+                continue
             normalized[k] = v
         return normalized
 

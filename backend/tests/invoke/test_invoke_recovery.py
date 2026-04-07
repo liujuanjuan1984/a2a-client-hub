@@ -234,6 +234,51 @@ async def test_finalize_outbound_invoke_payload_prefers_request_override_over_bo
 
 
 @pytest.mark.asyncio
+async def test_finalize_outbound_invoke_payload_applies_agent_defaults_after_bindings() -> (
+    None
+):
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {
+                "shared": {
+                    "invoke": {
+                        "bindings": {
+                            "project_id": "bound-project",
+                        }
+                    }
+                },
+            },
+        }
+    )
+
+    class _ExtensionsService:
+        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+            return _invoke_metadata_extension()
+
+    finalized = await finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a"),
+            invoke_metadata_defaults={
+                "project_id": "default-project",
+                "channel_id": "default-channel",
+            },
+        ),
+        logger=_fake_logger(),
+        log_extra={},
+        extensions_service_getter=lambda: _ExtensionsService(),
+        resolve_outbound_mode=_return_false,
+    )
+
+    assert finalized.metadata == {
+        "project_id": "bound-project",
+        "channel_id": "default-channel",
+    }
+
+
+@pytest.mark.asyncio
 async def test_finalize_outbound_invoke_payload_raises_when_declared_fields_are_unbound() -> (
     None
 ):

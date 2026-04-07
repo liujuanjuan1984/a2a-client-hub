@@ -153,6 +153,7 @@ export function ChatScreen({
         modelSelectionStatus={controller.modelSelectionStatus}
         currentDirectory={controller.opencodeDirectory}
         hasInvokeMetadata={controller.hasInvokeMetadataBindings}
+        showInvokeMetadataControl={controller.showInvokeMetadataControl}
         invokeMetadataRequiredCount={controller.invokeMetadataRequiredCount}
         pendingInterrupt={controller.pendingInterrupt}
         pendingInterruptCount={controller.pendingInterruptCount}

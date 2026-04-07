@@ -17,6 +17,7 @@ def test_a2a_runtime_builder_build_from_agent_uses_prefetched_fields() -> None:
         card_url="https://personal.example.com",
         auth_type="none",
         extra_headers={"X-Test": "1"},
+        invoke_metadata_defaults={"project_id": "proj-1"},
         enabled=True,
     )
 
@@ -28,6 +29,7 @@ def test_a2a_runtime_builder_build_from_agent_uses_prefetched_fields() -> None:
     assert runtime.agent_enabled is True
     assert runtime.resolved.url == "https://personal.example.com"
     assert runtime.resolved.headers == {"X-Test": "1"}
+    assert runtime.invoke_metadata_defaults == {"project_id": "proj-1"}
     assert runtime.token_last4 is None
 
 
@@ -39,6 +41,7 @@ def test_hub_runtime_builder_build_from_agent_returns_scalar_runtime_fields() ->
         card_url="https://shared.example.com",
         auth_type="none",
         extra_headers={"X-Shared": "1"},
+        invoke_metadata_defaults={"project_id": "proj-2"},
         enabled=False,
     )
 
@@ -50,6 +53,7 @@ def test_hub_runtime_builder_build_from_agent_returns_scalar_runtime_fields() ->
     assert runtime.agent_enabled is False
     assert runtime.resolved.url == "https://shared.example.com"
     assert runtime.resolved.headers == {"X-Shared": "1"}
+    assert runtime.invoke_metadata_defaults == {"project_id": "proj-2"}
 
 
 def test_hub_runtime_builder_resolve_prefetched_builds_bearer_headers() -> None:

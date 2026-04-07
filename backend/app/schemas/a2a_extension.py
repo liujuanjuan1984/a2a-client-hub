@@ -314,11 +314,13 @@ class A2AInvokeMetadataCapabilitiesResponse(BaseModel):
 
     declared: bool
     consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    status: Literal["supported", "unsupported", "invalid"]
     metadata_field: Optional[str] = Field(default=None, alias="metadataField")
     applies_to_methods: List[str] = Field(
         default_factory=list, alias="appliesToMethods"
     )
     fields: List[A2AInvokeMetadataFieldResponse] = Field(default_factory=list)
+    error: Optional[str] = None
 
 
 class A2ARequestExecutionOptionsCapabilitiesResponse(BaseModel):

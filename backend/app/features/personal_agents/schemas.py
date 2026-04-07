@@ -31,6 +31,7 @@ class A2AAgentBase(BaseModel):
     enabled: bool = Field(default=True)
     tags: List[str] = Field(default_factory=list)
     extra_headers: Dict[str, str] = Field(default_factory=dict)
+    invoke_metadata_defaults: Dict[str, str] = Field(default_factory=dict)
 
 
 class A2AAgentCreate(A2AAgentBase):
@@ -54,6 +55,7 @@ class A2AAgentUpdate(BaseModel):
     enabled: Optional[bool] = None
     tags: Optional[List[str]] = None
     extra_headers: Optional[Dict[str, str]] = None
+    invoke_metadata_defaults: Optional[Dict[str, str]] = None
     token: Optional[str] = Field(
         default=None,
         min_length=1,

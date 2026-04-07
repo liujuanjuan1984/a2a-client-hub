@@ -49,6 +49,7 @@ const buildPersonalAgent = (
     healthStatus === "healthy" ? null : "Connection failed",
   tags: [],
   extra_headers: {},
+  invoke_metadata_defaults: {},
   created_at: "2026-03-25T09:00:00.000Z",
   updated_at: "2026-03-25T09:00:00.000Z",
 });
