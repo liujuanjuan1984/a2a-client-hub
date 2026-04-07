@@ -55,6 +55,7 @@ The workflow currently checks and may update these files:
 
 - `VERSION`
 - `backend/pyproject.toml`
+- `backend/uv.lock`
 - `frontend/package.json`
 - `frontend/app.json`
 - `frontend/package-lock.json`

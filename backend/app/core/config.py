@@ -317,6 +317,20 @@ class Settings(BaseSettings):
             raise ValueError(f"APP_ENV must be one of: {allowed}")
         return normalized
 
+    @field_validator("log_format", mode="before")
+    @classmethod
+    def _normalize_log_format(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().lower()
+        allowed_values = {"text", "json"}
+        if normalized not in allowed_values:
+            allowed = ", ".join(sorted(allowed_values))
+            raise ValueError(f"LOG_FORMAT must be one of: {allowed}")
+        return normalized
+
     @staticmethod
     def _is_weak_secret(value: str) -> bool:
         candidate = (value or "").strip().lower()
@@ -512,6 +526,12 @@ class Settings(BaseSettings):
 
     # Logging settings
     log_level: str = "INFO"
+    log_format: str = Field(
+        default="text",
+        alias="LOG_FORMAT",
+        description="Log output format: text or json.",
+    )
+
     user_llm_token_encryption_key: str = Field(
         default="",
         alias="USER_LLM_TOKEN_ENCRYPTION_KEY",

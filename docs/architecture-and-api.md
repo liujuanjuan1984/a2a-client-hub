@@ -6,7 +6,7 @@ For the broader cross-cutting documentation map, see [`docs/README.md`](README.m
 
 ## System Overview
 
-`a2a-client-hub` is a client hub for user-managed and admin-managed A2A agents.
+`a2a-client-hub` is a client hub and control plane for user-managed and admin-managed A2A agents.
 
 - Frontend (`frontend/`): Expo / React Native / Web client.
 - Backend (`backend/`): FastAPI API layer, auth, persistence, scheduling, and A2A runtime integration.
@@ -22,9 +22,10 @@ For the broader cross-cutting documentation map, see [`docs/README.md`](README.m
 
 ## Key Backend Modules
 
-- `app/api/routers/`: HTTP route definitions
-- `app/services/`: domain and orchestration services
+- `app/features/`: business-facing route handlers, schemas, and feature orchestration for auth, agents, schedules, sessions, and related flows
+- `app/api/`: cross-cutting routing helpers, dependencies, and error handling
 - `app/integrations/`: outbound A2A clients/extensions
+- `app/runtime/`: scheduler, health, proxy cache, and long-lived runtime coordination
 - `app/db/models/`: SQLAlchemy models
 - `app/core/`: config, security, logging
 

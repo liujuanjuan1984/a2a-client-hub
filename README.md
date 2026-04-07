@@ -1,6 +1,6 @@
 # a2a-client-hub
 
-`a2a-client-hub` is a self-hosted A2A client hub for teams and individuals who need one place to manage, invoke, and operate multiple A2A agents across web and mobile.
+`a2a-client-hub` is a self-hosted A2A client hub and control plane for teams and individuals who need one place to manage, invoke, and operate multiple A2A agents across web and mobile.
 
 It is a client/control plane, not an A2A provider itself. It is also not an MCP server, MCP registry, or MCP gateway.
 
@@ -22,27 +22,19 @@ This project is designed for the A2A ecosystem first.
 - It aims to work with multiple A2A peer profiles rather than one provider only.
 - Current repository examples still use OpenCode-flavored contracts heavily because that profile is one of the most fully exercised in this codebase.
 - The Hub is not intended to replace MCP. MCP is an agent-internal tool/context protocol; this project focuses on agent-to-agent integration and control-plane concerns.
+- The intended product role is a user-facing control plane around downstream agents, not a thin single-provider chat shell.
+- Compatibility tiers, exercised peer profiles, and explicit non-goals are maintained in [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md).
 
-Current compatibility framing:
+## Why A2A Client Hub?
 
-- First-class today: A2A peers that expose standard Agent Cards plus the shared session / interrupt capabilities consumed by the Hub.
-- Explicitly exercised in this repository: OpenCode-compatible peers and other coding-agent peers, including Codex-family deployments, when they publish a compatible A2A surface.
-- Partial compatibility: standard A2A peers that only support invoke / stream without the shared extension workflows used for session continuity.
-
-Repository-level A2A service references that match the current target profile:
-
-- [`Intelligent-Internet/opencode-a2a`](https://github.com/Intelligent-Internet/opencode-a2a)
-- [`liujuanjuan1984/codex-a2a`](https://github.com/liujuanjuan1984/codex-a2a)
-- [`Swival/swival`](https://github.com/Swival/swival)
-
-See [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md) for the maintained compatibility notes and explicit non-goals.
-
-## What value it delivers
-
-- Faster integration: connect multiple A2A agents from one product surface.
-- Better governance: enforce allowlists, admin-only control, and secure token handling.
-- Better user continuity: keep chat and session flows available across devices.
-- Better extensibility: support A2A extension workflows (for example, OpenCode session query) without tightly coupling to provider-specific schemas.
+- Proactivity
+  - The Hub is not limited to manual chat turns. Scheduled invocation, execution history, and session continuity let it operate recurring agent workflows from a stable hub boundary.
+- Mobility
+  - The same product surface spans Expo, React Native, and Web so agent discovery, chat continuity, and scheduled-job operations do not have to be rebuilt separately for each client.
+- Governance
+  - Admin-managed catalog publishing, allowlists, encrypted credentials, secure token handling, and controlled outbound access keep A2A connectivity behind the Hub instead of scattering trust decisions across clients.
+- Extensibility
+  - The Hub can consume provider-specific extension workflows when needed while keeping its own routes and UI focused on a stable product surface.
 
 ## Core capabilities
 
