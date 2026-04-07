@@ -52,9 +52,14 @@ class InterruptRecoveryService:
             )
 
         details = item.get("details")
+        properties = item.get("properties")
         if details is not None and not isinstance(details, dict):
             raise A2AExtensionContractError(
                 "Interrupt recovery item details must be an object when provided"
+            )
+        if properties is not None and not isinstance(properties, dict):
+            raise A2AExtensionContractError(
+                "Interrupt recovery item properties must be an object when provided"
             )
 
         expires_at = item.get("expires_at")
@@ -67,7 +72,11 @@ class InterruptRecoveryService:
             "request_id": request_id.strip(),
             "session_id": session_id.strip(),
             "type": interrupt_type,
-            "details": dict(details) if isinstance(details, dict) else {},
+            "details": (
+                dict(details)
+                if isinstance(details, dict)
+                else dict(properties) if isinstance(properties, dict) else {}
+            ),
         }
 
         task_id = item.get("task_id")
@@ -104,6 +113,7 @@ class InterruptRecoveryService:
         ext: ResolvedInterruptRecoveryExtension,
         jsonrpc_url: str,
         method_key: str,
+        params: Dict[str, Any] | None = None,
     ) -> ExtensionCallResult:
         method_name = ext.methods.get(method_key)
         if not method_name:
@@ -120,7 +130,7 @@ class InterruptRecoveryService:
             runtime=runtime,
             jsonrpc_url=jsonrpc_url,
             method_name=method_name,
-            params={},
+            params=dict(params or {}),
         )
 
         meta: Dict[str, Any] = {
@@ -173,6 +183,21 @@ class InterruptRecoveryService:
         session_id: str | None = None,
     ) -> ExtensionCallResult:
         resolved_session_id = self.prepare_recovery_query(session_id=session_id)
+        list_method = ext.methods.get("list")
+        if list_method:
+            result = await self.invoke_method(
+                runtime=runtime,
+                ext=ext,
+                jsonrpc_url=jsonrpc_url,
+                method_key="list",
+            )
+            if not result.success:
+                return result
+            return self._filter_and_sort_items(
+                result=result,
+                session_id=resolved_session_id,
+            )
+
         permission_result = await self.invoke_method(
             runtime=runtime,
             ext=ext,
@@ -191,24 +216,43 @@ class InterruptRecoveryService:
         if not question_result.success:
             return question_result
 
+        merged_result = ExtensionCallResult(
+            success=True,
+            result={
+                "items": list((permission_result.result or {}).get("items") or [])
+                + list((question_result.result or {}).get("items") or [])
+            },
+            meta={
+                "extension_uri": ext.uri,
+                "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
+                "session_id": resolved_session_id,
+            },
+        )
+        return self._filter_and_sort_items(
+            result=merged_result,
+            session_id=resolved_session_id,
+        )
+
+    @staticmethod
+    def _filter_and_sort_items(
+        *,
+        result: ExtensionCallResult,
+        session_id: str | None,
+    ) -> ExtensionCallResult:
         items: list[dict[str, Any]] = []
         seen_request_ids: set[str] = set()
 
-        for result in (permission_result, question_result):
-            for item in list((result.result or {}).get("items") or []):
-                if not isinstance(item, dict):
-                    continue
-                item_session_id = item.get("session_id")
-                if (
-                    resolved_session_id is not None
-                    and item_session_id != resolved_session_id
-                ):
-                    continue
-                request_id = item.get("request_id")
-                if not isinstance(request_id, str) or request_id in seen_request_ids:
-                    continue
-                seen_request_ids.add(request_id)
-                items.append(item)
+        for item in list((result.result or {}).get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            item_session_id = item.get("session_id")
+            if session_id is not None and item_session_id != session_id:
+                continue
+            request_id = item.get("request_id")
+            if not isinstance(request_id, str) or request_id in seen_request_ids:
+                continue
+            seen_request_ids.add(request_id)
+            items.append(item)
 
         def _sort_key(item: dict[str, Any]) -> tuple[float, str]:
             raw_expires_at = item.get("expires_at")
@@ -224,9 +268,5 @@ class InterruptRecoveryService:
         return ExtensionCallResult(
             success=True,
             result={"items": items},
-            meta={
-                "extension_uri": ext.uri,
-                "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-                "session_id": resolved_session_id,
-            },
+            meta=dict(result.meta or {}),
         )

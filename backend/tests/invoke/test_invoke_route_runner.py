@@ -1173,7 +1173,7 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
     async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
         return kwargs["payload"]
 
-    async def fake_prompt_session_async(**kwargs):  # noqa: ARG001
+    async def fake_append_session_control(**kwargs):  # noqa: ARG001
         return SimpleNamespace(
             success=True,
             result={"ok": True, "session_id": "ses-upstream-next"},
@@ -1191,8 +1191,8 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
     )
     monkeypatch.setattr(
         invoke_route_runner.get_a2a_extensions_service(),
-        "prompt_session_async",
-        fake_prompt_session_async,
+        "append_session_control",
+        fake_append_session_control,
     )
 
     runtime = SimpleNamespace(

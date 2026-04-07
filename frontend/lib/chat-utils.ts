@@ -7,6 +7,7 @@ import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
 import { pickOpencodeDirectoryMetadata } from "@/lib/opencodeMetadata";
 import {
   pickSharedMetadataSections,
+  readSharedStreamIdentity,
   withoutSharedSessionBinding,
 } from "@/lib/sharedMetadata";
 
@@ -204,7 +205,9 @@ export const buildInvokePayload = (
   if (options?.resumeFromSequence !== undefined) {
     payload.resumeFromSequence = options.resumeFromSequence;
   }
-  const metadata = withoutSharedSessionBinding(session.metadata);
+  const metadata = withoutSharedSessionBinding(session.metadata, {
+    keepSharedStream: options?.sessionControlIntent === "append",
+  });
   const externalProvider = session.externalSessionRef?.provider?.trim();
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();
@@ -249,18 +252,33 @@ const normalizeSessionForPersistence = (
   const sharedMetadata = pickSharedMetadataSections(session.metadata, [
     "model",
   ]);
+  const sharedStreamIdentity = readSharedStreamIdentity(session.metadata);
   const invokeBindings = getInvokeMetadataBindings(session.metadata);
-  const persistedMetadata = {
-    ...sharedMetadata,
-    ...(Object.keys(invokeBindings).length > 0
+  const persistedShared = {
+    ...((sharedMetadata.shared as Record<string, unknown> | undefined) ?? {}),
+    ...(sharedStreamIdentity.threadId || sharedStreamIdentity.turnId
       ? {
-          shared: {
-            ...(sharedMetadata.shared as Record<string, unknown> | undefined),
-            invoke: {
-              bindings: invokeBindings,
-            },
+          stream: {
+            ...(sharedStreamIdentity.threadId
+              ? { thread_id: sharedStreamIdentity.threadId }
+              : {}),
+            ...(sharedStreamIdentity.turnId
+              ? { turn_id: sharedStreamIdentity.turnId }
+              : {}),
           },
         }
+      : {}),
+    ...(Object.keys(invokeBindings).length > 0
+      ? {
+          invoke: {
+            bindings: invokeBindings,
+          },
+        }
+      : {}),
+  };
+  const persistedMetadata = {
+    ...(Object.keys(persistedShared).length > 0
+      ? { shared: persistedShared }
       : {}),
     ...(pickOpencodeDirectoryMetadata(session.metadata) ?? {}),
   };

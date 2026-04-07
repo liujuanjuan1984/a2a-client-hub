@@ -10,6 +10,7 @@ from app.integrations.a2a_extensions.interrupt_recovery import (
     resolve_interrupt_recovery,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_INTERRUPT_RECOVERY_URI,
     INTERRUPT_RECOVERY_URI,
     OPENCODE_INTERRUPT_RECOVERY_URI,
 )
@@ -128,5 +129,30 @@ def test_resolve_treats_blank_interrupt_recovery_methods_as_missing() -> None:
 
     card = AgentCard.model_validate(payload)
     resolved = resolve_interrupt_recovery(card)
+    assert resolved.methods["list"] is None
+    assert resolved.methods["list_permissions"] is None
+    assert resolved.methods["list_questions"] is None
+
+
+def test_resolve_accepts_codex_interrupt_recovery_single_list_method() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_INTERRUPT_RECOVERY_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list": "codex.interrupts.list",
+                },
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_interrupt_recovery(card)
+
+    assert resolved.uri == CODEX_INTERRUPT_RECOVERY_URI
+    assert resolved.provider == "codex"
+    assert resolved.methods["list"] == "codex.interrupts.list"
     assert resolved.methods["list_permissions"] is None
     assert resolved.methods["list_questions"] is None

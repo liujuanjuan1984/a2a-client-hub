@@ -531,6 +531,29 @@ class _FakeExtensionsService:
             meta={},
         )
 
+    async def append_session_control(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        request_payload,
+        metadata,
+    ):
+        self.calls.append(
+            {
+                "fn": "append_session_control",
+                "runtime": runtime,
+                "session_id": session_id,
+                "request_payload": request_payload,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "session_id": session_id},
+            meta={},
+        )
+
     async def prompt_session_async(
         self,
         *,
@@ -2207,12 +2230,12 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         ),
         codex_turns=SimpleNamespace(
             declared=True,
-            consumed_by_hub=False,
-            status="unsupported_by_design",
+            consumed_by_hub=True,
+            status="supported",
             methods={
                 "steer": SimpleNamespace(
                     declared=True,
-                    consumed_by_hub=False,
+                    consumed_by_hub=True,
                     method="codex.turns.steer",
                 ),
             },
@@ -2594,8 +2617,8 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         },
         "codexTurns": {
             "declared": True,
-            "consumedByHub": False,
-            "status": "unsupported_by_design",
+            "consumedByHub": True,
+            "status": "supported",
             "declarationSource": None,
             "declarationConfidence": None,
             "negotiationState": None,
@@ -2603,7 +2626,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             "methods": {
                 "steer": {
                     "declared": True,
-                    "consumedByHub": False,
+                    "consumedByHub": True,
                     "method": "codex.turns.steer",
                     "availability": "always",
                     "configKey": None,

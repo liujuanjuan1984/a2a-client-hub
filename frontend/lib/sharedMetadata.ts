@@ -106,8 +106,67 @@ export const getPreferredSessionMetadata = (
   return Object.keys(legacy).length > 0 ? legacy : null;
 };
 
+export const readSharedStreamIdentity = (
+  payloadOrMetadata: Record<string, unknown> | null | undefined,
+) => {
+  const stream = getSharedMetadataSection(payloadOrMetadata, "stream");
+  return {
+    threadId: pickString(stream, ["thread_id", "threadId"]),
+    turnId: pickString(stream, ["turn_id", "turnId"]),
+  };
+};
+
+export const withSharedStreamIdentity = (
+  metadata: Record<string, unknown> | null | undefined,
+  identity: {
+    threadId?: string | null;
+    turnId?: string | null;
+  } | null,
+) => {
+  const nextMetadata = { ...(metadata ?? {}) };
+  const nextShared = asRecord(nextMetadata.shared)
+    ? { ...(nextMetadata.shared as Record<string, unknown>) }
+    : {};
+  const nextStream = asRecord(nextShared.stream)
+    ? { ...(nextShared.stream as Record<string, unknown>) }
+    : {};
+
+  const threadId = identity?.threadId?.trim() ?? "";
+  const turnId = identity?.turnId?.trim() ?? "";
+
+  if (threadId) {
+    nextStream.thread_id = threadId;
+  } else {
+    delete nextStream.thread_id;
+    delete nextStream.threadId;
+  }
+  if (turnId) {
+    nextStream.turn_id = turnId;
+  } else {
+    delete nextStream.turn_id;
+    delete nextStream.turnId;
+  }
+
+  if (Object.keys(nextStream).length > 0) {
+    nextShared.stream = nextStream;
+  } else {
+    delete nextShared.stream;
+  }
+
+  if (Object.keys(nextShared).length > 0) {
+    nextMetadata.shared = nextShared;
+  } else {
+    delete nextMetadata.shared;
+  }
+
+  return nextMetadata;
+};
+
 export const withoutSharedSessionBinding = (
   metadata: Record<string, unknown> | null | undefined,
+  options?: {
+    keepSharedStream?: boolean;
+  },
 ) => {
   const nextMetadata = { ...(metadata ?? {}) };
   const nextShared = asRecord(nextMetadata.shared)
@@ -116,6 +175,9 @@ export const withoutSharedSessionBinding = (
 
   if (nextShared) {
     delete nextShared.session;
+    if (!options?.keepSharedStream) {
+      delete nextShared.stream;
+    }
     if (Object.keys(nextShared).length > 0) {
       nextMetadata.shared = nextShared;
     } else {

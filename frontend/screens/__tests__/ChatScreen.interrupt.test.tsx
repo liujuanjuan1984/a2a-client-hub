@@ -31,6 +31,14 @@ const mockExtensionCapabilitiesState = {
   interruptRecoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
   sessionCommandStatus: "supported" as MockCapabilityStatus,
+  codexTurns: null as {
+    methods: {
+      steer?: {
+        declared: boolean;
+        consumedByHub: boolean;
+      };
+    };
+  } | null,
   invokeMetadataStatus: "unsupported" as MockCapabilityStatus,
   invokeMetadata: null as {
     fields: { name: string; required: boolean; description?: string | null }[];
@@ -482,6 +490,7 @@ describe("ChatScreen interrupt handling", () => {
     mockExtensionCapabilitiesState.interruptRecoveryStatus = "supported";
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
     mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
+    mockExtensionCapabilitiesState.codexTurns = null;
     mockExtensionCapabilitiesState.invokeMetadataStatus = "unsupported";
     mockExtensionCapabilitiesState.invokeMetadata = null;
     mockExtensionCapabilitiesState.canShowModelPicker = true;
@@ -998,6 +1007,74 @@ describe("ChatScreen interrupt handling", () => {
     );
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();
     expect(mockInvokeAgent).not.toHaveBeenCalled();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("uses append when codex turn steering is consumed by Hub", async () => {
+    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
+    mockExtensionCapabilitiesState.codexTurns = {
+      methods: {
+        steer: {
+          declared: true,
+          consumedByHub: true,
+        },
+      },
+    };
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      metadata: {
+        shared: {
+          stream: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+          },
+        },
+      },
+      externalSessionRef: {
+        provider: "Codex",
+        externalSessionId: "ses-upstream-5",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("steer this");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockInvokeAgent).toHaveBeenCalledWith("agent-1", {
+      query: "steer this",
+      conversationId,
+      userMessageId: expect.any(String),
+      metadata: {
+        shared: {
+          stream: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+          },
+        },
+      },
+      sessionBinding: {
+        provider: "codex",
+        externalSessionId: "ses-upstream-5",
+      },
+      sessionControl: {
+        intent: "append",
+      },
+    });
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Message added to current response",
+      "Your message was sent to the running upstream session.",
+    );
     act(() => {
       tree.unmount();
     });

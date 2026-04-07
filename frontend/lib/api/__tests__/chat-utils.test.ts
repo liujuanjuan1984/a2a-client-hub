@@ -1,6 +1,7 @@
 import {
   DEFAULT_RUNTIME_STATUS_CONTRACT,
   extractRuntimeStatusEvent,
+  extractSessionMeta,
   isInputRequiredRuntimeState,
   normalizeRuntimeState,
 } from "@/lib/api/chat-utils";
@@ -47,6 +48,26 @@ describe("runtime status contract", () => {
       seq: null,
       completionPhase: null,
       messageId: null,
+    });
+  });
+
+  it("extracts shared stream turn identity from lifecycle event properties", () => {
+    expect(
+      extractSessionMeta({
+        kind: "artifact-update",
+        properties: {
+          thread_id: "thread-1",
+          turn_id: "turn-2",
+        },
+      }),
+    ).toEqual({
+      provider: undefined,
+      externalSessionId: undefined,
+      streamThreadId: "thread-1",
+      streamTurnId: "turn-2",
+      transport: undefined,
+      inputModes: undefined,
+      outputModes: undefined,
     });
   });
 

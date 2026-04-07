@@ -129,6 +129,69 @@ describe("chat store utils", () => {
     });
   });
 
+  it("strips shared stream identity for normal sends", () => {
+    const session = createAgentSession("agent-3");
+    session.metadata = {
+      locale: "zh-CN",
+      shared: {
+        stream: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+        },
+      },
+    };
+
+    expect(buildInvokePayload("hello", session, "conversation:ghi")).toEqual({
+      query: "hello",
+      conversationId: "conversation:ghi",
+      metadata: {
+        locale: "zh-CN",
+      },
+    });
+  });
+
+  it("keeps shared stream identity for append session control", () => {
+    const session = createAgentSession("agent-3");
+    session.metadata = {
+      locale: "zh-CN",
+      shared: {
+        stream: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+        },
+      },
+    };
+    session.externalSessionRef = {
+      provider: "codex",
+      externalSessionId: "ses-upstream-2",
+    };
+
+    expect(
+      buildInvokePayload("hello", session, "conversation:jkl", {
+        sessionControlIntent: "append",
+      }),
+    ).toEqual({
+      query: "hello",
+      conversationId: "conversation:jkl",
+      metadata: {
+        locale: "zh-CN",
+        shared: {
+          stream: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+          },
+        },
+      },
+      sessionBinding: {
+        provider: "codex",
+        externalSessionId: "ses-upstream-2",
+      },
+      sessionControl: {
+        intent: "append",
+      },
+    });
+  });
+
   it("reads and writes shared model selection metadata", () => {
     const nextMetadata = withSharedModelSelection(
       { locale: "zh-CN" },
@@ -173,6 +236,30 @@ describe("chat store utils", () => {
         },
       },
       opencode: { directory: "/workspace" },
+    });
+  });
+
+  it("preserves shared stream identity in persisted sessions", () => {
+    const session = createAgentSession("agent-5");
+    session.metadata = {
+      shared: {
+        stream: {
+          thread_id: "thread-1",
+          turn_id: "turn-2",
+          event_id: "evt-ignored",
+        },
+      },
+    };
+
+    const persisted = buildPersistedSessions({ "conv-1": session });
+
+    expect(persisted["conv-1"]?.metadata).toEqual({
+      shared: {
+        stream: {
+          thread_id: "thread-1",
+          turn_id: "turn-2",
+        },
+      },
     });
   });
 

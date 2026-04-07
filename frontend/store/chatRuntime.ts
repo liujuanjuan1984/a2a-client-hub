@@ -41,6 +41,7 @@ import {
 import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
+import { withSharedStreamIdentity } from "@/lib/sharedMetadata";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { queryClient } from "@/services/queryClient";
 import { type AgentSource } from "@/store/agents";
@@ -315,6 +316,8 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   const updateSessionMeta = (meta: {
     provider?: string | null;
     externalSessionId?: string | null;
+    streamThreadId?: string | null;
+    streamTurnId?: string | null;
     runtimeStatus?: string | null;
     runtimeInterruptEvent?: RuntimeInterrupt | null;
     transport?: string;
@@ -406,6 +409,18 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
             currentExternalSessionId
         ) {
           nextPatch.externalSessionRef = mergedExternalSessionRef;
+        }
+      }
+      if (
+        meta.streamThreadId !== undefined ||
+        meta.streamTurnId !== undefined
+      ) {
+        const nextMetadata = withSharedStreamIdentity(current.metadata, {
+          threadId: meta.streamThreadId,
+          turnId: meta.streamTurnId,
+        });
+        if (JSON.stringify(nextMetadata) !== JSON.stringify(current.metadata)) {
+          nextPatch.metadata = nextMetadata;
         }
       }
 
@@ -766,6 +781,8 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     if (
       meta.provider !== undefined ||
       meta.externalSessionId !== undefined ||
+      meta.streamThreadId !== undefined ||
+      meta.streamTurnId !== undefined ||
       meta.transport ||
       meta.inputModes ||
       meta.outputModes ||
