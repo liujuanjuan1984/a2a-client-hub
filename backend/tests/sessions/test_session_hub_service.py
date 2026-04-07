@@ -285,6 +285,122 @@ async def test_preempt_inflight_invoke_report_marks_accepted_when_task_not_bound
     }
 
 
+async def test_bind_inflight_task_id_report_finalizes_pending_preempt_event(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001, ARG002
+            return {"success": True}
+
+    token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        gateway=_Gateway(),
+        resolved=object(),
+    )
+    pending_event = {
+        "reason": "invoke_interrupt",
+        "source": "user",
+        "target_message_id": str(uuid4()),
+        "replacement_user_message_id": str(uuid4()),
+        "replacement_agent_message_id": str(uuid4()),
+    }
+    report = await session_hub_service.preempt_inflight_invoke_report(
+        user_id=user.id,
+        conversation_id=thread.id,
+        reason="invoke_interrupt",
+        pending_event=pending_event,
+    )
+    assert report.status == "accepted"
+    assert report.pending_tokens == [token]
+
+    bind_report = await session_hub_service.bind_inflight_task_id_report(
+        user_id=user.id,
+        conversation_id=thread.id,
+        token=token,
+        task_id="task-late-bound",
+    )
+
+    assert bind_report.bound is True
+    assert bind_report.preempt_event == {
+        **pending_event,
+        "status": "completed",
+        "target_task_ids": ["task-late-bound"],
+        "failed_error_codes": [],
+    }
+
+
+async def test_bind_inflight_task_id_report_marks_pending_preempt_failed(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001, ARG002
+            return {"success": False, "error_code": "timeout"}
+
+    token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        gateway=_Gateway(),
+        resolved=object(),
+    )
+    pending_event = {
+        "reason": "invoke_interrupt",
+        "source": "user",
+        "target_message_id": str(uuid4()),
+        "replacement_user_message_id": str(uuid4()),
+        "replacement_agent_message_id": str(uuid4()),
+    }
+    await session_hub_service.preempt_inflight_invoke_report(
+        user_id=user.id,
+        conversation_id=thread.id,
+        reason="invoke_interrupt",
+        pending_event=pending_event,
+    )
+
+    bind_report = await session_hub_service.bind_inflight_task_id_report(
+        user_id=user.id,
+        conversation_id=thread.id,
+        token=token,
+        task_id="task-late-bound",
+    )
+
+    assert bind_report.bound is True
+    assert bind_report.preempt_event == {
+        **pending_event,
+        "status": "failed",
+        "target_task_ids": ["task-late-bound"],
+        "failed_error_codes": ["timeout"],
+    }
+
+
 async def test_preempt_inflight_invoke_keeps_old_token_when_new_inflight_registered(
     async_db_session,
 ):

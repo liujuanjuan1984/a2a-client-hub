@@ -264,21 +264,25 @@ async def _preempt_previous_invoke_if_requested(
         user_id=user_id,
         conversation_id=state.local_session_id,
     )
+    pending_event = {
+        "reason": "invoke_interrupt",
+        "source": "user",
+        "target_message_id": target_message_id,
+        "replacement_user_message_id": state.user_message_id,
+        "replacement_agent_message_id": state.agent_message_id,
+    }
     report = await session_hub_service.preempt_inflight_invoke_report(
         user_id=user_id,
         conversation_id=state.local_session_id,
         reason="invoke_interrupt",
+        pending_event=pending_event,
     )
     if not report.attempted:
         return
 
     event = {
-        "reason": "invoke_interrupt",
+        **pending_event,
         "status": report.status,
-        "source": "user",
-        "target_message_id": target_message_id,
-        "replacement_user_message_id": state.user_message_id,
-        "replacement_agent_message_id": state.agent_message_id,
         "target_task_ids": report.target_task_ids,
         "failed_error_codes": report.failed_error_codes,
     }
@@ -308,14 +312,20 @@ async def _bind_inflight_task_if_needed(
     )
     if not normalized_task_id or normalized_task_id == state.upstream_task_id:
         return
-    bound = await session_hub_service.bind_inflight_task_id(
+    bind_report = await session_hub_service.bind_inflight_task_id_report(
         user_id=user_id,
         conversation_id=state.local_session_id,
         token=state.inflight_token,
         task_id=normalized_task_id,
     )
-    if bound:
+    if bind_report.bound:
         state.upstream_task_id = normalized_task_id
+    if bind_report.preempt_event is not None:
+        await _record_preempt_history_event(
+            state=state,
+            user_id=user_id,
+            event=bind_report.preempt_event,
+        )
 
 
 async def _unregister_inflight_invoke(

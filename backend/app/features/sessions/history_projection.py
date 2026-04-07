@@ -116,6 +116,46 @@ def _trim_overlapping_reasoning_prefix(
     return text
 
 
+def _merge_preempt_event(
+    *,
+    existing_event: dict[str, Any] | None,
+    incoming_event: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_existing = normalize_preempt_event(existing_event)
+    if normalized_existing is None:
+        return incoming_event
+    if (
+        normalized_existing.get("status") in {"completed", "failed"}
+        and incoming_event.get("status") == "accepted"
+    ):
+        merged_event = dict(normalized_existing)
+        for field_name in (
+            "target_message_id",
+            "replacement_user_message_id",
+            "replacement_agent_message_id",
+        ):
+            if (
+                field_name not in merged_event
+                and incoming_event.get(field_name) is not None
+            ):
+                merged_event[field_name] = incoming_event[field_name]
+        for field_name in ("target_task_ids", "failed_error_codes"):
+            merged_values: list[str] = []
+            for raw_values in (
+                normalized_existing.get(field_name),
+                incoming_event.get(field_name),
+            ):
+                if not isinstance(raw_values, list):
+                    continue
+                for item in raw_values:
+                    normalized_item = normalize_non_empty_text(item)
+                    if normalized_item and normalized_item not in merged_values:
+                        merged_values.append(normalized_item)
+            merged_event[field_name] = merged_values
+        return merged_event
+    return incoming_event
+
+
 def _update_block_event_metadata(
     block: AgentMessageBlock,
     *,
@@ -903,7 +943,6 @@ class SessionHistoryProjectionService:
             ),
             reason=cast(str, normalized_event["reason"]),
         )
-        message_metadata = {"preempt": normalized_event}
         existing_message = await self._support.find_message_by_id_and_sender(
             db,
             user_id=user_id,
@@ -911,6 +950,19 @@ class SessionHistoryProjectionService:
             sender="system",
             conversation_id=conversation_id,
         )
+        existing_metadata = (
+            cast(dict[str, Any], existing_message.metadata)
+            if existing_message is not None
+            and isinstance(existing_message.metadata, dict)
+            else {}
+        )
+        resolved_event = _merge_preempt_event(
+            existing_event=cast(
+                dict[str, Any] | None, existing_metadata.get("preempt")
+            ),
+            incoming_event=normalized_event,
+        )
+        message_metadata = {"preempt": resolved_event}
         if existing_message is None:
             system_message = await message_store.create_agent_message(
                 db,
@@ -936,7 +988,7 @@ class SessionHistoryProjectionService:
             db,
             user_id=user_id,
             message_id=cast(UUID, system_message.id),
-            content=build_preempt_message_content(normalized_event),
+            content=build_preempt_message_content(resolved_event),
             source="invoke_preempt",
         )
         return cast(UUID, system_message.id)

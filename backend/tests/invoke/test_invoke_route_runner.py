@@ -20,6 +20,7 @@ from app.db.locking import (
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.features.sessions.common import (
+    BindInflightTaskReport,
     PreemptedInvokeReport,
     deserialize_interrupt_event_block_content,
 )
@@ -1077,8 +1078,10 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
         user_id,  # noqa: ANN001, ARG001
         conversation_id,  # noqa: ANN001, ARG001
         reason,  # noqa: ANN001
+        pending_event,  # noqa: ANN001
     ) -> PreemptedInvokeReport:
         called.append(str(reason))
+        recorded_events.append(dict(pending_event))
         return PreemptedInvokeReport(
             attempted=True,
             status="completed",
@@ -1141,6 +1144,13 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
     assert recorded_events == [
         {
             "reason": "invoke_interrupt",
+            "source": "user",
+            "target_message_id": target_message_id,
+            "replacement_user_message_id": state.user_message_id,
+            "replacement_agent_message_id": state.agent_message_id,
+        },
+        {
+            "reason": "invoke_interrupt",
             "status": "completed",
             "source": "user",
             "target_message_id": target_message_id,
@@ -1148,7 +1158,7 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
             "replacement_agent_message_id": state.agent_message_id,
             "target_task_ids": ["task-preempt-1"],
             "failed_error_codes": [],
-        }
+        },
     ]
 
 
@@ -1158,16 +1168,16 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
 ) -> None:
     captured: dict[str, object] = {}
 
-    async def fake_bind_inflight_task_id(
+    async def fake_bind_inflight_task_id_report(
         *,
         user_id,  # noqa: ANN001, ARG001
         conversation_id,  # noqa: ANN001, ARG001
         token,  # noqa: ANN001
         task_id,  # noqa: ANN001
-    ) -> bool:
+    ) -> BindInflightTaskReport:
         captured["bound_token"] = token
         captured["bound_task_id"] = task_id
-        return True
+        return BindInflightTaskReport(bound=True)
 
     async def fake_unregister_inflight_invoke(
         *,
@@ -1183,8 +1193,8 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
 
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "bind_inflight_task_id",
-        fake_bind_inflight_task_id,
+        "bind_inflight_task_id_report",
+        fake_bind_inflight_task_id_report,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -1236,6 +1246,69 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
     )
     assert captured["unregistered_token"] == "token-1"
     assert state.inflight_token is None
+
+
+@pytest.mark.asyncio
+async def test_bind_inflight_task_if_needed_records_deferred_preempt_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[dict[str, object]] = []
+    preempt_event = {
+        "reason": "invoke_interrupt",
+        "status": "completed",
+        "source": "user",
+        "target_message_id": str(uuid4()),
+        "replacement_user_message_id": str(uuid4()),
+        "replacement_agent_message_id": str(uuid4()),
+        "target_task_ids": ["task-xyz"],
+        "failed_error_codes": [],
+    }
+
+    async def fake_bind_inflight_task_id_report(
+        *,
+        user_id,  # noqa: ANN001, ARG001
+        conversation_id,  # noqa: ANN001, ARG001
+        token,  # noqa: ANN001, ARG001
+        task_id,  # noqa: ANN001, ARG001
+    ) -> BindInflightTaskReport:
+        return BindInflightTaskReport(bound=True, preempt_event=preempt_event)
+
+    async def fake_record_preempt_history_event(
+        *,
+        state,  # noqa: ANN001, ARG001
+        user_id,  # noqa: ANN001, ARG001
+        event,  # noqa: ANN001
+    ) -> None:
+        recorded_events.append(dict(event))
+
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "bind_inflight_task_id_report",
+        fake_bind_inflight_task_id_report,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_record_preempt_history_event",
+        fake_record_preempt_history_event,
+    )
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={"upstream_task_id": "task-xyz"},
+        stream_usage={},
+        inflight_token="token-1",
+    )
+
+    await invoke_route_runner._bind_inflight_task_if_needed(  # noqa: SLF001
+        state=state,
+        user_id=uuid4(),
+    )
+
+    assert state.upstream_task_id == "task-xyz"
+    assert recorded_events == [preempt_event]
 
 
 @pytest.mark.asyncio

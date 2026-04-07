@@ -15,7 +15,11 @@ from app.features.sessions.query_service import SessionQueryService
 from app.features.sessions.support import SessionHubSupport
 
 if TYPE_CHECKING:
-    from app.features.sessions.common import PreemptedInvokeReport, SessionSource
+    from app.features.sessions.common import (
+        BindInflightTaskReport,
+        PreemptedInvokeReport,
+        SessionSource,
+    )
 
 
 class SessionHubService:
@@ -121,6 +125,21 @@ class SessionHubService:
             task_id=task_id,
         )
 
+    async def bind_inflight_task_id_report(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        token: str,
+        task_id: str,
+    ) -> BindInflightTaskReport:
+        return await self._inflight.bind_inflight_task_id_report(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            token=token,
+            task_id=task_id,
+        )
+
     async def unregister_inflight_invoke(
         self,
         *,
@@ -153,11 +172,13 @@ class SessionHubService:
         user_id: UUID,
         conversation_id: UUID,
         reason: str,
+        pending_event: dict[str, Any] | None = None,
     ) -> PreemptedInvokeReport:
         return await self._inflight.preempt_inflight_invoke_report(
             user_id=user_id,
             conversation_id=conversation_id,
             reason=reason,
+            pending_event=pending_event,
         )
 
     async def cancel_session(

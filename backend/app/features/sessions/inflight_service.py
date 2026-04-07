@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.features.sessions.common import (
     INFLIGHT_CANCEL_TERMINAL_ERROR_CODES,
+    BindInflightTaskReport,
     InflightInvokeEntry,
     PreemptedInvokeReport,
     inflight_invokes,
     inflight_invokes_lock,
     normalize_non_empty_text,
+    normalize_preempt_event,
     parse_conversation_id,
 )
 from app.features.sessions.support import SessionHubSupport
@@ -41,7 +43,58 @@ class SessionInflightService:
             resolved=entry.resolved,
             cancel_requested=entry.cancel_requested,
             cancel_reason=entry.cancel_reason,
+            pending_preempt_event=SessionInflightService._copy_preempt_event(
+                entry.pending_preempt_event
+            ),
         )
+
+    @staticmethod
+    def _copy_preempt_event(
+        event: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        normalized_event = normalize_preempt_event(event)
+        if normalized_event is None:
+            return None
+        normalized_event["target_task_ids"] = list(
+            normalized_event.get("target_task_ids") or []
+        )
+        normalized_event["failed_error_codes"] = list(
+            normalized_event.get("failed_error_codes") or []
+        )
+        return normalized_event
+
+    @classmethod
+    def _build_pending_preempt_event(
+        cls,
+        event: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not isinstance(event, dict):
+            return None
+        return cls._copy_preempt_event(
+            {
+                **event,
+                "status": "accepted",
+                "target_task_ids": [],
+                "failed_error_codes": [],
+            }
+        )
+
+    @classmethod
+    def _resolve_pending_preempt_event(
+        cls,
+        *,
+        pending_event: dict[str, Any] | None,
+        task_id: str,
+        success: bool,
+        error_code: str | None,
+    ) -> dict[str, Any] | None:
+        copied_event = cls._copy_preempt_event(pending_event)
+        if copied_event is None:
+            return None
+        copied_event["status"] = "completed" if success else "failed"
+        copied_event["target_task_ids"] = [task_id]
+        copied_event["failed_error_codes"] = [error_code] if error_code else []
+        return copied_event
 
     async def register_inflight_invoke(
         self,
@@ -63,27 +116,28 @@ class SessionInflightService:
             )
         return token
 
-    async def bind_inflight_task_id(
+    async def bind_inflight_task_id_report(
         self,
         *,
         user_id: UUID,
         conversation_id: UUID,
         token: str,
         task_id: str,
-    ) -> bool:
+    ) -> BindInflightTaskReport:
         normalized_task_id = normalize_non_empty_text(task_id)
         if not normalized_task_id:
-            return False
+            return BindInflightTaskReport(bound=False)
         key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
         pending_cancel_snapshot: InflightInvokeEntry | None = None
         async with inflight_invokes_lock:
             bucket = inflight_invokes.get(key)
             current = bucket.get(token) if bucket is not None else None
             if current is None or current.token != token:
-                return False
+                return BindInflightTaskReport(bound=False)
             current.task_id = normalized_task_id
             if current.cancel_requested:
                 pending_cancel_snapshot = self._copy_inflight_entry(current)
+        deferred_preempt_event: dict[str, Any] | None = None
         if pending_cancel_snapshot is not None:
             try:
                 success, error_code = await self._cancel_inflight_task(
@@ -91,6 +145,12 @@ class SessionInflightService:
                     conversation_id=conversation_id,
                     snapshot=pending_cancel_snapshot,
                     reason=pending_cancel_snapshot.cancel_reason or "hub_user_cancel",
+                )
+                deferred_preempt_event = self._resolve_pending_preempt_event(
+                    pending_event=pending_cancel_snapshot.pending_preempt_event,
+                    task_id=normalized_task_id,
+                    success=success,
+                    error_code=error_code,
                 )
                 if not success:
                     logger.warning(
@@ -104,6 +164,12 @@ class SessionInflightService:
                         },
                     )
             except Exception:
+                deferred_preempt_event = self._resolve_pending_preempt_event(
+                    pending_event=pending_cancel_snapshot.pending_preempt_event,
+                    task_id=normalized_task_id,
+                    success=False,
+                    error_code="cancel_exception",
+                )
                 logger.warning(
                     "Deferred inflight cancellation raised after task binding",
                     exc_info=True,
@@ -114,7 +180,26 @@ class SessionInflightService:
                         "task_id": pending_cancel_snapshot.task_id,
                     },
                 )
-        return True
+        return BindInflightTaskReport(
+            bound=True,
+            preempt_event=deferred_preempt_event,
+        )
+
+    async def bind_inflight_task_id(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        token: str,
+        task_id: str,
+    ) -> bool:
+        report = await self.bind_inflight_task_id_report(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            token=token,
+            task_id=task_id,
+        )
+        return report.bound
 
     async def unregister_inflight_invoke(
         self,
@@ -151,6 +236,7 @@ class SessionInflightService:
         conversation_id: UUID,
         token: str,
         reason: str,
+        pending_preempt_event: dict[str, Any] | None = None,
     ) -> InflightInvokeEntry | None:
         normalized_reason = normalize_non_empty_text(reason) or "hub_user_cancel"
         key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
@@ -161,6 +247,9 @@ class SessionInflightService:
                 return None
             current.cancel_requested = True
             current.cancel_reason = normalized_reason
+            current.pending_preempt_event = self._copy_preempt_event(
+                pending_preempt_event
+            )
             return self._copy_inflight_entry(current)
 
     async def _cancel_inflight_task(
@@ -239,6 +328,7 @@ class SessionInflightService:
         user_id: UUID,
         conversation_id: UUID,
         reason: str,
+        pending_event: dict[str, Any] | None = None,
     ) -> PreemptedInvokeReport:
         snapshots = await self._list_inflight_invoke_snapshots(
             user_id=user_id,
@@ -252,6 +342,8 @@ class SessionInflightService:
         target_task_ids: list[str] = []
         completed_task_ids: list[str] = []
         failed_error_codes: list[str] = []
+        pending_tokens: list[str] = []
+        normalized_pending_event = self._build_pending_preempt_event(pending_event)
         for snapshot in snapshots:
             if snapshot.task_id is None:
                 marked = await self._mark_inflight_cancel_requested(
@@ -259,10 +351,12 @@ class SessionInflightService:
                     conversation_id=conversation_id,
                     token=snapshot.token,
                     reason=reason,
+                    pending_preempt_event=normalized_pending_event,
                 )
                 if marked is not None:
                     preempted = True
                     pending_requested = True
+                    pending_tokens.append(marked.token)
                 continue
 
             if snapshot.task_id not in target_task_ids:
@@ -298,6 +392,7 @@ class SessionInflightService:
                 pending_requested=pending_requested,
                 target_task_ids=target_task_ids,
                 failed_error_codes=failed_error_codes,
+                pending_tokens=pending_tokens,
             )
         if failed_error_codes:
             return PreemptedInvokeReport(
@@ -306,6 +401,7 @@ class SessionInflightService:
                 pending_requested=False,
                 target_task_ids=target_task_ids,
                 failed_error_codes=failed_error_codes,
+                pending_tokens=[],
             )
         return PreemptedInvokeReport(attempted=False, status="none")
 

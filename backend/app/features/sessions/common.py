@@ -56,6 +56,7 @@ class InflightInvokeEntry:
     resolved: Any | None = None
     cancel_requested: bool = False
     cancel_reason: str | None = None
+    pending_preempt_event: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,13 @@ class PreemptedInvokeReport:
     pending_requested: bool = False
     target_task_ids: list[str] = field(default_factory=list)
     failed_error_codes: list[str] = field(default_factory=list)
+    pending_tokens: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BindInflightTaskReport:
+    bound: bool
+    preempt_event: dict[str, Any] | None = None
 
 
 inflight_invokes_lock = asyncio.Lock()
