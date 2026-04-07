@@ -381,9 +381,7 @@ export function useChatScreenController({
         );
       }
       if (sessionPromptAsyncStatus !== "supported") {
-        throw new Error(
-          "This stream cannot accept appended input. Interrupt it before sending a new message.",
-        );
+        throw new Error("Agent 仍在工作，如需发送新消息，请先打断。");
       }
 
       const trimmedContent = parsedInput.text.trim();
@@ -564,7 +562,7 @@ export function useChatScreenController({
         }
         toast.info(
           "Interrupt required",
-          "This stream cannot accept appended input. Interrupt it before sending a new message.",
+          "Agent 仍在工作，如需发送新消息，请先打断。",
         );
         throw buildSkippedToastError(
           "Interrupt the current response before sending a new message.",
@@ -693,8 +691,7 @@ export function useChatScreenController({
     }
     return {
       tone: "interrupt" as const,
-      message:
-        "This stream cannot accept appended input. Interrupt the current response before sending a new message.",
+      message: "Agent 仍在工作，如需发送新消息，请先打断。",
     };
   }, [canAppendToRunningStream, pendingInterrupt, session?.streamState]);
 

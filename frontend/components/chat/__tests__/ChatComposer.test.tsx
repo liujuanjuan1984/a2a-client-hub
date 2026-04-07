@@ -197,16 +197,13 @@ describe("ChatComposer clear button", () => {
         {...mockProps}
         streamSendHint={{
           tone: "interrupt",
-          message:
-            "This stream cannot accept appended input. Interrupt the current response before sending a new message.",
+          message: "Agent 仍在工作，如需发送新消息，请先打断。",
         }}
       />,
     );
 
     expect(
-      getByText(
-        "This stream cannot accept appended input. Interrupt the current response before sending a new message.",
-      ),
+      getByText("Agent 仍在工作，如需发送新消息，请先打断。"),
     ).toBeTruthy();
   });
 });

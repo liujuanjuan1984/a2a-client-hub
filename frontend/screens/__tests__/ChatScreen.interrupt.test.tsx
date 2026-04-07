@@ -960,7 +960,7 @@ describe("ChatScreen interrupt handling", () => {
 
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Interrupt required",
-      "This stream cannot accept appended input. Interrupt it before sending a new message.",
+      "Agent 仍在工作，如需发送新消息，请先打断。",
     );
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();
     expect(mockInvokeAgent).not.toHaveBeenCalled();
@@ -994,7 +994,7 @@ describe("ChatScreen interrupt handling", () => {
 
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Interrupt required",
-      "This stream cannot accept appended input. Interrupt it before sending a new message.",
+      "Agent 仍在工作，如需发送新消息，请先打断。",
     );
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();
     expect(mockInvokeAgent).not.toHaveBeenCalled();
