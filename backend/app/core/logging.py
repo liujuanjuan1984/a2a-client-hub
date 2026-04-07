@@ -1,8 +1,4 @@
-"""Logging configuration for a2a-client-hub.
-
-This module sets up structured logging with proper stack trace handling for debugging
-and monitoring purposes.
-"""
+"""Logging configuration for a2a-client-hub."""
 
 import logging
 import sys
@@ -27,7 +23,7 @@ class RequestIdFilter(logging.Filter):
 
 
 class JsonFormatter(logging.Formatter):
-    """Render log records as JSON for easier downstream consumption."""
+    """Render log records as JSON for downstream consumption."""
 
     reserved_fields = {
         "name",
@@ -83,6 +79,41 @@ class JsonFormatter(logging.Formatter):
         return json_dumps(log_entry, default=str)
 
 
+class TextFormatter(logging.Formatter):
+    """Render log records in a compact human-readable format."""
+
+    reserved_fields = JsonFormatter.reserved_fields
+
+    def format(self, record: logging.LogRecord) -> str:  # noqa: D401
+        timestamp = datetime.fromtimestamp(record.created, tz=timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        extra = {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in self.reserved_fields and not key.startswith("_")
+        }
+
+        context_parts = [
+            f"request_id={getattr(record, 'request_id', '-')}",
+            f"user_id={getattr(record, 'user_id', '-')}",
+        ]
+        for key in sorted(extra):
+            context_parts.append(f"{key}={extra[key]}")
+
+        rendered = (
+            f"{timestamp} {record.levelname} {record.name} "
+            f"[{' '.join(context_parts)}] {record.getMessage()}"
+        )
+
+        if record.exc_info:
+            rendered = f"{rendered}\n{self.formatException(record.exc_info)}"
+        if record.stack_info:
+            rendered = f"{rendered}\n{record.stack_info}"
+
+        return rendered
+
+
 def set_request_id(request_id: str) -> Token[str | None]:
     """Bind a request id to the current context."""
 
@@ -117,20 +148,18 @@ def setup_logging() -> None:
     """
     Set up application logging configuration
 
-    This function configures:
-    - Log level from settings
-    - Proper formatting with timestamps
-    - Stack trace inclusion for errors
-    - Console output for development
-    - Prevents duplicate log output by clearing existing handlers
+    This function configures process-wide logging.
     """
 
     # Clear existing handlers to prevent duplicate output.
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
-    # Create formatter with timestamp and stack trace support
-    formatter = JsonFormatter()
+    formatter: logging.Formatter
+    if settings.resolved_log_format == "json":
+        formatter = JsonFormatter()
+    else:
+        formatter = TextFormatter()
 
     # Create console handler
     console_handler = logging.StreamHandler(sys.stdout)
