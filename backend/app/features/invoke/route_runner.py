@@ -117,7 +117,6 @@ _APPEND_UNAVAILABLE_EXTENSION_ERROR_CODES = frozenset(
         "method_disabled",
         "not_supported",
         "turn_not_steerable",
-        "turn_forbidden",
     }
 )
 _stream_hints_warning_cache: dict[

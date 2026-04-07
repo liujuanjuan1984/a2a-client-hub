@@ -192,7 +192,10 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
-  const codexTurns = extensionCapabilitiesQuery.codexTurns;
+  const codexTurnSteerStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.codexTurnSteerStatus;
   const invokeMetadataStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
@@ -359,8 +362,7 @@ export function useChatScreenController({
         currentSession.externalSessionRef?.externalSessionId?.trim() ?? "";
       const streamIdentity = readSharedStreamIdentity(currentSession?.metadata);
       const canSteerRunningTurn = Boolean(
-        codexTurns?.methods.steer?.declared &&
-        codexTurns.methods.steer.consumedByHub &&
+        codexTurnSteerStatus === "supported" &&
         streamIdentity.threadId &&
         streamIdentity.turnId,
       );
@@ -369,7 +371,7 @@ export function useChatScreenController({
         (sessionPromptAsyncStatus === "supported" || canSteerRunningTurn)
       );
     },
-    [codexTurns, pendingInterrupt, sessionPromptAsyncStatus],
+    [codexTurnSteerStatus, pendingInterrupt, sessionPromptAsyncStatus],
   );
 
   const appendMessageToRunningSession = useCallback(

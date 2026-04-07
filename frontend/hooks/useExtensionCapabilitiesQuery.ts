@@ -40,6 +40,24 @@ type DeclaredMethodCapability = {
   retention?: string | null;
 };
 
+const resolveDeclaredMethodStatus = (
+  method?: DeclaredMethodCapability | null,
+): GenericCapabilityStatus => {
+  if (!method) {
+    return "unknown";
+  }
+  if (!method.declared || !method.consumedByHub) {
+    return "unsupported";
+  }
+  if (
+    method.availability === "disabled" ||
+    method.availability === "unsupported"
+  ) {
+    return "unsupported";
+  }
+  return "supported";
+};
+
 const resolveSessionControlStatus = (
   method?: SessionControlMethodCapability | null,
 ): GenericCapabilityStatus => {
@@ -143,6 +161,8 @@ export const useExtensionCapabilitiesQuery = ({
     null;
   const codexTurns =
     (query.data?.codexTurns as CodexTurnsCapability | null | undefined) ?? null;
+  const codexTurnSteerStatus: GenericCapabilityStatus =
+    resolveDeclaredMethodStatus(codexTurns?.methods.steer);
   const codexReview =
     (query.data?.codexReview as CodexReviewCapability | null | undefined) ??
     null;
@@ -177,6 +197,7 @@ export const useExtensionCapabilitiesQuery = ({
     codexDiscoveryAvailableTabs,
     canShowCodexDiscovery: codexDiscoveryAvailableTabs.length > 0,
     canReadCodexPlugins,
+    codexTurnSteerStatus,
     canShowModelPicker: modelSelectionStatus !== "unsupported",
   };
 };
