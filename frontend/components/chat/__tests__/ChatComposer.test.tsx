@@ -17,6 +17,7 @@ describe("ChatComposer clear button", () => {
     invokeMetadataRequiredCount: 0,
     pendingInterrupt: null,
     pendingInterruptCount: 0,
+    streamSendHint: null,
     showShortcutManager: false,
     onOpenDirectoryPicker: jest.fn(),
     onOpenInvokeMetadata: jest.fn(),
@@ -169,5 +170,40 @@ describe("ChatComposer clear button", () => {
       start: 15,
       end: 15,
     });
+  });
+
+  it("shows append hint when running session supports prompt_async append", () => {
+    const { getByText } = render(
+      <ChatComposer
+        {...mockProps}
+        streamSendHint={{
+          tone: "append",
+          message: "New sends will append to the running upstream session.",
+        }}
+      />,
+    );
+
+    expect(
+      getByText("New sends will append to the running upstream session."),
+    ).toBeTruthy();
+  });
+
+  it("shows interrupt hint when append is unavailable for a running stream", () => {
+    const { getByText } = render(
+      <ChatComposer
+        {...mockProps}
+        streamSendHint={{
+          tone: "interrupt",
+          message:
+            "Append is unavailable for this stream. Sending now will interrupt the current response and start a new turn.",
+        }}
+      />,
+    );
+
+    expect(
+      getByText(
+        "Append is unavailable for this stream. Sending now will interrupt the current response and start a new turn.",
+      ),
+    ).toBeTruthy();
   });
 });

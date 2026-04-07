@@ -948,6 +948,10 @@ describe("ChatScreen interrupt handling", () => {
       "personal",
       undefined,
     );
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Previous response interrupted",
+      "Append was unavailable, so your new message started a new turn.",
+    );
     expect(warnSpy).toHaveBeenCalled();
 
     warnSpy.mockRestore();
@@ -983,6 +987,10 @@ describe("ChatScreen interrupt handling", () => {
       "send anyway",
       "personal",
       undefined,
+    );
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Previous response interrupted",
+      "Append was unavailable, so your new message started a new turn.",
     );
     expect(warnSpy).toHaveBeenCalled();
 
@@ -1024,7 +1032,48 @@ describe("ChatScreen interrupt handling", () => {
       "personal",
       undefined,
     );
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Previous response interrupted",
+      "Append was unavailable, so your new message started a new turn.",
+    );
     expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("does not show interrupt success feedback when fallback send fails", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-4",
+      },
+    };
+    mockChatState.sendMessage.mockRejectedValueOnce(new Error("invoke failed"));
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("failed fallback");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockToastInfo).not.toHaveBeenCalledWith(
+      "Previous response interrupted",
+      "Append was unavailable, so your new message started a new turn.",
+    );
+    expect(mockToastError).toHaveBeenCalledWith("Send failed", "invoke failed");
 
     warnSpy.mockRestore();
     act(() => {
