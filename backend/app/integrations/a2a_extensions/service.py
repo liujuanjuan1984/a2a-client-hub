@@ -1368,6 +1368,19 @@ class A2AExtensionsService:
         )
         return thread_id, turn_id
 
+    @staticmethod
+    def _strip_shared_metadata_for_upstream(
+        metadata: Dict[str, Any] | None,
+    ) -> Dict[str, Any] | None:
+        normalized_metadata = as_dict(metadata)
+        if not normalized_metadata:
+            return None
+        if "shared" not in normalized_metadata:
+            return dict(normalized_metadata)
+        sanitized_metadata = dict(normalized_metadata)
+        sanitized_metadata.pop("shared", None)
+        return sanitized_metadata or None
+
     def _prepare_codex_turn_steer(
         self,
         *,
@@ -1633,6 +1646,7 @@ class A2AExtensionsService:
 
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         thread_id, turn_id = self._resolve_shared_stream_turn_identity(metadata)
+        metadata_for_upstream = self._strip_shared_metadata_for_upstream(metadata)
         steer_capability = snapshot.codex_turns.methods.get("steer")
 
         if (
@@ -1664,7 +1678,7 @@ class A2AExtensionsService:
         self._session_extensions.prepare_prompt_session_async(
             session_id=session_id,
             request_payload=request_payload,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
         preflight = self._preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
@@ -1679,7 +1693,7 @@ class A2AExtensionsService:
             selection_meta=snapshot.session_query.selection_meta,
             session_id=session_id,
             request_payload=request_payload,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
     async def command_session(
