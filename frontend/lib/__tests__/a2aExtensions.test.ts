@@ -352,11 +352,19 @@ describe("assertExtensionSuccess", () => {
             declared: true,
             consumedByHub: true,
             method: "codex.discovery.skills.list",
+            availability: "always",
+            configKey: null,
+            reason: null,
+            retention: null,
           },
           pluginsRead: {
             declared: true,
             consumedByHub: true,
             method: "codex.discovery.plugins.read",
+            availability: "disabled",
+            configKey: "A2A_ENABLE_CODEX_DISCOVERY_PLUGIN_READ",
+            reason: "disabled_by_configuration",
+            retention: "deployment-conditional",
           },
         },
       },
@@ -411,6 +419,12 @@ describe("assertExtensionSuccess", () => {
     expect(result.codexDiscovery?.status).toBe("supported");
     expect(result.codexDiscovery?.methods.skillsList?.method).toBe(
       "codex.discovery.skills.list",
+    );
+    expect(result.codexDiscovery?.methods.pluginsRead?.availability).toBe(
+      "disabled",
+    );
+    expect(result.codexDiscovery?.methods.pluginsRead?.configKey).toBe(
+      "A2A_ENABLE_CODEX_DISCOVERY_PLUGIN_READ",
     );
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");

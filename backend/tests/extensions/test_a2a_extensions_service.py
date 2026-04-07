@@ -2535,6 +2535,7 @@ async def test_list_codex_skills_invokes_codex_discovery_service(
                         declared=True,
                         consumed_by_hub=True,
                         method="codex.discovery.skills.list",
+                        availability="always",
                     ),
                     "appsList": DeclaredMethodCapabilitySnapshot(
                         declared=False,
@@ -2620,6 +2621,7 @@ async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract
                         declared=True,
                         consumed_by_hub=True,
                         method="codex.discovery.skills.list",
+                        availability="always",
                     ),
                     "appsList": DeclaredMethodCapabilitySnapshot(
                         declared=False,
@@ -2635,6 +2637,7 @@ async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract
                         declared=True,
                         consumed_by_hub=True,
                         method="codex.discovery.plugins.read",
+                        availability="always",
                     ),
                     "watch": DeclaredMethodCapabilitySnapshot(
                         declared=False,
@@ -3029,21 +3032,26 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         ),
     )
 
+    compatibility_profile = _compatibility_profile_snapshot()
     discovery = service._build_codex_discovery_snapshot(
         card,
         wire_contract,
+        compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
     threads = service._build_codex_threads_snapshot(
         wire_contract,
+        compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
     turns = service._build_codex_turns_snapshot(
         wire_contract,
+        compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
     review = service._build_codex_review_snapshot(
         wire_contract,
+        compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
     thread_watch = service._build_codex_thread_watch_snapshot(
@@ -3052,6 +3060,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     )
     exec_capability = service._build_codex_exec_snapshot(
         wire_contract,
+        compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
 
@@ -3065,6 +3074,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         declared=True,
         consumed_by_hub=True,
         method="codex.discovery.skills.list",
+        availability="always",
     )
     assert discovery.methods["appsList"] == DeclaredMethodCapabilitySnapshot(
         declared=False,
@@ -3075,6 +3085,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         declared=True,
         consumed_by_hub=True,
         method="codex.discovery.plugins.read",
+        availability="always",
     )
 
     assert threads.declared is True
@@ -3089,6 +3100,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         declared=True,
         consumed_by_hub=False,
         method="codex.threads.watch",
+        availability="always",
     )
 
     assert turns.declared is False
@@ -3129,6 +3141,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         declared=True,
         consumed_by_hub=False,
         method="codex.exec.start",
+        availability="always",
     )
     assert exec_capability.methods["write"] == DeclaredMethodCapabilitySnapshot(
         declared=False,
@@ -3139,6 +3152,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         declared=True,
         consumed_by_hub=False,
         method="codex.exec.terminate",
+        availability="always",
     )
 
 
@@ -3149,17 +3163,24 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
+    compatibility_profile = _compatibility_profile_snapshot()
     discovery = service._build_codex_discovery_snapshot(
-        card, wire_contract, jsonrpc_url=None
+        card, wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    threads = service._build_codex_threads_snapshot(wire_contract, jsonrpc_url=None)
-    turns = service._build_codex_turns_snapshot(wire_contract, jsonrpc_url=None)
-    review = service._build_codex_review_snapshot(wire_contract, jsonrpc_url=None)
+    threads = service._build_codex_threads_snapshot(
+        wire_contract, compatibility_profile, jsonrpc_url=None
+    )
+    turns = service._build_codex_turns_snapshot(
+        wire_contract, compatibility_profile, jsonrpc_url=None
+    )
+    review = service._build_codex_review_snapshot(
+        wire_contract, compatibility_profile, jsonrpc_url=None
+    )
     thread_watch = service._build_codex_thread_watch_snapshot(
         wire_contract, jsonrpc_url=None
     )
     exec_capability = service._build_codex_exec_snapshot(
-        wire_contract, jsonrpc_url=None
+        wire_contract, compatibility_profile, jsonrpc_url=None
     )
 
     assert discovery.declared is False
@@ -3194,6 +3215,157 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     assert all(method.declared is False for method in exec_capability.methods.values())
 
 
+def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
+    service = A2AExtensionsService()
+    compatibility_profile = _compatibility_profile_snapshot(
+        status="supported",
+        ext=ResolvedCompatibilityProfileExtension(
+            uri=COMPATIBILITY_PROFILE_URI,
+            required=False,
+            extension_retention={},
+            method_retention={
+                "codex.turns.steer": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-turn-control/v1",
+                    toggle="A2A_ENABLE_TURN_CONTROL",
+                ),
+                "codex.review.start": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-review/v1",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.review.watch": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-review/v1",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.exec.start": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.write": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.resize": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.terminate": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+            },
+            service_behaviors={"classification": "stable-service-semantics"},
+            consumer_guidance=(),
+        ),
+    )
+    wire_contract = _wire_contract_snapshot(
+        status="supported",
+        ext=_wire_contract_extension_fixture(
+            all_jsonrpc_methods=("codex.threads.watch",),
+            conditional_methods={
+                "codex.turns.steer": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_TURN_CONTROL",
+                ),
+                "codex.review.start": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.review.watch": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.exec.start": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.write": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.resize": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.terminate": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+            },
+        ),
+    )
+
+    turns = service._build_codex_turns_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    review = service._build_codex_review_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    exec_capability = service._build_codex_exec_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    assert turns.declared is True
+    assert turns.status == "unsupported_by_design"
+    assert turns.methods["steer"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.turns.steer",
+        availability="disabled",
+        config_key="A2A_ENABLE_TURN_CONTROL",
+        reason="disabled_by_configuration",
+        retention="deployment-conditional",
+    )
+
+    assert review.declared is True
+    assert review.methods["watch"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.review.watch",
+        availability="disabled",
+        config_key="A2A_ENABLE_REVIEW_CONTROL",
+        reason="disabled_by_configuration",
+        retention="deployment-conditional",
+    )
+
+    assert exec_capability.declared is True
+    assert exec_capability.methods["start"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.exec.start",
+        availability="disabled",
+        config_key="A2A_ENABLE_EXEC_CONTROL",
+        reason="disabled_by_configuration",
+        retention="deployment-conditional",
+    )
+
+
 def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
     service = A2AExtensionsService()
     card = SimpleNamespace(
@@ -3217,7 +3389,10 @@ def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> N
     )
 
     discovery = service._build_codex_discovery_snapshot(
-        card, wire_contract, jsonrpc_url="https://example.com/jsonrpc"
+        card,
+        wire_contract,
+        _compatibility_profile_snapshot(),
+        jsonrpc_url="https://example.com/jsonrpc",
     )
 
     assert discovery.declared is True
@@ -3231,11 +3406,13 @@ def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> N
         declared=True,
         consumed_by_hub=False,
         method="codex.discovery.skills.list",
+        availability="always",
     )
     assert discovery.methods["pluginsRead"] == DeclaredMethodCapabilitySnapshot(
         declared=True,
         consumed_by_hub=False,
         method="codex.discovery.plugins.read",
+        availability="always",
     )
 
 
@@ -3333,7 +3510,10 @@ def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
     discovery = service._build_codex_discovery_snapshot(
-        card, wire_contract, jsonrpc_url="https://example.com/jsonrpc"
+        card,
+        wire_contract,
+        _compatibility_profile_snapshot(),
+        jsonrpc_url="https://example.com/jsonrpc",
     )
 
     assert discovery.declared is True
@@ -3346,4 +3526,5 @@ def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
         declared=True,
         consumed_by_hub=False,
         method="codex.discovery.apps.list",
+        availability="always",
     )

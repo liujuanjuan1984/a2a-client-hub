@@ -305,10 +305,26 @@ def _build_wire_contract_response(
 def _build_declared_method_capability_response(
     capability: Any,
 ) -> A2ADeclaredMethodCapabilityResponse:
+    raw_availability = getattr(capability, "availability", None)
     return A2ADeclaredMethodCapabilityResponse(
         declared=bool(getattr(capability, "declared", False)),
         consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
         method=getattr(capability, "method", None),
+        availability=cast(
+            Literal["always", "enabled", "disabled", "unsupported"],
+            (
+                raw_availability
+                if raw_availability is not None
+                else (
+                    "always"
+                    if bool(getattr(capability, "declared", False))
+                    else "unsupported"
+                )
+            ),
+        ),
+        configKey=getattr(capability, "config_key", None),
+        reason=getattr(capability, "reason", None),
+        retention=getattr(capability, "retention", None),
     )
 
 

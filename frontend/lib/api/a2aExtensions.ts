@@ -20,6 +20,10 @@ type DeclaredMethodCapability = {
   declared: boolean;
   consumedByHub: boolean;
   method?: string | null;
+  availability?: "always" | "enabled" | "disabled" | "unsupported";
+  configKey?: string | null;
+  reason?: string | null;
+  retention?: string | null;
 };
 
 type DeclaredMethodCollectionCapability<MethodKey extends string> = {

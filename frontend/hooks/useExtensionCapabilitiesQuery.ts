@@ -32,6 +32,10 @@ type InvokeMetadataCapability = {
 type DeclaredMethodCapability = {
   declared: boolean;
   consumedByHub: boolean;
+  availability?: "always" | "enabled" | "disabled" | "unsupported";
+  configKey?: string | null;
+  reason?: string | null;
+  retention?: string | null;
 };
 
 const resolveSessionControlStatus = (

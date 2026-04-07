@@ -343,6 +343,10 @@ class A2ADeclaredMethodCapabilityResponse(BaseModel):
     declared: bool
     consumed_by_hub: bool = Field(..., alias="consumedByHub")
     method: Optional[str] = None
+    availability: Literal["always", "enabled", "disabled", "unsupported"]
+    config_key: Optional[str] = Field(default=None, alias="configKey")
+    reason: Optional[str] = None
+    retention: Optional[str] = None
 
 
 class A2ADeclaredMethodCollectionCapabilitiesResponse(BaseModel):

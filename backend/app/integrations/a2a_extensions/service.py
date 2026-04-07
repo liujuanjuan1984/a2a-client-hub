@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, cast
 
 from app.core.logging import get_logger
 from app.features.personal_agents.runtime import A2ARuntime
@@ -67,6 +67,7 @@ from app.integrations.a2a_extensions.shared_support import (
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.integrations.a2a_extensions.types import (
+    CompatibilityRetentionEntry,
     ResolvedCompatibilityProfileExtension,
     ResolvedConditionalMethodAvailability,
     ResolvedInterruptCallbackExtension,
@@ -125,6 +126,12 @@ class DeclaredMethodCapabilitySnapshot:
     declared: bool
     consumed_by_hub: bool
     method: str | None = None
+    availability: Literal["always", "enabled", "disabled", "unsupported"] = (
+        "unsupported"
+    )
+    config_key: str | None = None
+    reason: str | None = None
+    retention: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -766,10 +773,85 @@ class A2AExtensionsService:
         return frozenset(snapshot.ext.all_jsonrpc_methods)
 
     @classmethod
+    def _conditional_wire_contract_methods(
+        cls,
+        snapshot: WireContractCapabilitySnapshot,
+    ) -> dict[str, ResolvedConditionalMethodAvailability]:
+        if snapshot.status != "supported" or snapshot.ext is None:
+            return {}
+        return dict(snapshot.ext.conditionally_available_methods)
+
+    @staticmethod
+    def _compatibility_method_retention(
+        snapshot: CompatibilityProfileCapabilitySnapshot,
+    ) -> dict[str, CompatibilityRetentionEntry]:
+        if snapshot.status != "supported" or snapshot.ext is None:
+            return {}
+        return dict(snapshot.ext.method_retention)
+
+    @classmethod
+    def _resolve_declared_method_snapshot(
+        cls,
+        *,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        method_name: str,
+        consumed_by_hub: bool,
+    ) -> DeclaredMethodCapabilitySnapshot:
+        declared_methods = cls._declared_wire_contract_methods(wire_contract)
+        conditional_methods = cls._conditional_wire_contract_methods(wire_contract)
+        retention_map = cls._compatibility_method_retention(compatibility_profile)
+        conditional = conditional_methods.get(method_name)
+        retention = retention_map.get(method_name)
+
+        active_declared = method_name in declared_methods
+        deployment_conditional = conditional is not None or (
+            retention is not None
+            and retention.retention == "deployment-conditional"
+            and retention.availability in {"enabled", "disabled"}
+        )
+        declared = active_declared or deployment_conditional
+
+        if active_declared:
+            availability: Literal["always", "enabled", "disabled", "unsupported"] = (
+                cast(
+                    Literal["always", "enabled", "disabled"],
+                    retention.availability,
+                )
+                if retention is not None
+                and retention.availability in {"always", "enabled", "disabled"}
+                else "always"
+            )
+        elif deployment_conditional:
+            availability = (
+                cast(Literal["enabled", "disabled"], retention.availability)
+                if retention is not None
+                and retention.availability in {"enabled", "disabled"}
+                else "disabled"
+            )
+        else:
+            availability = "unsupported"
+
+        return DeclaredMethodCapabilitySnapshot(
+            declared=declared,
+            consumed_by_hub=consumed_by_hub and active_declared,
+            method=method_name if declared else None,
+            availability=availability,
+            config_key=(
+                conditional.toggle
+                if conditional is not None and conditional.toggle
+                else retention.toggle if retention is not None else None
+            ),
+            reason=conditional.reason if conditional is not None else None,
+            retention=retention.retention if retention is not None else None,
+        )
+
+    @classmethod
     def _build_declared_method_collection_snapshot(
         cls,
         *,
         wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
         method_map: dict[str, str],
         hub_consumption: dict[str, bool],
         unsupported_status_when_declared: Literal[
@@ -794,13 +876,12 @@ class A2AExtensionsService:
         ) = None,
         diagnostic_note: str | None = None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        declared_methods = cls._declared_wire_contract_methods(wire_contract)
         methods = {
-            key: DeclaredMethodCapabilitySnapshot(
-                declared=method_name in declared_methods,
-                consumed_by_hub=bool(hub_consumption.get(key, False))
-                and method_name in declared_methods,
-                method=method_name if method_name in declared_methods else None,
+            key: cls._resolve_declared_method_snapshot(
+                wire_contract=wire_contract,
+                compatibility_profile=compatibility_profile,
+                method_name=method_name,
+                consumed_by_hub=bool(hub_consumption.get(key, False)),
             )
             for key, method_name in method_map.items()
         }
@@ -842,12 +923,14 @@ class A2AExtensionsService:
         cls,
         card: Any,
         wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
         if wire_contract.status == "supported":
             return cls._build_declared_method_collection_snapshot(
                 wire_contract=wire_contract,
+                compatibility_profile=compatibility_profile,
                 method_map=_CODEX_DISCOVERY_METHODS,
                 hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
                 unsupported_status_when_declared="declared_not_consumed",
@@ -869,6 +952,11 @@ class A2AExtensionsService:
                     method=(
                         method_name if method_name in fallback.method_names else None
                     ),
+                    availability=(
+                        "always"
+                        if method_name in fallback.method_names
+                        else "unsupported"
+                    ),
                 )
                 for key, method_name in _CODEX_DISCOVERY_METHODS.items()
             }
@@ -886,6 +974,7 @@ class A2AExtensionsService:
 
         return cls._build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
             method_map=_CODEX_DISCOVERY_METHODS,
             hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
             unsupported_status_when_declared="declared_not_consumed",
@@ -900,11 +989,13 @@ class A2AExtensionsService:
     def _build_codex_exec_snapshot(
         cls,
         wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
         return cls._build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
             method_map=_CODEX_EXEC_METHODS,
             hub_consumption={},
             unsupported_status_when_declared="unsupported_by_design",
@@ -915,11 +1006,13 @@ class A2AExtensionsService:
     def _build_codex_threads_snapshot(
         cls,
         wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
         return cls._build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
             method_map=_CODEX_THREADS_METHODS,
             hub_consumption={},
             unsupported_status_when_declared="unsupported_by_design",
@@ -930,11 +1023,13 @@ class A2AExtensionsService:
     def _build_codex_turns_snapshot(
         cls,
         wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
         return cls._build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
             method_map=_CODEX_TURNS_METHODS,
             hub_consumption={},
             unsupported_status_when_declared="unsupported_by_design",
@@ -945,11 +1040,13 @@ class A2AExtensionsService:
     def _build_codex_review_snapshot(
         cls,
         wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
         return cls._build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
             method_map=_CODEX_REVIEW_METHODS,
             hub_consumption={},
             unsupported_status_when_declared="unsupported_by_design",
@@ -995,6 +1092,7 @@ class A2AExtensionsService:
             )
         except (A2AExtensionContractError, A2AExtensionUpstreamError):
             jsonrpc_url = None
+        compatibility_profile = self._build_compatibility_profile_snapshot(card)
         snapshot = ResolvedCapabilitySnapshot(
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
@@ -1008,24 +1106,35 @@ class A2AExtensionsService:
             provider_discovery=self._build_provider_discovery_snapshot(card),
             stream_hints=self._build_stream_hints_snapshot(card),
             wire_contract=wire_contract,
-            compatibility_profile=self._build_compatibility_profile_snapshot(card),
+            compatibility_profile=compatibility_profile,
             codex_discovery=self._build_codex_discovery_snapshot(
-                card, wire_contract, jsonrpc_url=jsonrpc_url
+                card,
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
             ),
             codex_threads=self._build_codex_threads_snapshot(
-                wire_contract, jsonrpc_url=jsonrpc_url
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
             ),
             codex_turns=self._build_codex_turns_snapshot(
-                wire_contract, jsonrpc_url=jsonrpc_url
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
             ),
             codex_review=self._build_codex_review_snapshot(
-                wire_contract, jsonrpc_url=jsonrpc_url
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
             ),
             codex_thread_watch=self._build_codex_thread_watch_snapshot(
                 wire_contract, jsonrpc_url=jsonrpc_url
             ),
             codex_exec=self._build_codex_exec_snapshot(
-                wire_contract, jsonrpc_url=jsonrpc_url
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
             ),
         )
         async with self._capability_snapshot_cache_lock:
