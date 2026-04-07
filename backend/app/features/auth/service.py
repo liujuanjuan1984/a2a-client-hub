@@ -260,18 +260,3 @@ async def get_active_user(
     if not user:
         raise UserNotFoundError("User not found or disabled")
     return user
-
-
-async def get_user_timezone(
-    db: AsyncSession,
-    *,
-    user_id: UUID,
-    default: str = "UTC",
-) -> str:
-    """Return the user's configured timezone, falling back to ``default``."""
-
-    user = await get_active_user(db, user_id=user_id)
-    value = getattr(user, "timezone", None)
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return default

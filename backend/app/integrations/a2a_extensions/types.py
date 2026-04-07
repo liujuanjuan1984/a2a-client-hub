@@ -80,6 +80,9 @@ class CompatibilityRetentionEntry:
     retention: str
     extension_uri: str | None = None
     toggle: str | None = None
+    implementation_scope: str | None = None
+    identity_scope: str | None = None
+    upstream_stability: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +110,10 @@ class ResolvedInterruptRecoveryExtension:
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]
+    recovery_data_source: str | None = None
+    identity_scope: str | None = None
+    implementation_scope: str | None = None
+    empty_result_when_identity_unavailable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

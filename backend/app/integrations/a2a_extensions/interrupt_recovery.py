@@ -12,6 +12,7 @@ from app.integrations.a2a_extensions.contract_utils import (
     resolve_jsonrpc_interface,
 )
 from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
@@ -63,6 +64,38 @@ def resolve_interrupt_recovery(
 
     errors = as_dict(params.get("errors"))
     code_to_error = build_business_code_map(errors.get("business_codes"))
+    recovery_scope = as_dict(params.get("recovery_scope"))
+
+    raw_recovery_data_source = recovery_scope.get("data_source")
+    recovery_data_source = (
+        require_str(raw_recovery_data_source, field="recovery_scope.data_source")
+        if raw_recovery_data_source is not None
+        else None
+    )
+
+    raw_identity_scope = recovery_scope.get("identity_scope")
+    identity_scope = (
+        require_str(raw_identity_scope, field="recovery_scope.identity_scope")
+        if raw_identity_scope is not None
+        else None
+    )
+
+    raw_empty_result = recovery_scope.get("empty_result_when_identity_unavailable")
+    if raw_empty_result is not None and not isinstance(raw_empty_result, bool):
+        raise A2AExtensionContractError(
+            "Extension contract missing/invalid "
+            "'recovery_scope.empty_result_when_identity_unavailable'"
+        )
+
+    raw_implementation_scope = params.get("implementation_scope")
+    implementation_scope = (
+        require_str(
+            raw_implementation_scope,
+            field="params.implementation_scope",
+        )
+        if raw_implementation_scope is not None
+        else None
+    )
 
     return ResolvedInterruptRecoveryExtension(
         uri=str(getattr(ext, "uri", INTERRUPT_RECOVERY_URI)),
@@ -74,6 +107,12 @@ def resolve_interrupt_recovery(
             "list_questions": list_questions_method,
         },
         business_code_map=code_to_error,
+        recovery_data_source=recovery_data_source,
+        identity_scope=identity_scope,
+        implementation_scope=implementation_scope,
+        empty_result_when_identity_unavailable=(
+            raw_empty_result if isinstance(raw_empty_result, bool) else None
+        ),
     )
 
 

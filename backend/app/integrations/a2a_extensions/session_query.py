@@ -430,6 +430,26 @@ def _resolve_extension(
         methods.get("get_session_messages"),
         field="methods.get_session_messages",
     )
+    get_session_method = normalize_method_name(
+        methods.get("get_session"),
+        field="methods.get_session",
+    )
+    get_session_children_method = normalize_method_name(
+        methods.get("get_session_children"),
+        field="methods.get_session_children",
+    )
+    get_session_todo_method = normalize_method_name(
+        methods.get("get_session_todo"),
+        field="methods.get_session_todo",
+    )
+    get_session_diff_method = normalize_method_name(
+        methods.get("get_session_diff"),
+        field="methods.get_session_diff",
+    )
+    get_session_message_method = normalize_method_name(
+        methods.get("get_session_message"),
+        field="methods.get_session_message",
+    )
     prompt_async_method = normalize_method_name(
         methods.get("prompt_async"),
         field="methods.prompt_async",
@@ -437,6 +457,30 @@ def _resolve_extension(
     command_method = normalize_method_name(
         methods.get("command"),
         field="methods.command",
+    )
+    fork_method = normalize_method_name(
+        methods.get("fork"),
+        field="methods.fork",
+    )
+    share_method = normalize_method_name(
+        methods.get("share"),
+        field="methods.share",
+    )
+    unshare_method = normalize_method_name(
+        methods.get("unshare"),
+        field="methods.unshare",
+    )
+    summarize_method = normalize_method_name(
+        methods.get("summarize"),
+        field="methods.summarize",
+    )
+    revert_method = normalize_method_name(
+        methods.get("revert"),
+        field="methods.revert",
+    )
+    unrevert_method = normalize_method_name(
+        methods.get("unrevert"),
+        field="methods.unrevert",
     )
     shell_method = normalize_method_name(
         methods.get("shell"),
@@ -530,9 +574,20 @@ def _resolve_extension(
         jsonrpc=resolve_jsonrpc_interface(card),
         methods={
             "list_sessions": list_sessions_method,
+            "get_session": get_session_method,
+            "get_session_children": get_session_children_method,
+            "get_session_todo": get_session_todo_method,
+            "get_session_diff": get_session_diff_method,
+            "get_session_message": get_session_message_method,
             "get_session_messages": get_messages_method,
             "prompt_async": prompt_async_method,
             "command": command_method,
+            "fork": fork_method,
+            "share": share_method,
+            "unshare": unshare_method,
+            "summarize": summarize_method,
+            "revert": revert_method,
+            "unrevert": unrevert_method,
             "shell": shell_method,
         },
         pagination=PageSizePagination(

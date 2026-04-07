@@ -179,11 +179,14 @@ Endpoints:
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
   - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
+  - `compatibilityProfile.extensionRetention` and `compatibilityProfile.methodRetention` now preserve optional machine-readable governance fields such as `implementationScope`, `identityScope`, and `upstreamStability` when upstream declares them.
   - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
   - The capability response also surfaces `codexThreads`, `codexTurns`, and `codexReview` collection diagnostics so newer upstream lifecycle/control families remain visible even before Hub consumes them.
   - Each declared Codex method now also reports method-level `availability`, `configKey`, `reason`, and `retention`, allowing deployment-conditional upstream surfaces to remain visible as `enabled`/`disabled` diagnostics instead of being flattened into plain unsupported responses.
   - `codexDiscovery` also reports `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints can be surfaced without incorrectly promoting them to Hub-consumable support.
   - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions without yet promoting them to a Hub-consumed feature surface.
+  - `streamHints` surfaces whether the shared stream-hints contract is declared, whether Hub actively consumes it, which metadata fields are used, and whether Hub had to fall back to compatibility heuristics.
+  - `interruptRecoveryDetails` surfaces adapter-local interrupt recovery scope diagnostics, including recovery data source, identity scope, implementation scope, and whether unresolved caller identity returns an empty item list.
 - Read Codex discovery lists through Hub-stable APIs:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/skills`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/apps`
@@ -220,6 +223,19 @@ Validation:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages:query`
     - body example: `{"page":1,"size":50,"before":"<opaque-cursor>","include_raw":false}`
     - cursor-capable runtimes also return: `{"result":{"items":[...],"pagination":{"page":1,"size":50},"pageInfo":{"hasMoreBefore":true,"nextBefore":"<opaque-cursor>"}}}`
+- Read or mutate additional upstream session-management surfaces through Hub-stable routes:
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/children`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/todo`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/diff?messageId=<message-id>`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages/{message_id}`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:fork`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:share`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:unshare`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:summarize`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:revert`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:unrevert`
+  - The Hub still does not expose `opencode.sessions.shell`; upstream treats it as a deployment-conditional, boundary-sensitive surface and Hub keeps it diagnostics-only.
 - Reply interrupt callbacks:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts:recover`
     - body: `{ "sessionId": "ses-123" }`

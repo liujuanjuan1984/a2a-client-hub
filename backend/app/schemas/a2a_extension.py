@@ -230,6 +230,17 @@ class A2AExtensionSessionCommandRequest(BaseModel):
     )
 
 
+class A2AExtensionSessionMutationRequest(BaseModel):
+    request: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional session mutation payload forwarded through the hub contract",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional extension metadata object forwarded to upstream",
+    )
+
+
 class A2AModelDiscoveryRequest(BaseModel):
     provider_id: Optional[str] = Field(
         default=None,
@@ -321,6 +332,43 @@ class A2ARequestExecutionOptionsCapabilitiesResponse(BaseModel):
     persists_for_thread: Optional[bool] = Field(default=None, alias="persistsForThread")
     source_extensions: List[str] = Field(default_factory=list, alias="sourceExtensions")
     notes: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class A2AStreamHintsCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    status: Literal["supported", "unsupported", "invalid"]
+    stream_field: Optional[str] = Field(default=None, alias="streamField")
+    usage_field: Optional[str] = Field(default=None, alias="usageField")
+    interrupt_field: Optional[str] = Field(default=None, alias="interruptField")
+    session_field: Optional[str] = Field(default=None, alias="sessionField")
+    mode: Optional[str] = None
+    fallback_used: Optional[bool] = Field(default=None, alias="fallbackUsed")
+    error: Optional[str] = None
+
+
+class A2AInterruptRecoveryCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool
+    consumed_by_hub: bool = Field(..., alias="consumedByHub")
+    status: Literal["supported", "unsupported", "invalid"]
+    provider: Optional[str] = None
+    methods: Dict[str, str] = Field(default_factory=dict)
+    recovery_data_source: Optional[str] = Field(
+        default=None, alias="recoveryDataSource"
+    )
+    identity_scope: Optional[str] = Field(default=None, alias="identityScope")
+    implementation_scope: Optional[str] = Field(
+        default=None, alias="implementationScope"
+    )
+    empty_result_when_identity_unavailable: Optional[bool] = Field(
+        default=None,
+        alias="emptyResultWhenIdentityUnavailable",
+    )
     error: Optional[str] = None
 
 
@@ -575,6 +623,14 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="interruptRecovery",
         description="Whether the agent exposes Hub-consumed interrupt recovery support",
     )
+    interrupt_recovery_details: A2AInterruptRecoveryCapabilitiesResponse = Field(
+        ...,
+        alias="interruptRecoveryDetails",
+        description=(
+            "Machine-readable interrupt recovery contract diagnostics, including "
+            "identity scoping and adapter-local recovery semantics."
+        ),
+    )
     session_prompt_async: bool = Field(
         ...,
         alias="sessionPromptAsync",
@@ -598,6 +654,14 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         description=(
             "Codex-private request execution override contract diagnostics "
             "surfaced from session binding/session query extension params."
+        ),
+    )
+    stream_hints: A2AStreamHintsCapabilitiesResponse = Field(
+        ...,
+        alias="streamHints",
+        description=(
+            "Declared shared stream-hints contract consumed by the Hub invoke "
+            "runtime for stream block and usage metadata diagnostics."
         ),
     )
     wire_contract: A2AWireContractCapabilitiesResponse = Field(
@@ -702,6 +766,7 @@ __all__ = [
     "A2AExtensionSessionListQueryRequest",
     "A2AExtensionSessionMessagesQueryRequest",
     "A2AExtensionCapabilitiesResponse",
+    "A2AInterruptRecoveryCapabilitiesResponse",
     "A2AInterruptRecoveryItemResponse",
     "A2AInterruptRecoveryResponse",
     "A2ASessionControlCapabilitiesResponse",
@@ -718,4 +783,6 @@ __all__ = [
     "A2AExtensionQuestionRejectRequest",
     "A2AExtensionQuestionReplyRequest",
     "A2AExtensionResponse",
+    "A2AExtensionSessionMutationRequest",
+    "A2AStreamHintsCapabilitiesResponse",
 ]

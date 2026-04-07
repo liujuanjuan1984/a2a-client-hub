@@ -49,6 +49,9 @@ def _resolve_retention_entry(
 
     extension_uri = entry.get("extension_uri")
     toggle = entry.get("toggle")
+    implementation_scope = entry.get("implementation_scope")
+    identity_scope = entry.get("identity_scope")
+    upstream_stability = entry.get("upstream_stability")
     return CompatibilityRetentionEntry(
         surface=require_str(entry.get("surface"), field=f"{field}.{name}.surface"),
         availability=require_str(
@@ -69,6 +72,27 @@ def _resolve_retention_entry(
         toggle=(
             require_str(toggle, field=f"{field}.{name}.toggle")
             if toggle is not None
+            else None
+        ),
+        implementation_scope=(
+            require_str(
+                implementation_scope,
+                field=f"{field}.{name}.implementation_scope",
+            )
+            if implementation_scope is not None
+            else None
+        ),
+        identity_scope=(
+            require_str(identity_scope, field=f"{field}.{name}.identity_scope")
+            if identity_scope is not None
+            else None
+        ),
+        upstream_stability=(
+            require_str(
+                upstream_stability,
+                field=f"{field}.{name}.upstream_stability",
+            )
+            if upstream_stability is not None
             else None
         ),
     )

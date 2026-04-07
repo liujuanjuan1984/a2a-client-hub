@@ -15,6 +15,11 @@ class A2ACompatibilityProfileEntry(BaseModel):
     retention: str
     extension_uri: Optional[str] = Field(default=None, alias="extensionUri")
     toggle: Optional[str] = None
+    implementation_scope: Optional[str] = Field(
+        default=None, alias="implementationScope"
+    )
+    identity_scope: Optional[str] = Field(default=None, alias="identityScope")
+    upstream_stability: Optional[str] = Field(default=None, alias="upstreamStability")
 
 
 class A2ACompatibilityProfileDiagnostic(BaseModel):

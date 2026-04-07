@@ -225,6 +225,245 @@ class _FakeExtensionsService:
             meta={},
         )
 
+    async def get_session(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        include_raw=False,
+    ):
+        raw_item = {"id": session_id, "title": "One", "provider": "opencode"}
+        self.calls.append(
+            {
+                "fn": "get_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "include_raw": include_raw,
+            }
+        )
+        result = {"item": {"id": session_id, "title": "One"}}
+        if include_raw:
+            result["raw"] = raw_item
+        return _FakeExtensionResult(success=True, result=result, meta={})
+
+    async def get_session_children(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        include_raw=False,
+    ):
+        raw_items = [{"id": "child-1", "parentId": session_id, "provider": "opencode"}]
+        self.calls.append(
+            {
+                "fn": "get_session_children",
+                "runtime": runtime,
+                "session_id": session_id,
+                "include_raw": include_raw,
+            }
+        )
+        result = {"items": [{"id": "child-1", "parentId": session_id}]}
+        if include_raw:
+            result["raw"] = raw_items
+        return _FakeExtensionResult(success=True, result=result, meta={})
+
+    async def get_session_todo(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        include_raw=False,
+    ):
+        raw_items = [{"id": "todo-1", "sessionId": session_id, "provider": "opencode"}]
+        self.calls.append(
+            {
+                "fn": "get_session_todo",
+                "runtime": runtime,
+                "session_id": session_id,
+                "include_raw": include_raw,
+            }
+        )
+        result = {"items": [{"id": "todo-1", "sessionId": session_id}]}
+        if include_raw:
+            result["raw"] = raw_items
+        return _FakeExtensionResult(success=True, result=result, meta={})
+
+    async def get_session_diff(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        message_id: str | None = None,
+        include_raw=False,
+    ):
+        raw_items = [
+            {
+                "path": "README.md",
+                "sessionId": session_id,
+                "messageId": message_id,
+                "provider": "opencode",
+            }
+        ]
+        self.calls.append(
+            {
+                "fn": "get_session_diff",
+                "runtime": runtime,
+                "session_id": session_id,
+                "message_id": message_id,
+                "include_raw": include_raw,
+            }
+        )
+        result = {
+            "items": [
+                {"path": "README.md", "sessionId": session_id, "messageId": message_id}
+            ]
+        }
+        if include_raw:
+            result["raw"] = raw_items
+        return _FakeExtensionResult(success=True, result=result, meta={})
+
+    async def get_session_message(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        message_id: str,
+        include_raw=False,
+    ):
+        raw_item = {
+            "id": message_id,
+            "sessionId": session_id,
+            "text": "hello",
+            "provider": "opencode",
+        }
+        self.calls.append(
+            {
+                "fn": "get_session_message",
+                "runtime": runtime,
+                "session_id": session_id,
+                "message_id": message_id,
+                "include_raw": include_raw,
+            }
+        )
+        result = {"item": {"id": message_id, "sessionId": session_id, "text": "hello"}}
+        if include_raw:
+            result["raw"] = raw_item
+        return _FakeExtensionResult(success=True, result=result, meta={})
+
+    async def fork_session(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        request_payload=None,
+        metadata=None,
+    ):
+        self.calls.append(
+            {
+                "fn": "fork_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "request_payload": request_payload,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"item": {"id": f"{session_id}-fork", "parentId": session_id}},
+            meta={},
+        )
+
+    async def share_session(self, *, runtime, session_id: str, metadata=None):
+        self.calls.append(
+            {
+                "fn": "share_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"item": {"id": session_id, "shared": True}},
+            meta={},
+        )
+
+    async def unshare_session(self, *, runtime, session_id: str, metadata=None):
+        self.calls.append(
+            {
+                "fn": "unshare_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"item": {"id": session_id, "shared": False}},
+            meta={},
+        )
+
+    async def summarize_session(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        request_payload=None,
+        metadata=None,
+    ):
+        self.calls.append(
+            {
+                "fn": "summarize_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "request_payload": request_payload,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "sessionId": session_id},
+            meta={},
+        )
+
+    async def revert_session(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        request_payload,
+        metadata=None,
+    ):
+        self.calls.append(
+            {
+                "fn": "revert_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "request_payload": request_payload,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"item": {"id": session_id, "revertedTo": request_payload}},
+            meta={},
+        )
+
+    async def unrevert_session(self, *, runtime, session_id: str, metadata=None):
+        self.calls.append(
+            {
+                "fn": "unrevert_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"item": {"id": session_id, "reverted": False}},
+            meta={},
+        )
+
     async def reply_permission_interrupt(
         self,
         *,
@@ -1577,6 +1816,171 @@ async def test_hub_session_query_routes_forward_typed_session_list_filters(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path_suffix", "expected_fn", "expected"),
+    [
+        ("/extensions/sessions/ses-1", "get_session", {"session_id": "ses-1"}),
+        (
+            "/extensions/sessions/ses-1/children",
+            "get_session_children",
+            {"session_id": "ses-1"},
+        ),
+        (
+            "/extensions/sessions/ses-1/todo",
+            "get_session_todo",
+            {"session_id": "ses-1"},
+        ),
+        (
+            "/extensions/sessions/ses-1/diff?messageId=msg-9",
+            "get_session_diff",
+            {"session_id": "ses-1", "message_id": "msg-9"},
+        ),
+        (
+            "/extensions/sessions/ses-1/messages/msg-9",
+            "get_session_message",
+            {"session_id": "ses-1", "message_id": "msg-9"},
+        ),
+    ],
+)
+async def test_hub_session_management_read_routes_forward_calls(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    path_suffix: str,
+    expected_fn: str,
+    expected: dict[str, Any],
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_session_reads@example.com",
+        user_email="alice_opencode_session_reads@example.com",
+        token="secret-token-opencode-session-reads",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}{path_suffix}"
+        )
+
+    assert response.status_code == 200
+    call = next(c for c in fake_extensions.calls if c["fn"] == expected_fn)
+    for key, value in expected.items():
+        assert call[key] == value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path_suffix", "payload", "expected_fn", "expected"),
+    [
+        (
+            "/extensions/sessions/ses-1:fork",
+            {"request": {"messageID": "msg-1"}, "metadata": {"provider": "opencode"}},
+            "fork_session",
+            {
+                "session_id": "ses-1",
+                "request_payload": {"messageID": "msg-1"},
+                "metadata": {"provider": "opencode"},
+            },
+        ),
+        (
+            "/extensions/sessions/ses-1:share",
+            {"metadata": {"provider": "opencode"}},
+            "share_session",
+            {"session_id": "ses-1", "metadata": {"provider": "opencode"}},
+        ),
+        (
+            "/extensions/sessions/ses-1:unshare",
+            {"metadata": {"provider": "opencode"}},
+            "unshare_session",
+            {"session_id": "ses-1", "metadata": {"provider": "opencode"}},
+        ),
+        (
+            "/extensions/sessions/ses-1:summarize",
+            {"request": {"providerID": "openai", "auto": True}},
+            "summarize_session",
+            {
+                "session_id": "ses-1",
+                "request_payload": {"providerID": "openai", "auto": True},
+                "metadata": None,
+            },
+        ),
+        (
+            "/extensions/sessions/ses-1:revert",
+            {"request": {"messageID": "msg-1", "partID": "part-2"}},
+            "revert_session",
+            {
+                "session_id": "ses-1",
+                "request_payload": {"messageID": "msg-1", "partID": "part-2"},
+                "metadata": None,
+            },
+        ),
+        (
+            "/extensions/sessions/ses-1:unrevert",
+            {"metadata": {"provider": "opencode"}},
+            "unrevert_session",
+            {"session_id": "ses-1", "metadata": {"provider": "opencode"}},
+        ),
+    ],
+)
+async def test_hub_session_management_mutation_routes_forward_calls(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    path_suffix: str,
+    payload: dict[str, Any],
+    expected_fn: str,
+    expected: dict[str, Any],
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_session_mutations@example.com",
+        user_email="alice_opencode_session_mutations@example.com",
+        token="secret-token-opencode-session-mutations",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}{path_suffix}",
+            json=payload,
+        )
+
+    assert response.status_code == 200
+    call = next(c for c in fake_extensions.calls if c["fn"] == expected_fn)
+    for key, value in expected.items():
+        assert call[key] == value
+
+
+@pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_hub_extension_capabilities_route_returns_model_selection_true(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
@@ -1595,7 +1999,22 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
     fake_extensions.capability_snapshot = SimpleNamespace(
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="supported"),
-        interrupt_recovery=SimpleNamespace(status="supported"),
+        interrupt_recovery=SimpleNamespace(
+            status="supported",
+            error=None,
+            ext=SimpleNamespace(
+                provider="opencode",
+                methods={
+                    "list_permissions": "opencode.permissions.list",
+                    "list_questions": "opencode.questions.list",
+                },
+                recovery_data_source="local_interrupt_binding_registry",
+                identity_scope="current_authenticated_caller",
+                implementation_scope=None,
+                empty_result_when_identity_unavailable=True,
+                uri="urn:opencode-a2a:interrupt-recovery/v1",
+            ),
+        ),
         invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
         request_execution_options=SimpleNamespace(
             declared=True,
@@ -1610,6 +2029,21 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             ),
             notes=("Execution overrides are provider-private.",),
             error=None,
+        ),
+        stream_hints=SimpleNamespace(
+            status="supported",
+            error=None,
+            ext=SimpleNamespace(
+                stream_field="metadata.shared.stream",
+                usage_field="metadata.shared.usage",
+                interrupt_field="metadata.shared.interrupt",
+                session_field="metadata.shared.session",
+            ),
+            meta={
+                "stream_hints_declared": True,
+                "stream_hints_mode": "declared_contract",
+                "stream_hints_fallback_used": False,
+            },
         ),
         wire_contract=SimpleNamespace(
             status="supported",
@@ -1667,7 +2101,20 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                         retention="stable",
                         extension_uri=None,
                         toggle=None,
-                    )
+                        implementation_scope=None,
+                        identity_scope=None,
+                        upstream_stability=None,
+                    ),
+                    "urn:opencode-a2a:interrupt-recovery/v1": SimpleNamespace(
+                        surface="jsonrpc-extension",
+                        availability="always",
+                        retention="stable",
+                        extension_uri=None,
+                        toggle=None,
+                        implementation_scope="adapter-local",
+                        identity_scope="current_authenticated_caller",
+                        upstream_stability=None,
+                    ),
                 },
                 method_retention={
                     "opencode.sessions.shell": SimpleNamespace(
@@ -1676,6 +2123,9 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                         retention="deployment-conditional",
                         extension_uri="urn:opencode-a2a:session-query/v1",
                         toggle="A2A_ENABLE_SESSION_SHELL",
+                        implementation_scope=None,
+                        identity_scope=None,
+                        upstream_stability=None,
                     )
                 },
                 service_behaviors={
@@ -1862,6 +2312,21 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         "modelSelection": True,
         "providerDiscovery": True,
         "interruptRecovery": True,
+        "interruptRecoveryDetails": {
+            "declared": True,
+            "consumedByHub": True,
+            "status": "supported",
+            "provider": "opencode",
+            "methods": {
+                "list_permissions": "opencode.permissions.list",
+                "list_questions": "opencode.questions.list",
+            },
+            "recoveryDataSource": "local_interrupt_binding_registry",
+            "identityScope": "current_authenticated_caller",
+            "implementationScope": "adapter-local",
+            "emptyResultWhenIdentityUnavailable": True,
+            "error": None,
+        },
         "sessionPromptAsync": True,
         "sessionControl": {
             "promptAsync": {
@@ -1908,6 +2373,18 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 "urn:opencode-a2a:session-query/v1",
             ],
             "notes": ["Execution overrides are provider-private."],
+            "error": None,
+        },
+        "streamHints": {
+            "declared": True,
+            "consumedByHub": True,
+            "status": "supported",
+            "streamField": "metadata.shared.stream",
+            "usageField": "metadata.shared.usage",
+            "interruptField": "metadata.shared.interrupt",
+            "sessionField": "metadata.shared.session",
+            "mode": "declared_contract",
+            "fallbackUsed": False,
             "error": None,
         },
         "wireContract": {
@@ -1965,7 +2442,20 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                     "retention": "stable",
                     "extensionUri": None,
                     "toggle": None,
-                }
+                    "implementationScope": None,
+                    "identityScope": None,
+                    "upstreamStability": None,
+                },
+                "urn:opencode-a2a:interrupt-recovery/v1": {
+                    "surface": "jsonrpc-extension",
+                    "availability": "always",
+                    "retention": "stable",
+                    "extensionUri": None,
+                    "toggle": None,
+                    "implementationScope": "adapter-local",
+                    "identityScope": "current_authenticated_caller",
+                    "upstreamStability": None,
+                },
             },
             "methodRetention": {
                 "opencode.sessions.shell": {
@@ -1974,6 +2464,9 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                     "retention": "deployment-conditional",
                     "extensionUri": "urn:opencode-a2a:session-query/v1",
                     "toggle": "A2A_ENABLE_SESSION_SHELL",
+                    "implementationScope": None,
+                    "identityScope": None,
+                    "upstreamStability": None,
                 }
             },
             "serviceBehaviors": {
@@ -2278,6 +2771,18 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         "modelSelection": True,
         "providerDiscovery": False,
         "interruptRecovery": False,
+        "interruptRecoveryDetails": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "provider": None,
+            "methods": {},
+            "recoveryDataSource": None,
+            "identityScope": None,
+            "implementationScope": None,
+            "emptyResultWhenIdentityUnavailable": None,
+            "error": None,
+        },
         "sessionPromptAsync": False,
         "sessionControl": {
             "promptAsync": {
@@ -2321,6 +2826,18 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             "persistsForThread": None,
             "sourceExtensions": [],
             "notes": [],
+            "error": None,
+        },
+        "streamHints": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "streamField": None,
+            "usageField": None,
+            "interruptField": None,
+            "sessionField": None,
+            "mode": None,
+            "fallbackUsed": None,
             "error": None,
         },
         "wireContract": {
@@ -2540,6 +3057,18 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         "modelSelection": False,
         "providerDiscovery": True,
         "interruptRecovery": False,
+        "interruptRecoveryDetails": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "provider": None,
+            "methods": {},
+            "recoveryDataSource": None,
+            "identityScope": None,
+            "implementationScope": None,
+            "emptyResultWhenIdentityUnavailable": None,
+            "error": None,
+        },
         "sessionPromptAsync": True,
         "sessionControl": {
             "promptAsync": {
@@ -2583,6 +3112,18 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             "persistsForThread": None,
             "sourceExtensions": [],
             "notes": [],
+            "error": None,
+        },
+        "streamHints": {
+            "declared": False,
+            "consumedByHub": False,
+            "status": "unsupported",
+            "streamField": None,
+            "usageField": None,
+            "interruptField": None,
+            "sessionField": None,
+            "mode": None,
+            "fallbackUsed": None,
             "error": None,
         },
         "wireContract": {
