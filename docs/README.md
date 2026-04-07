@@ -19,10 +19,6 @@ Use this index to find the right document instead of repeating the same guidance
 - Release automation and version synchronization: [`release-workflow.md`](release-workflow.md)
 - Production security baseline: [`security-baseline.md`](security-baseline.md)
 
-## Design Notes
-
-- Codex discovery watch design boundary: [`codex-discovery-watch-design.md`](codex-discovery-watch-design.md)
-
 ## Contract References
 
 - A2A error and runtime status contract: [`contracts/a2a-error-and-runtime-status-contract.md`](contracts/a2a-error-and-runtime-status-contract.md)
@@ -38,6 +34,5 @@ Use this index to find the right document instead of repeating the same guidance
 - `README.md` should stay short and focus on repository-level orientation.
 - Module READMEs should document module-local setup and behavior only.
 - Stable reference docs should describe current repository behavior and maintained operating rules.
-- Design notes should capture future-facing boundaries or PoC guidance and must be labeled explicitly as non-authoritative for current production behavior.
 - `docs/` should own cross-cutting contracts, architecture, authentication, and production guidance.
 - Contract fixtures should live under `docs/contracts/` so they can be reused by interoperability reviews and upstream peer implementations.
