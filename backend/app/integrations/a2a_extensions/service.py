@@ -5,12 +5,23 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, cast
 
 from app.core.logging import get_logger
 from app.features.personal_agents.runtime import A2ARuntime
+from app.integrations.a2a_extensions.codex_declaration_diagnostics import (
+    diagnose_codex_discovery_fallback,
+)
+from app.integrations.a2a_extensions.codex_discovery_service import (
+    CodexDiscoveryService,
+)
 from app.integrations.a2a_extensions.compatibility_profile import (
     resolve_compatibility_profile,
+)
+from app.integrations.a2a_extensions.contract_utils import (
+    as_dict,
+    require_str,
+    resolve_jsonrpc_interface,
 )
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -46,11 +57,17 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
     ResolvedSessionQueryRuntimeCapability,
     resolve_runtime_session_query,
 )
+from app.integrations.a2a_extensions.shared_contract import (
+    SUPPORTED_SESSION_BINDING_URIS,
+    SUPPORTED_SESSION_QUERY_URIS,
+    normalize_known_extension_uri,
+)
 from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.integrations.a2a_extensions.types import (
+    CompatibilityRetentionEntry,
     ResolvedCompatibilityProfileExtension,
     ResolvedConditionalMethodAvailability,
     ResolvedInterruptCallbackExtension,
@@ -66,6 +83,94 @@ from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
 
 logger = get_logger(__name__)
 _CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS = 300.0
+_CODEX_DISCOVERY_METHODS = {
+    "skillsList": "codex.discovery.skills.list",
+    "appsList": "codex.discovery.apps.list",
+    "pluginsList": "codex.discovery.plugins.list",
+    "pluginsRead": "codex.discovery.plugins.read",
+    "watch": "codex.discovery.watch",
+}
+_CODEX_DISCOVERY_HUB_CONSUMPTION = {
+    "skillsList": True,
+    "appsList": True,
+    "pluginsList": True,
+    "pluginsRead": True,
+    "watch": False,
+}
+_CODEX_EXEC_METHODS = {
+    "start": "codex.exec.start",
+    "write": "codex.exec.write",
+    "resize": "codex.exec.resize",
+    "terminate": "codex.exec.terminate",
+}
+_CODEX_THREADS_METHODS = {
+    "fork": "codex.threads.fork",
+    "archive": "codex.threads.archive",
+    "unarchive": "codex.threads.unarchive",
+    "metadataUpdate": "codex.threads.metadata.update",
+    "watch": "codex.threads.watch",
+}
+_CODEX_TURNS_METHODS = {
+    "steer": "codex.turns.steer",
+}
+_CODEX_REVIEW_METHODS = {
+    "start": "codex.review.start",
+    "watch": "codex.review.watch",
+}
+_CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
+_CODEX_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredMethodCapabilitySnapshot:
+    declared: bool
+    consumed_by_hub: bool
+    method: str | None = None
+    availability: Literal["always", "enabled", "disabled", "unsupported"] = (
+        "unsupported"
+    )
+    config_key: str | None = None
+    reason: str | None = None
+    retention: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredMethodCollectionCapabilitySnapshot:
+    declared: bool
+    consumed_by_hub: bool
+    status: Literal[
+        "unsupported",
+        "declared_not_consumed",
+        "partially_consumed",
+        "supported",
+        "unsupported_by_design",
+    ]
+    methods: dict[str, DeclaredMethodCapabilitySnapshot]
+    jsonrpc_url: str | None = None
+    declaration_source: (
+        Literal[
+            "none",
+            "wire_contract",
+            "wire_contract_fallback",
+            "extension_method_hint",
+            "extension_uri_hint",
+        ]
+        | None
+    ) = None
+    declaration_confidence: Literal["none", "fallback", "authoritative"] | None = None
+    negotiation_state: (
+        Literal["supported", "missing", "invalid", "unsupported"] | None
+    ) = None
+    diagnostic_note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredSingleMethodCapabilitySnapshot:
+    declared: bool
+    consumed_by_hub: bool
+    status: Literal["unsupported", "unsupported_by_design"]
+    method: str | None = None
+    jsonrpc_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +208,19 @@ class InvokeMetadataCapabilitySnapshot:
     ext: ResolvedInvokeMetadataExtension | None = None
     error: str | None = None
     meta: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RequestExecutionOptionsCapabilitySnapshot:
+    status: Literal["unsupported", "declared_not_consumed", "invalid"]
+    declared: bool
+    consumed_by_hub: bool
+    metadata_field: str | None = None
+    fields: tuple[str, ...] = ()
+    persists_for_thread: bool | None = None
+    source_extensions: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +282,7 @@ class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
     invoke_metadata: InvokeMetadataCapabilitySnapshot
+    request_execution_options: RequestExecutionOptionsCapabilitySnapshot
     interrupt_callback: InterruptCallbackCapabilitySnapshot
     interrupt_recovery: InterruptRecoveryCapabilitySnapshot
     model_selection: ModelSelectionCapabilitySnapshot
@@ -171,6 +290,12 @@ class ResolvedCapabilitySnapshot:
     stream_hints: StreamHintsCapabilitySnapshot
     wire_contract: WireContractCapabilitySnapshot
     compatibility_profile: CompatibilityProfileCapabilitySnapshot
+    codex_discovery: DeclaredMethodCollectionCapabilitySnapshot
+    codex_threads: DeclaredMethodCollectionCapabilitySnapshot
+    codex_turns: DeclaredMethodCollectionCapabilitySnapshot
+    codex_review: DeclaredMethodCollectionCapabilitySnapshot
+    codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot
+    codex_exec: DeclaredMethodCollectionCapabilitySnapshot
 
 
 @dataclass(slots=True)
@@ -186,6 +311,7 @@ class A2AExtensionsService:
         self._interrupt_extensions = InterruptExtensionService(self._support)
         self._interrupt_recovery = InterruptRecoveryService(self._support)
         self._opencode_discovery = OpencodeDiscoveryService(self._support)
+        self._codex_discovery = CodexDiscoveryService(self._support)
         self._capability_snapshot_cache_lock = asyncio.Lock()
         self._capability_snapshot_cache: dict[
             tuple[str, tuple[tuple[str, str], ...]],
@@ -297,6 +423,155 @@ class A2AExtensionsService:
                 "invoke_metadata_uri": ext.uri,
                 "invoke_metadata_field_count": len(ext.fields),
             },
+        )
+
+    @staticmethod
+    def _normalize_optional_string_list(
+        value: Any,
+        *,
+        field: str,
+    ) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if not isinstance(value, list):
+            raise A2AExtensionContractError(
+                f"Extension contract missing/invalid '{field}'"
+            )
+        items: list[str] = []
+        for index, item in enumerate(value):
+            normalized = require_str(item, field=f"{field}[{index}]")
+            if normalized not in items:
+                items.append(normalized)
+        return tuple(items)
+
+    @classmethod
+    def _build_request_execution_options_snapshot(
+        cls,
+        card: Any,
+    ) -> RequestExecutionOptionsCapabilitySnapshot:
+        capabilities = getattr(card, "capabilities", None)
+        extensions = getattr(capabilities, "extensions", None) if capabilities else None
+        if not extensions:
+            return RequestExecutionOptionsCapabilitySnapshot(
+                status="unsupported",
+                declared=False,
+                consumed_by_hub=False,
+            )
+
+        metadata_field: str | None = None
+        persists_for_thread: bool | None = None
+        fields: list[str] = []
+        notes: list[str] = []
+        source_extensions: list[str] = []
+        found = False
+        supported_sources = {
+            *SUPPORTED_SESSION_BINDING_URIS,
+            *SUPPORTED_SESSION_QUERY_URIS,
+        }
+
+        try:
+            for ext in extensions:
+                raw_uri = getattr(ext, "uri", None)
+                if (
+                    not isinstance(raw_uri, str)
+                    or raw_uri.strip() not in supported_sources
+                ):
+                    continue
+                params = as_dict(getattr(ext, "params", None))
+                if "request_execution_options" not in params:
+                    continue
+                found = True
+                contract = as_dict(params.get("request_execution_options"))
+                if not contract:
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options'"
+                    )
+                current_metadata_field = require_str(
+                    contract.get("metadata_field"),
+                    field="params.request_execution_options.metadata_field",
+                )
+                if current_metadata_field != _CODEX_REQUEST_EXECUTION_METADATA_FIELD:
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options.metadata_field'"
+                    )
+                current_fields = cls._normalize_optional_string_list(
+                    contract.get("fields"),
+                    field="params.request_execution_options.fields",
+                )
+                if not current_fields:
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options.fields'"
+                    )
+                raw_persists_for_thread = contract.get("persists_for_thread")
+                if raw_persists_for_thread is not None and not isinstance(
+                    raw_persists_for_thread, bool
+                ):
+                    raise A2AExtensionContractError(
+                        "Extension contract missing/invalid "
+                        "'params.request_execution_options.persists_for_thread'"
+                    )
+                current_notes = cls._normalize_optional_string_list(
+                    contract.get("notes"),
+                    field="params.request_execution_options.notes",
+                )
+                if metadata_field is None:
+                    metadata_field = current_metadata_field
+                elif metadata_field != current_metadata_field:
+                    raise A2AExtensionContractError(
+                        "Extension contract has conflicting "
+                        "'params.request_execution_options.metadata_field'"
+                    )
+                if raw_persists_for_thread is not None:
+                    if persists_for_thread is None:
+                        persists_for_thread = raw_persists_for_thread
+                    elif persists_for_thread != raw_persists_for_thread:
+                        raise A2AExtensionContractError(
+                            "Extension contract has conflicting "
+                            "'params.request_execution_options.persists_for_thread'"
+                        )
+                for item in current_fields:
+                    if item not in fields:
+                        fields.append(item)
+                for item in current_notes:
+                    if item not in notes:
+                        notes.append(item)
+                normalized_uri = (
+                    normalize_known_extension_uri(raw_uri) or raw_uri.strip()
+                )
+                if normalized_uri not in source_extensions:
+                    source_extensions.append(normalized_uri)
+        except A2AExtensionContractError as exc:
+            return RequestExecutionOptionsCapabilitySnapshot(
+                status="invalid",
+                declared=found,
+                consumed_by_hub=False,
+                metadata_field=metadata_field,
+                fields=tuple(fields),
+                persists_for_thread=persists_for_thread,
+                source_extensions=tuple(source_extensions),
+                notes=tuple(notes),
+                error=str(exc),
+            )
+
+        if not found:
+            return RequestExecutionOptionsCapabilitySnapshot(
+                status="unsupported",
+                declared=False,
+                consumed_by_hub=False,
+            )
+
+        return RequestExecutionOptionsCapabilitySnapshot(
+            status="declared_not_consumed",
+            declared=True,
+            consumed_by_hub=False,
+            metadata_field=metadata_field,
+            fields=tuple(fields),
+            persists_for_thread=persists_for_thread,
+            source_extensions=tuple(source_extensions),
+            notes=tuple(notes),
         )
 
     def _build_interrupt_callback_snapshot(
@@ -489,6 +764,312 @@ class A2AExtensionsService:
             ext=ext,
         )
 
+    @staticmethod
+    def _declared_wire_contract_methods(
+        snapshot: WireContractCapabilitySnapshot,
+    ) -> frozenset[str]:
+        if snapshot.status != "supported" or snapshot.ext is None:
+            return frozenset()
+        return frozenset(snapshot.ext.all_jsonrpc_methods)
+
+    @classmethod
+    def _conditional_wire_contract_methods(
+        cls,
+        snapshot: WireContractCapabilitySnapshot,
+    ) -> dict[str, ResolvedConditionalMethodAvailability]:
+        if snapshot.status != "supported" or snapshot.ext is None:
+            return {}
+        return dict(snapshot.ext.conditionally_available_methods)
+
+    @staticmethod
+    def _compatibility_method_retention(
+        snapshot: CompatibilityProfileCapabilitySnapshot,
+    ) -> dict[str, CompatibilityRetentionEntry]:
+        if snapshot.status != "supported" or snapshot.ext is None:
+            return {}
+        return dict(snapshot.ext.method_retention)
+
+    @classmethod
+    def _resolve_declared_method_snapshot(
+        cls,
+        *,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        method_name: str,
+        consumed_by_hub: bool,
+    ) -> DeclaredMethodCapabilitySnapshot:
+        declared_methods = cls._declared_wire_contract_methods(wire_contract)
+        conditional_methods = cls._conditional_wire_contract_methods(wire_contract)
+        retention_map = cls._compatibility_method_retention(compatibility_profile)
+        conditional = conditional_methods.get(method_name)
+        retention = retention_map.get(method_name)
+
+        active_declared = method_name in declared_methods
+        deployment_conditional = conditional is not None or (
+            retention is not None
+            and retention.retention == "deployment-conditional"
+            and retention.availability in {"enabled", "disabled"}
+        )
+        declared = active_declared or deployment_conditional
+
+        if active_declared:
+            availability: Literal["always", "enabled", "disabled", "unsupported"] = (
+                cast(
+                    Literal["always", "enabled", "disabled"],
+                    retention.availability,
+                )
+                if retention is not None
+                and retention.availability in {"always", "enabled", "disabled"}
+                else "always"
+            )
+        elif deployment_conditional:
+            availability = (
+                cast(Literal["enabled", "disabled"], retention.availability)
+                if retention is not None
+                and retention.availability in {"enabled", "disabled"}
+                else "disabled"
+            )
+        else:
+            availability = "unsupported"
+
+        return DeclaredMethodCapabilitySnapshot(
+            declared=declared,
+            consumed_by_hub=consumed_by_hub and active_declared,
+            method=method_name if declared else None,
+            availability=availability,
+            config_key=(
+                conditional.toggle
+                if conditional is not None and conditional.toggle
+                else retention.toggle if retention is not None else None
+            ),
+            reason=conditional.reason if conditional is not None else None,
+            retention=retention.retention if retention is not None else None,
+        )
+
+    @classmethod
+    def _build_declared_method_collection_snapshot(
+        cls,
+        *,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        method_map: dict[str, str],
+        hub_consumption: dict[str, bool],
+        unsupported_status_when_declared: Literal[
+            "declared_not_consumed", "unsupported_by_design"
+        ],
+        jsonrpc_url: str | None,
+        declaration_source: (
+            Literal[
+                "none",
+                "wire_contract",
+                "wire_contract_fallback",
+                "extension_method_hint",
+                "extension_uri_hint",
+            ]
+            | None
+        ) = None,
+        declaration_confidence: (
+            Literal["none", "fallback", "authoritative"] | None
+        ) = None,
+        negotiation_state: (
+            Literal["supported", "missing", "invalid", "unsupported"] | None
+        ) = None,
+        diagnostic_note: str | None = None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        methods = {
+            key: cls._resolve_declared_method_snapshot(
+                wire_contract=wire_contract,
+                compatibility_profile=compatibility_profile,
+                method_name=method_name,
+                consumed_by_hub=bool(hub_consumption.get(key, False)),
+            )
+            for key, method_name in method_map.items()
+        }
+        declared = any(item.declared for item in methods.values())
+        consumed = any(
+            item.declared and item.consumed_by_hub for item in methods.values()
+        )
+        unconsumed = any(
+            item.declared and not item.consumed_by_hub for item in methods.values()
+        )
+        if not declared:
+            status: Literal[
+                "unsupported",
+                "declared_not_consumed",
+                "partially_consumed",
+                "supported",
+                "unsupported_by_design",
+            ] = "unsupported"
+        elif consumed and unconsumed:
+            status = "partially_consumed"
+        elif consumed:
+            status = "supported"
+        else:
+            status = unsupported_status_when_declared
+        return DeclaredMethodCollectionCapabilitySnapshot(
+            declared=declared,
+            consumed_by_hub=consumed,
+            status=status,
+            methods=methods,
+            jsonrpc_url=jsonrpc_url,
+            declaration_source=declaration_source,
+            declaration_confidence=declaration_confidence,
+            negotiation_state=negotiation_state,
+            diagnostic_note=diagnostic_note,
+        )
+
+    @classmethod
+    def _build_codex_discovery_snapshot(
+        cls,
+        card: Any,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        if wire_contract.status == "supported":
+            return cls._build_declared_method_collection_snapshot(
+                wire_contract=wire_contract,
+                compatibility_profile=compatibility_profile,
+                method_map=_CODEX_DISCOVERY_METHODS,
+                hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
+                unsupported_status_when_declared="declared_not_consumed",
+                jsonrpc_url=jsonrpc_url,
+                declaration_source="wire_contract",
+                declaration_confidence="authoritative",
+                negotiation_state="supported",
+            )
+
+        fallback = diagnose_codex_discovery_fallback(
+            card,
+            wire_contract_status=wire_contract.status,
+        )
+        if fallback.declared:
+            methods = {
+                key: DeclaredMethodCapabilitySnapshot(
+                    declared=method_name in fallback.method_names,
+                    consumed_by_hub=False,
+                    method=(
+                        method_name if method_name in fallback.method_names else None
+                    ),
+                    availability=(
+                        "always"
+                        if method_name in fallback.method_names
+                        else "unsupported"
+                    ),
+                )
+                for key, method_name in _CODEX_DISCOVERY_METHODS.items()
+            }
+            return DeclaredMethodCollectionCapabilitySnapshot(
+                declared=True,
+                consumed_by_hub=False,
+                status="unsupported",
+                methods=methods,
+                jsonrpc_url=None,
+                declaration_source=fallback.source,
+                declaration_confidence=fallback.confidence,
+                negotiation_state=fallback.negotiation_state,
+                diagnostic_note=fallback.note,
+            )
+
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
+            method_map=_CODEX_DISCOVERY_METHODS,
+            hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
+            unsupported_status_when_declared="declared_not_consumed",
+            jsonrpc_url=None,
+            declaration_source=fallback.source,
+            declaration_confidence=fallback.confidence,
+            negotiation_state=fallback.negotiation_state,
+            diagnostic_note=fallback.note,
+        )
+
+    @classmethod
+    def _build_codex_exec_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
+            method_map=_CODEX_EXEC_METHODS,
+            hub_consumption={},
+            unsupported_status_when_declared="unsupported_by_design",
+            jsonrpc_url=jsonrpc_url,
+        )
+
+    @classmethod
+    def _build_codex_threads_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
+            method_map=_CODEX_THREADS_METHODS,
+            hub_consumption={},
+            unsupported_status_when_declared="unsupported_by_design",
+            jsonrpc_url=jsonrpc_url,
+        )
+
+    @classmethod
+    def _build_codex_turns_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
+            method_map=_CODEX_TURNS_METHODS,
+            hub_consumption={},
+            unsupported_status_when_declared="unsupported_by_design",
+            jsonrpc_url=jsonrpc_url,
+        )
+
+    @classmethod
+    def _build_codex_review_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return cls._build_declared_method_collection_snapshot(
+            wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
+            method_map=_CODEX_REVIEW_METHODS,
+            hub_consumption={},
+            unsupported_status_when_declared="unsupported_by_design",
+            jsonrpc_url=jsonrpc_url,
+        )
+
+    @classmethod
+    def _build_codex_thread_watch_snapshot(
+        cls,
+        wire_contract: WireContractCapabilitySnapshot,
+        *,
+        jsonrpc_url: str | None,
+    ) -> DeclaredSingleMethodCapabilitySnapshot:
+        declared_methods = cls._declared_wire_contract_methods(wire_contract)
+        declared = _CODEX_THREAD_WATCH_METHOD in declared_methods
+        return DeclaredSingleMethodCapabilitySnapshot(
+            declared=declared,
+            consumed_by_hub=False,
+            status="unsupported_by_design" if declared else "unsupported",
+            method=_CODEX_THREAD_WATCH_METHOD if declared else None,
+            jsonrpc_url=jsonrpc_url,
+        )
+
     async def resolve_capability_snapshot(
         self,
         *,
@@ -502,17 +1083,59 @@ class A2AExtensionsService:
                 return cached.snapshot
 
         card = await self._support.fetch_card(runtime)
+        wire_contract = self._build_wire_contract_snapshot(card)
+        jsonrpc_url = None
+        try:
+            jsonrpc_url = self._support.ensure_outbound_allowed(
+                resolve_jsonrpc_interface(card).url,
+                purpose="JSON-RPC interface URL",
+            )
+        except (A2AExtensionContractError, A2AExtensionUpstreamError):
+            jsonrpc_url = None
+        compatibility_profile = self._build_compatibility_profile_snapshot(card)
         snapshot = ResolvedCapabilitySnapshot(
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
             invoke_metadata=self._build_invoke_metadata_snapshot(card),
+            request_execution_options=self._build_request_execution_options_snapshot(
+                card
+            ),
             interrupt_callback=self._build_interrupt_callback_snapshot(card),
             interrupt_recovery=self._build_interrupt_recovery_snapshot(card),
             model_selection=self._build_model_selection_snapshot(card),
             provider_discovery=self._build_provider_discovery_snapshot(card),
             stream_hints=self._build_stream_hints_snapshot(card),
-            wire_contract=self._build_wire_contract_snapshot(card),
-            compatibility_profile=self._build_compatibility_profile_snapshot(card),
+            wire_contract=wire_contract,
+            compatibility_profile=compatibility_profile,
+            codex_discovery=self._build_codex_discovery_snapshot(
+                card,
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
+            ),
+            codex_threads=self._build_codex_threads_snapshot(
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
+            ),
+            codex_turns=self._build_codex_turns_snapshot(
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
+            ),
+            codex_review=self._build_codex_review_snapshot(
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
+            ),
+            codex_thread_watch=self._build_codex_thread_watch_snapshot(
+                wire_contract, jsonrpc_url=jsonrpc_url
+            ),
+            codex_exec=self._build_codex_exec_snapshot(
+                wire_contract,
+                compatibility_profile,
+                jsonrpc_url=jsonrpc_url,
+            ),
         )
         async with self._capability_snapshot_cache_lock:
             self._capability_snapshot_cache[cache_key] = _CapabilitySnapshotCacheEntry(
@@ -575,6 +1198,38 @@ class A2AExtensionsService:
             )
         raise A2AExtensionNotSupportedError(
             snapshot.error or "Provider discovery extension not found"
+        )
+
+    @staticmethod
+    def _require_declared_method_collection_capability(
+        snapshot: DeclaredMethodCollectionCapabilitySnapshot,
+        *,
+        capability_name: str,
+    ) -> tuple[DeclaredMethodCollectionCapabilitySnapshot, str]:
+        if snapshot.declared and snapshot.jsonrpc_url:
+            return snapshot, snapshot.jsonrpc_url
+        if snapshot.declared:
+            raise A2AExtensionContractError(
+                f"{capability_name} is declared but no JSON-RPC interface URL is available"
+            )
+        raise A2AExtensionNotSupportedError(f"{capability_name} methods not declared")
+
+    @staticmethod
+    def _require_declared_method_capability(
+        snapshot: DeclaredMethodCollectionCapabilitySnapshot,
+        *,
+        method_key: str,
+        capability_name: str,
+    ) -> DeclaredMethodCapabilitySnapshot:
+        method = snapshot.methods[method_key]
+        if method.declared and method.consumed_by_hub:
+            return method
+        if method.declared:
+            raise A2AExtensionNotSupportedError(
+                f"{capability_name} method {method_key} is declared but not consumed by Hub"
+            )
+        raise A2AExtensionNotSupportedError(
+            f"{capability_name} method {method_key} is not declared"
         )
 
     @staticmethod
@@ -893,6 +1548,182 @@ class A2AExtensionsService:
             jsonrpc_url=jsonrpc_url,
             provider_id=provider_id,
             session_metadata=session_metadata,
+        )
+
+    async def list_codex_skills(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ExtensionCallResult:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        capability, jsonrpc_url = self._require_declared_method_collection_capability(
+            snapshot.codex_discovery,
+            capability_name="Codex discovery",
+        )
+        method = self._require_declared_method_capability(
+            capability,
+            method_key="skillsList",
+            capability_name="Codex discovery",
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=(
+                snapshot.wire_contract.ext.uri
+                if snapshot.wire_contract.ext is not None
+                else "wire_contract"
+            ),
+            method_name=method.method,
+        )
+        if preflight is not None:
+            return preflight
+        return await self._codex_discovery.list_skills(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method.method or _CODEX_DISCOVERY_METHODS["skillsList"],
+            meta={
+                "extension_uri": (
+                    snapshot.wire_contract.ext.uri
+                    if snapshot.wire_contract.ext is not None
+                    else None
+                ),
+                "capability_area": "codex_discovery",
+                "method_name": method.method,
+            },
+        )
+
+    async def list_codex_apps(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ExtensionCallResult:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        capability, jsonrpc_url = self._require_declared_method_collection_capability(
+            snapshot.codex_discovery,
+            capability_name="Codex discovery",
+        )
+        method = self._require_declared_method_capability(
+            capability,
+            method_key="appsList",
+            capability_name="Codex discovery",
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=(
+                snapshot.wire_contract.ext.uri
+                if snapshot.wire_contract.ext is not None
+                else "wire_contract"
+            ),
+            method_name=method.method,
+        )
+        if preflight is not None:
+            return preflight
+        return await self._codex_discovery.list_apps(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method.method or _CODEX_DISCOVERY_METHODS["appsList"],
+            meta={
+                "extension_uri": (
+                    snapshot.wire_contract.ext.uri
+                    if snapshot.wire_contract.ext is not None
+                    else None
+                ),
+                "capability_area": "codex_discovery",
+                "method_name": method.method,
+            },
+        )
+
+    async def list_codex_plugins(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ExtensionCallResult:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        capability, jsonrpc_url = self._require_declared_method_collection_capability(
+            snapshot.codex_discovery,
+            capability_name="Codex discovery",
+        )
+        method = self._require_declared_method_capability(
+            capability,
+            method_key="pluginsList",
+            capability_name="Codex discovery",
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=(
+                snapshot.wire_contract.ext.uri
+                if snapshot.wire_contract.ext is not None
+                else "wire_contract"
+            ),
+            method_name=method.method,
+        )
+        if preflight is not None:
+            return preflight
+        return await self._codex_discovery.list_plugins(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method.method or _CODEX_DISCOVERY_METHODS["pluginsList"],
+            meta={
+                "extension_uri": (
+                    snapshot.wire_contract.ext.uri
+                    if snapshot.wire_contract.ext is not None
+                    else None
+                ),
+                "capability_area": "codex_discovery",
+                "method_name": method.method,
+            },
+        )
+
+    async def read_codex_plugin(
+        self,
+        *,
+        runtime: A2ARuntime,
+        marketplace_path: str,
+        plugin_name: str,
+    ) -> ExtensionCallResult:
+        resolved_marketplace_path = marketplace_path.strip()
+        resolved_plugin_name = plugin_name.strip()
+        if not resolved_marketplace_path:
+            raise ValueError("marketplace_path must be a non-empty string")
+        if not resolved_plugin_name:
+            raise ValueError("plugin_name must be a non-empty string")
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        capability, jsonrpc_url = self._require_declared_method_collection_capability(
+            snapshot.codex_discovery,
+            capability_name="Codex discovery",
+        )
+        method = self._require_declared_method_capability(
+            capability,
+            method_key="pluginsRead",
+            capability_name="Codex discovery",
+        )
+        preflight = self._preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=(
+                snapshot.wire_contract.ext.uri
+                if snapshot.wire_contract.ext is not None
+                else "wire_contract"
+            ),
+            method_name=method.method,
+        )
+        if preflight is not None:
+            return preflight
+        return await self._codex_discovery.read_plugin(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method.method or _CODEX_DISCOVERY_METHODS["pluginsRead"],
+            marketplace_path=resolved_marketplace_path,
+            plugin_name=resolved_plugin_name,
+            meta={
+                "extension_uri": (
+                    snapshot.wire_contract.ext.uri
+                    if snapshot.wire_contract.ext is not None
+                    else None
+                ),
+                "capability_area": "codex_discovery",
+                "method_name": method.method,
+                "marketplace_path": resolved_marketplace_path,
+                "plugin_name": resolved_plugin_name,
+            },
         )
 
     async def reply_permission_interrupt(

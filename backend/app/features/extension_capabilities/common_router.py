@@ -36,6 +36,14 @@ from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileEntry,
 )
 from app.schemas.a2a_extension import (
+    A2ACodexDiscoveryAppsListResponse,
+    A2ACodexDiscoveryPluginReadRequest,
+    A2ACodexDiscoveryPluginReadResponse,
+    A2ACodexDiscoveryPluginsListResponse,
+    A2ACodexDiscoverySkillsListResponse,
+    A2ADeclaredMethodCapabilityResponse,
+    A2ADeclaredMethodCollectionCapabilitiesResponse,
+    A2ADeclaredSingleMethodCapabilitiesResponse,
     A2AExtensionCapabilitiesResponse,
     A2AExtensionElicitationReplyRequest,
     A2AExtensionInterruptRecoveryRequest,
@@ -53,6 +61,7 @@ from app.schemas.a2a_extension import (
     A2AInvokeMetadataCapabilitiesResponse,
     A2AInvokeMetadataFieldResponse,
     A2AModelDiscoveryRequest,
+    A2ARequestExecutionOptionsCapabilitiesResponse,
     A2ARuntimeStatusContractResponse,
     A2ASessionControlCapabilitiesResponse,
     A2ASessionControlMethodResponse,
@@ -230,6 +239,26 @@ def _build_invoke_metadata_response(
     )
 
 
+def _build_request_execution_options_response(
+    snapshot: Any,
+) -> A2ARequestExecutionOptionsCapabilitiesResponse:
+    capability = getattr(snapshot, "request_execution_options", None)
+    return A2ARequestExecutionOptionsCapabilitiesResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        status=cast(
+            Literal["unsupported", "declared_not_consumed", "invalid"],
+            getattr(capability, "status", "unsupported"),
+        ),
+        metadataField=getattr(capability, "metadata_field", None),
+        fields=list(getattr(capability, "fields", ()) or ()),
+        persistsForThread=getattr(capability, "persists_for_thread", None),
+        sourceExtensions=list(getattr(capability, "source_extensions", ()) or ()),
+        notes=list(getattr(capability, "notes", ()) or ()),
+        error=getattr(capability, "error", None),
+    )
+
+
 def _build_wire_contract_response(
     snapshot: Any,
 ) -> A2AWireContractCapabilitiesResponse:
@@ -270,6 +299,76 @@ def _build_wire_contract_response(
             dataFields=list(ext.unsupported_method_error.data_fields),
         ),
         error=error,
+    )
+
+
+def _build_declared_method_capability_response(
+    capability: Any,
+) -> A2ADeclaredMethodCapabilityResponse:
+    raw_availability = getattr(capability, "availability", None)
+    return A2ADeclaredMethodCapabilityResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        method=getattr(capability, "method", None),
+        availability=cast(
+            Literal["always", "enabled", "disabled", "unsupported"],
+            (
+                raw_availability
+                if raw_availability is not None
+                else (
+                    "always"
+                    if bool(getattr(capability, "declared", False))
+                    else "unsupported"
+                )
+            ),
+        ),
+        configKey=getattr(capability, "config_key", None),
+        reason=getattr(capability, "reason", None),
+        retention=getattr(capability, "retention", None),
+    )
+
+
+def _build_declared_method_collection_response(
+    capability: Any,
+) -> A2ADeclaredMethodCollectionCapabilitiesResponse:
+    methods = dict(getattr(capability, "methods", {}) or {})
+    status = cast(
+        Literal[
+            "unsupported",
+            "declared_not_consumed",
+            "partially_consumed",
+            "supported",
+            "unsupported_by_design",
+        ],
+        getattr(capability, "status", "unsupported"),
+    )
+    return A2ADeclaredMethodCollectionCapabilitiesResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        status=status,
+        methods={
+            name: _build_declared_method_capability_response(item)
+            for name, item in methods.items()
+        },
+        declarationSource=getattr(capability, "declaration_source", None),
+        declarationConfidence=getattr(capability, "declaration_confidence", None),
+        negotiationState=getattr(capability, "negotiation_state", None),
+        diagnosticNote=getattr(capability, "diagnostic_note", None),
+    )
+
+
+def _build_declared_single_method_response(
+    capability: Any,
+) -> A2ADeclaredSingleMethodCapabilitiesResponse:
+    status = cast(
+        Literal["unsupported", "unsupported_by_design"],
+        getattr(capability, "status", "unsupported"),
+    )
+    return A2ADeclaredSingleMethodCapabilitiesResponse(
+        declared=bool(getattr(capability, "declared", False)),
+        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
+        status=status,
+        method=getattr(capability, "method", None),
     )
 
 
@@ -383,8 +482,27 @@ def create_extension_capability_router(
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
             invokeMetadata=_build_invoke_metadata_response(snapshot),
+            requestExecutionOptions=_build_request_execution_options_response(snapshot),
             wireContract=_build_wire_contract_response(snapshot),
             compatibilityProfile=_build_compatibility_profile_response(snapshot),
+            codexDiscovery=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_discovery", None)
+            ),
+            codexThreads=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_threads", None)
+            ),
+            codexTurns=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_turns", None)
+            ),
+            codexReview=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_review", None)
+            ),
+            codexThreadWatch=_build_declared_single_method_response(
+                getattr(snapshot, "codex_thread_watch", None)
+            ),
+            codexExec=_build_declared_method_collection_response(
+                getattr(snapshot, "codex_exec", None)
+            ),
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()
             ),
@@ -455,6 +573,117 @@ def create_extension_capability_router(
                 runtime=runtime,
                 provider_id=payload.provider_id,
                 session_metadata=payload.session_metadata,
+            )
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/codex/skills",
+        response_model=A2ACodexDiscoverySkillsListResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_codex_skills(
+        *,
+        agent_id: UUID,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery skills list requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().list_codex_skills(runtime=runtime)
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/codex/apps",
+        response_model=A2ACodexDiscoveryAppsListResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_codex_apps(
+        *,
+        agent_id: UUID,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery apps list requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().list_codex_apps(runtime=runtime)
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/codex/plugins",
+        response_model=A2ACodexDiscoveryPluginsListResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_codex_plugins(
+        *,
+        agent_id: UUID,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery plugins list requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().list_codex_plugins(runtime=runtime)
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/codex/plugins:read",
+        response_model=A2ACodexDiscoveryPluginReadResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def read_codex_plugin(
+        *,
+        agent_id: UUID,
+        payload: A2ACodexDiscoveryPluginReadRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Codex discovery plugin read requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "marketplace_path": payload.marketplace_path,
+                "plugin_name": payload.plugin_name,
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().read_codex_plugin(
+                runtime=runtime,
+                marketplace_path=payload.marketplace_path,
+                plugin_name=payload.plugin_name,
             )
         )
 

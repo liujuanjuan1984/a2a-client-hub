@@ -18,9 +18,9 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
     LEGACY_SHARED_SESSION_QUERY_URI,
+    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
-    SHARED_SESSION_QUERY_URI,
     STREAM_HINTS_URI,
 )
 
@@ -40,7 +40,7 @@ def _base_card_payload() -> dict:
 
 def _build_card(
     *,
-    uri: str = SHARED_SESSION_QUERY_URI,
+    uri: str = OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     pagination: dict | None = None,
     with_binding: bool = False,
     with_stream_hints: bool = False,
@@ -52,13 +52,13 @@ def _build_card(
             "params": {
                 "provider": "opencode",
                 "methods": {
-                    "list_sessions": "shared.sessions.list",
-                    "get_session_messages": "shared.sessions.messages.list",
-                    "prompt_async": "shared.sessions.prompt_async",
-                    "command": "shared.sessions.command",
+                    "list_sessions": "opencode.sessions.list",
+                    "get_session_messages": "opencode.sessions.messages.list",
+                    "prompt_async": "opencode.sessions.prompt_async",
+                    "command": "opencode.sessions.command",
                 },
                 "control_method_flags": {
-                    "shell": {
+                    "opencode.sessions.shell": {
                         "enabled_by_default": False,
                         "config_key": "A2A_ENABLE_SESSION_SHELL",
                     }
@@ -96,7 +96,7 @@ def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> Non
     assert capability.declared_contract_family == "opencode"
     assert capability.normalized_contract_family == "a2a_client_hub"
     assert capability.selection_mode == "direct"
-    assert capability.ext.uri == SHARED_SESSION_QUERY_URI
+    assert capability.ext.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
     assert capability.control_methods["prompt_async"].declared is True
     assert capability.control_methods["prompt_async"].availability == "always"
     assert capability.control_methods["command"].declared is True

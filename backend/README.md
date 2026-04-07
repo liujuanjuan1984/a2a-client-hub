@@ -161,8 +161,10 @@ Contract references:
 
 - Canonical contract: [`docs/contracts/shared-session-query-canonical-contract.md`](../docs/contracts/shared-session-query-canonical-contract.md)
 - Reference payloads: [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
+- Hub recognizes the newer opencode public HTTPS alias `#opencode-session-management-v1` while preserving Hub-private normalized `session_query` naming internally.
 - Hub also accepts the Codex compatibility URI `urn:codex-a2a:codex-session-query/v1` when its declared pagination and control semantics stay losslessly mappable to the Hub-private normalized `a2a_client_hub` session-query contract family.
 - Cross-cutting API examples: [`docs/architecture-and-api.md`](../docs/architecture-and-api.md)
+- Codex discovery watch design boundary: [`docs/codex-discovery-watch-design.md`](../docs/codex-discovery-watch-design.md)
 - Compatibility notes and non-goals: [`docs/compatibility-and-non-goals.md`](../docs/compatibility-and-non-goals.md)
 
 Requirements:
@@ -177,6 +179,19 @@ Endpoints:
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
   - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
+  - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
+  - The capability response also surfaces `codexThreads`, `codexTurns`, and `codexReview` collection diagnostics so newer upstream lifecycle/control families remain visible even before Hub consumes them.
+  - Each declared Codex method now also reports method-level `availability`, `configKey`, `reason`, and `retention`, allowing deployment-conditional upstream surfaces to remain visible as `enabled`/`disabled` diagnostics instead of being flattened into plain unsupported responses.
+  - `codexDiscovery` also reports `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints can be surfaced without incorrectly promoting them to Hub-consumable support.
+  - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions without yet promoting them to a Hub-consumed feature surface.
+- Read Codex discovery lists through Hub-stable APIs:
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/skills`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/apps`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins`
+- Read Codex plugin details through a Hub-stable API:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins:read`
+    - body: `{ "marketplacePath": "plugin://marketplace/codex-default", "pluginName": "planner" }`
+  - Codex discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body: `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`

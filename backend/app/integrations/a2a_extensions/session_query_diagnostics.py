@@ -47,7 +47,7 @@ def _find_declared_extension(card: AgentCard) -> tuple[Any | None, str | None]:
         uri = str(getattr(candidate, "uri", "") or "").strip()
         if uri in SUPPORTED_SESSION_QUERY_URIS:
             return candidate, uri
-        if hinted is None and "session-query" in uri:
+        if hinted is None and ("session-query" in uri or "session-management" in uri):
             hinted = candidate, uri
     return hinted if hinted is not None else (None, None)
 

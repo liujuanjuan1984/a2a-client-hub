@@ -3,9 +3,13 @@ import {
   assertExtensionSuccess,
   commandSession,
   getExtensionCapabilities,
+  listCodexApps,
+  listCodexPlugins,
+  listCodexSkills,
   listModelProviders,
   listModels,
   promptSessionAsync,
+  readCodexPlugin,
   recoverInterrupts,
   replyElicitationInterrupt,
   replyPermissionInterrupt,
@@ -339,6 +343,31 @@ describe("assertExtensionSuccess", () => {
           },
         ],
       },
+      codexDiscovery: {
+        declared: true,
+        consumedByHub: true,
+        status: "supported",
+        methods: {
+          skillsList: {
+            declared: true,
+            consumedByHub: true,
+            method: "codex.discovery.skills.list",
+            availability: "always",
+            configKey: null,
+            reason: null,
+            retention: null,
+          },
+          pluginsRead: {
+            declared: true,
+            consumedByHub: true,
+            method: "codex.discovery.plugins.read",
+            availability: "disabled",
+            configKey: "A2A_ENABLE_CODEX_DISCOVERY_PLUGIN_READ",
+            reason: "disabled_by_configuration",
+            retention: "deployment-conditional",
+          },
+        },
+      },
       runtimeStatus: {
         version: "v1",
         canonicalStates: [
@@ -387,8 +416,163 @@ describe("assertExtensionSuccess", () => {
     expect(result.sessionControl.shell.availability).toBe("conditional");
     expect(result.invokeMetadata.metadataField).toBe("metadata.shared.invoke");
     expect(result.invokeMetadata.fields[0]?.name).toBe("project_id");
+    expect(result.codexDiscovery?.status).toBe("supported");
+    expect(result.codexDiscovery?.methods.skillsList?.method).toBe(
+      "codex.discovery.skills.list",
+    );
+    expect(result.codexDiscovery?.methods.pluginsRead?.availability).toBe(
+      "disabled",
+    );
+    expect(result.codexDiscovery?.methods.pluginsRead?.configKey).toBe(
+      "A2A_ENABLE_CODEX_DISCOVERY_PLUGIN_READ",
+    );
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
+  });
+
+  it("calls codex discovery list endpoints and normalizes responses", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      success: true,
+      result: {
+        items: [
+          {
+            cwd: "/workspace/project",
+            skills: [
+              {
+                name: "Planning",
+                path: "/workspace/project/.codex/skills/PLANNING/SKILL.md",
+                description: "Summarize plans.",
+                enabled: true,
+                scope: "project",
+                interface: null,
+                codex: { source: "codex" },
+              },
+            ],
+            errors: [],
+            codex: {},
+          },
+        ],
+      },
+    });
+    mockedApiRequest.mockResolvedValueOnce({
+      success: true,
+      result: {
+        items: [
+          {
+            id: "app-1",
+            name: "workspace",
+            description: "Manage files.",
+            isAccessible: true,
+            isEnabled: true,
+            installUrl: null,
+            mentionPath: "app://app-1",
+            branding: null,
+            labels: [],
+            codex: {},
+          },
+        ],
+        nextCursor: "cursor-2",
+      },
+    });
+    mockedApiRequest.mockResolvedValueOnce({
+      success: true,
+      result: {
+        items: [
+          {
+            marketplaceName: "test",
+            marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+            interface: null,
+            plugins: [
+              {
+                name: "Planner",
+                description: "Coordinates work.",
+                enabled: true,
+                interface: null,
+                mentionPath: "plugin://planner@test",
+                codex: { version: "1.0" },
+              },
+            ],
+            codex: {},
+          },
+        ],
+        featuredPluginIds: ["test:Planner"],
+        marketplaceLoadErrors: [],
+        remoteSyncError: null,
+      },
+    });
+
+    const skills = await listCodexSkills({
+      source: "shared",
+      agentId: "agent-1",
+    });
+    const apps = await listCodexApps({
+      source: "shared",
+      agentId: "agent-1",
+    });
+    const plugins = await listCodexPlugins({
+      source: "personal",
+      agentId: "agent-1",
+    });
+
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      1,
+      "/a2a/agents/agent-1/extensions/codex/skills",
+      { method: "GET" },
+    );
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "/a2a/agents/agent-1/extensions/codex/apps",
+      { method: "GET" },
+    );
+    expect(mockedApiRequest).toHaveBeenNthCalledWith(
+      3,
+      "/me/a2a/agents/agent-1/extensions/codex/plugins",
+      { method: "GET" },
+    );
+    expect(skills.items[0]?.cwd).toBe("/workspace/project");
+    expect(apps.nextCursor).toBe("cursor-2");
+    expect(apps.items[0]?.mentionPath).toBe("app://app-1");
+    expect(plugins.items[0]?.marketplaceName).toBe("test");
+  });
+
+  it("calls codex plugin read endpoint and normalizes plugin details", async () => {
+    mockedApiRequest.mockResolvedValue({
+      success: true,
+      result: {
+        item: {
+          name: "planner",
+          marketplaceName: "test",
+          marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+          mentionPath: "plugin://planner@test",
+          summary: ["Use for planning"],
+          skills: [{ name: "planning" }],
+          apps: [{ id: "demo-app" }],
+          mcpServers: ["planner-server"],
+          interface: { transport: "mcp" },
+          codex: { version: "1.0" },
+        },
+      },
+    });
+
+    const result = await readCodexPlugin({
+      source: "shared",
+      agentId: "agent-1",
+      marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+      pluginName: "planner",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/a2a/agents/agent-1/extensions/codex/plugins:read",
+      {
+        method: "POST",
+        body: {
+          marketplacePath: "/workspace/.codex/plugins/marketplace.json",
+          pluginName: "planner",
+        },
+      },
+    );
+    expect(result.item?.name).toBe("planner");
+    expect(result.item?.summary).toEqual(["Use for planning"]);
   });
 
   it("calls model discovery endpoint with provider filter", async () => {

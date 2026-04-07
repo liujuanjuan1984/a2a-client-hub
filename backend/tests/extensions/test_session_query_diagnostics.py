@@ -8,7 +8,7 @@ from app.integrations.a2a_extensions.session_query_diagnostics import (
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
     LEGACY_SHARED_SESSION_QUERY_URI,
-    OPENCODE_SHARED_SESSION_QUERY_URI,
+    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     SHARED_SESSION_QUERY_URI,
 )
 
@@ -92,7 +92,7 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SHARED_SESSION_QUERY_URI,
+            "uri": OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
             "params": {
                 "provider": "opencode",
                 "methods": {
@@ -119,7 +119,7 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
     assert diagnostic.status == "supported"
     assert diagnostic.declared_contract_family == "opencode"
     assert diagnostic.uses_legacy_uri is False
-    assert diagnostic.uri == OPENCODE_SHARED_SESSION_QUERY_URI
+    assert diagnostic.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
 
 
 def test_diagnose_session_query_returns_legacy_status_for_legacy_limit_fields() -> None:

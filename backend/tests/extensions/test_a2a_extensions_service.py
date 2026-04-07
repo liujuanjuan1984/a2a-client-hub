@@ -10,12 +10,16 @@ from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     CompatibilityProfileCapabilitySnapshot,
+    DeclaredMethodCapabilitySnapshot,
+    DeclaredMethodCollectionCapabilitySnapshot,
+    DeclaredSingleMethodCapabilitySnapshot,
     ExtensionCallResult,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
     InvokeMetadataCapabilitySnapshot,
     ModelSelectionCapabilitySnapshot,
     ProviderDiscoveryCapabilitySnapshot,
+    RequestExecutionOptionsCapabilitySnapshot,
     ResolvedCapabilitySnapshot,
     SessionBindingCapabilitySnapshot,
     SessionQueryCapabilitySnapshot,
@@ -225,6 +229,7 @@ def _capability_snapshot(
     session_query: SessionQueryCapabilitySnapshot,
     session_binding: SessionBindingCapabilitySnapshot | None = None,
     invoke_metadata: InvokeMetadataCapabilitySnapshot | None = None,
+    request_execution_options: RequestExecutionOptionsCapabilitySnapshot | None = None,
     interrupt_callback: InterruptCallbackCapabilitySnapshot | None = None,
     interrupt_recovery: InterruptRecoveryCapabilitySnapshot | None = None,
     model_selection: ModelSelectionCapabilitySnapshot | None = None,
@@ -232,12 +237,24 @@ def _capability_snapshot(
     stream_hints: StreamHintsCapabilitySnapshot | None = None,
     wire_contract: WireContractCapabilitySnapshot | None = None,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot | None = None,
+    codex_discovery: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    codex_threads: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    codex_turns: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    codex_review: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot | None = None,
+    codex_exec: DeclaredMethodCollectionCapabilitySnapshot | None = None,
 ) -> ResolvedCapabilitySnapshot:
     return ResolvedCapabilitySnapshot(
         session_query=session_query,
         session_binding=session_binding or _binding_snapshot(status="unsupported"),
         invoke_metadata=invoke_metadata
         or _invoke_metadata_snapshot(status="unsupported"),
+        request_execution_options=request_execution_options
+        or RequestExecutionOptionsCapabilitySnapshot(
+            status="unsupported",
+            declared=False,
+            consumed_by_hub=False,
+        ),
         interrupt_callback=interrupt_callback or _interrupt_snapshot(),
         interrupt_recovery=interrupt_recovery or _interrupt_recovery_snapshot(),
         model_selection=model_selection or _model_selection_snapshot(),
@@ -247,6 +264,47 @@ def _capability_snapshot(
         wire_contract=wire_contract or _wire_contract_snapshot(),
         compatibility_profile=compatibility_profile
         or _compatibility_profile_snapshot(),
+        codex_discovery=codex_discovery
+        or DeclaredMethodCollectionCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+            methods={},
+        ),
+        codex_threads=codex_threads
+        or DeclaredMethodCollectionCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+            methods={},
+        ),
+        codex_turns=codex_turns
+        or DeclaredMethodCollectionCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+            methods={},
+        ),
+        codex_review=codex_review
+        or DeclaredMethodCollectionCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+            methods={},
+        ),
+        codex_thread_watch=codex_thread_watch
+        or DeclaredSingleMethodCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+        ),
+        codex_exec=codex_exec
+        or DeclaredMethodCollectionCapabilitySnapshot(
+            declared=False,
+            consumed_by_hub=False,
+            status="unsupported",
+            methods={},
+        ),
     )
 
 
@@ -2449,6 +2507,175 @@ async def test_list_model_providers_returns_method_not_supported_when_wire_contr
 
 
 @pytest.mark.asyncio
+async def test_list_codex_skills_invokes_codex_discovery_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    wire_contract = _wire_contract_extension_fixture(
+        all_jsonrpc_methods=("codex.discovery.skills.list",)
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            wire_contract=_wire_contract_snapshot(
+                status="supported", ext=wire_contract
+            ),
+            compatibility_profile=_compatibility_profile_snapshot(),
+            codex_discovery=DeclaredMethodCollectionCapabilitySnapshot(
+                declared=True,
+                consumed_by_hub=True,
+                status="supported",
+                methods={
+                    "skillsList": DeclaredMethodCapabilitySnapshot(
+                        declared=True,
+                        consumed_by_hub=True,
+                        method="codex.discovery.skills.list",
+                        availability="always",
+                    ),
+                    "appsList": DeclaredMethodCapabilitySnapshot(
+                        declared=False,
+                        consumed_by_hub=False,
+                        method=None,
+                    ),
+                    "pluginsList": DeclaredMethodCapabilitySnapshot(
+                        declared=False,
+                        consumed_by_hub=False,
+                        method=None,
+                    ),
+                    "pluginsRead": DeclaredMethodCapabilitySnapshot(
+                        declared=False,
+                        consumed_by_hub=False,
+                        method=None,
+                    ),
+                    "watch": DeclaredMethodCapabilitySnapshot(
+                        declared=False,
+                        consumed_by_hub=False,
+                        method=None,
+                    ),
+                },
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _fake_list_skills(**kwargs):
+        assert kwargs["method_name"] == "codex.discovery.skills.list"
+        return ExtensionCallResult(
+            success=True, result={"items": []}, meta=kwargs["meta"]
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._codex_discovery, "list_skills", _fake_list_skills)
+
+    result = await service.list_codex_skills(runtime=runtime)
+
+    assert result.success is True
+    assert result.result == {"items": []}
+
+
+@pytest.mark.asyncio
+async def test_read_codex_plugin_validates_marketplace_path_and_plugin_name() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+
+    with pytest.raises(ValueError):
+        await service.read_codex_plugin(
+            runtime=runtime,
+            marketplace_path="   ",
+            plugin_name="planner",
+        )
+    with pytest.raises(ValueError):
+        await service.read_codex_plugin(
+            runtime=runtime,
+            marketplace_path="/workspace/.codex/plugins/marketplace.json",
+            plugin_name="   ",
+        )
+
+
+@pytest.mark.asyncio
+async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract_disallows_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+    wire_contract = _wire_contract_extension_fixture(
+        all_jsonrpc_methods=("codex.discovery.skills.list",)
+    )
+
+    async def _fake_snapshot(*, runtime):
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            wire_contract=_wire_contract_snapshot(
+                status="supported", ext=wire_contract
+            ),
+            codex_discovery=DeclaredMethodCollectionCapabilitySnapshot(
+                declared=True,
+                consumed_by_hub=True,
+                status="partially_consumed",
+                methods={
+                    "skillsList": DeclaredMethodCapabilitySnapshot(
+                        declared=True,
+                        consumed_by_hub=True,
+                        method="codex.discovery.skills.list",
+                        availability="always",
+                    ),
+                    "appsList": DeclaredMethodCapabilitySnapshot(
+                        declared=False,
+                        consumed_by_hub=False,
+                        method=None,
+                    ),
+                    "pluginsList": DeclaredMethodCapabilitySnapshot(
+                        declared=False,
+                        consumed_by_hub=False,
+                        method=None,
+                    ),
+                    "pluginsRead": DeclaredMethodCapabilitySnapshot(
+                        declared=True,
+                        consumed_by_hub=True,
+                        method="codex.discovery.plugins.read",
+                        availability="always",
+                    ),
+                    "watch": DeclaredMethodCapabilitySnapshot(
+                        declared=False,
+                        consumed_by_hub=False,
+                        method=None,
+                    ),
+                },
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _unexpected_read_plugin(**_kwargs):
+        raise AssertionError(
+            "plugin read should be rejected during wire-contract preflight"
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._codex_discovery, "read_plugin", _unexpected_read_plugin
+    )
+
+    result = await service.read_codex_plugin(
+        runtime=runtime,
+        marketplace_path="/workspace/.codex/plugins/marketplace.json",
+        plugin_name="planner",
+    )
+
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.meta == {
+        "extension_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_preflight": "unsupported_method",
+        "method_name": "codex.discovery.plugins.read",
+    }
+
+
+@pytest.mark.asyncio
 async def test_provider_and_interrupt_share_single_card_fetch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2786,3 +3013,518 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
     assert snapshot.ext is not None
     assert snapshot.ext.extension_retention == {}
     assert snapshot.ext.method_retention == {}
+
+
+def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
+    service = A2AExtensionsService()
+    card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
+    wire_contract = _wire_contract_snapshot(
+        status="supported",
+        ext=_wire_contract_extension_fixture(
+            all_jsonrpc_methods=(
+                "shared.sessions.prompt_async",
+                "codex.discovery.skills.list",
+                "codex.discovery.plugins.read",
+                "codex.threads.watch",
+                "codex.exec.start",
+                "codex.exec.terminate",
+            )
+        ),
+    )
+
+    compatibility_profile = _compatibility_profile_snapshot()
+    discovery = service._build_codex_discovery_snapshot(
+        card,
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    threads = service._build_codex_threads_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    turns = service._build_codex_turns_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    review = service._build_codex_review_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    thread_watch = service._build_codex_thread_watch_snapshot(
+        wire_contract,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    exec_capability = service._build_codex_exec_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    assert discovery.declared is True
+    assert discovery.consumed_by_hub is True
+    assert discovery.status == "supported"
+    assert discovery.declaration_source == "wire_contract"
+    assert discovery.declaration_confidence == "authoritative"
+    assert discovery.negotiation_state == "supported"
+    assert discovery.methods["skillsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=True,
+        method="codex.discovery.skills.list",
+        availability="always",
+    )
+    assert discovery.methods["appsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+    assert discovery.methods["pluginsRead"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=True,
+        method="codex.discovery.plugins.read",
+        availability="always",
+    )
+
+    assert threads.declared is True
+    assert threads.consumed_by_hub is False
+    assert threads.status == "unsupported_by_design"
+    assert threads.methods["fork"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+    assert threads.methods["watch"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.threads.watch",
+        availability="always",
+    )
+
+    assert turns.declared is False
+    assert turns.consumed_by_hub is False
+    assert turns.status == "unsupported"
+    assert turns.methods["steer"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+
+    assert review.declared is False
+    assert review.consumed_by_hub is False
+    assert review.status == "unsupported"
+    assert review.methods["start"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+    assert review.methods["watch"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+
+    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        status="unsupported_by_design",
+        method="codex.threads.watch",
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    assert exec_capability.declared is True
+    assert exec_capability.consumed_by_hub is False
+    assert exec_capability.status == "unsupported_by_design"
+    assert exec_capability.methods["start"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.exec.start",
+        availability="always",
+    )
+    assert exec_capability.methods["write"] == DeclaredMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        method=None,
+    )
+    assert exec_capability.methods["terminate"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.exec.terminate",
+        availability="always",
+    )
+
+
+def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract() -> (
+    None
+):
+    service = A2AExtensionsService()
+    card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
+    wire_contract = _wire_contract_snapshot(status="unsupported")
+
+    compatibility_profile = _compatibility_profile_snapshot()
+    discovery = service._build_codex_discovery_snapshot(
+        card, wire_contract, compatibility_profile, jsonrpc_url=None
+    )
+    threads = service._build_codex_threads_snapshot(
+        wire_contract, compatibility_profile, jsonrpc_url=None
+    )
+    turns = service._build_codex_turns_snapshot(
+        wire_contract, compatibility_profile, jsonrpc_url=None
+    )
+    review = service._build_codex_review_snapshot(
+        wire_contract, compatibility_profile, jsonrpc_url=None
+    )
+    thread_watch = service._build_codex_thread_watch_snapshot(
+        wire_contract, jsonrpc_url=None
+    )
+    exec_capability = service._build_codex_exec_snapshot(
+        wire_contract, compatibility_profile, jsonrpc_url=None
+    )
+
+    assert discovery.declared is False
+    assert discovery.status == "unsupported"
+    assert discovery.declaration_source == "none"
+    assert discovery.declaration_confidence == "none"
+    assert discovery.negotiation_state == "unsupported"
+    assert all(method.declared is False for method in discovery.methods.values())
+
+    assert threads.declared is False
+    assert threads.status == "unsupported"
+    assert all(method.declared is False for method in threads.methods.values())
+
+    assert turns.declared is False
+    assert turns.status == "unsupported"
+    assert all(method.declared is False for method in turns.methods.values())
+
+    assert review.declared is False
+    assert review.status == "unsupported"
+    assert all(method.declared is False for method in review.methods.values())
+
+    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
+        declared=False,
+        consumed_by_hub=False,
+        status="unsupported",
+        method=None,
+        jsonrpc_url=None,
+    )
+
+    assert exec_capability.declared is False
+    assert exec_capability.status == "unsupported"
+    assert all(method.declared is False for method in exec_capability.methods.values())
+
+
+def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
+    service = A2AExtensionsService()
+    compatibility_profile = _compatibility_profile_snapshot(
+        status="supported",
+        ext=ResolvedCompatibilityProfileExtension(
+            uri=COMPATIBILITY_PROFILE_URI,
+            required=False,
+            extension_retention={},
+            method_retention={
+                "codex.turns.steer": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-turn-control/v1",
+                    toggle="A2A_ENABLE_TURN_CONTROL",
+                ),
+                "codex.review.start": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-review/v1",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.review.watch": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-review/v1",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.exec.start": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.write": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.resize": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.terminate": CompatibilityRetentionEntry(
+                    surface="extension",
+                    availability="disabled",
+                    retention="deployment-conditional",
+                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+            },
+            service_behaviors={"classification": "stable-service-semantics"},
+            consumer_guidance=(),
+        ),
+    )
+    wire_contract = _wire_contract_snapshot(
+        status="supported",
+        ext=_wire_contract_extension_fixture(
+            all_jsonrpc_methods=("codex.threads.watch",),
+            conditional_methods={
+                "codex.turns.steer": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_TURN_CONTROL",
+                ),
+                "codex.review.start": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.review.watch": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_REVIEW_CONTROL",
+                ),
+                "codex.exec.start": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.write": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.resize": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+                "codex.exec.terminate": ResolvedConditionalMethodAvailability(
+                    reason="disabled_by_configuration",
+                    toggle="A2A_ENABLE_EXEC_CONTROL",
+                ),
+            },
+        ),
+    )
+
+    turns = service._build_codex_turns_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    review = service._build_codex_review_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+    exec_capability = service._build_codex_exec_snapshot(
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    assert turns.declared is True
+    assert turns.status == "unsupported_by_design"
+    assert turns.methods["steer"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.turns.steer",
+        availability="disabled",
+        config_key="A2A_ENABLE_TURN_CONTROL",
+        reason="disabled_by_configuration",
+        retention="deployment-conditional",
+    )
+
+    assert review.declared is True
+    assert review.methods["watch"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.review.watch",
+        availability="disabled",
+        config_key="A2A_ENABLE_REVIEW_CONTROL",
+        reason="disabled_by_configuration",
+        retention="deployment-conditional",
+    )
+
+    assert exec_capability.declared is True
+    assert exec_capability.methods["start"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.exec.start",
+        availability="disabled",
+        config_key="A2A_ENABLE_EXEC_CONTROL",
+        reason="disabled_by_configuration",
+        retention="deployment-conditional",
+    )
+
+
+def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
+    service = A2AExtensionsService()
+    card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=OPENCODE_WIRE_CONTRACT_URI,
+                    params={
+                        "all_jsonrpc_methods": [
+                            "codex.discovery.skills.list",
+                            "codex.discovery.plugins.read",
+                        ]
+                    },
+                )
+            ]
+        )
+    )
+    wire_contract = _wire_contract_snapshot(
+        status="invalid",
+        error="Extension contract missing/invalid 'params.protocol_version'",
+    )
+
+    discovery = service._build_codex_discovery_snapshot(
+        card,
+        wire_contract,
+        _compatibility_profile_snapshot(),
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    assert discovery.declared is True
+    assert discovery.consumed_by_hub is False
+    assert discovery.status == "unsupported"
+    assert discovery.jsonrpc_url is None
+    assert discovery.declaration_source == "wire_contract_fallback"
+    assert discovery.declaration_confidence == "fallback"
+    assert discovery.negotiation_state == "invalid"
+    assert discovery.methods["skillsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.skills.list",
+        availability="always",
+    )
+    assert discovery.methods["pluginsRead"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.plugins.read",
+        availability="always",
+    )
+
+
+def test_build_request_execution_options_snapshot_collects_declared_contracts() -> None:
+    service = A2AExtensionsService()
+    card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=SHARED_SESSION_BINDING_URI,
+                    params={
+                        "request_execution_options": {
+                            "metadata_field": "metadata.codex.execution",
+                            "fields": ["model", "effort"],
+                            "persists_for_thread": True,
+                            "notes": ["Binding notes"],
+                        }
+                    },
+                ),
+                SimpleNamespace(
+                    uri=SHARED_SESSION_QUERY_URI,
+                    params={
+                        "request_execution_options": {
+                            "metadata_field": "metadata.codex.execution",
+                            "fields": ["summary", "personality"],
+                            "persists_for_thread": True,
+                            "notes": ["Query notes"],
+                        }
+                    },
+                ),
+            ]
+        )
+    )
+
+    snapshot = service._build_request_execution_options_snapshot(card)
+
+    assert snapshot.status == "declared_not_consumed"
+    assert snapshot.declared is True
+    assert snapshot.consumed_by_hub is False
+    assert snapshot.metadata_field == "metadata.codex.execution"
+    assert snapshot.fields == ("model", "effort", "summary", "personality")
+    assert snapshot.persists_for_thread is True
+    assert snapshot.source_extensions == (
+        SHARED_SESSION_BINDING_URI,
+        SHARED_SESSION_QUERY_URI,
+    )
+    assert snapshot.notes == ("Binding notes", "Query notes")
+
+
+def test_build_request_execution_options_snapshot_reports_invalid_contract() -> None:
+    service = A2AExtensionsService()
+    card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=SHARED_SESSION_QUERY_URI,
+                    params={
+                        "request_execution_options": {
+                            "metadata_field": "metadata.shared.invoke",
+                            "fields": ["model"],
+                        }
+                    },
+                )
+            ]
+        )
+    )
+
+    snapshot = service._build_request_execution_options_snapshot(card)
+
+    assert snapshot.status == "invalid"
+    assert snapshot.declared is True
+    assert snapshot.consumed_by_hub is False
+    assert snapshot.error == (
+        "Extension contract missing/invalid "
+        "'params.request_execution_options.metadata_field'"
+    )
+
+
+def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
+    service = A2AExtensionsService()
+    card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri="urn:example:codex-discovery:v1",
+                    params={
+                        "methods": {
+                            "appsList": "codex.discovery.apps.list",
+                        }
+                    },
+                )
+            ]
+        )
+    )
+    wire_contract = _wire_contract_snapshot(status="unsupported")
+
+    discovery = service._build_codex_discovery_snapshot(
+        card,
+        wire_contract,
+        _compatibility_profile_snapshot(),
+        jsonrpc_url="https://example.com/jsonrpc",
+    )
+
+    assert discovery.declared is True
+    assert discovery.consumed_by_hub is False
+    assert discovery.status == "unsupported"
+    assert discovery.declaration_source == "extension_method_hint"
+    assert discovery.declaration_confidence == "fallback"
+    assert discovery.negotiation_state == "missing"
+    assert discovery.methods["appsList"] == DeclaredMethodCapabilitySnapshot(
+        declared=True,
+        consumed_by_hub=False,
+        method="codex.discovery.apps.list",
+        availability="always",
+    )

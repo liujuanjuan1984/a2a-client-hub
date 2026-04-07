@@ -354,6 +354,27 @@ def _resolve_session_list_filters(
     )
 
 
+def _resolve_control_method_flag(
+    raw_flags: Dict[str, Any],
+    *,
+    method_key: str,
+    method_name: str | None,
+) -> tuple[str | None, Any]:
+    if method_name is not None and method_name in raw_flags:
+        return method_name, raw_flags.get(method_name)
+    if method_key in raw_flags:
+        return method_key, raw_flags.get(method_key)
+
+    suffix = f".{method_key}"
+    suffix_matches = [
+        key for key in raw_flags.keys() if isinstance(key, str) and key.endswith(suffix)
+    ]
+    if len(suffix_matches) == 1:
+        matched_key = suffix_matches[0]
+        return matched_key, raw_flags.get(matched_key)
+    return None, None
+
+
 def _find_session_query_extension(
     card: AgentCard,
     *,
@@ -603,11 +624,15 @@ def resolve_session_query_control_methods(
             "always" if declared else "unsupported"
         )
 
-        raw_flag = raw_flags.get(method_key)
+        raw_flag_key, raw_flag = _resolve_control_method_flag(
+            raw_flags,
+            method_key=method_key,
+            method_name=method_name,
+        )
         if raw_flag is not None:
             if not isinstance(raw_flag, dict):
                 raise A2AExtensionContractError(
-                    f"'control_method_flags.{method_key}' must be an object if provided"
+                    f"'control_method_flags.{raw_flag_key}' must be an object if provided"
                 )
 
             unknown_keys = sorted(
@@ -617,14 +642,14 @@ def resolve_session_query_control_methods(
             )
             if unknown_keys:
                 raise A2AExtensionContractError(
-                    f"'control_method_flags.{method_key}' contains unsupported keys"
+                    f"'control_method_flags.{raw_flag_key}' contains unsupported keys"
                 )
 
             raw_enabled_by_default = raw_flag.get("enabled_by_default")
             if raw_enabled_by_default is not None:
                 if not isinstance(raw_enabled_by_default, bool):
                     raise A2AExtensionContractError(
-                        f"'control_method_flags.{method_key}.enabled_by_default' must be a boolean if provided"
+                        f"'control_method_flags.{raw_flag_key}.enabled_by_default' must be a boolean if provided"
                     )
                 enabled_by_default = raw_enabled_by_default
 
@@ -632,7 +657,7 @@ def resolve_session_query_control_methods(
             if raw_config_key is not None:
                 config_key = require_str(
                     raw_config_key,
-                    field=f"control_method_flags.{method_key}.config_key",
+                    field=f"control_method_flags.{raw_flag_key}.config_key",
                 )
 
             availability = "conditional"
