@@ -156,7 +156,7 @@ def setup_logging() -> None:
     root_logger.handlers.clear()
 
     formatter: logging.Formatter
-    if settings.resolved_log_format == "json":
+    if settings.log_format == "json":
         formatter = JsonFormatter()
     else:
         formatter = TextFormatter()

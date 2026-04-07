@@ -48,25 +48,16 @@ def test_json_formatter_preserves_structured_fields() -> None:
     assert '"taskName": "Task-2"' in rendered
 
 
-def test_resolved_log_format_defaults_to_text_outside_production() -> None:
-    original_env = settings.app_env
-    original_log_format = settings.log_format
-    try:
-        settings.app_env = "development"
-        settings.log_format = "auto"
-        assert settings.resolved_log_format == "text"
-    finally:
-        settings.app_env = original_env
-        settings.log_format = original_log_format
+def test_log_format_setting_defaults_to_text() -> None:
+    assert type(settings).model_fields["log_format"].default == "text"
 
 
-def test_resolved_log_format_defaults_to_json_in_production() -> None:
-    original_env = settings.app_env
+def test_log_format_accepts_explicit_json_and_text_values() -> None:
     original_log_format = settings.log_format
     try:
-        settings.app_env = "production"
-        settings.log_format = "auto"
-        assert settings.resolved_log_format == "json"
+        settings.log_format = "json"
+        assert settings.log_format == "json"
+        settings.log_format = "text"
+        assert settings.log_format == "text"
     finally:
-        settings.app_env = original_env
         settings.log_format = original_log_format

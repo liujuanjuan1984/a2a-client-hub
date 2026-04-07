@@ -18,9 +18,8 @@ Production note:
 - Set `APP_ENV=production` to enable strict security baseline checks at startup.
 - See [`docs/security-baseline.md`](../docs/security-baseline.md) for required cookie/CORS/origin/TLS settings.
 - Logging format is controlled by `LOG_FORMAT`:
-  - `auto` (default): human-readable text in development/staging, JSON in production
-  - `text`: force traditional console-friendly logs
-  - `json`: force structured JSON logs
+  - `text` (default): traditional console-friendly logs
+  - `json`: structured JSON logs
 
 ## Initialize Schema and Run Migrations
 

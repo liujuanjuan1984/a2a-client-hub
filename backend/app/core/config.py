@@ -325,7 +325,7 @@ class Settings(BaseSettings):
         if not isinstance(value, str):
             return value
         normalized = value.strip().lower()
-        allowed_values = {"auto", "text", "json"}
+        allowed_values = {"text", "json"}
         if normalized not in allowed_values:
             allowed = ", ".join(sorted(allowed_values))
             raise ValueError(f"LOG_FORMAT must be one of: {allowed}")
@@ -527,16 +527,10 @@ class Settings(BaseSettings):
     # Logging settings
     log_level: str = "INFO"
     log_format: str = Field(
-        default="auto",
+        default="text",
         alias="LOG_FORMAT",
-        description="Log output format: auto, text, or json.",
+        description="Log output format: text or json.",
     )
-
-    @property
-    def resolved_log_format(self) -> str:
-        if self.log_format == "auto":
-            return "json" if self.is_production else "text"
-        return self.log_format
 
     user_llm_token_encryption_key: str = Field(
         default="",
