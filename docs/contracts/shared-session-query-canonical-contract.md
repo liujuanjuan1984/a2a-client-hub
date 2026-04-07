@@ -9,7 +9,8 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
 - Hub-private normalized contract family: `a2a_client_hub`
 - Supported upstream declaration families currently include:
   - `opencode`: `urn:opencode-a2a:session-query/v1`
-  - `opencode` HTTPS alias: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
+  - `opencode` HTTPS alias: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-management-v1`
+  - `opencode` deprecated HTTPS alias still accepted by Hub for older peers: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
   - `legacy`: `urn:shared-a2a:session-query:v1`
   - `codex`: `urn:codex-a2a:codex-session-query/v1`
 - This document describes the Hub-private normalized contract only
