@@ -100,6 +100,15 @@ describe("chat store idempotency semantics", () => {
     expect(initialAgentMessage).toBeDefined();
 
     mockedExecuteChatRuntime.mockClear();
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-2": {
+          ...state.sessions["conv-2"],
+          streamState: "idle",
+        },
+      },
+    }));
 
     await useChatStore.getState().retryMessage("conv-2", "agent-1", "personal");
 
@@ -137,7 +146,7 @@ describe("chat store idempotency semantics", () => {
     expect(runtimeCall?.[4]).toBe(initialAgentMessage?.id);
   });
 
-  it("sets explicit preempt session control when sending during active stream", async () => {
+  it("rejects direct sends while a response is still streaming", async () => {
     useChatStore.getState().ensureSession("conv-3", "agent-1");
     useChatStore.setState((state) => ({
       sessions: {
@@ -149,17 +158,14 @@ describe("chat store idempotency semantics", () => {
       },
     }));
 
-    await useChatStore
-      .getState()
-      .sendMessage("conv-3", "agent-1", "interrupt this stream", "personal");
-
-    expect(mockedExecuteChatRuntime).toHaveBeenCalledTimes(1);
-    const runtimeCall = mockedExecuteChatRuntime.mock.calls[0];
-    expect(runtimeCall?.[3]).toMatchObject({
-      sessionControl: {
-        intent: "preempt",
-      },
-    });
+    await expect(
+      useChatStore
+        .getState()
+        .sendMessage("conv-3", "agent-1", "interrupt this stream", "personal"),
+    ).rejects.toThrow(
+      "A response is still streaming. Resolve session control before sending a new turn.",
+    );
+    expect(mockedExecuteChatRuntime).not.toHaveBeenCalled();
   });
 
   it("sends neutral session binding intent and leaves metadata shape adaptation to backend", async () => {
@@ -265,6 +271,28 @@ describe("chat store idempotency semantics", () => {
     useChatStore.getState().cancelMessage("conv-5");
 
     expect(chatConnectionService.cancelSession).not.toHaveBeenCalled();
+  });
+
+  it("cancelMessage can skip the remote cancel request when preempt is already handled elsewhere", () => {
+    useChatStore.getState().ensureSession("conv-remote", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-remote": {
+          ...state.sessions["conv-remote"],
+          streamState: "streaming",
+        },
+      },
+    }));
+
+    useChatStore
+      .getState()
+      .cancelMessage("conv-remote", { requestRemoteCancel: false });
+
+    expect(chatConnectionService.cancelSession).not.toHaveBeenCalled();
+    expect(useChatStore.getState().sessions["conv-remote"]?.streamState).toBe(
+      "idle",
+    );
   });
 
   it("cancelMessage requests server cancel when idle session has active connection", () => {

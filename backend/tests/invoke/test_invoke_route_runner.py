@@ -1071,6 +1071,10 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
     )
     called: list[str] = []
     recorded_events: list[dict[str, object]] = []
+
+    async def fake_record_preempt_event_by_local_session_id(*args, **kwargs):
+        recorded_events.append(kwargs["event"])
+
     target_message_id = str(uuid4())
 
     async def fake_preempt_inflight_invoke_report(
@@ -1272,6 +1276,156 @@ async def test_run_http_invoke_append_requires_bound_session(
     assert response.session_control is not None
     assert response.session_control.intent == "append"
     assert response.session_control.status == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_preempt_only_returns_completed_session_control(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+        return kwargs["payload"]
+
+    async def fake_find_latest_agent_message_id(**kwargs):  # noqa: ARG001
+        return "22222222-2222-4222-8222-222222222222"
+
+    async def fake_preempt_inflight_invoke_report(**kwargs):  # noqa: ARG001
+        return SimpleNamespace(
+            attempted=True,
+            status="completed",
+            target_task_ids=["task-preempt-1"],
+            failed_error_codes=[],
+        )
+
+    recorded_events: list[dict[str, object]] = []
+
+    async def fake_record_preempt_event_by_local_session_id(*args, **kwargs):
+        recorded_events.append(kwargs["event"])
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload",
+        fake_finalize_outbound_invoke_payload,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_find_latest_agent_message_id",
+        fake_find_latest_agent_message_id,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "preempt_inflight_invoke_report",
+        fake_preempt_inflight_invoke_report,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_preempt_event_by_local_session_id",
+        fake_record_preempt_event_by_local_session_id,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "",
+            "conversationId": str(uuid4()),
+            "sessionControl": {"intent": "preempt"},
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="personal",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is True
+    assert response.session_control is not None
+    assert response.session_control.intent == "preempt"
+    assert response.session_control.status == "completed"
+    assert recorded_events == [
+        {
+            "reason": "invoke_interrupt",
+            "source": "user",
+            "target_message_id": "22222222-2222-4222-8222-222222222222",
+            "status": "completed",
+            "target_task_ids": ["task-preempt-1"],
+            "failed_error_codes": [],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_preempt_only_returns_no_inflight_when_idle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+        return kwargs["payload"]
+
+    async def fake_find_latest_agent_message_id(**kwargs):  # noqa: ARG001
+        return None
+
+    async def fake_preempt_inflight_invoke_report(**kwargs):  # noqa: ARG001
+        return SimpleNamespace(
+            attempted=False,
+            status="none",
+            target_task_ids=[],
+            failed_error_codes=[],
+        )
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload",
+        fake_finalize_outbound_invoke_payload,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_find_latest_agent_message_id",
+        fake_find_latest_agent_message_id,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "preempt_inflight_invoke_report",
+        fake_preempt_inflight_invoke_report,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "",
+            "conversationId": str(uuid4()),
+            "sessionControl": {"intent": "preempt"},
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="personal",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is True
+    assert response.session_control is not None
+    assert response.session_control.intent == "preempt"
+    assert response.session_control.status == "no_inflight"
 
 
 @pytest.mark.asyncio

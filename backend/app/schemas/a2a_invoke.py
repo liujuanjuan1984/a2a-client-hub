@@ -35,7 +35,13 @@ class A2AAgentInvokeSessionControlResult(BaseModel):
         ...,
         description="Resolved session-control intent handled by the hub.",
     )
-    status: Literal["accepted", "unavailable", "failed"] = Field(
+    status: Literal[
+        "accepted",
+        "completed",
+        "no_inflight",
+        "unavailable",
+        "failed",
+    ] = Field(
         ...,
         description="Outcome of the resolved session-control operation.",
     )
@@ -49,7 +55,10 @@ class A2AAgentInvokeSessionControlResult(BaseModel):
 
 
 class A2AAgentInvokeRequest(BaseModel):
-    query: str = Field(..., min_length=1, description="User query to forward")
+    query: str = Field(
+        default="",
+        description="User query to forward. May be empty for preempt-only session control.",
+    )
     conversation_id: Optional[str] = Field(
         default=None,
         alias="conversationId",
@@ -93,6 +102,17 @@ class A2AAgentInvokeRequest(BaseModel):
         if isinstance(value, dict) and ("contextId" in value or "context_id" in value):
             raise ValueError("contextId is server-managed and must not be provided")
         return value
+
+    @model_validator(mode="after")
+    def validate_query_for_session_control(self) -> "A2AAgentInvokeRequest":
+        if (
+            self.session_control is not None
+            and self.session_control.intent == "preempt"
+        ):
+            return self
+        if not self.query.strip():
+            raise ValueError("query must not be empty")
+        return self
 
 
 class A2AAgentInvokeResponse(BaseModel):

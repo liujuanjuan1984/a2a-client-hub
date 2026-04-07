@@ -38,8 +38,6 @@ describe("ChatComposer clear button", () => {
     inputHeight: 40,
     maxInputHeight: 200,
     onSubmit: jest.fn(),
-    onAppend: jest.fn(),
-    showAppendAction: false,
     onKeyPress: jest.fn(),
   };
 
@@ -181,14 +179,14 @@ describe("ChatComposer clear button", () => {
         streamSendHint={{
           tone: "append",
           message:
-            "Send will interrupt the current response. Use Append to continue in the running upstream session.",
+            "This response is still running. Sending will add to it. Interrupt first if you want to start a new turn.",
         }}
       />,
     );
 
     expect(
       getByText(
-        "Send will interrupt the current response. Use Append to continue in the running upstream session.",
+        "This response is still running. Sending will add to it. Interrupt first if you want to start a new turn.",
       ),
     ).toBeTruthy();
   });
@@ -200,30 +198,15 @@ describe("ChatComposer clear button", () => {
         streamSendHint={{
           tone: "interrupt",
           message:
-            "Append is unavailable for this stream. Sending now will interrupt the current response and start a new turn.",
+            "This stream cannot accept appended input. Interrupt the current response before sending a new message.",
         }}
       />,
     );
 
     expect(
       getByText(
-        "Append is unavailable for this stream. Sending now will interrupt the current response and start a new turn.",
+        "This stream cannot accept appended input. Interrupt the current response before sending a new message.",
       ),
     ).toBeTruthy();
-  });
-
-  it("renders an append button when the append action is available", () => {
-    const onAppend = jest.fn();
-    const { getByTestId } = render(
-      <ChatComposer
-        {...mockProps}
-        hasSendableInput
-        showAppendAction
-        onAppend={onAppend}
-      />,
-    );
-
-    fireEvent.press(getByTestId("chat-append-button"));
-    expect(onAppend).toHaveBeenCalled();
   });
 });

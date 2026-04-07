@@ -31,12 +31,6 @@ type UseChatComposerControllerParams = {
     content: string,
     agentSource: AgentSource,
   ) => Promise<void>;
-  appendMessage?: (
-    conversationId: string,
-    agentId: string,
-    content: string,
-    agentSource: AgentSource,
-  ) => Promise<void>;
   setSharedModelSelection: (
     conversationId: string,
     agentId: string,
@@ -55,7 +49,6 @@ export function useChatComposerController({
   pendingInterruptActive,
   ensureSession,
   sendMessage,
-  appendMessage,
   setSharedModelSelection,
   onAfterSend,
 }: UseChatComposerControllerParams) {
@@ -190,13 +183,6 @@ export function useChatComposerController({
   const handleSend = useCallback(() => {
     submitDraft(sendMessage, "Send failed");
   }, [sendMessage, submitDraft]);
-
-  const handleAppend = useCallback(() => {
-    if (!appendMessage) {
-      return;
-    }
-    submitDraft(appendMessage, "Append failed");
-  }, [appendMessage, submitDraft]);
 
   const openShortcutManager = useCallback(() => {
     setShortcutManagerInitialPrompt(draftInputRef.current);
@@ -349,6 +335,5 @@ export function useChatComposerController({
     handleContentSizeChange,
     handleKeyPress,
     handleSend,
-    handleAppend,
   };
 }

@@ -183,8 +183,6 @@ jest.mock("@/components/chat/ChatComposer", () => ({
     pendingInterrupt?: unknown;
     onInputChange?: (value: string) => void;
     onSubmit?: () => void;
-    onAppend?: () => void;
-    showAppendAction?: boolean;
   }) => {
     const { Pressable, TextInput, View } = require("react-native");
     const disabled = Boolean(props.pendingInterrupt);
@@ -195,13 +193,6 @@ jest.mock("@/components/chat/ChatComposer", () => ({
           value={props.input ?? ""}
           onChangeText={props.onInputChange}
         />
-        {props.showAppendAction ? (
-          <Pressable
-            testID="chat-append-button"
-            disabled={disabled}
-            onPress={props.onAppend}
-          />
-        ) : null}
         <Pressable
           testID="chat-send-button"
           disabled={disabled}
@@ -879,7 +870,7 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("appends input to the active upstream session through the invoke contract", async () => {
+  it("uses append as the default send action during streaming", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       metadata: {
@@ -897,13 +888,13 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const input = root.findByProps({ placeholder: "Type your message" });
-    const appendButton = root.findByProps({ testID: "chat-append-button" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
 
     act(() => {
       input.props.onChangeText("append this");
     });
     await act(async () => {
-      await appendButton.props.onPress();
+      await sendButton.props.onPress();
     });
 
     expect(mockInvokeAgent).toHaveBeenCalledWith("agent-1", {
@@ -939,8 +930,8 @@ describe("ChatScreen interrupt handling", () => {
       }),
     );
     expect(mockToastInfo).toHaveBeenCalledWith(
-      "Message appended",
-      "Sent to the running upstream session.",
+      "Message added to current response",
+      "Your message was sent to the running upstream session.",
     );
 
     act(() => {
@@ -948,45 +939,7 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("uses preempt send as the default action during streaming", async () => {
-    mockChatState.sessions[conversationId] = {
-      ...baseSession(),
-      streamState: "streaming",
-      externalSessionRef: {
-        provider: "OpenCode",
-        externalSessionId: "ses-upstream-2",
-      },
-    };
-
-    const tree = renderChatScreen(conversationId);
-    const root = tree.root;
-    const input = root.findByProps({ placeholder: "Type your message" });
-    const sendButton = root.findByProps({ testID: "chat-send-button" });
-
-    act(() => {
-      input.props.onChangeText("interrupt this");
-    });
-    await act(async () => {
-      await sendButton.props.onPress();
-    });
-
-    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
-      conversationId,
-      "agent-1",
-      "interrupt this",
-      "personal",
-      undefined,
-    );
-    expect(mockToastInfo).toHaveBeenCalledWith(
-      "Previous response interrupted",
-      "Interrupted the current response and started a new turn.",
-    );
-    act(() => {
-      tree.unmount();
-    });
-  });
-
-  it("hides the append action when the stream has no upstream session binding", () => {
+  it("requires an explicit interrupt before sending when append is unavailable", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       streamState: "streaming",
@@ -996,18 +949,27 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
 
     act(() => {
-      input.props.onChangeText("send anyway");
+      input.props.onChangeText("new turn please");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
     });
 
-    expect(() => root.findByProps({ testID: "chat-append-button" })).toThrow();
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Interrupt required",
+      "This stream cannot accept appended input. Interrupt it before sending a new message.",
+    );
+    expect(mockChatState.sendMessage).not.toHaveBeenCalled();
+    expect(mockInvokeAgent).not.toHaveBeenCalled();
     act(() => {
       tree.unmount();
     });
   });
 
-  it("hides the append action when append capability is unsupported", () => {
+  it("requires an explicit interrupt before sending when append capability is unsupported", async () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
@@ -1021,27 +983,41 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
 
     act(() => {
       input.props.onChangeText("capability fallback");
     });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
 
-    expect(() => root.findByProps({ testID: "chat-append-button" })).toThrow();
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Interrupt required",
+      "This stream cannot accept appended input. Interrupt it before sending a new message.",
+    );
+    expect(mockChatState.sendMessage).not.toHaveBeenCalled();
+    expect(mockInvokeAgent).not.toHaveBeenCalled();
     act(() => {
       tree.unmount();
     });
   });
 
-  it("does not show interrupt success feedback when preempt send fails", async () => {
+  it("shows append failure without silently degrading to interrupt", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
       streamState: "streaming",
       externalSessionRef: {
         provider: "OpenCode",
         externalSessionId: "ses-upstream-4",
       },
     };
-    mockChatState.sendMessage.mockRejectedValueOnce(new Error("invoke failed"));
+    mockInvokeAgent.mockRejectedValueOnce(new Error("append unavailable"));
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
@@ -1049,51 +1025,17 @@ describe("ChatScreen interrupt handling", () => {
     const sendButton = root.findByProps({ testID: "chat-send-button" });
 
     act(() => {
-      input.props.onChangeText("failed fallback");
+      input.props.onChangeText("append attempt");
     });
     await act(async () => {
       await sendButton.props.onPress();
     });
 
-    expect(mockToastInfo).not.toHaveBeenCalledWith(
-      "Previous response interrupted",
-      "Interrupted the current response and started a new turn.",
-    );
-    expect(mockToastError).toHaveBeenCalledWith("Send failed", "invoke failed");
-    act(() => {
-      tree.unmount();
-    });
-  });
-
-  it("shows append failure without silently degrading to preempt", async () => {
-    mockInvokeAgent.mockRejectedValueOnce(new Error("append unavailable"));
-    mockChatState.sessions[conversationId] = {
-      ...baseSession(),
-      streamState: "streaming",
-      externalSessionRef: {
-        provider: "OpenCode",
-        externalSessionId: "ses-upstream-5",
-      },
-    };
-
-    const tree = renderChatScreen(conversationId);
-    const root = tree.root;
-    const input = root.findByProps({ placeholder: "Type your message" });
-    const appendButton = root.findByProps({ testID: "chat-append-button" });
-
-    act(() => {
-      input.props.onChangeText("append attempt");
-    });
-    await act(async () => {
-      await appendButton.props.onPress();
-    });
-
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();
     expect(mockToastError).toHaveBeenCalledWith(
-      "Append failed",
+      "Send failed",
       "append unavailable",
     );
-
     act(() => {
       tree.unmount();
     });
@@ -1216,10 +1158,14 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("cancels the current stream when the interrupt button is pressed", () => {
+  it("preempts the current stream through the invoke contract when the interrupt button is pressed", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       streamState: "streaming",
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-9",
+      },
     };
 
     const tree = renderChatScreen(conversationId);
@@ -1228,11 +1174,36 @@ describe("ChatScreen interrupt handling", () => {
       testID: "chat-interrupt-button",
     });
 
-    act(() => {
-      interruptButton.props.onPress();
+    mockInvokeAgent.mockResolvedValueOnce({
+      success: true,
+      sessionControl: {
+        intent: "preempt",
+        status: "completed",
+      },
     });
 
-    expect(mockChatState.cancelMessage).toHaveBeenCalledWith(conversationId);
+    await act(async () => {
+      await interruptButton.props.onPress();
+    });
+
+    expect(mockInvokeAgent).toHaveBeenCalledWith("agent-1", {
+      query: "",
+      conversationId,
+      sessionControl: {
+        intent: "preempt",
+      },
+      sessionBinding: {
+        provider: "opencode",
+        externalSessionId: "ses-upstream-9",
+      },
+    });
+    expect(mockChatState.cancelMessage).toHaveBeenCalledWith(conversationId, {
+      requestRemoteCancel: false,
+    });
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Response interrupted",
+      "The current response was interrupted. You can send a new message now.",
+    );
     act(() => {
       tree.unmount();
     });

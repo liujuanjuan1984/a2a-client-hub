@@ -121,7 +121,12 @@ type ChatState = {
     conversationId: string,
     runtimeStatusContract?: RuntimeStatusContract | null,
   ) => Promise<void>;
-  cancelMessage: (conversationId: string) => void;
+  cancelMessage: (
+    conversationId: string,
+    options?: {
+      requestRemoteCancel?: boolean;
+    },
+  ) => void;
   resetSession: (conversationId: string, agentId: string) => void;
   bindExternalSession: (
     conversationId: string,
@@ -465,7 +470,7 @@ export const useChatStore = create<ChatState>()(
           { runtimeStatusContract },
         );
       },
-      cancelMessage: (conversationId) => {
+      cancelMessage: (conversationId, options) => {
         const normalizedConversationId = conversationId.trim();
         const current =
           get().sessions[normalizedConversationId] ??
@@ -476,7 +481,10 @@ export const useChatStore = create<ChatState>()(
         const shouldCancelByConnection =
           chatConnectionService.hasActiveConnection(normalizedConversationId);
 
-        if (shouldCancelByState || shouldCancelByConnection) {
+        if (
+          options?.requestRemoteCancel !== false &&
+          (shouldCancelByState || shouldCancelByConnection)
+        ) {
           requestSessionCancel(normalizedConversationId);
         }
         const interruptedAgentMessageId = current?.lastAgentMessageId;
@@ -538,9 +546,11 @@ export const useChatStore = create<ChatState>()(
         if (!trimmed) return;
 
         const previousSession = get().sessions[conversationId];
-        const shouldInterruptPrevious =
-          previousSession?.streamState === "streaming";
-        get().cancelMessage(conversationId);
+        if (previousSession?.streamState === "streaming") {
+          throw new Error(
+            "A response is still streaming. Resolve session control before sending a new turn.",
+          );
+        }
 
         const userMessage = {
           id: generateUuid(),
@@ -586,7 +596,6 @@ export const useChatStore = create<ChatState>()(
         const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
           agentMessageId: agentMessage.id,
-          sessionControlIntent: shouldInterruptPrevious ? "preempt" : undefined,
         });
 
         await executeChatRuntime(
@@ -620,8 +629,11 @@ export const useChatStore = create<ChatState>()(
           return;
         }
 
-        const shouldInterruptPrevious = session?.streamState === "streaming";
-        get().cancelMessage(conversationId);
+        if (session?.streamState === "streaming") {
+          throw new Error(
+            "A response is still streaming. Resolve session control before retrying.",
+          );
+        }
 
         const existingAgentMessage = messages.find(
           (message) =>
@@ -668,9 +680,6 @@ export const useChatStore = create<ChatState>()(
           {
             userMessageId,
             agentMessageId,
-            sessionControlIntent: shouldInterruptPrevious
-              ? "preempt"
-              : undefined,
           },
         );
         await executeChatRuntime(

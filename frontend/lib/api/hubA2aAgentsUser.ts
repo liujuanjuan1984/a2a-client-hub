@@ -56,7 +56,7 @@ type HubA2AAgentInvokeResponse = {
   agent_url?: string | null;
   sessionControl?: {
     intent: "append" | "preempt";
-    status: "accepted" | "unavailable" | "failed";
+    status: "accepted" | "completed" | "no_inflight" | "unavailable" | "failed";
     sessionId?: string | null;
   } | null;
 };

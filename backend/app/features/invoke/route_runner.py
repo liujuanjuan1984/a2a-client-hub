@@ -304,7 +304,7 @@ async def _preempt_previous_invoke_if_requested(
 def _build_session_control_response(
     *,
     intent: Literal["append", "preempt"],
-    status: Literal["accepted", "unavailable", "failed"],
+    status: Literal["accepted", "completed", "no_inflight", "unavailable", "failed"],
     session_id: str | None = None,
 ) -> A2AAgentInvokeSessionControlResult:
     return A2AAgentInvokeSessionControlResult(
@@ -439,6 +439,114 @@ async def _run_append_session_control(
             intent="append",
             status="accepted",
             session_id=resolved_session_id,
+        ),
+    )
+
+
+def _is_preempt_only_session_control(payload: A2AAgentInvokeRequest) -> bool:
+    return (
+        resolve_invoke_session_control_intent(payload) == "preempt"
+        and not payload.query.strip()
+    )
+
+
+async def _run_preempt_session_control(
+    *,
+    runtime: Any,
+    payload: A2AAgentInvokeRequest,
+    user_id: UUID,
+) -> A2AAgentInvokeResponse:
+    local_session_id = _coerce_uuid(payload.conversation_id)
+    if local_session_id is None:
+        return A2AAgentInvokeResponse(
+            success=True,
+            content=None,
+            error=None,
+            error_code=None,
+            source="hub_session_control",
+            jsonrpc_code=None,
+            missing_params=None,
+            upstream_error=None,
+            agent_name=getattr(runtime.resolved, "name", None),
+            agent_url=getattr(runtime.resolved, "url", None),
+            sessionControl=_build_session_control_response(
+                intent="preempt",
+                status="no_inflight",
+            ),
+        )
+
+    target_message_id = await _find_latest_agent_message_id(
+        user_id=user_id,
+        conversation_id=local_session_id,
+    )
+    pending_event = {
+        "reason": "invoke_interrupt",
+        "source": "user",
+        "target_message_id": target_message_id,
+    }
+    report = await session_hub_service.preempt_inflight_invoke_report(
+        user_id=user_id,
+        conversation_id=local_session_id,
+        reason="invoke_interrupt",
+        pending_event=pending_event,
+    )
+    if not report.attempted:
+        return A2AAgentInvokeResponse(
+            success=True,
+            content=None,
+            error=None,
+            error_code=None,
+            source="hub_session_control",
+            jsonrpc_code=None,
+            missing_params=None,
+            upstream_error=None,
+            agent_name=getattr(runtime.resolved, "name", None),
+            agent_url=getattr(runtime.resolved, "url", None),
+            sessionControl=_build_session_control_response(
+                intent="preempt",
+                status="no_inflight",
+            ),
+        )
+
+    event = {
+        **pending_event,
+        "status": report.status,
+        "target_task_ids": report.target_task_ids,
+        "failed_error_codes": report.failed_error_codes,
+    }
+    async with AsyncSessionLocal() as db:
+        await session_hub_service.record_preempt_event_by_local_session_id(
+            db,
+            local_session_id=local_session_id,
+            user_id=user_id,
+            event=event,
+        )
+        await commit_safely(db)
+    if report.status == "failed":
+        return _build_session_control_error_response(
+            intent="preempt",
+            message="Interrupt failed.",
+            error_code="invoke_interrupt_failed",
+            runtime=runtime,
+        )
+    resolved_status: Literal["accepted", "completed"] = (
+        "completed" if report.status == "completed" else "accepted"
+    )
+
+    return A2AAgentInvokeResponse(
+        success=True,
+        content=None,
+        error=None,
+        error_code=None,
+        source="hub_session_control",
+        jsonrpc_code=None,
+        missing_params=None,
+        upstream_error=None,
+        agent_name=getattr(runtime.resolved, "name", None),
+        agent_url=getattr(runtime.resolved, "url", None),
+        sessionControl=_build_session_control_response(
+            intent="preempt",
+            status=resolved_status,
         ),
     )
 
@@ -1270,6 +1378,12 @@ async def run_http_invoke(
         return _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
     if resolve_invoke_session_control_intent(payload) == "append":
         return await _run_append_session_control(runtime=runtime, payload=payload)
+    if _is_preempt_only_session_control(payload):
+        return await _run_preempt_session_control(
+            runtime=runtime,
+            payload=payload,
+            user_id=user_id,
+        )
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,

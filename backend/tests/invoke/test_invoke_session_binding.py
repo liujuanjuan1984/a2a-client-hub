@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.features.invoke.session_binding import (
     is_recoverable_invoke_session_error,
     normalize_error_code,
@@ -92,3 +94,25 @@ def test_resolve_invoke_session_control_intent_supports_legacy_interrupt_metadat
     )
 
     assert resolve_invoke_session_control_intent(payload) == "preempt"
+
+
+def test_invoke_request_allows_empty_query_for_preempt_only_session_control() -> None:
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "",
+            "conversationId": "conv-1",
+            "sessionControl": {"intent": "preempt"},
+        }
+    )
+
+    assert payload.query == ""
+
+
+def test_invoke_request_rejects_empty_query_without_preempt_session_control() -> None:
+    with pytest.raises(ValueError, match="query must not be empty"):
+        A2AAgentInvokeRequest.model_validate(
+            {
+                "query": "   ",
+                "conversationId": "conv-1",
+            }
+        )

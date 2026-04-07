@@ -62,7 +62,6 @@ import { useChatStore } from "@/store/chat";
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const INTERRUPT_RECOVERY_THROTTLE_MS = 5_000;
-const PREEMPT_FEEDBACK_THROTTLE_MS = 2_500;
 
 export function useChatScreenController({
   routeAgentId,
@@ -88,7 +87,6 @@ export function useChatScreenController({
   const sendMessage = useChatStore((state) => state.sendMessage);
   const retryMessage = useChatStore((state) => state.retryMessage);
   const resumeMessage = useChatStore((state) => state.resumeMessage);
-  const cancelMessage = useChatStore((state) => state.cancelMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
   );
@@ -116,10 +114,6 @@ export function useChatScreenController({
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
-  const lastPreemptFeedbackRef = useRef<{
-    conversationId: string;
-    shownAt: number;
-  } | null>(null);
   const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -290,25 +284,80 @@ export function useChatScreenController({
     scheduleStickToBottom(true);
   }, [scheduleStickToBottom]);
 
-  const showPreemptFeedback = useCallback((nextConversationId: string) => {
-    const lastFeedback = lastPreemptFeedbackRef.current;
-    const now = Date.now();
-    if (
-      lastFeedback &&
-      lastFeedback.conversationId === nextConversationId &&
-      now - lastFeedback.shownAt < PREEMPT_FEEDBACK_THROTTLE_MS
-    ) {
-      return;
-    }
-    lastPreemptFeedbackRef.current = {
-      conversationId: nextConversationId,
-      shownAt: now,
-    };
-    toast.info(
-      "Previous response interrupted",
-      "Interrupted the current response and started a new turn.",
-    );
+  const buildSkippedToastError = useCallback((message: string) => {
+    const error = new Error(message);
+    (error as Error & { skipToast?: boolean }).skipToast = true;
+    return error;
   }, []);
+
+  const invokeSessionControl = useCallback(
+    async (
+      nextConversationId: string,
+      nextAgentId: string,
+      nextAgentSource: AgentSource,
+      query: string,
+      options: {
+        userMessageId?: string;
+        sessionControlIntent: "append" | "preempt";
+      },
+    ) => {
+      const currentSession =
+        useChatStore.getState().sessions[nextConversationId];
+      if (!currentSession) {
+        throw new Error("Conversation session is unavailable.");
+      }
+      const response =
+        nextAgentSource === "shared"
+          ? await invokeHubAgent(
+              nextAgentId,
+              buildInvokePayload(
+                query,
+                currentSession,
+                nextConversationId,
+                options,
+              ),
+            )
+          : await invokeAgent(
+              nextAgentId,
+              buildInvokePayload(
+                query,
+                currentSession,
+                nextConversationId,
+                options,
+              ),
+            );
+      if (!response.success) {
+        throw new Error(
+          response.error?.trim() ||
+            `${options.sessionControlIntent} session control failed.`,
+        );
+      }
+      return response;
+    },
+    [],
+  );
+
+  const isAppendAvailableForSession = useCallback(
+    (
+      currentSession:
+        | {
+            streamState?: string | null;
+            externalSessionRef?: { externalSessionId?: string | null } | null;
+          }
+        | null
+        | undefined,
+    ) => {
+      if (currentSession?.streamState !== "streaming" || pendingInterrupt) {
+        return false;
+      }
+      const externalSessionId =
+        currentSession.externalSessionRef?.externalSessionId?.trim() ?? "";
+      return (
+        sessionPromptAsyncStatus === "supported" && Boolean(externalSessionId)
+      );
+    },
+    [pendingInterrupt, sessionPromptAsyncStatus],
+  );
 
   const appendMessageToRunningSession = useCallback(
     async (
@@ -333,38 +382,22 @@ export function useChatScreenController({
       }
       if (sessionPromptAsyncStatus !== "supported") {
         throw new Error(
-          "Append is unavailable for the current stream. Use send to interrupt instead.",
+          "This stream cannot accept appended input. Interrupt it before sending a new message.",
         );
       }
 
       const trimmedContent = parsedInput.text.trim();
       const userMessageId = generateUuid();
-      const response =
-        nextAgentSource === "shared"
-          ? await invokeHubAgent(
-              nextAgentId,
-              buildInvokePayload(
-                trimmedContent,
-                currentSession,
-                nextConversationId,
-                {
-                  userMessageId,
-                  sessionControlIntent: "append",
-                },
-              ),
-            )
-          : await invokeAgent(
-              nextAgentId,
-              buildInvokePayload(
-                trimmedContent,
-                currentSession,
-                nextConversationId,
-                {
-                  userMessageId,
-                  sessionControlIntent: "append",
-                },
-              ),
-            );
+      const response = await invokeSessionControl(
+        nextConversationId,
+        nextAgentId,
+        nextAgentSource,
+        trimmedContent,
+        {
+          userMessageId,
+          sessionControlIntent: "append",
+        },
+      );
 
       addConversationOverlayMessage(nextConversationId, {
         id: userMessageId,
@@ -378,9 +411,47 @@ export function useChatScreenController({
         externalSessionId:
           response.sessionControl?.sessionId?.trim() || externalSessionId,
       });
-      toast.info("Message appended", "Sent to the running upstream session.");
+      toast.info(
+        "Message added to current response",
+        "Your message was sent to the running upstream session.",
+      );
     },
-    [sessionPromptAsyncStatus],
+    [invokeSessionControl, sessionPromptAsyncStatus],
+  );
+
+  const preemptRunningSession = useCallback(
+    async (
+      nextConversationId: string,
+      nextAgentId: string,
+      nextAgentSource: AgentSource,
+    ) => {
+      const response = await invokeSessionControl(
+        nextConversationId,
+        nextAgentId,
+        nextAgentSource,
+        "",
+        {
+          sessionControlIntent: "preempt",
+        },
+      );
+      useChatStore
+        .getState()
+        .cancelMessage(nextConversationId, { requestRemoteCancel: false });
+
+      if (response.sessionControl?.status === "no_inflight") {
+        toast.info(
+          "No active response",
+          "There is no running response to interrupt.",
+        );
+        return;
+      }
+
+      toast.info(
+        "Response interrupted",
+        "The current response was interrupted. You can send a new message now.",
+      );
+    },
+    [invokeSessionControl],
   );
 
   const sendMessageWithCapabilities = useCallback(
@@ -481,6 +552,25 @@ export function useChatScreenController({
         useChatStore.getState().sessions[nextConversationId];
       const isActivelyStreaming = currentSession?.streamState === "streaming";
 
+      if (isActivelyStreaming) {
+        if (isAppendAvailableForSession(currentSession)) {
+          await appendMessageToRunningSession(
+            nextConversationId,
+            nextAgentId,
+            effectiveContent,
+            nextAgentSource,
+          );
+          return;
+        }
+        toast.info(
+          "Interrupt required",
+          "This stream cannot accept appended input. Interrupt it before sending a new message.",
+        );
+        throw buildSkippedToastError(
+          "Interrupt the current response before sending a new message.",
+        );
+      }
+
       await sendMessage(
         nextConversationId,
         nextAgentId,
@@ -488,15 +578,14 @@ export function useChatScreenController({
         nextAgentSource,
         runtimeStatusContract,
       );
-      if (isActivelyStreaming) {
-        showPreemptFeedback(nextConversationId);
-      }
     },
     [
+      appendMessageToRunningSession,
+      buildSkippedToastError,
+      isAppendAvailableForSession,
       runtimeStatusContract,
       sendMessage,
       sessionCommandStatus,
-      showPreemptFeedback,
     ],
   );
 
@@ -588,20 +677,8 @@ export function useChatScreenController({
   });
 
   const canAppendToRunningStream = useMemo(() => {
-    if (session?.streamState !== "streaming" || pendingInterrupt) {
-      return false;
-    }
-    const externalSessionId =
-      session.externalSessionRef?.externalSessionId?.trim() ?? "";
-    return (
-      sessionPromptAsyncStatus === "supported" && Boolean(externalSessionId)
-    );
-  }, [
-    pendingInterrupt,
-    session?.externalSessionRef?.externalSessionId,
-    session?.streamState,
-    sessionPromptAsyncStatus,
-  ]);
+    return isAppendAvailableForSession(session);
+  }, [isAppendAvailableForSession, session]);
 
   const streamSendHint = useMemo(() => {
     if (session?.streamState !== "streaming" || pendingInterrupt) {
@@ -611,13 +688,13 @@ export function useChatScreenController({
       return {
         tone: "append" as const,
         message:
-          "Send will interrupt the current response. Use Append to continue in the running upstream session.",
+          "This response is still running. Sending will add to it. Interrupt first if you want to start a new turn.",
       };
     }
     return {
       tone: "interrupt" as const,
       message:
-        "Append is unavailable for this stream. Sending now will interrupt the current response and start a new turn.",
+        "This stream cannot accept appended input. Interrupt the current response before sending a new message.",
     };
   }, [canAppendToRunningStream, pendingInterrupt, session?.streamState]);
 
@@ -650,7 +727,6 @@ export function useChatScreenController({
     handleContentSizeChange,
     handleKeyPress,
     handleSend,
-    handleAppend,
   } = useChatComposerController({
     activeAgentId,
     conversationId,
@@ -658,9 +734,6 @@ export function useChatScreenController({
     pendingInterruptActive: pendingInterruptCount > 0,
     ensureSession,
     sendMessage: sendMessageWithCapabilities,
-    appendMessage: canAppendToRunningStream
-      ? appendMessageToRunningSession
-      : undefined,
     setSharedModelSelection,
     onAfterSend: handleSendScrollIntent,
   });
@@ -1072,11 +1145,26 @@ export function useChatScreenController({
   }, []);
 
   const handleInterruptStream = useCallback(() => {
-    if (!conversationId) {
+    if (!conversationId || !activeAgentId || !agent?.source) {
       return;
     }
-    cancelMessage(conversationId);
-  }, [cancelMessage, conversationId]);
+    const runInterrupt = async () => {
+      try {
+        await preemptRunningSession(
+          conversationId,
+          activeAgentId,
+          agent.source,
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to interrupt response.";
+        toast.error("Interrupt failed", message);
+      }
+    };
+    runInterrupt();
+  }, [activeAgentId, agent?.source, conversationId, preemptRunningSession]);
 
   const handleSessionSelect = useCallback(
     (nextConversationId: string) => {
@@ -1122,7 +1210,6 @@ export function useChatScreenController({
     pendingInterrupt,
     pendingInterruptCount,
     streamSendHint,
-    showAppendAction: canAppendToRunningStream,
     interruptAction,
     questionAnswers,
     structuredResponseInput,
@@ -1175,7 +1262,6 @@ export function useChatScreenController({
     handleContentSizeChange,
     handleKeyPress,
     handleSend,
-    handleAppend,
     loadEarlierHistory,
     handleListContentSizeChange,
     handleListScroll,
