@@ -371,14 +371,6 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   };
 };
 
-export const extractRuntimeStatus = (
-  data: Record<string, unknown>,
-  contract?: RuntimeStatusContract | null,
-) => {
-  const statusEvent = extractRuntimeStatusEvent(data, contract);
-  return statusEvent?.state ?? null;
-};
-
 export const extractRuntimeStatusEvent = (
   data: Record<string, unknown>,
   contract?: RuntimeStatusContract | null,

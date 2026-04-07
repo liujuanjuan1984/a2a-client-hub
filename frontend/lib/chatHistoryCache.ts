@@ -45,12 +45,6 @@ const readHistoryData = (conversationId: string) =>
 const flattenPages = (pages: ChatHistoryPage[]) =>
   normalizeMessages(pages.flatMap((page) => page.items ?? []));
 
-const buildConversationTitle = (messages: ChatMessage[]): string | null => {
-  const firstUserMessage = messages.find((message) => message.role === "user");
-  const title = firstUserMessage?.content?.trim();
-  return title ? title : null;
-};
-
 const writeMessages = (
   conversationId: string,
   nextMessages: ChatMessage[],
@@ -86,46 +80,6 @@ export const getConversationMessages = (
     return [];
   }
   return flattenPages(data.pages);
-};
-
-const getConversationTitle = (conversationId: string): string | null => {
-  return buildConversationTitle(getConversationMessages(conversationId));
-};
-
-export const getConversationTitleMap = (
-  conversationIds: string[],
-): Record<string, string> => {
-  if (conversationIds.length === 0) {
-    return {};
-  }
-
-  const wantedIds = new Set(
-    conversationIds.map((value) => value.trim()).filter((value) => value),
-  );
-  const titleMap: Record<string, string> = {};
-
-  queryClient
-    .getQueryCache()
-    .findAll({ queryKey: ["history", "chat"] })
-    .forEach((query) => {
-      const key = query.queryKey;
-      if (!Array.isArray(key) || key.length < 3) {
-        return;
-      }
-      const conversationId = key[2];
-      if (
-        typeof conversationId !== "string" ||
-        !wantedIds.has(conversationId)
-      ) {
-        return;
-      }
-      const title = getConversationTitle(conversationId);
-      if (title) {
-        titleMap[conversationId] = title;
-      }
-    });
-
-  return titleMap;
 };
 
 export const setConversationMessages = (

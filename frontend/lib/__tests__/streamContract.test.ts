@@ -3,7 +3,6 @@ import {
   applyStreamBlockUpdate,
   buildInterruptEventBlockUpdate,
   extractSessionMeta,
-  extractRuntimeStatus,
   extractRuntimeStatusEvent,
   extractStreamBlockUpdate,
   finalizeMessageBlocks,
@@ -1139,7 +1138,6 @@ describe("block-based stream parser and reducer", () => {
       final: true,
     };
 
-    expect(extractRuntimeStatus(payload)).toBe("input-required");
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "input-required",
       isFinal: true,
