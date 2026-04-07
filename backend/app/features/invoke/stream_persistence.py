@@ -8,6 +8,7 @@ from uuid import UUID
 
 from app.db.models.agent_message import AgentMessage
 from app.features.invoke.service import StreamOutcome
+from app.features.invoke.session_binding import resolve_invoke_session_control_intent
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.session_identity import normalize_non_empty_text
@@ -625,11 +626,7 @@ async def persist_synthetic_final_block_if_needed(
 
 
 def is_interrupt_requested(payload: A2AAgentInvokeRequest) -> bool:
-    metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
-    extensions = metadata.get("extensions")
-    if not isinstance(extensions, dict):
-        return False
-    return extensions.get("interrupt") is True
+    return resolve_invoke_session_control_intent(payload) == "preempt"
 
 
 __all__ = [

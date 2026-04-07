@@ -1163,6 +1163,118 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+        return kwargs["payload"]
+
+    async def fake_prompt_session_async(**kwargs):  # noqa: ARG001
+        return SimpleNamespace(
+            success=True,
+            result={"ok": True, "session_id": "ses-upstream-next"},
+            error_code=None,
+            source="upstream_a2a",
+            jsonrpc_code=None,
+            missing_params=None,
+            upstream_error=None,
+        )
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload",
+        fake_finalize_outbound_invoke_payload,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.get_a2a_extensions_service(),
+        "prompt_session_async",
+        fake_prompt_session_async,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "append this",
+            "conversationId": str(uuid4()),
+            "userMessageId": str(uuid4()),
+            "sessionBinding": {
+                "provider": "opencode",
+                "externalSessionId": "ses-upstream-current",
+            },
+            "sessionControl": {"intent": "append"},
+            "metadata": {"locale": "zh-CN"},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="personal",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is True
+    assert response.source == "hub_session_control"
+    assert response.session_control is not None
+    assert response.session_control.intent == "append"
+    assert response.session_control.status == "accepted"
+    assert response.session_control.session_id == "ses-upstream-next"
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_append_requires_bound_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+        return kwargs["payload"]
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload",
+        fake_finalize_outbound_invoke_payload,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "append this",
+            "conversationId": str(uuid4()),
+            "sessionControl": {"intent": "append"},
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="personal",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is False
+    assert response.error_code == "append_requires_bound_session"
+    assert response.session_control is not None
+    assert response.session_control.intent == "append"
+    assert response.session_control.status == "unavailable"
+
+
+@pytest.mark.asyncio
 async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

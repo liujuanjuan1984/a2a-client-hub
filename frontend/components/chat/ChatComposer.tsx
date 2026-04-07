@@ -43,6 +43,8 @@ export const ChatComposer = memo(function ChatComposer({
   inputHeight,
   maxInputHeight,
   onSubmit,
+  onAppend,
+  showAppendAction,
   onKeyPress,
   showScrollToBottom,
   onScrollToBottom,
@@ -78,6 +80,8 @@ export const ChatComposer = memo(function ChatComposer({
   inputHeight: number;
   maxInputHeight: number;
   onSubmit: () => void;
+  onAppend: () => void;
+  showAppendAction: boolean;
   onKeyPress: (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => void;
   showScrollToBottom?: boolean;
   onScrollToBottom?: () => void;
@@ -274,6 +278,22 @@ export const ChatComposer = memo(function ChatComposer({
           returnKeyType="default"
         />
         <View className="flex-row items-center pb-1">
+          {hasSendableInput && showAppendAction && (
+            <Pressable
+              className={`mr-2 h-9 min-w-20 items-center justify-center rounded-xl border px-3 ${
+                pendingInterrupt
+                  ? "border-slate-700 bg-slate-800/30 opacity-40"
+                  : "border-sky-500/40 bg-sky-500/10"
+              }`}
+              testID="chat-append-button"
+              onPress={onAppend}
+              disabled={Boolean(pendingInterrupt)}
+              accessibilityRole="button"
+              accessibilityLabel="Append to running response"
+            >
+              <Text className="text-xs font-medium text-sky-200">Append</Text>
+            </Pressable>
+          )}
           {hasSendableInput && (
             <Pressable
               className={`h-9 w-14 items-center justify-center rounded-xl ${

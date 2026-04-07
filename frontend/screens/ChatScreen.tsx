@@ -178,6 +178,8 @@ export function ChatScreen({
         inputHeight={controller.inputHeight}
         maxInputHeight={controller.maxInputHeight}
         onSubmit={controller.handleSend}
+        onAppend={controller.handleAppend}
+        showAppendAction={controller.showAppendAction}
         onKeyPress={controller.handleKeyPress}
         showScrollToBottom={controller.showScrollToBottom}
         onScrollToBottom={() => controller.scrollToBottom(true)}

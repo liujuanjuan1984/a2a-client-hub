@@ -586,7 +586,7 @@ export const useChatStore = create<ChatState>()(
         const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
           agentMessageId: agentMessage.id,
-          interrupt: shouldInterruptPrevious,
+          sessionControlIntent: shouldInterruptPrevious ? "preempt" : undefined,
         });
 
         await executeChatRuntime(
@@ -668,7 +668,9 @@ export const useChatStore = create<ChatState>()(
           {
             userMessageId,
             agentMessageId,
-            interrupt: shouldInterruptPrevious,
+            sessionControlIntent: shouldInterruptPrevious
+              ? "preempt"
+              : undefined,
           },
         );
         await executeChatRuntime(

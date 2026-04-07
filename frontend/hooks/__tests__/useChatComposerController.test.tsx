@@ -16,6 +16,7 @@ const mockedToast = toast as jest.Mocked<typeof toast>;
 describe("useChatComposerController", () => {
   const ensureSession = jest.fn();
   const sendMessage = jest.fn();
+  const appendMessage = jest.fn();
   const setSharedModelSelection = jest.fn();
   const onAfterSend = jest.fn();
 
@@ -26,6 +27,7 @@ describe("useChatComposerController", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sendMessage.mockResolvedValue(undefined);
+    appendMessage.mockResolvedValue(undefined);
   });
 
   const renderComposer = () =>
@@ -37,6 +39,7 @@ describe("useChatComposerController", () => {
         pendingInterruptActive: false,
         ensureSession,
         sendMessage,
+        appendMessage,
         setSharedModelSelection,
         onAfterSend,
       }),
@@ -136,6 +139,22 @@ describe("useChatComposerController", () => {
     expect(result.current.inputDefaultValue).toBe("Ship the patch");
     expect(result.current.hasInput).toBe(true);
     expect(result.current.hasSendableInput).toBe(true);
+  });
+
+  it("routes append submissions through the append handler", () => {
+    const { result } = renderComposer();
+
+    act(() => {
+      result.current.handleInputChange("Refine the previous answer");
+      result.current.handleAppend();
+    });
+
+    expect(appendMessage).toHaveBeenCalledWith(
+      "conv-1",
+      "agent-1",
+      "Refine the previous answer",
+      "personal",
+    );
   });
 
   it("does not overwrite a newer draft when the previous send fails", async () => {

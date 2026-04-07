@@ -137,7 +137,7 @@ describe("chat store idempotency semantics", () => {
     expect(runtimeCall?.[4]).toBe(initialAgentMessage?.id);
   });
 
-  it("injects interrupt extension when sending during active stream", async () => {
+  it("sets explicit preempt session control when sending during active stream", async () => {
     useChatStore.getState().ensureSession("conv-3", "agent-1");
     useChatStore.setState((state) => ({
       sessions: {
@@ -156,10 +156,8 @@ describe("chat store idempotency semantics", () => {
     expect(mockedExecuteChatRuntime).toHaveBeenCalledTimes(1);
     const runtimeCall = mockedExecuteChatRuntime.mock.calls[0];
     expect(runtimeCall?.[3]).toMatchObject({
-      metadata: {
-        extensions: {
-          interrupt: true,
-        },
+      sessionControl: {
+        intent: "preempt",
       },
     });
   });

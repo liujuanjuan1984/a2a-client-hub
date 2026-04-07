@@ -38,6 +38,8 @@ describe("ChatComposer clear button", () => {
     inputHeight: 40,
     maxInputHeight: 200,
     onSubmit: jest.fn(),
+    onAppend: jest.fn(),
+    showAppendAction: false,
     onKeyPress: jest.fn(),
   };
 
@@ -178,13 +180,16 @@ describe("ChatComposer clear button", () => {
         {...mockProps}
         streamSendHint={{
           tone: "append",
-          message: "New sends will append to the running upstream session.",
+          message:
+            "Send will interrupt the current response. Use Append to continue in the running upstream session.",
         }}
       />,
     );
 
     expect(
-      getByText("New sends will append to the running upstream session."),
+      getByText(
+        "Send will interrupt the current response. Use Append to continue in the running upstream session.",
+      ),
     ).toBeTruthy();
   });
 
@@ -205,5 +210,20 @@ describe("ChatComposer clear button", () => {
         "Append is unavailable for this stream. Sending now will interrupt the current response and start a new turn.",
       ),
     ).toBeTruthy();
+  });
+
+  it("renders an append button when the append action is available", () => {
+    const onAppend = jest.fn();
+    const { getByTestId } = render(
+      <ChatComposer
+        {...mockProps}
+        hasSendableInput
+        showAppendAction
+        onAppend={onAppend}
+      />,
+    );
+
+    fireEvent.press(getByTestId("chat-append-button"));
+    expect(onAppend).toHaveBeenCalled();
   });
 });

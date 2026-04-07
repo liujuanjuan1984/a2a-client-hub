@@ -8,9 +8,10 @@ const mockReplyPermissions = jest.fn();
 const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
 const mockReplyElicitation = jest.fn();
-const mockPromptSessionAsync = jest.fn();
 const mockCommandSession = jest.fn();
 const mockRecoverInterrupts = jest.fn();
+const mockInvokeAgent = jest.fn();
+const mockInvokeHubAgent = jest.fn();
 const mockAddConversationOverlayMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
@@ -182,6 +183,8 @@ jest.mock("@/components/chat/ChatComposer", () => ({
     pendingInterrupt?: unknown;
     onInputChange?: (value: string) => void;
     onSubmit?: () => void;
+    onAppend?: () => void;
+    showAppendAction?: boolean;
   }) => {
     const { Pressable, TextInput, View } = require("react-native");
     const disabled = Boolean(props.pendingInterrupt);
@@ -192,6 +195,13 @@ jest.mock("@/components/chat/ChatComposer", () => ({
           value={props.input ?? ""}
           onChangeText={props.onInputChange}
         />
+        {props.showAppendAction ? (
+          <Pressable
+            testID="chat-append-button"
+            disabled={disabled}
+            onPress={props.onAppend}
+          />
+        ) : null}
         <Pressable
           testID="chat-send-button"
           disabled={disabled}
@@ -390,7 +400,6 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
     upstreamError: Record<string, unknown> | null = null;
   },
   commandSession: (...args: unknown[]) => mockCommandSession(...args),
-  promptSessionAsync: (...args: unknown[]) => mockPromptSessionAsync(...args),
   recoverInterrupts: (...args: unknown[]) => mockRecoverInterrupts(...args),
   replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
@@ -400,6 +409,14 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
   rejectQuestionInterrupt: (...args: unknown[]) => mockRejectQuestion(...args),
   replyElicitationInterrupt: (...args: unknown[]) =>
     mockReplyElicitation(...args),
+}));
+
+jest.mock("@/lib/api/a2aAgents", () => ({
+  invokeAgent: (...args: unknown[]) => mockInvokeAgent(...args),
+}));
+
+jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
+  invokeHubAgent: (...args: unknown[]) => mockInvokeHubAgent(...args),
 }));
 
 jest.mock("@/lib/chatHistoryCache", () => ({
@@ -452,10 +469,15 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.bindExternalSession.mockReset();
     mockChatState.setOpencodeDirectory.mockReset();
     mockChatState.setInvokeMetadataBindings.mockReset();
-    mockPromptSessionAsync.mockReset().mockResolvedValue({
-      ok: true,
-      sessionId: "ses-upstream-1",
+    mockInvokeAgent.mockReset().mockResolvedValue({
+      success: true,
+      sessionControl: {
+        intent: "append",
+        status: "accepted",
+        sessionId: "ses-upstream-1",
+      },
     });
+    mockInvokeHubAgent.mockReset().mockResolvedValue({ success: true });
     mockCommandSession.mockReset().mockResolvedValue({
       item: {
         messageId: "msg-cmd-1",
@@ -857,7 +879,7 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("appends input to the active upstream session during streaming", async () => {
+  it("appends input to the active upstream session through the invoke contract", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       metadata: {
@@ -875,27 +897,30 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const input = root.findByProps({ placeholder: "Type your message" });
-    const sendButton = root.findByProps({ testID: "chat-send-button" });
+    const appendButton = root.findByProps({ testID: "chat-append-button" });
 
     act(() => {
       input.props.onChangeText("append this");
     });
     await act(async () => {
-      await sendButton.props.onPress();
+      await appendButton.props.onPress();
     });
 
-    expect(mockPromptSessionAsync).toHaveBeenCalledWith({
-      source: "personal",
-      agentId: "agent-1",
-      sessionId: "ses-upstream-1",
-      request: {
-        messageID: expect.any(String),
-        parts: [{ type: "text", text: "append this" }],
-      },
+    expect(mockInvokeAgent).toHaveBeenCalledWith("agent-1", {
+      query: "append this",
+      conversationId,
+      userMessageId: expect.any(String),
       metadata: {
         opencode: {
           directory: "/workspace/app",
         },
+      },
+      sessionBinding: {
+        provider: "opencode",
+        externalSessionId: "ses-upstream-1",
+      },
+      sessionControl: {
+        intent: "append",
       },
     });
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();
@@ -905,6 +930,13 @@ describe("ChatScreen interrupt handling", () => {
         agentId: "agent-1",
         externalSessionId: "ses-upstream-1",
       },
+    );
+    expect(mockAddConversationOverlayMessage).toHaveBeenCalledWith(
+      conversationId,
+      expect.objectContaining({
+        role: "user",
+        content: "append this",
+      }),
     );
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Message appended",
@@ -916,9 +948,7 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("falls back to interrupt-and-send when prompt_async fails", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    mockPromptSessionAsync.mockRejectedValueOnce(new Error("unsupported"));
+  it("uses preempt send as the default action during streaming", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       streamState: "streaming",
@@ -934,34 +964,29 @@ describe("ChatScreen interrupt handling", () => {
     const sendButton = root.findByProps({ testID: "chat-send-button" });
 
     act(() => {
-      input.props.onChangeText("fallback send");
+      input.props.onChangeText("interrupt this");
     });
     await act(async () => {
       await sendButton.props.onPress();
     });
 
-    expect(mockPromptSessionAsync).toHaveBeenCalledTimes(1);
     expect(mockChatState.sendMessage).toHaveBeenCalledWith(
       conversationId,
       "agent-1",
-      "fallback send",
+      "interrupt this",
       "personal",
       undefined,
     );
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Previous response interrupted",
-      "Append was unavailable, so your new message started a new turn.",
+      "Interrupted the current response and started a new turn.",
     );
-    expect(warnSpy).toHaveBeenCalled();
-
-    warnSpy.mockRestore();
     act(() => {
       tree.unmount();
     });
   });
 
-  it("falls back to interrupt-and-send when the stream has no upstream session binding", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  it("hides the append action when the stream has no upstream session binding", () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       streamState: "streaming",
@@ -971,37 +996,18 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const input = root.findByProps({ placeholder: "Type your message" });
-    const sendButton = root.findByProps({ testID: "chat-send-button" });
 
     act(() => {
       input.props.onChangeText("send anyway");
     });
-    await act(async () => {
-      await sendButton.props.onPress();
-    });
 
-    expect(mockPromptSessionAsync).not.toHaveBeenCalled();
-    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
-      conversationId,
-      "agent-1",
-      "send anyway",
-      "personal",
-      undefined,
-    );
-    expect(mockToastInfo).toHaveBeenCalledWith(
-      "Previous response interrupted",
-      "Append was unavailable, so your new message started a new turn.",
-    );
-    expect(warnSpy).toHaveBeenCalled();
-
-    warnSpy.mockRestore();
+    expect(() => root.findByProps({ testID: "chat-append-button" })).toThrow();
     act(() => {
       tree.unmount();
     });
   });
 
-  it("falls back to interrupt-and-send when prompt_async capability is unsupported", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  it("hides the append action when append capability is unsupported", () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
@@ -1015,38 +1021,18 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const input = root.findByProps({ placeholder: "Type your message" });
-    const sendButton = root.findByProps({ testID: "chat-send-button" });
 
     act(() => {
       input.props.onChangeText("capability fallback");
     });
-    await act(async () => {
-      await sendButton.props.onPress();
-    });
 
-    expect(mockPromptSessionAsync).not.toHaveBeenCalled();
-    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
-      conversationId,
-      "agent-1",
-      "capability fallback",
-      "personal",
-      undefined,
-    );
-    expect(mockToastInfo).toHaveBeenCalledWith(
-      "Previous response interrupted",
-      "Append was unavailable, so your new message started a new turn.",
-    );
-    expect(warnSpy).toHaveBeenCalled();
-
-    warnSpy.mockRestore();
+    expect(() => root.findByProps({ testID: "chat-append-button" })).toThrow();
     act(() => {
       tree.unmount();
     });
   });
 
-  it("does not show interrupt success feedback when fallback send fails", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
+  it("does not show interrupt success feedback when preempt send fails", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       streamState: "streaming",
@@ -1071,11 +1057,43 @@ describe("ChatScreen interrupt handling", () => {
 
     expect(mockToastInfo).not.toHaveBeenCalledWith(
       "Previous response interrupted",
-      "Append was unavailable, so your new message started a new turn.",
+      "Interrupted the current response and started a new turn.",
     );
     expect(mockToastError).toHaveBeenCalledWith("Send failed", "invoke failed");
+    act(() => {
+      tree.unmount();
+    });
+  });
 
-    warnSpy.mockRestore();
+  it("shows append failure without silently degrading to preempt", async () => {
+    mockInvokeAgent.mockRejectedValueOnce(new Error("append unavailable"));
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-5",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const appendButton = root.findByProps({ testID: "chat-append-button" });
+
+    act(() => {
+      input.props.onChangeText("append attempt");
+    });
+    await act(async () => {
+      await appendButton.props.onPress();
+    });
+
+    expect(mockChatState.sendMessage).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Append failed",
+      "append unavailable",
+    );
+
     act(() => {
       tree.unmount();
     });

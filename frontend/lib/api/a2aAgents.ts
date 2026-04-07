@@ -109,6 +109,9 @@ export type A2AAgentInvokeRequest = {
     provider?: string | null;
     externalSessionId?: string | null;
   };
+  sessionControl?: {
+    intent: "append" | "preempt";
+  };
 };
 
 type A2AAgentInvokeResponse = {
@@ -122,6 +125,11 @@ type A2AAgentInvokeResponse = {
   upstream_error?: Record<string, unknown> | null;
   agent_name?: string | null;
   agent_url?: string | null;
+  sessionControl?: {
+    intent: "append" | "preempt";
+    status: "accepted" | "unavailable" | "failed";
+    sessionId?: string | null;
+  } | null;
 };
 
 type WsTicketResponse = {

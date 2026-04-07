@@ -6,7 +6,7 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -54,6 +54,8 @@ from app.features.invoke.session_binding import (
     is_recoverable_invoke_session_error,
     merge_invoke_binding_state,
     normalize_invoke_binding_state,
+    resolve_invoke_session_binding_hint,
+    resolve_invoke_session_control_intent,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
     ws_error_code_for_recovery_failed,
@@ -83,16 +85,17 @@ from app.features.invoke.stream_persistence import (
 )
 from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
-from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
+from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.runtime.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeResponse,
+    A2AAgentInvokeSessionControlResult,
 )
 from app.schemas.ws_ticket import WsTicketResponse
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
@@ -108,6 +111,9 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
 _STREAM_HINTS_WARNING_TTL_SECONDS = 300.0
+_APPEND_UNAVAILABLE_EXTENSION_ERROR_CODES = frozenset(
+    {"method_not_supported", "method_disabled", "not_supported"}
+)
 _stream_hints_warning_cache: dict[
     tuple[str, tuple[tuple[str, str], ...], str],
     float,
@@ -293,6 +299,148 @@ async def _preempt_previous_invoke_if_requested(
     )
     if report.status == "failed":
         raise ValueError("invoke_interrupt_failed")
+
+
+def _build_session_control_response(
+    *,
+    intent: Literal["append", "preempt"],
+    status: Literal["accepted", "unavailable", "failed"],
+    session_id: str | None = None,
+) -> A2AAgentInvokeSessionControlResult:
+    return A2AAgentInvokeSessionControlResult(
+        intent=intent,
+        status=status,
+        sessionId=session_id,
+    )
+
+
+def _build_session_control_error_response(
+    *,
+    intent: Literal["append", "preempt"],
+    message: str,
+    error_code: str,
+    runtime: Any,
+    source: str = "hub_session_control",
+    jsonrpc_code: int | None = None,
+    missing_params: list[dict[str, Any]] | None = None,
+    upstream_error: dict[str, Any] | None = None,
+) -> A2AAgentInvokeResponse:
+    status: Literal["unavailable", "failed"] = (
+        "unavailable"
+        if error_code in {"append_requires_bound_session", "append_unavailable"}
+        else "failed"
+    )
+    return A2AAgentInvokeResponse(
+        success=False,
+        content=None,
+        error=message,
+        error_code=error_code,
+        source=source,
+        jsonrpc_code=jsonrpc_code,
+        missing_params=missing_params,
+        upstream_error=upstream_error,
+        agent_name=getattr(runtime.resolved, "name", None),
+        agent_url=getattr(runtime.resolved, "url", None),
+        sessionControl=_build_session_control_response(
+            intent=intent,
+            status=status,
+        ),
+    )
+
+
+def _build_append_request_payload(payload: A2AAgentInvokeRequest) -> dict[str, Any]:
+    request_payload: dict[str, Any] = {
+        "parts": [{"type": "text", "text": payload.query.strip()}],
+        "messageID": _normalize_optional_message_id(payload.user_message_id)
+        or str(uuid4()),
+    }
+    return request_payload
+
+
+def _resolve_append_session_id(payload: A2AAgentInvokeRequest) -> str | None:
+    _provider, external_session_id = resolve_invoke_session_binding_hint(
+        session_binding=payload.session_binding,
+        metadata=payload.metadata,
+    )
+    return external_session_id
+
+
+async def _run_append_session_control(
+    *,
+    runtime: Any,
+    payload: A2AAgentInvokeRequest,
+) -> A2AAgentInvokeResponse:
+    session_id = _resolve_append_session_id(payload)
+    if not session_id:
+        return _build_session_control_error_response(
+            intent="append",
+            message="Append requires a bound upstream session.",
+            error_code="append_requires_bound_session",
+            runtime=runtime,
+        )
+
+    result = await get_a2a_extensions_service().prompt_session_async(
+        runtime=runtime,
+        session_id=session_id,
+        request_payload=_build_append_request_payload(payload),
+        metadata=payload.metadata,
+    )
+    if not result.success:
+        mapped_error_code = (
+            "append_unavailable"
+            if result.error_code in _APPEND_UNAVAILABLE_EXTENSION_ERROR_CODES
+            else result.error_code or "upstream_error"
+        )
+        message = (
+            "Append is unavailable for the current session."
+            if mapped_error_code == "append_unavailable"
+            else "Append failed."
+        )
+        return _build_session_control_error_response(
+            intent="append",
+            message=message,
+            error_code=mapped_error_code,
+            runtime=runtime,
+            source=result.source or "hub_session_control",
+            jsonrpc_code=result.jsonrpc_code,
+            missing_params=result.missing_params,
+            upstream_error=result.upstream_error,
+        )
+
+    response_payload = result.result if isinstance(result.result, dict) else {}
+    if response_payload.get("ok") is not True:
+        return _build_session_control_error_response(
+            intent="append",
+            message="Append acknowledged without ok=true.",
+            error_code="upstream_payload_error",
+            runtime=runtime,
+            source=result.source or "hub_session_control",
+            jsonrpc_code=result.jsonrpc_code,
+            missing_params=result.missing_params,
+            upstream_error=result.upstream_error,
+        )
+
+    resolved_session_id = (
+        normalize_non_empty_text(cast(str | None, response_payload.get("session_id")))
+        or session_id
+    )
+    return A2AAgentInvokeResponse(
+        success=True,
+        content=None,
+        error=None,
+        error_code=None,
+        source="hub_session_control",
+        jsonrpc_code=None,
+        missing_params=None,
+        upstream_error=None,
+        agent_name=getattr(runtime.resolved, "name", None),
+        agent_url=getattr(runtime.resolved, "url", None),
+        sessionControl=_build_session_control_response(
+            intent="append",
+            status="accepted",
+            session_id=resolved_session_id,
+        ),
+    )
 
 
 async def _bind_inflight_task_if_needed(
@@ -1120,6 +1268,8 @@ async def run_http_invoke(
         )
     except InvokeMetadataBindingRequiredError as exc:
         return _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
+    if resolve_invoke_session_control_intent(payload) == "append":
+        return await _run_append_session_control(runtime=runtime, payload=payload)
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,

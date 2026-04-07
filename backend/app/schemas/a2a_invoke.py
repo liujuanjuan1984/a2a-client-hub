@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -16,6 +16,33 @@ class A2AAgentInvokeSessionBinding(BaseModel):
         default=None,
         alias="externalSessionId",
         description="Optional upstream external session identifier.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class A2AAgentInvokeSessionControl(BaseModel):
+    intent: Literal["append", "preempt"] = Field(
+        ...,
+        description="Stable hub-managed send intent for active session control.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class A2AAgentInvokeSessionControlResult(BaseModel):
+    intent: Literal["append", "preempt"] = Field(
+        ...,
+        description="Resolved session-control intent handled by the hub.",
+    )
+    status: Literal["accepted", "unavailable", "failed"] = Field(
+        ...,
+        description="Outcome of the resolved session-control operation.",
+    )
+    session_id: Optional[str] = Field(
+        default=None,
+        alias="sessionId",
+        description="Resolved upstream session identifier after session control.",
     )
 
     model_config = {"populate_by_name": True}
@@ -52,6 +79,11 @@ class A2AAgentInvokeRequest(BaseModel):
         alias="sessionBinding",
         description="Optional hub-internal session binding intent. Not forwarded upstream as-is.",
     )
+    session_control: Optional[A2AAgentInvokeSessionControl] = Field(
+        default=None,
+        alias="sessionControl",
+        description="Optional hub-managed send intent for active session control.",
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -74,10 +106,16 @@ class A2AAgentInvokeResponse(BaseModel):
     upstream_error: Optional[Dict[str, Any]] = None
     agent_name: Optional[str] = None
     agent_url: Optional[str] = None
+    session_control: Optional[A2AAgentInvokeSessionControlResult] = Field(
+        default=None,
+        alias="sessionControl",
+    )
 
 
 __all__ = [
     "A2AAgentInvokeRequest",
     "A2AAgentInvokeResponse",
     "A2AAgentInvokeSessionBinding",
+    "A2AAgentInvokeSessionControl",
+    "A2AAgentInvokeSessionControlResult",
 ]

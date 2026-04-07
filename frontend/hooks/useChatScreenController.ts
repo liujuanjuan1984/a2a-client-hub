@@ -22,15 +22,17 @@ import {
   useExtensionCapabilitiesQuery,
 } from "@/hooks/useExtensionCapabilitiesQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
+import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
   A2AExtensionCallError,
   commandSession,
-  promptSessionAsync,
   recoverInterrupts,
 } from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
+import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import { continueSession } from "@/lib/api/sessions";
 import {
+  buildInvokePayload,
   getPendingInterrupt,
   getPendingInterruptQueue,
   getSharedModelSelection,
@@ -304,9 +306,82 @@ export function useChatScreenController({
     };
     toast.info(
       "Previous response interrupted",
-      "Append was unavailable, so your new message started a new turn.",
+      "Interrupted the current response and started a new turn.",
     );
   }, []);
+
+  const appendMessageToRunningSession = useCallback(
+    async (
+      nextConversationId: string,
+      nextAgentId: string,
+      content: string,
+      nextAgentSource: AgentSource,
+    ) => {
+      const parsedInput = parseComposerInput(content);
+      if (parsedInput.kind !== "message") {
+        throw new Error("Append only supports plain text messages.");
+      }
+
+      const currentSession =
+        useChatStore.getState().sessions[nextConversationId];
+      const externalSessionId =
+        currentSession?.externalSessionRef?.externalSessionId?.trim() ?? "";
+      if (currentSession?.streamState !== "streaming" || !externalSessionId) {
+        throw new Error(
+          "Append requires an active stream with a bound upstream session.",
+        );
+      }
+      if (sessionPromptAsyncStatus !== "supported") {
+        throw new Error(
+          "Append is unavailable for the current stream. Use send to interrupt instead.",
+        );
+      }
+
+      const trimmedContent = parsedInput.text.trim();
+      const userMessageId = generateUuid();
+      const response =
+        nextAgentSource === "shared"
+          ? await invokeHubAgent(
+              nextAgentId,
+              buildInvokePayload(
+                trimmedContent,
+                currentSession,
+                nextConversationId,
+                {
+                  userMessageId,
+                  sessionControlIntent: "append",
+                },
+              ),
+            )
+          : await invokeAgent(
+              nextAgentId,
+              buildInvokePayload(
+                trimmedContent,
+                currentSession,
+                nextConversationId,
+                {
+                  userMessageId,
+                  sessionControlIntent: "append",
+                },
+              ),
+            );
+
+      addConversationOverlayMessage(nextConversationId, {
+        id: userMessageId,
+        role: "user",
+        content: trimmedContent,
+        createdAt: new Date().toISOString(),
+        status: "done",
+      });
+      useChatStore.getState().bindExternalSession(nextConversationId, {
+        agentId: nextAgentId,
+        externalSessionId:
+          response.sessionControl?.sessionId?.trim() || externalSessionId,
+      });
+      toast.info("Message appended", "Sent to the running upstream session.");
+    },
+    [sessionPromptAsyncStatus],
+  );
 
   const sendMessageWithCapabilities = useCallback(
     async (
@@ -405,79 +480,6 @@ export function useChatScreenController({
       const currentSession =
         useChatStore.getState().sessions[nextConversationId];
       const isActivelyStreaming = currentSession?.streamState === "streaming";
-      const externalSessionId =
-        currentSession?.externalSessionRef?.externalSessionId?.trim() ?? "";
-      let fallbackToInterruptSend = false;
-
-      if (
-        isActivelyStreaming &&
-        sessionPromptAsyncStatus === "supported" &&
-        externalSessionId
-      ) {
-        const promptMessageId = generateUuid();
-        try {
-          const promptResult = await promptSessionAsync({
-            source: nextAgentSource,
-            agentId: nextAgentId,
-            sessionId: externalSessionId,
-            request: {
-              messageID: promptMessageId,
-              parts: [{ type: "text", text: effectiveContent.trim() }],
-            },
-            metadata: pickOpencodeDirectoryMetadata(currentSession?.metadata),
-          });
-          addConversationOverlayMessage(nextConversationId, {
-            id: promptMessageId,
-            role: "user",
-            content: effectiveContent.trim(),
-            createdAt: new Date().toISOString(),
-            status: "done",
-          });
-          useChatStore.getState().bindExternalSession(nextConversationId, {
-            agentId: nextAgentId,
-            externalSessionId: promptResult.sessionId,
-          });
-          toast.info(
-            "Message appended",
-            "Sent to the running upstream session.",
-          );
-          return;
-        } catch (error) {
-          const fallbackReason =
-            error instanceof A2AExtensionCallError
-              ? (error.errorCode ?? "extension_call_failed")
-              : error instanceof Error
-                ? error.message
-                : "unknown_error";
-          console.warn(
-            "[Chat] prompt_async unavailable during stream; fallback to interrupt send",
-            {
-              conversationId: nextConversationId,
-              agentId: nextAgentId,
-              fallbackReason,
-              hasExternalSessionId: true,
-            },
-          );
-          fallbackToInterruptSend = true;
-        }
-      } else if (isActivelyStreaming) {
-        const fallbackReason = externalSessionId
-          ? sessionPromptAsyncStatus === "unsupported"
-            ? "prompt_async_capability_unsupported"
-            : "prompt_async_capability_unknown"
-          : "missing_external_session_id";
-        console.warn(
-          "[Chat] prompt_async not eligible during stream; fallback to interrupt send",
-          {
-            conversationId: nextConversationId,
-            agentId: nextAgentId,
-            fallbackReason,
-            hasExternalSessionId: Boolean(externalSessionId),
-            sessionPromptAsyncStatus,
-          },
-        );
-        fallbackToInterruptSend = true;
-      }
 
       await sendMessage(
         nextConversationId,
@@ -486,7 +488,7 @@ export function useChatScreenController({
         nextAgentSource,
         runtimeStatusContract,
       );
-      if (isActivelyStreaming && fallbackToInterruptSend) {
+      if (isActivelyStreaming) {
         showPreemptFeedback(nextConversationId);
       }
     },
@@ -494,7 +496,6 @@ export function useChatScreenController({
       runtimeStatusContract,
       sendMessage,
       sessionCommandStatus,
-      sessionPromptAsyncStatus,
       showPreemptFeedback,
     ],
   );
@@ -586,16 +587,31 @@ export function useChatScreenController({
     clearPendingInterrupt,
   });
 
+  const canAppendToRunningStream = useMemo(() => {
+    if (session?.streamState !== "streaming" || pendingInterrupt) {
+      return false;
+    }
+    const externalSessionId =
+      session.externalSessionRef?.externalSessionId?.trim() ?? "";
+    return (
+      sessionPromptAsyncStatus === "supported" && Boolean(externalSessionId)
+    );
+  }, [
+    pendingInterrupt,
+    session?.externalSessionRef?.externalSessionId,
+    session?.streamState,
+    sessionPromptAsyncStatus,
+  ]);
+
   const streamSendHint = useMemo(() => {
     if (session?.streamState !== "streaming" || pendingInterrupt) {
       return null;
     }
-    const externalSessionId =
-      session.externalSessionRef?.externalSessionId?.trim() ?? "";
-    if (sessionPromptAsyncStatus === "supported" && externalSessionId) {
+    if (canAppendToRunningStream) {
       return {
         tone: "append" as const,
-        message: "New sends will append to the running upstream session.",
+        message:
+          "Send will interrupt the current response. Use Append to continue in the running upstream session.",
       };
     }
     return {
@@ -603,12 +619,7 @@ export function useChatScreenController({
       message:
         "Append is unavailable for this stream. Sending now will interrupt the current response and start a new turn.",
     };
-  }, [
-    pendingInterrupt,
-    session?.externalSessionRef?.externalSessionId,
-    session?.streamState,
-    sessionPromptAsyncStatus,
-  ]);
+  }, [canAppendToRunningStream, pendingInterrupt, session?.streamState]);
 
   const {
     inputRef,
@@ -639,6 +650,7 @@ export function useChatScreenController({
     handleContentSizeChange,
     handleKeyPress,
     handleSend,
+    handleAppend,
   } = useChatComposerController({
     activeAgentId,
     conversationId,
@@ -646,6 +658,9 @@ export function useChatScreenController({
     pendingInterruptActive: pendingInterruptCount > 0,
     ensureSession,
     sendMessage: sendMessageWithCapabilities,
+    appendMessage: canAppendToRunningStream
+      ? appendMessageToRunningSession
+      : undefined,
     setSharedModelSelection,
     onAfterSend: handleSendScrollIntent,
   });
@@ -1107,6 +1122,7 @@ export function useChatScreenController({
     pendingInterrupt,
     pendingInterruptCount,
     streamSendHint,
+    showAppendAction: canAppendToRunningStream,
     interruptAction,
     questionAnswers,
     structuredResponseInput,
@@ -1159,6 +1175,7 @@ export function useChatScreenController({
     handleContentSizeChange,
     handleKeyPress,
     handleSend,
+    handleAppend,
     loadEarlierHistory,
     handleListContentSizeChange,
     handleListScroll,
