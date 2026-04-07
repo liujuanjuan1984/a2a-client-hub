@@ -176,7 +176,9 @@ async def test_cancel_session_returns_no_inflight_when_session_not_found(
     assert payload["status"] == "no_inflight"
 
 
-async def test_preempt_inflight_invoke_cancels_existing_task(async_db_session):
+async def test_preempt_inflight_invoke_report_marks_completed_when_task_cancelled(
+    async_db_session,
+):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     thread = ConversationThread(
         id=uuid4(),
@@ -212,20 +214,23 @@ async def test_preempt_inflight_invoke_cancels_existing_task(async_db_session):
         task_id="task-preempt-1",
     )
 
-    preempted = await session_hub_service.preempt_inflight_invoke(
+    report = await session_hub_service.preempt_inflight_invoke_report(
         user_id=user.id,
         conversation_id=thread.id,
         reason="invoke_interrupt",
     )
 
-    assert preempted is True
+    assert report.attempted is True
+    assert report.status == "completed"
+    assert report.target_task_ids == ["task-preempt-1"]
+    assert report.failed_error_codes == []
     assert calls == {
         "task_id": "task-preempt-1",
         "reason": "invoke_interrupt",
     }
 
 
-async def test_preempt_inflight_invoke_marks_pending_cancel_when_task_not_bound(
+async def test_preempt_inflight_invoke_report_marks_accepted_when_task_not_bound(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -255,12 +260,16 @@ async def test_preempt_inflight_invoke_marks_pending_cancel_when_task_not_bound(
         gateway=_Gateway(),
         resolved=object(),
     )
-    preempted = await session_hub_service.preempt_inflight_invoke(
+    report = await session_hub_service.preempt_inflight_invoke_report(
         user_id=user.id,
         conversation_id=thread.id,
         reason="invoke_interrupt",
     )
-    assert preempted is True
+    assert report.attempted is True
+    assert report.status == "accepted"
+    assert report.pending_requested is True
+    assert report.target_task_ids == []
+    assert report.failed_error_codes == []
     assert calls == {}
 
     bound = await session_hub_service.bind_inflight_task_id(

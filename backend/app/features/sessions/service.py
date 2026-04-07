@@ -15,7 +15,7 @@ from app.features.sessions.query_service import SessionQueryService
 from app.features.sessions.support import SessionHubSupport
 
 if TYPE_CHECKING:
-    from app.features.sessions.common import SessionSource
+    from app.features.sessions.common import PreemptedInvokeReport, SessionSource
 
 
 class SessionHubService:
@@ -142,6 +142,19 @@ class SessionHubService:
         reason: str,
     ) -> bool:
         return await self._inflight.preempt_inflight_invoke(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            reason=reason,
+        )
+
+    async def preempt_inflight_invoke_report(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        reason: str,
+    ) -> PreemptedInvokeReport:
+        return await self._inflight.preempt_inflight_invoke_report(
             user_id=user_id,
             conversation_id=conversation_id,
             reason=reason,
@@ -326,6 +339,36 @@ class SessionHubService:
         event: dict[str, Any],
     ) -> UUID | None:
         return await self._history.record_interrupt_lifecycle_event(
+            db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            event=event,
+        )
+
+    async def record_preempt_event_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+    ) -> UUID | None:
+        return await self._history.record_preempt_event_by_local_session_id(
+            db,
+            local_session_id=local_session_id,
+            user_id=user_id,
+            event=event,
+        )
+
+    async def record_preempt_event(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+    ) -> UUID | None:
+        return await self._history.record_preempt_event(
             db,
             conversation_id=conversation_id,
             user_id=user_id,

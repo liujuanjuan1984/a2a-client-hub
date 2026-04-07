@@ -19,6 +19,8 @@ from app.features.sessions.common import (
     SessionSource,
     build_interrupt_lifecycle_message_content,
     build_interrupt_lifecycle_message_id,
+    build_preempt_message_content,
+    build_preempt_message_id,
     build_query_hash,
     create_block_with_conflict_recovery,
     derive_session_title_from_invoke_metadata,
@@ -29,6 +31,7 @@ from app.features.sessions.common import (
     is_primary_text_snapshot_source,
     normalize_block_type,
     normalize_interrupt_lifecycle_event,
+    normalize_preempt_event,
     read_block_cursor_state,
     write_block_cursor_state,
 )
@@ -850,6 +853,91 @@ class SessionHistoryProjectionService:
             message_id=cast(UUID, system_message.id),
             content=build_interrupt_lifecycle_message_content(normalized_event),
             source="interrupt_lifecycle",
+        )
+        return cast(UUID, system_message.id)
+
+    async def record_preempt_event_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+    ) -> UUID | None:
+        session = await self._support.get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if session is None:
+            return None
+        return await self.record_preempt_event(
+            db,
+            conversation_id=cast(UUID, session.id),
+            user_id=user_id,
+            event=event,
+        )
+
+    async def record_preempt_event(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+    ) -> UUID | None:
+        normalized_event = normalize_preempt_event(event)
+        if normalized_event is None:
+            return None
+
+        message_id = build_preempt_message_id(
+            conversation_id=conversation_id,
+            replacement_user_message_id=cast(
+                str | None, normalized_event.get("replacement_user_message_id")
+            ),
+            replacement_agent_message_id=cast(
+                str | None, normalized_event.get("replacement_agent_message_id")
+            ),
+            target_message_id=cast(
+                str | None, normalized_event.get("target_message_id")
+            ),
+            reason=cast(str, normalized_event["reason"]),
+        )
+        message_metadata = {"preempt": normalized_event}
+        existing_message = await self._support.find_message_by_id_and_sender(
+            db,
+            user_id=user_id,
+            message_id=message_id,
+            sender="system",
+            conversation_id=conversation_id,
+        )
+        if existing_message is None:
+            system_message = await message_store.create_agent_message(
+                db,
+                id=message_id,
+                created_at=utc_now(),
+                user_id=user_id,
+                sender="system",
+                status="done",
+                conversation_id=conversation_id,
+                metadata=message_metadata,
+            )
+        else:
+            updated_system_message = await message_store.update_agent_message(
+                db,
+                message=existing_message,
+                status="done",
+                message_metadata=message_metadata,
+            )
+            if updated_system_message is None:
+                raise ValueError("message_update_failed")
+            system_message = updated_system_message
+        await self._support.upsert_single_text_block(
+            db,
+            user_id=user_id,
+            message_id=cast(UUID, system_message.id),
+            content=build_preempt_message_content(normalized_event),
+            source="invoke_preempt",
         )
         return cast(UUID, system_message.id)
 

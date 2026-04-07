@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.error_codes import status_code_for_invoke_error_code
@@ -20,6 +21,7 @@ from app.db.locking import (
     RetryableDbLockError,
     RetryableDbQueryTimeoutError,
 )
+from app.db.models.agent_message import AgentMessage
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke.guard import (
@@ -209,6 +211,45 @@ async def _register_inflight_invoke(
     )
 
 
+async def _find_latest_agent_message_id(
+    *,
+    user_id: UUID,
+    conversation_id: UUID,
+) -> str | None:
+    async with AsyncSessionLocal() as db:
+        latest_message_id = await db.scalar(
+            select(AgentMessage.id)
+            .where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == conversation_id,
+                    AgentMessage.sender == "agent",
+                )
+            )
+            .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+            .limit(1)
+        )
+    return str(latest_message_id) if isinstance(latest_message_id, UUID) else None
+
+
+async def _record_preempt_history_event(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+    event: dict[str, Any],
+) -> None:
+    if state.local_session_id is None:
+        return
+    async with AsyncSessionLocal() as db:
+        await session_hub_service.record_preempt_event_by_local_session_id(
+            db,
+            local_session_id=state.local_session_id,
+            user_id=user_id,
+            event=event,
+        )
+        await commit_safely(db)
+
+
 async def _preempt_previous_invoke_if_requested(
     *,
     state: _InvokeState,
@@ -219,11 +260,35 @@ async def _preempt_previous_invoke_if_requested(
         return
     if not _is_interrupt_requested(payload):
         return
-    await session_hub_service.preempt_inflight_invoke(
+    target_message_id = await _find_latest_agent_message_id(
+        user_id=user_id,
+        conversation_id=state.local_session_id,
+    )
+    report = await session_hub_service.preempt_inflight_invoke_report(
         user_id=user_id,
         conversation_id=state.local_session_id,
         reason="invoke_interrupt",
     )
+    if not report.attempted:
+        return
+
+    event = {
+        "reason": "invoke_interrupt",
+        "status": report.status,
+        "source": "user",
+        "target_message_id": target_message_id,
+        "replacement_user_message_id": state.user_message_id,
+        "replacement_agent_message_id": state.agent_message_id,
+        "target_task_ids": report.target_task_ids,
+        "failed_error_codes": report.failed_error_codes,
+    }
+    await _record_preempt_history_event(
+        state=state,
+        user_id=user_id,
+        event=event,
+    )
+    if report.status == "failed":
+        raise ValueError("invoke_interrupt_failed")
 
 
 async def _bind_inflight_task_if_needed(

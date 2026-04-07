@@ -19,7 +19,10 @@ from app.db.locking import (
 )
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
-from app.features.sessions.common import deserialize_interrupt_event_block_content
+from app.features.sessions.common import (
+    PreemptedInvokeReport,
+    deserialize_interrupt_event_block_content,
+)
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
@@ -1062,23 +1065,49 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
         metadata={},
         stream_identity={},
         stream_usage={},
-        user_message_id=None,
+        user_message_id=str(uuid4()),
+        agent_message_id=str(uuid4()),
     )
     called: list[str] = []
+    recorded_events: list[dict[str, object]] = []
+    target_message_id = str(uuid4())
 
-    async def fake_preempt_inflight_invoke(
+    async def fake_preempt_inflight_invoke_report(
         *,
         user_id,  # noqa: ANN001, ARG001
         conversation_id,  # noqa: ANN001, ARG001
         reason,  # noqa: ANN001
-    ) -> bool:
+    ) -> PreemptedInvokeReport:
         called.append(str(reason))
-        return True
+        return PreemptedInvokeReport(
+            attempted=True,
+            status="completed",
+            target_task_ids=["task-preempt-1"],
+        )
 
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "preempt_inflight_invoke",
-        fake_preempt_inflight_invoke,
+        "preempt_inflight_invoke_report",
+        fake_preempt_inflight_invoke_report,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_find_latest_agent_message_id",
+        lambda **_kwargs: asyncio.sleep(0, result=target_message_id),
+    )
+
+    async def fake_record_preempt_history_event(
+        *,
+        state,  # noqa: ANN001, ARG001
+        user_id,  # noqa: ANN001, ARG001
+        event,  # noqa: ANN001
+    ) -> None:
+        recorded_events.append(dict(event))
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_record_preempt_history_event",
+        fake_record_preempt_history_event,
     )
 
     payload_normal = A2AAgentInvokeRequest.model_validate(
@@ -1094,6 +1123,7 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
         user_id=uuid4(),
     )
     assert called == []
+    assert recorded_events == []
 
     payload_interrupt = A2AAgentInvokeRequest.model_validate(
         {
@@ -1108,6 +1138,18 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
         user_id=uuid4(),
     )
     assert called == ["invoke_interrupt"]
+    assert recorded_events == [
+        {
+            "reason": "invoke_interrupt",
+            "status": "completed",
+            "source": "user",
+            "target_message_id": target_message_id,
+            "replacement_user_message_id": state.user_message_id,
+            "replacement_agent_message_id": state.agent_message_id,
+            "target_task_ids": ["task-preempt-1"],
+            "failed_error_codes": [],
+        }
+    ]
 
 
 @pytest.mark.asyncio

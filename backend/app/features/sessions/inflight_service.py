@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.core.logging import get_logger
 from app.features.sessions.common import (
     INFLIGHT_CANCEL_TERMINAL_ERROR_CODES,
     InflightInvokeEntry,
+    PreemptedInvokeReport,
     inflight_invokes,
     inflight_invokes_lock,
     normalize_non_empty_text,
@@ -223,14 +224,33 @@ class SessionInflightService:
         conversation_id: UUID,
         reason: str,
     ) -> bool:
+        report = await self.preempt_inflight_invoke_report(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            reason=reason,
+        )
+        if report.status == "failed":
+            raise ValueError("invoke_interrupt_failed")
+        return report.status in {"accepted", "completed"}
+
+    async def preempt_inflight_invoke_report(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        reason: str,
+    ) -> PreemptedInvokeReport:
         snapshots = await self._list_inflight_invoke_snapshots(
             user_id=user_id,
             conversation_id=conversation_id,
         )
         if not snapshots:
-            return False
+            return PreemptedInvokeReport(attempted=False, status="none")
 
         preempted = False
+        pending_requested = False
+        target_task_ids: list[str] = []
+        completed_task_ids: list[str] = []
         failed_error_codes: list[str] = []
         for snapshot in snapshots:
             if snapshot.task_id is None:
@@ -242,8 +262,11 @@ class SessionInflightService:
                 )
                 if marked is not None:
                     preempted = True
+                    pending_requested = True
                 continue
 
+            if snapshot.task_id not in target_task_ids:
+                target_task_ids.append(snapshot.task_id)
             success, error_code = await self._cancel_inflight_task(
                 user_id=user_id,
                 conversation_id=conversation_id,
@@ -254,6 +277,8 @@ class SessionInflightService:
                 failed_error_codes.append(error_code or "upstream_error")
                 continue
             preempted = True
+            if snapshot.task_id not in completed_task_ids:
+                completed_task_ids.append(snapshot.task_id)
         if preempted:
             if failed_error_codes:
                 logger.warning(
@@ -264,10 +289,25 @@ class SessionInflightService:
                         "failed_error_codes": failed_error_codes,
                     },
                 )
-            return True
+            status: Literal["accepted", "completed"] = (
+                "completed" if completed_task_ids else "accepted"
+            )
+            return PreemptedInvokeReport(
+                attempted=True,
+                status=status,
+                pending_requested=pending_requested,
+                target_task_ids=target_task_ids,
+                failed_error_codes=failed_error_codes,
+            )
         if failed_error_codes:
-            raise ValueError("invoke_interrupt_failed")
-        return preempted
+            return PreemptedInvokeReport(
+                attempted=True,
+                status="failed",
+                pending_requested=False,
+                target_task_ids=target_task_ids,
+                failed_error_codes=failed_error_codes,
+            )
+        return PreemptedInvokeReport(attempted=False, status="none")
 
     async def cancel_session(
         self,

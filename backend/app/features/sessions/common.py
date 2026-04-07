@@ -7,7 +7,7 @@ import base64
 import binascii
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -56,6 +56,15 @@ class InflightInvokeEntry:
     resolved: Any | None = None
     cancel_requested: bool = False
     cancel_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class PreemptedInvokeReport:
+    attempted: bool
+    status: Literal["none", "accepted", "completed", "failed"]
+    pending_requested: bool = False
+    target_task_ids: list[str] = field(default_factory=list)
+    failed_error_codes: list[str] = field(default_factory=list)
 
 
 inflight_invokes_lock = asyncio.Lock()
@@ -395,6 +404,111 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
     if display_message:
         return display_message
     return "Agent requested additional input."
+
+
+def normalize_preempt_event(event: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(event, dict):
+        return None
+    reason = normalize_non_empty_text(event.get("reason")) or "invoke_interrupt"
+    status = normalize_non_empty_text(event.get("status"))
+    if status not in {"accepted", "completed", "failed"}:
+        return None
+    source = normalize_non_empty_text(event.get("source")) or "user"
+    if source not in {"user", "system"}:
+        return None
+
+    def _normalize_optional_message_id(field_name: str) -> str | None:
+        value = normalize_non_empty_text(event.get(field_name))
+        if value is None:
+            return None
+        try:
+            return str(UUID(value))
+        except ValueError:
+            return None
+
+    target_task_ids: list[str] = []
+    raw_target_task_ids = event.get("target_task_ids")
+    if isinstance(raw_target_task_ids, list):
+        for item in raw_target_task_ids:
+            normalized = normalize_non_empty_text(item)
+            if normalized and normalized not in target_task_ids:
+                target_task_ids.append(normalized)
+
+    failed_error_codes: list[str] = []
+    raw_failed_error_codes = event.get("failed_error_codes")
+    if isinstance(raw_failed_error_codes, list):
+        for item in raw_failed_error_codes:
+            normalized = normalize_non_empty_text(item)
+            if normalized and normalized not in failed_error_codes:
+                failed_error_codes.append(normalized)
+
+    normalized_event: dict[str, Any] = {
+        "reason": reason,
+        "status": status,
+        "source": source,
+        "target_task_ids": target_task_ids,
+        "failed_error_codes": failed_error_codes,
+    }
+    for field_name in (
+        "target_message_id",
+        "replacement_user_message_id",
+        "replacement_agent_message_id",
+    ):
+        normalized_value = _normalize_optional_message_id(field_name)
+        if normalized_value is not None:
+            normalized_event[field_name] = normalized_value
+    return normalized_event
+
+
+def build_preempt_message_id(
+    *,
+    conversation_id: UUID,
+    replacement_user_message_id: str | None,
+    replacement_agent_message_id: str | None,
+    target_message_id: str | None,
+    reason: str,
+) -> UUID:
+    return uuid5(
+        NAMESPACE_URL,
+        "preempt-event:"
+        f"{conversation_id}:"
+        f"{replacement_user_message_id or 'none'}:"
+        f"{replacement_agent_message_id or 'none'}:"
+        f"{target_message_id or 'none'}:"
+        f"{reason}",
+    )
+
+
+def build_preempt_message_content(event: dict[str, Any]) -> str:
+    status = str(event.get("status") or "")
+    if status == "completed":
+        content = (
+            "Interrupted the previous response before continuing with your new "
+            "message."
+        )
+    elif status == "accepted":
+        content = (
+            "Accepted the interrupt request for the previous response and is "
+            "continuing with your new message."
+        )
+    else:
+        content = (
+            "Failed to interrupt the previous response before continuing with "
+            "your new message."
+        )
+
+    target_task_ids = event.get("target_task_ids")
+    if isinstance(target_task_ids, list) and target_task_ids:
+        content = (
+            f"{content}\nTasks: {', '.join(str(item) for item in target_task_ids)}"
+        )
+    failed_error_codes = event.get("failed_error_codes")
+    if isinstance(failed_error_codes, list) and failed_error_codes:
+        content = (
+            f"{content}\nErrors: "
+            f"{', '.join(str(item) for item in failed_error_codes)}"
+        )
+    return content
 
 
 def build_interrupt_block_view(event: dict[str, Any]) -> dict[str, Any]:
