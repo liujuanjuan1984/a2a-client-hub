@@ -82,6 +82,7 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
         "last_health_check_error": record.last_health_check_error,
         "tags": record.tags,
         "extra_headers": record.extra_headers,
+        "invoke_metadata_defaults": record.invoke_metadata_defaults,
         "token_last4": record.token_last4,
         "username_hint": record.username_hint,
         "created_at": record.created_at,
@@ -183,6 +184,9 @@ async def create_agent(
             "enabled": payload.enabled,
             "tags_count": len(payload.tags or []),
             "extra_header_keys": sorted((payload.extra_headers or {}).keys()),
+            "invoke_metadata_default_keys": sorted(
+                (payload.invoke_metadata_defaults or {}).keys()
+            ),
         },
     )
     try:
@@ -197,6 +201,7 @@ async def create_agent(
             enabled=payload.enabled,
             tags=payload.tags,
             extra_headers=payload.extra_headers,
+            invoke_metadata_defaults=payload.invoke_metadata_defaults,
             token=payload.token,
             basic_username=payload.basic_username,
             basic_password=payload.basic_password,
@@ -233,6 +238,11 @@ async def update_agent(
                 if payload.extra_headers is not None
                 else None
             ),
+            "invoke_metadata_default_keys": (
+                sorted(payload.invoke_metadata_defaults.keys())
+                if payload.invoke_metadata_defaults is not None
+                else None
+            ),
         },
     )
     try:
@@ -248,6 +258,7 @@ async def update_agent(
             enabled=payload.enabled,
             tags=payload.tags,
             extra_headers=payload.extra_headers,
+            invoke_metadata_defaults=payload.invoke_metadata_defaults,
             token=payload.token,
             basic_username=payload.basic_username,
             basic_password=payload.basic_password,

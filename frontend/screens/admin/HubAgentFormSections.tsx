@@ -42,6 +42,7 @@ type HubAgentFormSectionsProps = {
   tokenPlaceholder: string;
   tokenFootnote?: ReactNode;
   extraHeadersDescription?: string;
+  invokeMetadataDefaultsDescription?: string;
   onNameChange: (value: string) => void;
   onCardUrlChange: (value: string) => void;
   onEnabledChange: (value: boolean) => void;
@@ -61,6 +62,13 @@ type HubAgentFormSectionsProps = {
   ) => void;
   onHeaderRowRemove: (id: string) => void;
   onHeaderRowAdd: () => void;
+  onInvokeMetadataDefaultRowChange: (
+    id: string,
+    field: "key" | "value",
+    value: string,
+  ) => void;
+  onInvokeMetadataDefaultRowRemove: (id: string) => void;
+  onInvokeMetadataDefaultRowAdd: () => void;
 };
 
 export function HubAgentFormSections({
@@ -74,6 +82,7 @@ export function HubAgentFormSections({
   tokenPlaceholder,
   tokenFootnote,
   extraHeadersDescription,
+  invokeMetadataDefaultsDescription,
   onNameChange,
   onCardUrlChange,
   onEnabledChange,
@@ -89,6 +98,9 @@ export function HubAgentFormSections({
   onHeaderRowChange,
   onHeaderRowRemove,
   onHeaderRowAdd,
+  onInvokeMetadataDefaultRowChange,
+  onInvokeMetadataDefaultRowRemove,
+  onInvokeMetadataDefaultRowAdd,
 }: HubAgentFormSectionsProps) {
   return (
     <>
@@ -303,6 +315,39 @@ export function HubAgentFormSections({
             variant="outline"
             size="sm"
             onPress={onHeaderRowAdd}
+          />
+        </View>
+      </View>
+
+      <View className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/30 p-5">
+        <Text className="text-base font-semibold text-white">
+          Invoke metadata defaults
+        </Text>
+        <Text className="mt-2 text-sm text-muted">
+          {invokeMetadataDefaultsDescription ??
+            "Optional agent-level defaults used when request metadata and session bindings do not provide a value."}
+        </Text>
+        <View className="mt-4 gap-3">
+          {values.invokeMetadataDefaults.map((row: HeaderRow) => (
+            <KeyValueInputRow
+              key={row.id}
+              keyValue={row.key}
+              valueValue={row.value}
+              onChangeKey={(value) =>
+                onInvokeMetadataDefaultRowChange(row.id, "key", value)
+              }
+              onChangeValue={(value) =>
+                onInvokeMetadataDefaultRowChange(row.id, "value", value)
+              }
+              onRemove={() => onInvokeMetadataDefaultRowRemove(row.id)}
+            />
+          ))}
+          <Button
+            className="self-start"
+            label="Add default"
+            variant="outline"
+            size="sm"
+            onPress={onInvokeMetadataDefaultRowAdd}
           />
         </View>
       </View>

@@ -64,6 +64,7 @@ const buildAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
   basicUsername: "",
   basicPassword: "",
   extraHeaders: [],
+  invokeMetadataDefaults: [],
   status: "idle",
   ...overrides,
 });
@@ -115,6 +116,7 @@ describe("useAgentsCatalogQuery mutations", () => {
           enabled: true,
           tags: [],
           extra_headers: {},
+          invoke_metadata_defaults: {},
           created_at: "2026-02-12T00:00:00.000Z",
           updated_at: "2026-02-12T00:01:00.000Z",
         },
@@ -185,6 +187,7 @@ describe("useAgentsCatalogQuery mutations", () => {
       enabled: true,
       tags: [],
       extra_headers: {},
+      invoke_metadata_defaults: {},
       created_at: "2026-02-12T00:00:00.000Z",
       updated_at: "2026-02-12T00:01:00.000Z",
     });
@@ -235,6 +238,7 @@ describe("useAgentsCatalogQuery mutations", () => {
       enabled: true,
       tags: [],
       extra_headers: {},
+      invoke_metadata_defaults: {},
       created_at: "2026-02-12T00:00:00.000Z",
       updated_at: "2026-02-12T00:01:00.000Z",
     });
@@ -381,6 +385,7 @@ describe("useAgentsCatalogQuery mutations", () => {
       enabled: true,
       tags: [],
       extra_headers: {},
+      invoke_metadata_defaults: {},
       created_at: "2026-02-12T00:00:00.000Z",
       updated_at: "2026-02-12T00:00:00.000Z",
     });
@@ -420,6 +425,7 @@ describe("useAgentsCatalogQuery mutations", () => {
         basicUsername: "",
         basicPassword: "",
         extraHeaders: [],
+        invokeMetadataDefaults: [],
       });
     });
 
@@ -443,6 +449,7 @@ describe("useAgentsCatalogQuery mutations", () => {
       enabled: true,
       tags: [],
       extra_headers: {},
+      invoke_metadata_defaults: {},
       created_at: "2026-02-12T00:00:00.000Z",
       updated_at: "2026-02-12T00:00:00.000Z",
     });
@@ -464,6 +471,7 @@ describe("useAgentsCatalogQuery mutations", () => {
           basicUsername: "",
           basicPassword: "",
           extraHeaders: [],
+          invokeMetadataDefaults: [],
         }),
       ).resolves.toMatchObject({
         id: "agent-new",

@@ -228,6 +228,7 @@ async def finalize_outbound_invoke_payload(
     invoke_metadata_resolution = apply_invoke_metadata_bindings(
         metadata=payload.metadata,
         ext=invoke_metadata_ext,
+        defaults=getattr(runtime, "invoke_metadata_defaults", None),
     )
     cleaned_metadata = strip_session_binding_metadata(
         invoke_metadata_resolution.metadata

@@ -21,6 +21,7 @@ type SessionControlMethodCapability = {
 type InvokeMetadataCapability = {
   declared: boolean;
   consumedByHub: boolean;
+  status: "supported" | "unsupported" | "invalid";
   metadataField?: string | null;
   appliesToMethods: string[];
   fields: {
@@ -28,6 +29,7 @@ type InvokeMetadataCapability = {
     required: boolean;
     description?: string | null;
   }[];
+  error?: string | null;
 };
 type DeclaredMethodCapability = {
   declared: boolean;
@@ -117,8 +119,7 @@ export const useExtensionCapabilitiesQuery = ({
       : "unknown";
   const invokeMetadataStatus: GenericCapabilityStatus =
     query.data?.invokeMetadata != null
-      ? query.data.invokeMetadata.declared &&
-        query.data.invokeMetadata.consumedByHub
+      ? query.data.invokeMetadata.status === "supported"
         ? "supported"
         : "unsupported"
       : "unknown";

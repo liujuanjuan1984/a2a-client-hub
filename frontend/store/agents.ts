@@ -26,6 +26,7 @@ export type AgentConfig = {
   basicUsername: string;
   basicPassword: string;
   extraHeaders: AgentHeader[];
+  invokeMetadataDefaults: AgentHeader[];
   status: AgentStatus;
   lastCheckedAt?: string;
   lastError?: string;

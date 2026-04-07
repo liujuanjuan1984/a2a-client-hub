@@ -16,6 +16,7 @@ export type HubA2AAgentAdminResponse = {
   enabled: boolean;
   tags: string[];
   extra_headers: Record<string, string>;
+  invoke_metadata_defaults: Record<string, string>;
   has_credential: boolean;
   token_last4?: string | null;
   username_hint?: string | null;
@@ -47,6 +48,7 @@ export type HubA2AAgentAdminCreate = {
   enabled: boolean;
   tags: string[];
   extra_headers: Record<string, string>;
+  invoke_metadata_defaults: Record<string, string>;
   token?: string | null;
   basic_username?: string | null;
   basic_password?: string | null;

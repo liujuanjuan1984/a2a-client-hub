@@ -230,6 +230,8 @@ export function useChatScreenController({
   }, [extensionCapabilitiesQuery.invokeMetadata?.fields, latestMissingParams]);
   const hasInvokeMetadataBindings =
     Object.keys(invokeMetadataBindings).length > 0;
+  const showInvokeMetadataControl =
+    hasInvokeMetadataBindings || invokeMetadataFields.length > 0;
   const invokeMetadataRequiredCount = invokeMetadataFields.filter(
     (field) => field.required,
   ).length;
@@ -1038,6 +1040,7 @@ export function useChatScreenController({
     invokeMetadataBindings,
     invokeMetadataFields,
     hasInvokeMetadataBindings,
+    showInvokeMetadataControl,
     invokeMetadataRequiredCount,
     messages,
     historyLoading,

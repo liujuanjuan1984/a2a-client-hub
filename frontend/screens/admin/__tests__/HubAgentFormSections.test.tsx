@@ -88,6 +88,7 @@ describe("HubAgentFormSections", () => {
       basicPassword: "",
       tagsText: "",
       extraHeaders: [{ id: "row-1", key: "", value: "" }],
+      invokeMetadataDefaults: [{ id: "default-1", key: "", value: "" }],
     },
     errors: {},
     tokenLabel: "Token",
@@ -107,6 +108,9 @@ describe("HubAgentFormSections", () => {
     onHeaderRowChange: jest.fn(),
     onHeaderRowRemove: jest.fn(),
     onHeaderRowAdd: jest.fn(),
+    onInvokeMetadataDefaultRowChange: jest.fn(),
+    onInvokeMetadataDefaultRowRemove: jest.fn(),
+    onInvokeMetadataDefaultRowAdd: jest.fn(),
   };
 
   beforeEach(() => {
@@ -135,9 +139,11 @@ describe("HubAgentFormSections", () => {
 
     fireEvent(screen.UNSAFE_getByType(Switch), "valueChange", false);
     fireEvent.press(screen.getByText("Add header"));
+    fireEvent.press(screen.getByText("Add default"));
 
     expect(baseProps.onEnabledChange).toHaveBeenCalledWith(false);
     expect(baseProps.onHeaderRowAdd).toHaveBeenCalled();
+    expect(baseProps.onInvokeMetadataDefaultRowAdd).toHaveBeenCalled();
   });
 
   it("renders optional descriptions and forwards bearer plus header-row edits", () => {
@@ -156,6 +162,7 @@ describe("HubAgentFormSections", () => {
         authenticationDescription="Use bearer auth for upstream requests."
         tokenFootnote={<>Stored securely.</>}
         extraHeadersDescription="Forwarded to upstream requests."
+        invokeMetadataDefaultsDescription="Used as agent-level fallbacks."
       />,
     );
 
@@ -167,15 +174,16 @@ describe("HubAgentFormSections", () => {
       screen.getByText("Use bearer auth for upstream requests."),
     ).toBeTruthy();
     expect(screen.getByText("Forwarded to upstream requests.")).toBeTruthy();
+    expect(screen.getByText("Used as agent-level fallbacks.")).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText("Public"));
     fireEvent.press(screen.getByLabelText("No Auth"));
     fireEvent.changeText(screen.getByLabelText("Auth header"), "X-Auth");
     fireEvent.changeText(screen.getByLabelText("Auth scheme"), "Token");
     fireEvent.changeText(screen.getByLabelText("Token"), "next-token");
-    fireEvent.press(screen.getByText("Change header key"));
-    fireEvent.press(screen.getByText("Change header value"));
-    fireEvent.press(screen.getByText("Remove header"));
+    fireEvent.press(screen.getAllByText("Change header key")[0]!);
+    fireEvent.press(screen.getAllByText("Change header value")[0]!);
+    fireEvent.press(screen.getAllByText("Remove header")[0]!);
 
     expect(baseProps.onAvailabilityPolicyChange).toHaveBeenCalledWith("public");
     expect(baseProps.onAuthTypeChange).toHaveBeenCalledWith("none");

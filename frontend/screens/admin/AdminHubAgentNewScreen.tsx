@@ -48,6 +48,9 @@ export function AdminHubAgentNewScreen() {
     setHeaderRow,
     removeHeaderRow,
     addHeaderRow,
+    setInvokeMetadataDefaultRow,
+    removeInvokeMetadataDefaultRow,
+    addInvokeMetadataDefaultRow,
     validate,
     buildPayload,
   } = useHubAgentFormState();
@@ -161,6 +164,9 @@ export function AdminHubAgentNewScreen() {
           onHeaderRowChange={setHeaderRow}
           onHeaderRowRemove={removeHeaderRow}
           onHeaderRowAdd={addHeaderRow}
+          onInvokeMetadataDefaultRowChange={setInvokeMetadataDefaultRow}
+          onInvokeMetadataDefaultRowRemove={removeInvokeMetadataDefaultRow}
+          onInvokeMetadataDefaultRowAdd={addInvokeMetadataDefaultRow}
         />
 
         <View className="mt-10 flex-row items-center justify-between gap-3">

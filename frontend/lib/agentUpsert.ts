@@ -16,6 +16,7 @@ type AgentUpsertInput = {
   basicUsername: string;
   basicPassword: string;
   extraHeaders: HeaderEntry[];
+  invokeMetadataDefaults: HeaderEntry[];
 };
 
 export const buildAgentUpsertPayload = (
@@ -39,6 +40,7 @@ export const buildAgentUpsertPayload = (
     enabled: true,
     tags: [],
     extra_headers: {},
+    invoke_metadata_defaults: buildHeaderObject(input.invokeMetadataDefaults),
   };
 
   switch (input.authType) {

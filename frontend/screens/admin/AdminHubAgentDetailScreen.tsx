@@ -66,6 +66,9 @@ export function AdminHubAgentDetailScreen({
     setHeaderRow,
     removeHeaderRow,
     addHeaderRow,
+    setInvokeMetadataDefaultRow,
+    removeInvokeMetadataDefaultRow,
+    addInvokeMetadataDefaultRow,
     hydrateFromRecord,
     validate,
     buildPayload,
@@ -317,6 +320,9 @@ export function AdminHubAgentDetailScreen({
           onHeaderRowChange={setHeaderRow}
           onHeaderRowRemove={removeHeaderRow}
           onHeaderRowAdd={addHeaderRow}
+          onInvokeMetadataDefaultRowChange={setInvokeMetadataDefaultRow}
+          onInvokeMetadataDefaultRowRemove={removeInvokeMetadataDefaultRow}
+          onInvokeMetadataDefaultRowAdd={addInvokeMetadataDefaultRow}
         />
 
         {values.availabilityPolicy === "allowlist" ? (

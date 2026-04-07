@@ -227,8 +227,18 @@ def _build_invoke_metadata_response(
     ext = getattr(invoke_snapshot, "ext", None)
     fields = list(getattr(ext, "fields", ()) or ())
     return A2AInvokeMetadataCapabilitiesResponse(
-        declared=ext is not None,
+        declared=bool(
+            getattr(
+                invoke_snapshot,
+                "meta",
+                {},
+            ).get("invoke_metadata_declared", ext is not None)
+        ),
         consumedByHub=True,
+        status=cast(
+            Literal["supported", "unsupported", "invalid"],
+            getattr(invoke_snapshot, "status", "unsupported"),
+        ),
         metadataField=getattr(ext, "metadata_field", None),
         appliesToMethods=list(getattr(ext, "applies_to_methods", ()) or ()),
         fields=[
@@ -239,6 +249,7 @@ def _build_invoke_metadata_response(
             )
             for item in fields
         ],
+        error=getattr(invoke_snapshot, "error", None),
     )
 
 

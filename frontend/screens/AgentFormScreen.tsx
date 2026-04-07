@@ -73,6 +73,7 @@ type Snapshot = {
   basicUsername: string;
   basicPassword: string;
   extraHeaders: { key: string; value: string }[];
+  invokeMetadataDefaults: { key: string; value: string }[];
 };
 
 const buildSnapshot = (value: {
@@ -85,6 +86,7 @@ const buildSnapshot = (value: {
   basicUsername: string;
   basicPassword: string;
   extraHeaders: AgentHeader[];
+  invokeMetadataDefaults: AgentHeader[];
 }): Snapshot => ({
   name: value.name.trim(),
   cardUrl: value.cardUrl.trim(),
@@ -95,6 +97,9 @@ const buildSnapshot = (value: {
   basicUsername: value.basicUsername.trim(),
   basicPassword: value.basicPassword.trim(),
   extraHeaders: value.extraHeaders
+    .map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
+    .filter((item) => item.key || item.value),
+  invokeMetadataDefaults: value.invokeMetadataDefaults
     .map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
     .filter((item) => item.key || item.value),
 });
@@ -132,7 +137,14 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     agent?.basicPassword ?? "",
   );
   const [extraHeaders, setExtraHeaders] = useState<AgentHeader[]>(
-    agent?.extraHeaders.length ? agent.extraHeaders : [createHeader()],
+    agent?.extraHeaders?.length ? agent.extraHeaders : [createHeader()],
+  );
+  const [invokeMetadataDefaults, setInvokeMetadataDefaults] = useState<
+    AgentHeader[]
+  >(
+    agent?.invokeMetadataDefaults?.length
+      ? agent.invokeMetadataDefaults
+      : [createHeader()],
   );
   const [errors, setErrors] = useState<{ name?: string; cardUrl?: string }>({});
   const [saveStatus, setSaveStatus] = useState<
@@ -178,6 +190,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
           basicUsername,
           basicPassword,
           extraHeaders,
+          invokeMetadataDefaults,
         });
       }
       return;
@@ -196,7 +209,12 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     setBasicUsername(agent.basicUsername ?? "");
     setBasicPassword(agent.basicPassword ?? "");
     setExtraHeaders(
-      agent.extraHeaders.length ? agent.extraHeaders : [createHeader()],
+      agent.extraHeaders?.length ? agent.extraHeaders : [createHeader()],
+    );
+    setInvokeMetadataDefaults(
+      agent.invokeMetadataDefaults?.length
+        ? agent.invokeMetadataDefaults
+        : [createHeader()],
     );
 
     initialSnapshotRef.current = buildSnapshot({
@@ -208,7 +226,10 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       apiKeyValue: agent.apiKeyValue ?? "",
       basicUsername: agent.basicUsername ?? "",
       basicPassword: agent.basicPassword ?? "",
-      extraHeaders: agent.extraHeaders.length ? agent.extraHeaders : [],
+      extraHeaders: agent.extraHeaders?.length ? agent.extraHeaders : [],
+      invokeMetadataDefaults: agent.invokeMetadataDefaults?.length
+        ? agent.invokeMetadataDefaults
+        : [],
     });
   }, [
     agentId,
@@ -222,6 +243,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     basicUsername,
     basicPassword,
     extraHeaders,
+    invokeMetadataDefaults,
   ]);
 
   const dirty = useMemo(() => {
@@ -237,6 +259,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       basicUsername,
       basicPassword,
       extraHeaders,
+      invokeMetadataDefaults,
     });
     return JSON.stringify(current) !== JSON.stringify(initial);
   }, [
@@ -249,6 +272,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     basicUsername,
     basicPassword,
     extraHeaders,
+    invokeMetadataDefaults,
   ]);
 
   const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
@@ -287,6 +311,24 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
 
   const handleHeaderRemove = (id: string) => {
     setExtraHeaders((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleAddInvokeMetadataDefault = () => {
+    setInvokeMetadataDefaults((prev) => [...prev, createHeader()]);
+  };
+
+  const handleInvokeMetadataDefaultChange = (
+    id: string,
+    key: "key" | "value",
+    value: string,
+  ) => {
+    setInvokeMetadataDefaults((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [key]: value } : item)),
+    );
+  };
+
+  const handleInvokeMetadataDefaultRemove = (id: string) => {
+    setInvokeMetadataDefaults((prev) => prev.filter((item) => item.id !== id));
   };
 
   const handleAuthTypeChange = (nextType: AgentAuthType) => {
@@ -329,6 +371,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       basicUsername: basicUsername.trim(),
       basicPassword: basicPassword.trim(),
       extraHeaders,
+      invokeMetadataDefaults,
     };
     const isEditing = Boolean(agentId && agent);
     try {
@@ -374,6 +417,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
         basicUsername: payload.basicUsername,
         basicPassword: payload.basicPassword,
         extraHeaders: payload.extraHeaders,
+        invokeMetadataDefaults: payload.invokeMetadataDefaults,
       });
       setSaveStatus("success");
       toast.success("Success", "Agent saved successfully.");
@@ -769,6 +813,39 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
             variant="outline"
             size="sm"
             onPress={handleAddHeader}
+          />
+        </View>
+      </View>
+
+      <View className="mt-8">
+        <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          Invoke Metadata Defaults
+        </Text>
+        <Text className="mt-2 text-xs text-slate-400">
+          Optional agent-level defaults used when request metadata and session
+          bindings do not provide a value.
+        </Text>
+        <View className="mt-3 gap-3">
+          {invokeMetadataDefaults.map((item) => (
+            <KeyValueInputRow
+              key={item.id}
+              keyValue={item.key}
+              valueValue={item.value}
+              onChangeKey={(value) =>
+                handleInvokeMetadataDefaultChange(item.id, "key", value)
+              }
+              onChangeValue={(value) =>
+                handleInvokeMetadataDefaultChange(item.id, "value", value)
+              }
+              onRemove={() => handleInvokeMetadataDefaultRemove(item.id)}
+            />
+          ))}
+          <Button
+            className="self-start"
+            label="Add default"
+            variant="outline"
+            size="sm"
+            onPress={handleAddInvokeMetadataDefault}
           />
         </View>
       </View>

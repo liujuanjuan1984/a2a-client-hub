@@ -93,6 +93,7 @@ type A2AExtensionCapabilities = {
   invokeMetadata: {
     declared: boolean;
     consumedByHub: boolean;
+    status: "supported" | "unsupported" | "invalid";
     metadataField?: string | null;
     appliesToMethods: string[];
     fields: {
@@ -100,6 +101,7 @@ type A2AExtensionCapabilities = {
       required: boolean;
       description?: string | null;
     }[];
+    error?: string | null;
   };
   requestExecutionOptions?: {
     declared: boolean;

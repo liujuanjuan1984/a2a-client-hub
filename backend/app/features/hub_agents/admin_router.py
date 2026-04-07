@@ -53,6 +53,7 @@ def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse
         "enabled": record.enabled,
         "tags": record.tags,
         "extra_headers": record.extra_headers,
+        "invoke_metadata_defaults": record.invoke_metadata_defaults,
         "has_credential": record.has_credential,
         "token_last4": record.token_last4,
         "username_hint": record.username_hint,
@@ -117,6 +118,9 @@ async def create_hub_agent_admin(
             "enabled": payload.enabled,
             "tags_count": len(payload.tags or []),
             "extra_header_keys": sorted((payload.extra_headers or {}).keys()),
+            "invoke_metadata_default_keys": sorted(
+                (payload.invoke_metadata_defaults or {}).keys()
+            ),
         },
     )
     try:
@@ -133,6 +137,7 @@ async def create_hub_agent_admin(
             enabled=payload.enabled,
             tags=payload.tags,
             extra_headers=payload.extra_headers,
+            invoke_metadata_defaults=payload.invoke_metadata_defaults,
             token=payload.token,
             basic_username=payload.basic_username,
             basic_password=payload.basic_password,
@@ -191,6 +196,11 @@ async def update_hub_agent_admin(
                 if payload.extra_headers is not None
                 else None
             ),
+            "invoke_metadata_default_keys": (
+                sorted(payload.invoke_metadata_defaults.keys())
+                if payload.invoke_metadata_defaults is not None
+                else None
+            ),
             "token_provided": payload.token is not None,
         },
     )
@@ -209,6 +219,7 @@ async def update_hub_agent_admin(
             enabled=payload.enabled,
             tags=payload.tags,
             extra_headers=payload.extra_headers,
+            invoke_metadata_defaults=payload.invoke_metadata_defaults,
             token=payload.token,
             basic_username=payload.basic_username,
             basic_password=payload.basic_password,

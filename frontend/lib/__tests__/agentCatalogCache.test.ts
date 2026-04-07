@@ -21,6 +21,7 @@ const buildAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
   basicUsername: "",
   basicPassword: "",
   extraHeaders: [],
+  invokeMetadataDefaults: [],
   status: "idle",
   ...overrides,
 });
