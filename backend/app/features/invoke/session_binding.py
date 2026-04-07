@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from app.schemas.a2a_invoke import A2AAgentInvokeSessionBinding
+from app.schemas.a2a_invoke import (
+    A2AAgentInvokeRequest,
+    A2AAgentInvokeSessionBinding,
+)
 from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
+
+SessionControlIntent = Literal["append", "preempt"]
 
 
 def status_code_for_invoke_session_error(detail: str) -> int:
@@ -18,6 +23,8 @@ def status_code_for_invoke_session_error(detail: str) -> int:
         "invoke_interrupt_failed",
         "idempotency_conflict",
         "message_id_conflict",
+        "append_requires_bound_session",
+        "append_unavailable",
     }:
         return 409
     return 400
@@ -42,6 +49,10 @@ def ws_error_code_for_invoke_session_error(detail: str) -> str:
         return "invoke_inflight"
     if normalized == "invoke_interrupt_failed":
         return "invoke_interrupt_failed"
+    if normalized == "append_requires_bound_session":
+        return "append_requires_bound_session"
+    if normalized == "append_unavailable":
+        return "append_unavailable"
     if normalized == "idempotency_conflict":
         return "idempotency_conflict"
     if normalized == "message_id_conflict":
@@ -106,12 +117,27 @@ def merge_invoke_binding_state(
     return merged_context_id, merged_metadata
 
 
+def resolve_invoke_session_control_intent(
+    payload: A2AAgentInvokeRequest,
+) -> SessionControlIntent | None:
+    session_control = payload.session_control
+    if session_control is not None:
+        return session_control.intent
+    metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+    extensions = metadata.get("extensions")
+    if isinstance(extensions, dict) and extensions.get("interrupt") is True:
+        return "preempt"
+    return None
+
+
 __all__ = [
     "merge_invoke_binding_state",
     "normalize_invoke_binding_state",
+    "resolve_invoke_session_control_intent",
     "status_code_for_invoke_session_error",
     "is_recoverable_invoke_session_error",
     "ws_error_code_for_recovery_failed",
     "ws_error_code_for_invoke_session_error",
     "resolve_invoke_session_binding_hint",
+    "SessionControlIntent",
 ]

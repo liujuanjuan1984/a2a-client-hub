@@ -191,7 +191,7 @@ export const buildInvokePayload = (
     userMessageId?: string;
     agentMessageId?: string;
     resumeFromSequence?: number;
-    interrupt?: boolean;
+    sessionControlIntent?: "append" | "preempt";
   },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, conversationId };
@@ -218,21 +218,10 @@ export const buildInvokePayload = (
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;
   }
-  if (options?.interrupt) {
-    const resolvedMetadata: Record<string, unknown> = {
-      ...((payload.metadata as Record<string, unknown> | undefined) ?? {}),
+  if (options?.sessionControlIntent) {
+    payload.sessionControl = {
+      intent: options.sessionControlIntent,
     };
-    const currentExtensions =
-      typeof resolvedMetadata.extensions === "object" &&
-      resolvedMetadata.extensions !== null &&
-      !Array.isArray(resolvedMetadata.extensions)
-        ? { ...(resolvedMetadata.extensions as Record<string, unknown>) }
-        : {};
-    resolvedMetadata.extensions = {
-      ...currentExtensions,
-      interrupt: true,
-    };
-    payload.metadata = resolvedMetadata;
   }
   return payload;
 };

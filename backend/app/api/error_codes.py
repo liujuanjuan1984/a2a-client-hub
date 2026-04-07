@@ -28,6 +28,8 @@ class _A2AErrorCodeStatus:
         "interrupt_request_not_found": 404,
         "interrupt_request_expired": 409,
         "interrupt_type_mismatch": 409,
+        "append_requires_bound_session": 409,
+        "append_unavailable": 409,
         # client-side coordination
         "invoke_inflight": 409,
         # upstream-related

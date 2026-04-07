@@ -192,6 +192,28 @@ class SessionHubSupport:
             raise ValueError("message_id_conflict")
         return message
 
+    async def find_latest_message_by_sender(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        sender: str,
+    ) -> AgentMessage | None:
+        stmt = (
+            select(AgentMessage)
+            .where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == conversation_id,
+                    AgentMessage.sender == sender,
+                )
+            )
+            .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+            .limit(1)
+        )
+        return cast(AgentMessage | None, await db.scalar(stmt))
+
     async def ensure_idempotent_user_query(
         self,
         db: AsyncSession,

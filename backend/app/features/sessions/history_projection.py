@@ -19,6 +19,8 @@ from app.features.sessions.common import (
     SessionSource,
     build_interrupt_lifecycle_message_content,
     build_interrupt_lifecycle_message_id,
+    build_preempt_message_content,
+    build_preempt_message_id,
     build_query_hash,
     create_block_with_conflict_recovery,
     derive_session_title_from_invoke_metadata,
@@ -29,6 +31,7 @@ from app.features.sessions.common import (
     is_primary_text_snapshot_source,
     normalize_block_type,
     normalize_interrupt_lifecycle_event,
+    normalize_preempt_event,
     read_block_cursor_state,
     write_block_cursor_state,
 )
@@ -111,6 +114,46 @@ def _trim_overlapping_reasoning_prefix(
         ):
             return re.sub(r"^\s+", "", text[overlap:])
     return text
+
+
+def _merge_preempt_event(
+    *,
+    existing_event: dict[str, Any] | None,
+    incoming_event: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_existing = normalize_preempt_event(existing_event)
+    if normalized_existing is None:
+        return incoming_event
+    if (
+        normalized_existing.get("status") in {"completed", "failed"}
+        and incoming_event.get("status") == "accepted"
+    ):
+        merged_event = dict(normalized_existing)
+        for field_name in (
+            "target_message_id",
+            "replacement_user_message_id",
+            "replacement_agent_message_id",
+        ):
+            if (
+                field_name not in merged_event
+                and incoming_event.get(field_name) is not None
+            ):
+                merged_event[field_name] = incoming_event[field_name]
+        for field_name in ("target_task_ids", "failed_error_codes"):
+            merged_values: list[str] = []
+            for raw_values in (
+                normalized_existing.get(field_name),
+                incoming_event.get(field_name),
+            ):
+                if not isinstance(raw_values, list):
+                    continue
+                for item in raw_values:
+                    normalized_item = normalize_non_empty_text(item)
+                    if normalized_item and normalized_item not in merged_values:
+                        merged_values.append(normalized_item)
+            merged_event[field_name] = merged_values
+        return merged_event
+    return incoming_event
 
 
 def _update_block_event_metadata(
@@ -850,6 +893,103 @@ class SessionHistoryProjectionService:
             message_id=cast(UUID, system_message.id),
             content=build_interrupt_lifecycle_message_content(normalized_event),
             source="interrupt_lifecycle",
+        )
+        return cast(UUID, system_message.id)
+
+    async def record_preempt_event_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+    ) -> UUID | None:
+        session = await self._support.get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if session is None:
+            return None
+        return await self.record_preempt_event(
+            db,
+            conversation_id=cast(UUID, session.id),
+            user_id=user_id,
+            event=event,
+        )
+
+    async def record_preempt_event(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+    ) -> UUID | None:
+        normalized_event = normalize_preempt_event(event)
+        if normalized_event is None:
+            return None
+
+        message_id = build_preempt_message_id(
+            conversation_id=conversation_id,
+            replacement_user_message_id=cast(
+                str | None, normalized_event.get("replacement_user_message_id")
+            ),
+            replacement_agent_message_id=cast(
+                str | None, normalized_event.get("replacement_agent_message_id")
+            ),
+            target_message_id=cast(
+                str | None, normalized_event.get("target_message_id")
+            ),
+            reason=cast(str, normalized_event["reason"]),
+        )
+        existing_message = await self._support.find_message_by_id_and_sender(
+            db,
+            user_id=user_id,
+            message_id=message_id,
+            sender="system",
+            conversation_id=conversation_id,
+        )
+        existing_metadata = (
+            cast(dict[str, Any], existing_message.metadata)
+            if existing_message is not None
+            and isinstance(existing_message.metadata, dict)
+            else {}
+        )
+        resolved_event = _merge_preempt_event(
+            existing_event=cast(
+                dict[str, Any] | None, existing_metadata.get("preempt")
+            ),
+            incoming_event=normalized_event,
+        )
+        message_metadata = {"preempt": resolved_event}
+        if existing_message is None:
+            system_message = await message_store.create_agent_message(
+                db,
+                id=message_id,
+                created_at=utc_now(),
+                user_id=user_id,
+                sender="system",
+                status="done",
+                conversation_id=conversation_id,
+                metadata=message_metadata,
+            )
+        else:
+            updated_system_message = await message_store.update_agent_message(
+                db,
+                message=existing_message,
+                status="done",
+                message_metadata=message_metadata,
+            )
+            if updated_system_message is None:
+                raise ValueError("message_update_failed")
+            system_message = updated_system_message
+        await self._support.upsert_single_text_block(
+            db,
+            user_id=user_id,
+            message_id=cast(UUID, system_message.id),
+            content=build_preempt_message_content(resolved_event),
+            source="invoke_preempt",
         )
         return cast(UUID, system_message.id)
 

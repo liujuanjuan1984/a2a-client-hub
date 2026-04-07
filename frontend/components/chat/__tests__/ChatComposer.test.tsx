@@ -17,6 +17,7 @@ describe("ChatComposer clear button", () => {
     invokeMetadataRequiredCount: 0,
     pendingInterrupt: null,
     pendingInterruptCount: 0,
+    streamSendHint: null,
     showShortcutManager: false,
     onOpenDirectoryPicker: jest.fn(),
     onOpenInvokeMetadata: jest.fn(),
@@ -169,5 +170,43 @@ describe("ChatComposer clear button", () => {
       start: 15,
       end: 15,
     });
+  });
+
+  it("shows append hint when running session supports prompt_async append", () => {
+    const { getByText } = render(
+      <ChatComposer
+        {...mockProps}
+        streamSendHint={{
+          tone: "append",
+          message:
+            "This response is still running. Sending will add to it. Interrupt first if you want to start a new turn.",
+        }}
+      />,
+    );
+
+    expect(
+      getByText(
+        "This response is still running. Sending will add to it. Interrupt first if you want to start a new turn.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows interrupt hint when append is unavailable for a running stream", () => {
+    const { getByText } = render(
+      <ChatComposer
+        {...mockProps}
+        streamSendHint={{
+          tone: "interrupt",
+          message:
+            "The agent is still working. Interrupt it before sending a new message.",
+        }}
+      />,
+    );
+
+    expect(
+      getByText(
+        "The agent is still working. Interrupt it before sending a new message.",
+      ),
+    ).toBeTruthy();
   });
 });

@@ -1,3 +1,5 @@
+import { executeWithCorrection } from "@/lib/correctionFlow";
+
 const ALREADY_EXISTS = "already exists";
 
 type ApiLikeError = {
@@ -79,32 +81,31 @@ export const executeWithAdminAutoAllowlist = async <T>({
   addHostToAllowlist,
   onCancel,
 }: AutoAllowlistActionOptions<T>): Promise<AutoAllowlistActionResult<T>> => {
-  try {
-    return { status: "created", value: await run() };
-  } catch (error) {
-    if (!isAdmin || !isCardUrlHostNotAllowedError(error)) {
-      throw error;
-    }
-
-    const host = extractCardUrlHost(cardUrl);
-    if (!host) {
-      throw error;
-    }
-
-    const confirmed = await confirmAddHost(host);
-    if (!confirmed) {
-      await onCancel();
-      return { status: "cancelled" };
-    }
-
-    try {
-      await addHostToAllowlist(host);
-    } catch (allowlistError) {
-      if (!isAllowlistEntryAlreadyExistsError(allowlistError)) {
-        throw allowlistError;
+  const result = await executeWithCorrection({
+    run,
+    onCancel,
+    resolveCorrection: (error) => {
+      if (!isAdmin || !isCardUrlHostNotAllowedError(error)) {
+        return null;
       }
-    }
 
-    return { status: "created", value: await run() };
+      const host = extractCardUrlHost(cardUrl);
+      if (!host) {
+        return null;
+      }
+
+      return {
+        context: host,
+        confirm: confirmAddHost,
+        apply: addHostToAllowlist,
+        shouldIgnoreApplyError: (allowlistError) =>
+          isAllowlistEntryAlreadyExistsError(allowlistError),
+      };
+    },
+  });
+
+  if (result.status === "cancelled") {
+    return result;
   }
+  return { status: "created", value: result.value };
 };

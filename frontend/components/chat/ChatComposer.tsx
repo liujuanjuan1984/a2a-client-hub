@@ -22,6 +22,7 @@ export const ChatComposer = memo(function ChatComposer({
   invokeMetadataRequiredCount,
   pendingInterrupt,
   pendingInterruptCount,
+  streamSendHint,
   showShortcutManager,
   onOpenDirectoryPicker,
   onOpenInvokeMetadata,
@@ -53,6 +54,10 @@ export const ChatComposer = memo(function ChatComposer({
   invokeMetadataRequiredCount: number;
   pendingInterrupt: PendingRuntimeInterrupt | null;
   pendingInterruptCount: number;
+  streamSendHint: {
+    tone: "append" | "interrupt";
+    message: string;
+  } | null;
   showShortcutManager: boolean;
   onOpenDirectoryPicker: () => void;
   onOpenInvokeMetadata: () => void;
@@ -104,6 +109,26 @@ export const ChatComposer = memo(function ChatComposer({
               session.
             </Text>
           ) : null}
+        </View>
+      ) : null}
+
+      {!pendingInterrupt && streamSendHint ? (
+        <View
+          className={`mb-3 rounded-xl px-3 py-2 ${
+            streamSendHint.tone === "append"
+              ? "border border-sky-500/30 bg-sky-500/10"
+              : "border border-yellow-500/30 bg-yellow-500/10"
+          }`}
+        >
+          <Text
+            className={`text-xs ${
+              streamSendHint.tone === "append"
+                ? "text-sky-200"
+                : "text-yellow-200"
+            }`}
+          >
+            {streamSendHint.message}
+          </Text>
         </View>
       ) : null}
 

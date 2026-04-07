@@ -122,52 +122,67 @@ export function useChatComposerController({
     [minInputHeight, updateInputFlags],
   );
 
-  const handleSend = useCallback(() => {
-    if (!activeAgentId || !conversationId || !agentSource) {
-      return;
-    }
-    if (pendingInterruptActive) {
-      toast.info(
-        "Action required",
-        "Please resolve the interactive action card before sending a new message.",
-      );
-      return;
-    }
-    const input = draftInputRef.current;
-    if (!input.trim()) {
-      return;
-    }
+  const submitDraft = useCallback(
+    (
+      action: (
+        conversationId: string,
+        agentId: string,
+        content: string,
+        agentSource: AgentSource,
+      ) => Promise<void>,
+      errorTitle: string,
+    ) => {
+      if (!activeAgentId || !conversationId || !agentSource) {
+        return;
+      }
+      if (pendingInterruptActive) {
+        toast.info(
+          "Action required",
+          "Please resolve the interactive action card before sending a new message.",
+        );
+        return;
+      }
+      const input = draftInputRef.current;
+      if (!input.trim()) {
+        return;
+      }
 
-    replaceInput("", { resetHeight: true });
-    onAfterSend();
-    const sendPromise = sendMessage(
-      conversationId,
+      replaceInput("", { resetHeight: true });
+      onAfterSend();
+      const sendPromise = action(
+        conversationId,
+        activeAgentId,
+        input,
+        agentSource,
+      );
+      sendPromise.catch((error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : "Unknown error.";
+        const skipToast =
+          Boolean(error) &&
+          typeof error === "object" &&
+          (error as { skipToast?: boolean }).skipToast === true;
+        if (!skipToast) {
+          toast.error(errorTitle, message);
+        }
+        if (draftInputRef.current.length === 0) {
+          replaceInput(input, { focus: true });
+        }
+      });
+    },
+    [
       activeAgentId,
-      input,
       agentSource,
-    );
-    sendPromise.catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "Unknown error.";
-      const skipToast =
-        Boolean(error) &&
-        typeof error === "object" &&
-        (error as { skipToast?: boolean }).skipToast === true;
-      if (!skipToast) {
-        toast.error("Send failed", message);
-      }
-      if (draftInputRef.current.length === 0) {
-        replaceInput(input, { focus: true });
-      }
-    });
-  }, [
-    activeAgentId,
-    agentSource,
-    conversationId,
-    onAfterSend,
-    pendingInterruptActive,
-    replaceInput,
-    sendMessage,
-  ]);
+      conversationId,
+      onAfterSend,
+      pendingInterruptActive,
+      replaceInput,
+    ],
+  );
+
+  const handleSend = useCallback(() => {
+    submitDraft(sendMessage, "Send failed");
+  }, [sendMessage, submitDraft]);
 
   const openShortcutManager = useCallback(() => {
     setShortcutManagerInitialPrompt(draftInputRef.current);

@@ -6,11 +6,12 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.error_codes import status_code_for_invoke_error_code
@@ -20,6 +21,7 @@ from app.db.locking import (
     RetryableDbLockError,
     RetryableDbQueryTimeoutError,
 )
+from app.db.models.agent_message import AgentMessage
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke.guard import (
@@ -52,6 +54,8 @@ from app.features.invoke.session_binding import (
     is_recoverable_invoke_session_error,
     merge_invoke_binding_state,
     normalize_invoke_binding_state,
+    resolve_invoke_session_binding_hint,
+    resolve_invoke_session_control_intent,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
     ws_error_code_for_recovery_failed,
@@ -81,16 +85,17 @@ from app.features.invoke.stream_persistence import (
 )
 from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
-from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
+from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.runtime.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeResponse,
+    A2AAgentInvokeSessionControlResult,
 )
 from app.schemas.ws_ticket import WsTicketResponse
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
@@ -106,6 +111,9 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
 _STREAM_HINTS_WARNING_TTL_SECONDS = 300.0
+_APPEND_UNAVAILABLE_EXTENSION_ERROR_CODES = frozenset(
+    {"method_not_supported", "method_disabled", "not_supported"}
+)
 _stream_hints_warning_cache: dict[
     tuple[str, tuple[tuple[str, str], ...], str],
     float,
@@ -209,6 +217,45 @@ async def _register_inflight_invoke(
     )
 
 
+async def _find_latest_agent_message_id(
+    *,
+    user_id: UUID,
+    conversation_id: UUID,
+) -> str | None:
+    async with AsyncSessionLocal() as db:
+        latest_message_id = await db.scalar(
+            select(AgentMessage.id)
+            .where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == conversation_id,
+                    AgentMessage.sender == "agent",
+                )
+            )
+            .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+            .limit(1)
+        )
+    return str(latest_message_id) if isinstance(latest_message_id, UUID) else None
+
+
+async def _record_preempt_history_event(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+    event: dict[str, Any],
+) -> None:
+    if state.local_session_id is None:
+        return
+    async with AsyncSessionLocal() as db:
+        await session_hub_service.record_preempt_event_by_local_session_id(
+            db,
+            local_session_id=state.local_session_id,
+            user_id=user_id,
+            event=event,
+        )
+        await commit_safely(db)
+
+
 async def _preempt_previous_invoke_if_requested(
     *,
     state: _InvokeState,
@@ -219,10 +266,288 @@ async def _preempt_previous_invoke_if_requested(
         return
     if not _is_interrupt_requested(payload):
         return
-    await session_hub_service.preempt_inflight_invoke(
+    target_message_id = await _find_latest_agent_message_id(
+        user_id=user_id,
+        conversation_id=state.local_session_id,
+    )
+    pending_event = {
+        "reason": "invoke_interrupt",
+        "source": "user",
+        "target_message_id": target_message_id,
+        "replacement_user_message_id": state.user_message_id,
+        "replacement_agent_message_id": state.agent_message_id,
+    }
+    report = await session_hub_service.preempt_inflight_invoke_report(
         user_id=user_id,
         conversation_id=state.local_session_id,
         reason="invoke_interrupt",
+        pending_event=pending_event,
+    )
+    if not report.attempted:
+        return
+
+    event = {
+        **pending_event,
+        "status": report.status,
+        "target_task_ids": report.target_task_ids,
+        "failed_error_codes": report.failed_error_codes,
+    }
+    await _record_preempt_history_event(
+        state=state,
+        user_id=user_id,
+        event=event,
+    )
+    if report.status == "failed":
+        raise ValueError("invoke_interrupt_failed")
+
+
+def _build_session_control_response(
+    *,
+    intent: Literal["append", "preempt"],
+    status: Literal["accepted", "completed", "no_inflight", "unavailable", "failed"],
+    session_id: str | None = None,
+) -> A2AAgentInvokeSessionControlResult:
+    return A2AAgentInvokeSessionControlResult(
+        intent=intent,
+        status=status,
+        sessionId=session_id,
+    )
+
+
+def _build_session_control_error_response(
+    *,
+    intent: Literal["append", "preempt"],
+    message: str,
+    error_code: str,
+    runtime: Any,
+    source: str = "hub_session_control",
+    jsonrpc_code: int | None = None,
+    missing_params: list[dict[str, Any]] | None = None,
+    upstream_error: dict[str, Any] | None = None,
+) -> A2AAgentInvokeResponse:
+    status: Literal["unavailable", "failed"] = (
+        "unavailable"
+        if error_code in {"append_requires_bound_session", "append_unavailable"}
+        else "failed"
+    )
+    return A2AAgentInvokeResponse(
+        success=False,
+        content=None,
+        error=message,
+        error_code=error_code,
+        source=source,
+        jsonrpc_code=jsonrpc_code,
+        missing_params=missing_params,
+        upstream_error=upstream_error,
+        agent_name=getattr(runtime.resolved, "name", None),
+        agent_url=getattr(runtime.resolved, "url", None),
+        sessionControl=_build_session_control_response(
+            intent=intent,
+            status=status,
+        ),
+    )
+
+
+def _build_append_request_payload(payload: A2AAgentInvokeRequest) -> dict[str, Any]:
+    request_payload: dict[str, Any] = {
+        "parts": [{"type": "text", "text": payload.query.strip()}],
+        "messageID": _normalize_optional_message_id(payload.user_message_id)
+        or str(uuid4()),
+    }
+    return request_payload
+
+
+def _resolve_append_session_id(payload: A2AAgentInvokeRequest) -> str | None:
+    _provider, external_session_id = resolve_invoke_session_binding_hint(
+        session_binding=payload.session_binding,
+        metadata=payload.metadata,
+    )
+    return external_session_id
+
+
+async def _run_append_session_control(
+    *,
+    runtime: Any,
+    payload: A2AAgentInvokeRequest,
+) -> A2AAgentInvokeResponse:
+    session_id = _resolve_append_session_id(payload)
+    if not session_id:
+        return _build_session_control_error_response(
+            intent="append",
+            message="Append requires a bound upstream session.",
+            error_code="append_requires_bound_session",
+            runtime=runtime,
+        )
+
+    result = await get_a2a_extensions_service().prompt_session_async(
+        runtime=runtime,
+        session_id=session_id,
+        request_payload=_build_append_request_payload(payload),
+        metadata=payload.metadata,
+    )
+    if not result.success:
+        mapped_error_code = (
+            "append_unavailable"
+            if result.error_code in _APPEND_UNAVAILABLE_EXTENSION_ERROR_CODES
+            else result.error_code or "upstream_error"
+        )
+        message = (
+            "Append is unavailable for the current session."
+            if mapped_error_code == "append_unavailable"
+            else "Append failed."
+        )
+        return _build_session_control_error_response(
+            intent="append",
+            message=message,
+            error_code=mapped_error_code,
+            runtime=runtime,
+            source=result.source or "hub_session_control",
+            jsonrpc_code=result.jsonrpc_code,
+            missing_params=result.missing_params,
+            upstream_error=result.upstream_error,
+        )
+
+    response_payload = result.result if isinstance(result.result, dict) else {}
+    if response_payload.get("ok") is not True:
+        return _build_session_control_error_response(
+            intent="append",
+            message="Append acknowledged without ok=true.",
+            error_code="upstream_payload_error",
+            runtime=runtime,
+            source=result.source or "hub_session_control",
+            jsonrpc_code=result.jsonrpc_code,
+            missing_params=result.missing_params,
+            upstream_error=result.upstream_error,
+        )
+
+    resolved_session_id = (
+        normalize_non_empty_text(cast(str | None, response_payload.get("session_id")))
+        or session_id
+    )
+    return A2AAgentInvokeResponse(
+        success=True,
+        content=None,
+        error=None,
+        error_code=None,
+        source="hub_session_control",
+        jsonrpc_code=None,
+        missing_params=None,
+        upstream_error=None,
+        agent_name=getattr(runtime.resolved, "name", None),
+        agent_url=getattr(runtime.resolved, "url", None),
+        sessionControl=_build_session_control_response(
+            intent="append",
+            status="accepted",
+            session_id=resolved_session_id,
+        ),
+    )
+
+
+def _is_preempt_only_session_control(payload: A2AAgentInvokeRequest) -> bool:
+    return (
+        resolve_invoke_session_control_intent(payload) == "preempt"
+        and not payload.query.strip()
+    )
+
+
+async def _run_preempt_session_control(
+    *,
+    runtime: Any,
+    payload: A2AAgentInvokeRequest,
+    user_id: UUID,
+) -> A2AAgentInvokeResponse:
+    local_session_id = _coerce_uuid(payload.conversation_id)
+    if local_session_id is None:
+        return A2AAgentInvokeResponse(
+            success=True,
+            content=None,
+            error=None,
+            error_code=None,
+            source="hub_session_control",
+            jsonrpc_code=None,
+            missing_params=None,
+            upstream_error=None,
+            agent_name=getattr(runtime.resolved, "name", None),
+            agent_url=getattr(runtime.resolved, "url", None),
+            sessionControl=_build_session_control_response(
+                intent="preempt",
+                status="no_inflight",
+            ),
+        )
+
+    target_message_id = await _find_latest_agent_message_id(
+        user_id=user_id,
+        conversation_id=local_session_id,
+    )
+    pending_event = {
+        "reason": "invoke_interrupt",
+        "source": "user",
+        "target_message_id": target_message_id,
+    }
+    report = await session_hub_service.preempt_inflight_invoke_report(
+        user_id=user_id,
+        conversation_id=local_session_id,
+        reason="invoke_interrupt",
+        pending_event=pending_event,
+    )
+    if not report.attempted:
+        return A2AAgentInvokeResponse(
+            success=True,
+            content=None,
+            error=None,
+            error_code=None,
+            source="hub_session_control",
+            jsonrpc_code=None,
+            missing_params=None,
+            upstream_error=None,
+            agent_name=getattr(runtime.resolved, "name", None),
+            agent_url=getattr(runtime.resolved, "url", None),
+            sessionControl=_build_session_control_response(
+                intent="preempt",
+                status="no_inflight",
+            ),
+        )
+
+    event = {
+        **pending_event,
+        "status": report.status,
+        "target_task_ids": report.target_task_ids,
+        "failed_error_codes": report.failed_error_codes,
+    }
+    async with AsyncSessionLocal() as db:
+        await session_hub_service.record_preempt_event_by_local_session_id(
+            db,
+            local_session_id=local_session_id,
+            user_id=user_id,
+            event=event,
+        )
+        await commit_safely(db)
+    if report.status == "failed":
+        return _build_session_control_error_response(
+            intent="preempt",
+            message="Interrupt failed.",
+            error_code="invoke_interrupt_failed",
+            runtime=runtime,
+        )
+    resolved_status: Literal["accepted", "completed"] = (
+        "completed" if report.status == "completed" else "accepted"
+    )
+
+    return A2AAgentInvokeResponse(
+        success=True,
+        content=None,
+        error=None,
+        error_code=None,
+        source="hub_session_control",
+        jsonrpc_code=None,
+        missing_params=None,
+        upstream_error=None,
+        agent_name=getattr(runtime.resolved, "name", None),
+        agent_url=getattr(runtime.resolved, "url", None),
+        sessionControl=_build_session_control_response(
+            intent="preempt",
+            status=resolved_status,
+        ),
     )
 
 
@@ -243,14 +568,20 @@ async def _bind_inflight_task_if_needed(
     )
     if not normalized_task_id or normalized_task_id == state.upstream_task_id:
         return
-    bound = await session_hub_service.bind_inflight_task_id(
+    bind_report = await session_hub_service.bind_inflight_task_id_report(
         user_id=user_id,
         conversation_id=state.local_session_id,
         token=state.inflight_token,
         task_id=normalized_task_id,
     )
-    if bound:
+    if bind_report.bound:
         state.upstream_task_id = normalized_task_id
+    if bind_report.preempt_event is not None:
+        await _record_preempt_history_event(
+            state=state,
+            user_id=user_id,
+            event=bind_report.preempt_event,
+        )
 
 
 async def _unregister_inflight_invoke(
@@ -1045,6 +1376,14 @@ async def run_http_invoke(
         )
     except InvokeMetadataBindingRequiredError as exc:
         return _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
+    if resolve_invoke_session_control_intent(payload) == "append":
+        return await _run_append_session_control(runtime=runtime, payload=payload)
+    if _is_preempt_only_session_control(payload):
+        return await _run_preempt_session_control(
+            runtime=runtime,
+            payload=payload,
+            user_id=user_id,
+        )
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 from app.features.invoke.session_binding import (
     is_recoverable_invoke_session_error,
     normalize_error_code,
+    resolve_invoke_session_control_intent,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
     ws_error_code_for_recovery_failed,
 )
+from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 
 
 def test_normalize_error_code_rejects_invalid_inputs() -> None:
@@ -59,3 +63,56 @@ def test_status_code_and_http_error_mapping_normalizes_inputs() -> None:
         ws_error_code_for_invoke_session_error("invalid_message_id")
         == "invalid_message_id"
     )
+    assert status_code_for_invoke_session_error("append_requires_bound_session") == 409
+    assert status_code_for_invoke_session_error("append_unavailable") == 409
+    assert (
+        ws_error_code_for_invoke_session_error("append_unavailable")
+        == "append_unavailable"
+    )
+
+
+def test_resolve_invoke_session_control_intent_prefers_explicit_contract() -> None:
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "sessionControl": {"intent": "append"},
+            "metadata": {"extensions": {"interrupt": True}},
+        }
+    )
+
+    assert resolve_invoke_session_control_intent(payload) == "append"
+
+
+def test_resolve_invoke_session_control_intent_supports_legacy_interrupt_metadata() -> (
+    None
+):
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "metadata": {"extensions": {"interrupt": True}},
+        }
+    )
+
+    assert resolve_invoke_session_control_intent(payload) == "preempt"
+
+
+def test_invoke_request_allows_empty_query_for_preempt_only_session_control() -> None:
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "",
+            "conversationId": "conv-1",
+            "sessionControl": {"intent": "preempt"},
+        }
+    )
+
+    assert payload.query == ""
+
+
+def test_invoke_request_rejects_empty_query_without_preempt_session_control() -> None:
+    with pytest.raises(ValueError, match="query must not be empty"):
+        A2AAgentInvokeRequest.model_validate(
+            {
+                "query": "   ",
+                "conversationId": "conv-1",
+            }
+        )

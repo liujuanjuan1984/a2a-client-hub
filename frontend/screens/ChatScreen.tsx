@@ -157,6 +157,7 @@ export function ChatScreen({
         invokeMetadataRequiredCount={controller.invokeMetadataRequiredCount}
         pendingInterrupt={controller.pendingInterrupt}
         pendingInterruptCount={controller.pendingInterruptCount}
+        streamSendHint={controller.streamSendHint}
         showShortcutManager={controller.showShortcutManager}
         onOpenDirectoryPicker={controller.openDirectoryPicker}
         onOpenInvokeMetadata={controller.openInvokeMetadataModal}

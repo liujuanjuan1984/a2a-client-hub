@@ -894,6 +894,62 @@ async def test_messages_query_fills_visible_page_when_interrupt_lifecycle_exists
     assert payload["items"][1]["blocks"][0]["content"] == "world"
 
 
+async def test_messages_query_keeps_preempt_history_visible(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="preempts")
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Preempt History",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_preempt_event_by_local_session_id(
+        async_db_session,
+        local_session_id=session.id,
+        user_id=user.id,
+        event={
+            "reason": "invoke_interrupt",
+            "status": "completed",
+            "source": "user",
+            "target_message_id": str(uuid4()),
+            "replacement_user_message_id": str(uuid4()),
+            "replacement_agent_message_id": str(uuid4()),
+            "target_task_ids": ["task-preempt-1"],
+            "failed_error_codes": [],
+        },
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["role"] == "system"
+    assert payload["items"][0]["blocks"][0]["content"].startswith(
+        "Interrupted the previous response before continuing with your new message."
+    )
+
+
 async def test_messages_query_keeps_interrupt_event_blocks_inline_on_agent_message(
     async_db_session,
     async_session_maker,
