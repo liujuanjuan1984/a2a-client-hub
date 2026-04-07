@@ -197,13 +197,16 @@ describe("ChatComposer clear button", () => {
         {...mockProps}
         streamSendHint={{
           tone: "interrupt",
-          message: "Agent 仍在工作，如需发送新消息，请先打断。",
+          message:
+            "The agent is still working. Interrupt it before sending a new message.",
         }}
       />,
     );
 
     expect(
-      getByText("Agent 仍在工作，如需发送新消息，请先打断。"),
+      getByText(
+        "The agent is still working. Interrupt it before sending a new message.",
+      ),
     ).toBeTruthy();
   });
 });

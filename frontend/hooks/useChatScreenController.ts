@@ -381,7 +381,9 @@ export function useChatScreenController({
         );
       }
       if (sessionPromptAsyncStatus !== "supported") {
-        throw new Error("Agent 仍在工作，如需发送新消息，请先打断。");
+        throw new Error(
+          "The agent is still working. Interrupt it before sending a new message.",
+        );
       }
 
       const trimmedContent = parsedInput.text.trim();
@@ -562,7 +564,7 @@ export function useChatScreenController({
         }
         toast.info(
           "Interrupt required",
-          "Agent 仍在工作，如需发送新消息，请先打断。",
+          "The agent is still working. Interrupt it before sending a new message.",
         );
         throw buildSkippedToastError(
           "Interrupt the current response before sending a new message.",
@@ -691,7 +693,8 @@ export function useChatScreenController({
     }
     return {
       tone: "interrupt" as const,
-      message: "Agent 仍在工作，如需发送新消息，请先打断。",
+      message:
+        "The agent is still working. Interrupt it before sending a new message.",
     };
   }, [canAppendToRunningStream, pendingInterrupt, session?.streamState]);
 
