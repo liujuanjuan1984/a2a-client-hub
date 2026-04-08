@@ -53,6 +53,11 @@ async def test_app_lifespan_cleans_up_when_startup_fails(
     )
     monkeypatch.setattr(
         main_module,
+        "ensure_auth_cleanup_job",
+        lambda: called.append("auth_cleanup_job"),
+    )
+    monkeypatch.setattr(
+        main_module,
         "ensure_a2a_schedule_execution_cleanup_job",
         lambda: called.append("schedule_cleanup_job"),
     )
@@ -97,6 +102,7 @@ async def test_app_lifespan_cleans_up_when_startup_fails(
         async with main_module.app_lifespan(FastAPI()):
             pass
 
+    assert "auth_cleanup_job" in called
     assert "schedule_cleanup_job" in called
     assert "shutdown_scheduler" in called
     assert "close_http" in called

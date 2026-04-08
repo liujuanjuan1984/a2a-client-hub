@@ -24,6 +24,7 @@ from app.core.http_client import close_global_http_client, init_global_http_clie
 from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_with_new_session
+from app.features.auth.cleanup_service import ensure_auth_cleanup_job
 from app.features.schedules.job import ensure_a2a_schedule_job
 from app.features.schedules.service import (
     ensure_a2a_schedule_execution_cleanup_job,
@@ -75,6 +76,7 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
         init_global_http_client()
         start_scheduler()
         ensure_a2a_schedule_job()
+        ensure_auth_cleanup_job()
         ensure_a2a_schedule_execution_cleanup_job()
         ensure_ws_ticket_cleanup_job()
 

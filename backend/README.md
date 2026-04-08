@@ -33,6 +33,7 @@ Production note:
 - Password changes revoke all active refresh sessions for that user.
 - JWTs now carry `kid`, and the backend exposes JWKS at `/api/v1/auth/.well-known/jwks.json`. Keep previous public keys in `JWT_PREVIOUS_PUBLIC_KEYS` during rotation windows.
 - Login and refresh rate limiting is currently process-local and in-memory. It improves burst protection, but multi-instance/shared enforcement still requires an external shared store.
+- A daily auth cleanup job prunes expired legacy refresh revocations and applies retention windows to refresh-session rows and auth audit events. Tune with `AUTH_REFRESH_SESSION_RETENTION_DAYS` and `AUTH_AUDIT_EVENT_RETENTION_DAYS`.
 
 ## Initialize Schema and Run Migrations
 
