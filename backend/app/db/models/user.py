@@ -75,6 +75,13 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         nullable=True,
         comment="Timestamp of the most recent successful login",
     )
+    legacy_refresh_valid_after = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "Legacy refresh tokens issued at or before this timestamp are invalid"
+        ),
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}', name='{self.name}')>"

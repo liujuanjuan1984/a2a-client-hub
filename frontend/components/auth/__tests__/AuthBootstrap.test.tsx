@@ -67,10 +67,15 @@ jest.mock("react-native", () => {
 });
 
 describe("AuthBootstrap", () => {
+  let addWindowListenerSpy: jest.SpyInstance;
+  let removeWindowListenerSpy: jest.SpyInstance;
+
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date("2026-03-17T12:00:00.000Z"));
     jest.clearAllMocks();
+    addWindowListenerSpy = jest.spyOn(window, "addEventListener");
+    removeWindowListenerSpy = jest.spyOn(window, "removeEventListener");
     useSessionStore.setState({
       token: null,
       user: null,
@@ -85,6 +90,8 @@ describe("AuthBootstrap", () => {
   });
 
   afterEach(() => {
+    addWindowListenerSpy.mockRestore();
+    removeWindowListenerSpy.mockRestore();
     jest.useRealTimers();
   });
 
@@ -133,6 +140,60 @@ describe("AuthBootstrap", () => {
       jest.advanceTimersByTime(1);
     });
     expect(mockEnsureFreshAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("listens to window focus on web to pre-refresh before first click", () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    const windowStub = {
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    } as unknown as Window & typeof globalThis;
+    const documentStub = {
+      visibilityState: "visible",
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    } as unknown as Document;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: windowStub,
+    });
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: documentStub,
+    });
+    try {
+      useSessionStore.setState({
+        hydrated: true,
+        token: "token-1",
+        accessTokenExpiresAtMs: Date.now() + 60_000,
+        accessTokenTtlSeconds: 30,
+        authStatus: "authenticated",
+      });
+
+      const { unmount } = render(<AuthBootstrap />);
+
+      expect(windowStub.addEventListener).toHaveBeenCalledWith(
+        "focus",
+        expect.any(Function),
+      );
+
+      unmount();
+
+      expect(windowStub.removeEventListener).toHaveBeenCalledWith(
+        "focus",
+        expect.any(Function),
+      );
+    } finally {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      });
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: originalDocument,
+      });
+    }
   });
 
   it("forces logout instead of scheduling another retry when recovery window is exceeded", () => {

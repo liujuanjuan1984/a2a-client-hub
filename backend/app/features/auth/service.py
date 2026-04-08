@@ -21,7 +21,6 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models.user import User
-from app.db.transaction import commit_safely
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -62,6 +61,10 @@ class PasswordReuseError(AuthHandlerError):
     """Raised when the new password matches the current one."""
 
 
+class LegacyRefreshTokenRevokedError(AuthHandlerError):
+    """Raised when a legacy stateless refresh token has been invalidated."""
+
+
 class UserLockedError(AuthHandlerError):
     """Raised when a user account is temporarily locked due to failed attempts."""
 
@@ -94,6 +97,35 @@ def _normalize_timezone(timezone: Optional[str]) -> str:
     if isinstance(timezone, str) and timezone.strip():
         return timezone.strip()
     return "UTC"
+
+
+def mark_legacy_refresh_tokens_revoked(
+    user: User,
+    *,
+    revoked_before: datetime | None = None,
+) -> datetime:
+    """Advance the user-level cutoff used to invalidate legacy stateless refresh JWTs."""
+
+    effective_cutoff = revoked_before or utc_now()
+    current_cutoff = cast(datetime | None, user.legacy_refresh_valid_after)
+    if current_cutoff is not None and current_cutoff > effective_cutoff:
+        effective_cutoff = current_cutoff
+    setattr(user, "legacy_refresh_valid_after", effective_cutoff)
+    return effective_cutoff
+
+
+def ensure_legacy_refresh_token_is_active(
+    *,
+    user: User,
+    token_issued_at: datetime | None,
+) -> None:
+    """Reject legacy refresh tokens that were issued before the user's revoke cutoff."""
+
+    cutoff = cast(datetime | None, user.legacy_refresh_valid_after)
+    if cutoff is None:
+        return
+    if token_issued_at is None or token_issued_at <= cutoff:
+        raise LegacyRefreshTokenRevokedError("Legacy refresh token is no longer active")
 
 
 async def register_user(
@@ -130,7 +162,7 @@ async def register_user(
     )
 
     db.add(user)
-    await commit_safely(db)
+    await db.flush()
     await db.refresh(user)
 
     return RegistrationResult(
@@ -223,7 +255,7 @@ async def change_user_password(
     current_password: str,
     new_password: str,
 ) -> None:
-    """Update password for the provided user after validating credentials."""
+    """Stage a password update for the provided user after validating credentials."""
 
     if user is None:
         if user_id is None:
@@ -245,7 +277,28 @@ async def change_user_password(
 
     setattr(user, "password_hash", get_password_hash(new_password))
     db.add(user)
-    await commit_safely(db)
+
+
+async def revoke_legacy_refresh_tokens(
+    db: AsyncSession,
+    *,
+    user: Optional[User] = None,
+    user_id: Optional[UUID] = None,
+    revoked_before: datetime | None = None,
+) -> datetime:
+    """Advance the revoke watermark used for legacy stateless refresh tokens."""
+
+    if user is None:
+        if user_id is None:
+            raise ValueError("Either user or user_id must be provided")
+        user = await get_active_user(db, user_id=user_id)
+
+    effective_cutoff = mark_legacy_refresh_tokens_revoked(
+        user,
+        revoked_before=revoked_before,
+    )
+    db.add(user)
+    return effective_cutoff
 
 
 async def get_active_user(
