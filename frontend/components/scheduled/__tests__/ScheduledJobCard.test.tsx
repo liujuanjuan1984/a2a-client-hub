@@ -53,9 +53,7 @@ jest.mock("@/components/ui/IconButton", () => {
   };
 });
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: () => null,
-}));
+jest.mock("@expo/vector-icons/Ionicons", () => () => null);
 
 describe("ScheduledJobCard visuals", () => {
   const defaultProps = {

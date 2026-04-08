@@ -5,7 +5,6 @@ import { AppState, type AppStateStatus, Text, View } from "react-native";
 import { AppRouteErrorBoundary } from "@/components/ui/AppRouteErrorBoundary";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
-import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useMe } from "@/hooks/useAuth";
 import { ApiRequestError } from "@/lib/api/client";
 import { useChatStore } from "@/store/chat";
@@ -20,8 +19,6 @@ export default function AppLayout() {
   const hydrated = useSessionStore((state) => state.hydrated);
   const { data, isLoading, isError, refetch, error, isFetching } = useMe();
   const cleanupSessions = useChatStore((state) => state.cleanupSessions);
-
-  useAgentsCatalogQuery(Boolean(token));
 
   useEffect(() => {
     cleanupSessions();

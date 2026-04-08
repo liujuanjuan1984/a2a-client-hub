@@ -4,9 +4,7 @@ import { TextInput } from "react-native";
 
 import { ChatComposer } from "../ChatComposer";
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: () => null,
-}));
+jest.mock("@expo/vector-icons/Ionicons", () => () => null);
 
 describe("ChatComposer clear button", () => {
   const mockProps = {

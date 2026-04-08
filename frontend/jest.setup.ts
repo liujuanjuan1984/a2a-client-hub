@@ -66,16 +66,8 @@ jest.mock("expo-clipboard", () => ({
   getStringAsync: jest.fn(async () => null),
 }));
 
-jest.mock("@expo/vector-icons", () => {
-  const MockIcon = () => null;
-  return {
-    Ionicons: MockIcon,
-    AntDesign: MockIcon,
-    FontAwesome: MockIcon,
-    FontAwesome5: MockIcon,
-    MaterialIcons: MockIcon,
-    MaterialCommunityIcons: MockIcon,
-  };
+jest.mock("@expo/vector-icons/Ionicons", () => {
+  return () => null;
 });
 
 jest.mock("react-native/Libraries/AppState/AppState", () => ({

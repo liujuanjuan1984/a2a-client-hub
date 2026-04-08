@@ -28,9 +28,7 @@ jest.mock("react-native/Libraries/Modal/Modal", () => {
   };
 });
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: () => null,
-}));
+jest.mock("@expo/vector-icons/Ionicons", () => () => null);
 
 jest.mock("@/lib/api/a2aExtensions", () => {
   class MockA2AExtensionCallError extends Error {
