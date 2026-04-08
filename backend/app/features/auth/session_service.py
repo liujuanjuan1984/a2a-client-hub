@@ -44,10 +44,18 @@ class RefreshSessionRotation:
     session: AuthRefreshSession
     next_jti: str
     was_legacy_bootstrap: bool = False
+    reused_existing_token: bool = False
 
 
 def _new_refresh_expiry() -> datetime:
     return utc_now() + timedelta(seconds=settings.jwt_refresh_token_ttl_seconds)
+
+
+def _previous_jti_grace_expiry(*, now: datetime) -> datetime | None:
+    grace_seconds = max(settings.auth_refresh_replay_grace_seconds, 0)
+    if grace_seconds <= 0:
+        return None
+    return now + timedelta(seconds=grace_seconds)
 
 
 def _new_jti() -> str:
@@ -192,8 +200,50 @@ async def rotate_refresh_session(
     revoked_at = cast(datetime | None, session.revoked_at)
     expires_at = cast(datetime, session.expires_at)
     current_jti = cast(str, session.current_jti)
+    previous_jti = cast(str | None, session.previous_jti)
+    previous_jti_expires_at = cast(datetime | None, session.previous_jti_expires_at)
     if revoked_at is not None or expires_at <= now:
         raise RefreshSessionRevokedError("Refresh session is no longer active")
+
+    if presented_jti and current_jti == presented_jti:
+        next_jti = _new_jti()
+        setattr(session, "previous_jti", current_jti)
+        setattr(
+            session,
+            "previous_jti_expires_at",
+            _previous_jti_grace_expiry(now=now),
+        )
+        setattr(session, "current_jti", next_jti)
+        setattr(session, "expires_at", _new_refresh_expiry())
+        setattr(session, "last_rotated_at", now)
+        setattr(session, "last_used_at", now)
+        setattr(session, "last_seen_ip", client_ip)
+        setattr(session, "last_seen_user_agent", user_agent)
+        db.add(session)
+        await db.flush()
+        return RefreshSessionRotation(session=session, next_jti=next_jti)
+
+    if (
+        presented_jti
+        and previous_jti
+        and previous_jti == presented_jti
+        and previous_jti_expires_at is not None
+        and previous_jti_expires_at > now
+    ):
+        setattr(session, "last_used_at", now)
+        setattr(session, "last_seen_ip", client_ip)
+        setattr(session, "last_seen_user_agent", user_agent)
+        db.add(session)
+        await db.flush()
+        return RefreshSessionRotation(
+            session=session,
+            next_jti=current_jti,
+            reused_existing_token=True,
+        )
+
+    if previous_jti_expires_at is not None and previous_jti_expires_at <= now:
+        setattr(session, "previous_jti", None)
+        setattr(session, "previous_jti_expires_at", None)
 
     if not presented_jti or current_jti != presented_jti:
         setattr(session, "revoked_at", now)
@@ -203,17 +253,7 @@ async def rotate_refresh_session(
         setattr(session, "last_seen_user_agent", user_agent)
         db.add(session)
         raise RefreshSessionReplayError("Refresh session token replay detected")
-
-    next_jti = _new_jti()
-    setattr(session, "current_jti", next_jti)
-    setattr(session, "expires_at", _new_refresh_expiry())
-    setattr(session, "last_rotated_at", now)
-    setattr(session, "last_used_at", now)
-    setattr(session, "last_seen_ip", client_ip)
-    setattr(session, "last_seen_user_agent", user_agent)
-    db.add(session)
-    await db.flush()
-    return RefreshSessionRotation(session=session, next_jti=next_jti)
+    raise RefreshSessionReplayError("Refresh session token replay detected")
 
 
 async def revoke_refresh_session(

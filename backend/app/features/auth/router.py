@@ -629,7 +629,10 @@ async def refresh_access_token(
         email=cast(str, user.email),
         ip_address=client_ip,
         user_agent=user_agent,
-        metadata={"legacy_bootstrap": rotation.was_legacy_bootstrap},
+        metadata={
+            "legacy_bootstrap": rotation.was_legacy_bootstrap,
+            "reused_existing_token": rotation.reused_existing_token,
+        },
     )
     await commit_safely(db)
 

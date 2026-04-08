@@ -33,6 +33,16 @@ class AuthRefreshSession(Base, TimestampMixin):
         index=True,
         comment="Current accepted refresh JWT jti for this session.",
     )
+    previous_jti = Column(
+        String(64),
+        nullable=True,
+        comment="Immediately previous refresh JWT jti tolerated during rotation races.",
+    )
+    previous_jti_expires_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Expiry timestamp for short replay grace on the previous refresh JWT jti.",
+    )
     expires_at = Column(
         DateTime(timezone=True),
         nullable=False,
