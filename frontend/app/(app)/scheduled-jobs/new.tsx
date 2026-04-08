@@ -1,11 +1,20 @@
+import { lazy, Suspense } from "react";
+
 import { PageTitle } from "@/components/layout/PageTitle";
-import { ScheduledJobFormScreen } from "@/screens/ScheduledJobFormScreen";
+import { RouteScreenFallback } from "@/components/layout/RouteScreenFallback";
+
+const LazyScheduledJobFormScreen = lazy(async () => {
+  const module = await import("@/screens/ScheduledJobFormScreen");
+  return { default: module.ScheduledJobFormScreen };
+});
 
 export default function NewScheduledJobPage() {
   return (
     <>
       <PageTitle title="New Job" />
-      <ScheduledJobFormScreen />
+      <Suspense fallback={<RouteScreenFallback />}>
+        <LazyScheduledJobFormScreen />
+      </Suspense>
     </>
   );
 }

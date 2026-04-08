@@ -1,7 +1,13 @@
 import { useLocalSearchParams } from "expo-router";
+import { lazy, Suspense } from "react";
 
 import { PageTitle } from "@/components/layout/PageTitle";
-import { AdminHubAgentDetailScreen } from "@/screens/admin/AdminHubAgentDetailScreen";
+import { RouteScreenFallback } from "@/components/layout/RouteScreenFallback";
+
+const LazyAdminHubAgentDetailScreen = lazy(async () => {
+  const module = await import("@/screens/admin/AdminHubAgentDetailScreen");
+  return { default: module.AdminHubAgentDetailScreen };
+});
 
 export default function AdminHubAgentDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -9,7 +15,9 @@ export default function AdminHubAgentDetailRoute() {
   return (
     <>
       <PageTitle title="Shared Agent" />
-      <AdminHubAgentDetailScreen agentId={agentId} />
+      <Suspense fallback={<RouteScreenFallback />}>
+        <LazyAdminHubAgentDetailScreen agentId={agentId} />
+      </Suspense>
     </>
   );
 }

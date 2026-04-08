@@ -1,11 +1,20 @@
+import { lazy, Suspense } from "react";
+
 import { PageTitle } from "@/components/layout/PageTitle";
-import { AdminHomeScreen } from "@/screens/admin/AdminHomeScreen";
+import { RouteScreenFallback } from "@/components/layout/RouteScreenFallback";
+
+const LazyAdminHomeScreen = lazy(async () => {
+  const module = await import("@/screens/admin/AdminHomeScreen");
+  return { default: module.AdminHomeScreen };
+});
 
 export default function AdminHomeRoute() {
   return (
     <>
       <PageTitle title="Admin" />
-      <AdminHomeScreen />
+      <Suspense fallback={<RouteScreenFallback />}>
+        <LazyAdminHomeScreen />
+      </Suspense>
     </>
   );
 }

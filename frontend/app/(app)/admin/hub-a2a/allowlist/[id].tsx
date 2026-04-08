@@ -1,7 +1,13 @@
 import { useLocalSearchParams } from "expo-router";
+import { lazy, Suspense } from "react";
 
 import { PageTitle } from "@/components/layout/PageTitle";
-import { AdminHubAgentAllowlistScreen } from "@/screens/admin/AdminHubAgentAllowlistScreen";
+import { RouteScreenFallback } from "@/components/layout/RouteScreenFallback";
+
+const LazyAdminHubAgentAllowlistScreen = lazy(async () => {
+  const module = await import("@/screens/admin/AdminHubAgentAllowlistScreen");
+  return { default: module.AdminHubAgentAllowlistScreen };
+});
 
 export default function AdminHubAgentAllowlistRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -9,7 +15,9 @@ export default function AdminHubAgentAllowlistRoute() {
   return (
     <>
       <PageTitle title="Agent Allowlist" />
-      <AdminHubAgentAllowlistScreen agentId={agentId} />
+      <Suspense fallback={<RouteScreenFallback />}>
+        <LazyAdminHubAgentAllowlistScreen agentId={agentId} />
+      </Suspense>
     </>
   );
 }
