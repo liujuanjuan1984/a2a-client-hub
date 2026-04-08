@@ -60,6 +60,26 @@ def _jwt_verification_keys() -> dict[str, str]:
     return keys
 
 
+def _jwt_verification_key_candidates(key_id: str | None) -> list[str]:
+    verification_keys = _jwt_verification_keys()
+    if isinstance(key_id, str) and key_id.strip():
+        verification_key = verification_keys.get(key_id.strip())
+        return [verification_key] if verification_key else []
+
+    ordered_key_ids = [settings.jwt_key_id]
+    ordered_key_ids.extend(
+        str(item["kid"]).strip() for item in settings.jwt_previous_public_keys
+    )
+    candidates: list[str] = []
+    seen_keys: set[str] = set()
+    for candidate_key_id in ordered_key_ids:
+        verification_key = verification_keys.get(candidate_key_id)
+        if verification_key and verification_key not in seen_keys:
+            candidates.append(verification_key)
+            seen_keys.add(verification_key)
+    return candidates
+
+
 def _b64url_uint(value: int) -> str:
     raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
@@ -174,26 +194,31 @@ def verify_jwt_token_claims(
     try:
         headers = jwt.get_unverified_header(token)
         key_id = headers.get("kid")
-        verification_keys = _jwt_verification_keys()
-        verification_key = (
-            verification_keys.get(str(key_id))
-            if isinstance(key_id, str) and key_id.strip()
-            else _jwt_verification_key()
+        verification_keys = _jwt_verification_key_candidates(
+            str(key_id) if isinstance(key_id, str) and key_id.strip() else None
         )
-        if verification_key is None:
+        if not verification_keys:
             return None
         options = {
             "require": ["exp", "iat", "sub", "typ", "iss"],
             "verify_signature": True,
             "verify_exp": True,
         }
-        payload = jwt.decode(
-            token,
-            verification_key,
-            algorithms=[settings.jwt_algorithm],
-            issuer=settings.jwt_issuer,
-            options=cast(Any, options),
-        )
+        payload: dict[str, Any] | None = None
+        for verification_key in verification_keys:
+            try:
+                payload = jwt.decode(
+                    token,
+                    verification_key,
+                    algorithms=[settings.jwt_algorithm],
+                    issuer=settings.jwt_issuer,
+                    options=cast(Any, options),
+                )
+                break
+            except InvalidTokenError:
+                continue
+        if payload is None:
+            return None
         if payload.get("typ") != expected_type:
             return None
         subject = payload.get("sub")

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+import jwt
 import pytest
 import pytest_asyncio
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from httpx import AsyncClient
 from sqlalchemy import select
 
@@ -12,6 +16,7 @@ from app.core.config import settings
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     build_jwks_document,
+    create_user_refresh_token,
     create_user_token,
     get_password_hash,
     verify_refresh_token_claims,
@@ -323,6 +328,41 @@ async def test_logout_all_revokes_all_refresh_sessions(
     assert second_refresh.status_code == 401
 
 
+async def test_logout_all_blocks_legacy_refresh_tokens(
+    client: AsyncClient, async_session_maker
+) -> None:
+    payload = {
+        "email": "logout-all-legacy@example.com",
+        "name": "Logout All Legacy User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    await client.post(f"{settings.api_v1_prefix}/auth/register", json=payload)
+
+    async def fetch_user(session):
+        result = await session.execute(
+            select(User).where(User.email == payload["email"])
+        )
+        return result.scalar_one()
+
+    user = await run_in_session(async_session_maker, fetch_user)
+    legacy_refresh = create_user_refresh_token(user.id)
+    access_token = create_user_token(user.id)
+
+    logout_all_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/logout-all",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert logout_all_response.status_code == 204
+
+    client.cookies.set(settings.auth_refresh_cookie_name, legacy_refresh)
+    refresh_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert refresh_response.status_code == 401
+
+
 async def test_change_password_updates_credentials(
     client: AsyncClient, async_session_maker
 ) -> None:
@@ -386,6 +426,49 @@ async def test_change_password_updates_credentials(
         json={"email": payload["email"], "password": "N3wPass!2"},
     )
     assert success_login.status_code == 200
+
+
+async def test_change_password_blocks_legacy_refresh_tokens(
+    client: AsyncClient, async_session_maker
+) -> None:
+    payload = {
+        "email": "changepw-legacy@example.com",
+        "name": "Legacy Changer",
+        "password": "InitPass!1",
+        "timezone": "UTC",
+    }
+    register_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/register", json=payload
+    )
+    assert register_response.status_code == 201
+
+    async def fetch_user(session):
+        result = await session.execute(
+            select(User).where(User.email == payload["email"])
+        )
+        return result.scalar_one()
+
+    user = await run_in_session(async_session_maker, fetch_user)
+    access_token = create_user_token(user.id)
+    legacy_refresh = create_user_refresh_token(user.id)
+
+    change_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/password/change",
+        json={
+            "current_password": payload["password"],
+            "new_password": "N3wPass!2",
+            "new_password_confirm": "N3wPass!2",
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert change_response.status_code == 200
+
+    client.cookies.set(settings.auth_refresh_cookie_name, legacy_refresh)
+    refresh_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert refresh_response.status_code == 401
 
 
 async def test_change_password_rejects_wrong_current_password(
@@ -919,6 +1002,48 @@ async def test_jwks_endpoint_exposes_active_key(client: AsyncClient) -> None:
     body = response.json()
     assert body == build_jwks_document()
     assert body["keys"][0]["kid"] == settings.jwt_key_id
+
+
+async def test_verify_refresh_token_claims_accepts_previous_key_without_kid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_private_key = rsa.generate_private_key(
+        public_exponent=65537, key_size=2048
+    )
+    previous_public_key = (
+        previous_private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("utf-8")
+    )
+    monkeypatch.setattr(
+        settings,
+        "jwt_previous_public_keys",
+        [{"kid": "legacy-key", "public_key_pem": previous_public_key}],
+    )
+
+    now = utc_now()
+    token = jwt.encode(
+        {
+            "sub": str(uuid4()),
+            "typ": "refresh",
+            "iss": settings.jwt_issuer,
+            "iat": now,
+            "exp": now + timedelta(minutes=5),
+            "jti": uuid4().hex,
+        },
+        previous_private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8"),
+        algorithm=settings.jwt_algorithm,
+    )
+
+    claims = verify_refresh_token_claims(token)
+    assert claims is not None
 
 
 async def test_login_and_refresh_write_audit_events(

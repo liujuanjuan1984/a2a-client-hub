@@ -21,6 +21,19 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.add_column(
+        "users",
+        sa.Column(
+            "legacy_refresh_valid_after",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            comment=(
+                "Legacy refresh tokens issued at or before this timestamp are invalid"
+            ),
+        ),
+        schema=SCHEMA_NAME,
+    )
+
     op.create_table(
         "auth_refresh_sessions",
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -180,3 +193,4 @@ def downgrade() -> None:
         schema=SCHEMA_NAME,
     )
     op.drop_table("auth_refresh_sessions", schema=SCHEMA_NAME)
+    op.drop_column("users", "legacy_refresh_valid_after", schema=SCHEMA_NAME)

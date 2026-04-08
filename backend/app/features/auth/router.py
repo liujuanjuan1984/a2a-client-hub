@@ -470,6 +470,16 @@ async def refresh_access_token(
                     settings.auth_refresh_db_timeout_seconds * 1000
                 ),
             )
+            user = await auth_service.get_active_user(db, user_id=user_id)
+            phase_timings_ms["user_lookup"] = (
+                time.perf_counter() - phase_started
+            ) * 1000.0
+            phase_started = time.perf_counter()
+            if not claims.session_id:
+                auth_service.ensure_legacy_refresh_token_is_active(
+                    user=user,
+                    token_issued_at=claims.issued_at,
+                )
             if claims.session_id:
                 rotation = await rotate_refresh_session(
                     db,
@@ -487,11 +497,6 @@ async def refresh_access_token(
                     user_agent=user_agent,
                 )
             phase_timings_ms["session_state"] = (
-                time.perf_counter() - phase_started
-            ) * 1000.0
-            phase_started = time.perf_counter()
-            user = await auth_service.get_active_user(db, user_id=user_id)
-            phase_timings_ms["user_lookup"] = (
                 time.perf_counter() - phase_started
             ) * 1000.0
     except TimeoutError as exc:
@@ -517,6 +522,7 @@ async def refresh_access_token(
     except (
         TypeError,
         ValueError,
+        auth_service.LegacyRefreshTokenRevokedError,
         auth_service.UserNotFoundError,
         RefreshSessionNotFoundError,
         RefreshSessionRevokedError,
@@ -632,6 +638,15 @@ async def logout_user(
                 client_ip=client_ip,
                 user_agent=user_agent,
             )
+        elif user_id:
+            try:
+                await auth_service.revoke_legacy_refresh_tokens(
+                    db,
+                    user_id=user_id,
+                    revoked_before=claims.issued_at,
+                )
+            except auth_service.UserNotFoundError:
+                user_id = None
         await record_auth_event(
             db,
             event_type="logout",
@@ -697,6 +712,7 @@ async def change_password(
         client_ip=get_client_ip(request),
         user_agent=get_user_agent(request),
     )
+    await auth_service.revoke_legacy_refresh_tokens(db, user=current_user)
     await record_auth_event(
         db,
         event_type="password_changed",
@@ -733,6 +749,7 @@ async def logout_all_sessions(
         client_ip=get_client_ip(request),
         user_agent=get_user_agent(request),
     )
+    await auth_service.revoke_legacy_refresh_tokens(db, user=current_user)
     await record_auth_event(
         db,
         event_type="logout_all",

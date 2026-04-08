@@ -24,6 +24,7 @@ Production note:
 ## Auth Notes
 
 - Refresh auth now uses a server-side refresh-session table instead of relying only on self-contained refresh JWTs.
+- Users also track a legacy refresh revoke watermark so pre-session stateless refresh JWTs cannot be replayed after logout, logout-all, or password changes.
 - Cookie-auth endpoints (`/api/v1/auth/refresh` and `/api/v1/auth/logout`) validate trusted `Origin` / `Referer` headers. Configure `AUTH_COOKIE_TRUSTED_ORIGINS` when the frontend origin differs from `BACKEND_CORS_ORIGINS`.
 - `POST /api/v1/auth/logout-all` revokes every active refresh session for the authenticated user.
 - Password changes revoke all active refresh sessions for that user.
