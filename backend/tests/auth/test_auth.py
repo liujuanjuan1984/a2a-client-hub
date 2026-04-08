@@ -231,7 +231,9 @@ async def test_refresh_rotates_cookie_and_returns_new_access_token(
     assert sessions[0].current_jti == claims.jwt_id
 
 
-async def test_refresh_rejects_missing_origin_header(client: AsyncClient) -> None:
+async def test_refresh_rejects_missing_origin_header_without_native_marker(
+    client: AsyncClient, async_session_maker
+) -> None:
     payload = {
         "email": "refresh-no-origin@example.com",
         "name": "Refresh User",
@@ -251,6 +253,43 @@ async def test_refresh_rejects_missing_origin_header(client: AsyncClient) -> Non
 
     refresh_response = await client.post(f"{settings.api_v1_prefix}/auth/refresh")
     assert refresh_response.status_code == 403
+
+    async def inspect_events(session):
+        result = await session.execute(
+            select(AuthAuditEvent).where(AuthAuditEvent.event_type == "refresh_blocked")
+        )
+        return list(result.scalars())
+
+    events = await run_in_session(async_session_maker, inspect_events)
+    assert len(events) == 1
+    assert events[0].event_metadata["reason"] == "untrusted_cookie_origin"
+
+
+async def test_refresh_accepts_native_client_without_origin_header(
+    client: AsyncClient,
+) -> None:
+    payload = {
+        "email": "refresh-native@example.com",
+        "name": "Refresh Native User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    register_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/register", json=payload
+    )
+    assert register_response.status_code == 201
+
+    login_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login_response.status_code == 200
+
+    refresh_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"X-A2A-Client-Platform": "native"},
+    )
+    assert refresh_response.status_code == 200
 
 
 async def test_refresh_invalid_token_is_rate_limited_before_jwt_validation(
@@ -370,6 +409,48 @@ async def test_logout_revokes_only_current_legacy_refresh_token(
         headers={"Origin": TRUSTED_ORIGIN},
     )
     assert surviving_refresh.status_code == 200
+
+
+async def test_legacy_refresh_token_can_be_bootstrapped_only_once(
+    client: AsyncClient, async_session_maker
+) -> None:
+    payload = {
+        "email": "legacy-bootstrap@example.com",
+        "name": "Legacy Bootstrap User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    await client.post(f"{settings.api_v1_prefix}/auth/register", json=payload)
+
+    async def fetch_user(session):
+        result = await session.execute(
+            select(User).where(User.email == payload["email"])
+        )
+        return result.scalar_one()
+
+    user = await run_in_session(async_session_maker, fetch_user)
+    legacy_refresh = create_user_refresh_token(user.id)
+
+    client.cookies.set(settings.auth_refresh_cookie_name, legacy_refresh)
+    first_refresh = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert first_refresh.status_code == 200
+
+    client.cookies.set(settings.auth_refresh_cookie_name, legacy_refresh)
+    replay_refresh = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert replay_refresh.status_code == 401
+
+    async def inspect_session_state(session):
+        result = await session.execute(select(AuthRefreshSession))
+        return list(result.scalars())
+
+    sessions = await run_in_session(async_session_maker, inspect_session_state)
+    assert len(sessions) == 1
 
 
 async def test_logout_all_revokes_all_refresh_sessions(

@@ -10,6 +10,9 @@ from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
 
+FIRST_PARTY_CLIENT_PLATFORM_HEADER = "x-a2a-client-platform"
+NATIVE_CLIENT_PLATFORM = "native"
+
 
 def get_client_ip(request: Request) -> str | None:
     """Extract a normalized client IP address from the request."""
@@ -58,6 +61,13 @@ def get_user_agent(request: Request) -> str | None:
     return value[:512]
 
 
+def is_native_first_party_client(request: Request) -> bool:
+    """Return whether the request explicitly identifies as a native first-party app."""
+
+    value = (request.headers.get(FIRST_PARTY_CLIENT_PLATFORM_HEADER) or "").strip()
+    return value.lower() == NATIVE_CLIENT_PLATFORM
+
+
 def normalize_origin(origin: str) -> str:
     """Normalize origin/referer values to scheme://host[:port]."""
 
@@ -95,6 +105,8 @@ def enforce_trusted_cookie_origin(request: Request) -> None:
 
     sources = list(_iter_present_sources(request))
     if not sources:
+        if is_native_first_party_client(request):
+            return
         if settings.auth_cookie_require_origin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -112,9 +124,12 @@ def enforce_trusted_cookie_origin(request: Request) -> None:
 
 
 __all__ = [
+    "FIRST_PARTY_CLIENT_PLATFORM_HEADER",
+    "NATIVE_CLIENT_PLATFORM",
     "enforce_trusted_cookie_origin",
     "get_client_ip",
     "get_trusted_cookie_origins",
     "get_user_agent",
+    "is_native_first_party_client",
     "normalize_origin",
 ]

@@ -116,6 +116,8 @@ const AUTH_LOGIN_PATH = "/auth/login";
 const AUTH_REGISTER_PATH = "/auth/register";
 const AUTH_REFRESH_PATH = "/auth/refresh";
 const AUTH_LOGOUT_PATH = "/auth/logout";
+const FIRST_PARTY_CLIENT_PLATFORM_HEADER = "X-A2A-Client-Platform";
+const NATIVE_CLIENT_PLATFORM = "native";
 const REFRESH_REQUEST_TIMEOUT_MS = 2_000;
 const REFRESH_COOLDOWN_MS = 10_000;
 const PROACTIVE_REFRESH_RATIO = 0.2;
@@ -147,6 +149,13 @@ let refreshPromiseForAuthVersion: number | null = null;
 let refreshCooldownUntilMs = 0;
 let authResetting = false;
 let lastRefreshFailureReason: RefreshFailureReason | null = null;
+
+const buildFirstPartyClientHeaders = (): Record<string, string> =>
+  Platform.OS === "web"
+    ? {}
+    : {
+        [FIRST_PARTY_CLIENT_PLATFORM_HEADER]: NATIVE_CLIENT_PLATFORM,
+      };
 
 const logAuthClientEvent = (
   level: "info" | "warn",
@@ -368,6 +377,7 @@ export const refreshAccessTokenWithOutcome = async (
           credentials: "include",
           headers: {
             "Content-Type": "application/json",
+            ...buildFirstPartyClientHeaders(),
           },
           signal: controller.signal,
         });
@@ -588,6 +598,7 @@ const executeJsonRequest = async (
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...buildFirstPartyClientHeaders(),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...headers,
     },

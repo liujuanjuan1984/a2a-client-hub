@@ -25,13 +25,15 @@ Production note:
 
 - Refresh auth now uses a server-side refresh-session table instead of relying only on self-contained refresh JWTs.
 - Users also track a legacy refresh revoke watermark so pre-session stateless refresh JWTs cannot be replayed after logout-all or password changes.
+- Legacy stateless refresh JWTs are single-use during session bootstrap: the first successful refresh consumes the legacy token `jti` before minting a persisted refresh session.
 - Legacy `/auth/logout` requests also persist per-token legacy refresh revocations by `jti`, so one logged-out legacy token cannot be replayed to bootstrap a new session.
-- Cookie-auth endpoints (`/api/v1/auth/refresh` and `/api/v1/auth/logout`) validate trusted `Origin` / `Referer` headers. Configure `AUTH_COOKIE_TRUSTED_ORIGINS` when the frontend origin differs from `BACKEND_CORS_ORIGINS`.
+- Cookie-auth endpoints (`/api/v1/auth/refresh` and `/api/v1/auth/logout`) validate trusted `Origin` / `Referer` headers. Native first-party clients may omit those headers when they send `X-A2A-Client-Platform: native`. Configure `AUTH_COOKIE_TRUSTED_ORIGINS` when the frontend origin differs from `BACKEND_CORS_ORIGINS`.
 - Auth endpoints ignore `X-Forwarded-For` unless `AUTH_TRUST_PROXY_HEADERS=true` and the direct peer IP matches `AUTH_TRUSTED_PROXY_IPS`.
 - `POST /api/v1/auth/logout-all` revokes every active refresh session for the authenticated user.
 - Password changes revoke all active refresh sessions for that user.
 - JWTs now carry `kid`, and the backend exposes JWKS at `/api/v1/auth/.well-known/jwks.json`. Keep previous public keys in `JWT_PREVIOUS_PUBLIC_KEYS` during rotation windows.
 - Login and refresh rate limiting is currently process-local and in-memory. It improves burst protection, but multi-instance/shared enforcement still requires an external shared store.
+- A daily auth cleanup job prunes expired legacy refresh revocations and applies retention windows to refresh-session rows and auth audit events. Tune with `AUTH_REFRESH_SESSION_RETENTION_DAYS` and `AUTH_AUDIT_EVENT_RETENTION_DAYS`.
 
 ## Initialize Schema and Run Migrations
 

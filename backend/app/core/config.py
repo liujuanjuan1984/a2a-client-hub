@@ -333,6 +333,16 @@ class Settings(BaseSettings):
         alias="AUTH_REFRESH_SLOW_LOG_THRESHOLD_MS",
         description="Warn threshold for total refresh endpoint latency.",
     )
+    auth_refresh_session_retention_days: int = Field(
+        default=30,
+        alias="AUTH_REFRESH_SESSION_RETENTION_DAYS",
+        description="Number of days to retain expired or revoked refresh sessions before cleanup.",
+    )
+    auth_audit_event_retention_days: int = Field(
+        default=90,
+        alias="AUTH_AUDIT_EVENT_RETENTION_DAYS",
+        description="Number of days to retain auth audit events before cleanup.",
+    )
     invitation_code_length: int = Field(
         default=32,
         alias="INVITATION_CODE_LENGTH",
@@ -579,6 +589,12 @@ class Settings(BaseSettings):
             raise ValueError("AUTH_REFRESH_RATE_LIMIT_WINDOW_SECONDS must be positive")
         if self.auth_refresh_rate_limit_max_attempts <= 0:
             raise ValueError("AUTH_REFRESH_RATE_LIMIT_MAX_ATTEMPTS must be positive")
+        if self.auth_refresh_session_retention_days < 0:
+            raise ValueError(
+                "AUTH_REFRESH_SESSION_RETENTION_DAYS must be zero or positive"
+            )
+        if self.auth_audit_event_retention_days < 0:
+            raise ValueError("AUTH_AUDIT_EVENT_RETENTION_DAYS must be zero or positive")
 
         # Browsers reject SameSite=None cookies without Secure.
         if (
