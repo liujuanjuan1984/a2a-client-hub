@@ -2538,6 +2538,9 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     async def fake_commit_safely(_: object) -> None:
         return None
 
+    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+        return "validated"
+
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -2545,6 +2548,11 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_validate_provider_aware_continue_session",
+        fake_validate_provider_aware_continue_session,
+    )
 
     async def runtime_builder():
         return runtime
@@ -2632,6 +2640,9 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
     async def fake_commit_safely(_: object) -> None:
         return None
 
+    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+        return "validated"
+
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -2639,6 +2650,11 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_validate_provider_aware_continue_session",
+        fake_validate_provider_aware_continue_session,
+    )
 
     async def runtime_builder():
         return runtime
@@ -2751,6 +2767,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
         return False
 
+    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+        return "validated"
+
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_service,
@@ -2767,6 +2786,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
         invoke_route_runner,
         "_resolve_session_binding_outbound_mode",
         fake_resolve_session_binding_outbound_mode,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_validate_provider_aware_continue_session",
+        fake_validate_provider_aware_continue_session,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -2900,6 +2924,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
         return False
 
+    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+        return "validated"
+
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_service,
@@ -2916,6 +2943,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
         invoke_route_runner,
         "_resolve_session_binding_outbound_mode",
         fake_resolve_session_binding_outbound_mode,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_validate_provider_aware_continue_session",
+        fake_validate_provider_aware_continue_session,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -2972,6 +3004,224 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     ]
     assert stream_calls == 2
     assert observed_error_codes == ["session_not_found", "session_not_found"]
+    assert len(error_events) == 1
+    assert (
+        error_events[0]["data"]["error_code"] == "session_not_found_recovery_exhausted"
+    )
+    assert sent[-1] == {"event": "stream_end", "data": {}}
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_route_aborts_retry_when_provider_aware_recovery_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    attempt = 0
+
+    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+        nonlocal attempt
+        attempt += 1
+        return A2AAgentInvokeResponse(
+            success=False,
+            error="session missing",
+            error_code="session_not_found",
+            agent_name="Demo Agent",
+            agent_url="https://example.com",
+        )
+
+    async def fake_continue_session(
+        *_,
+        user_id: object,  # noqa: ARG002
+        conversation_id: str,
+        **__,  # noqa: ARG001
+    ) -> tuple[dict[str, object], bool]:
+        assert conversation_id
+        return (
+            {
+                "conversationId": conversation_id,
+                "source": "manual",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "upstream-sid-2",
+                    "contextId": "ctx-2",
+                },
+            },
+            True,
+        )
+
+    async def fake_commit_safely(_: object) -> None:
+        return None
+
+    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+        return "failed"
+
+    monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "continue_session",
+        fake_continue_session,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_validate_provider_aware_continue_session",
+        fake_validate_provider_aware_continue_session,
+    )
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke_route(
+        db=object(),
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        gateway=object(),
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=(RuntimeError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(ValueError,),
+        runtime_validation_status_code=400,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        invoke_log_message="test invoke",
+        invoke_log_extra_builder=lambda _req, _runtime: {},
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 404
+    response_payload = json.loads(response.body.decode())
+    assert response_payload["detail"]["error_code"] == "session_not_found"
+    assert attempt == 1
+
+
+@pytest.mark.asyncio
+async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_aware_recovery_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        return invoke_route_runner._InvokeState(
+            local_session_id=uuid4(),
+            local_source="manual",
+            context_id=None,
+            metadata={},
+            stream_identity={},
+            stream_usage={},
+            user_message_id=None,
+        )
+
+    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
+        if on_error_metadata:
+            result = on_error_metadata(
+                {
+                    "message": "Upstream streaming failed",
+                    "error_code": "session_not_found",
+                }
+            )
+            if inspect.isawaitable(result):
+                await result
+
+    async def fake_continue_session(
+        *_,
+        user_id: object,  # noqa: ARG002
+        conversation_id: str,
+        **__,  # noqa: ARG001
+    ) -> tuple[dict[str, object], bool]:
+        assert conversation_id
+        return (
+            {
+                "conversationId": conversation_id,
+                "source": "manual",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "upstream-sid-2",
+                    "contextId": "ctx-2",
+                },
+            },
+            True,
+        )
+
+    async def fake_commit_safely(_: object) -> None:
+        return None
+
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+        return False
+
+    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+        return "failed"
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "stream_ws",
+        fake_stream_ws,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "continue_session",
+        fake_continue_session,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_validate_provider_aware_continue_session",
+        fake_validate_provider_aware_continue_session,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages_by_local_session_id",
+        lambda **kwargs: None,  # noqa: ARG005
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+    websocket = _NoopWebSocket()
+
+    await invoke_route_runner.run_ws_invoke_with_session_recovery(
+        websocket=websocket,
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={
+            "user_id": str(uuid4()),
+            "agent_id": str(uuid4()),
+        },
+        max_recovery_attempts=1,
+    )
+
+    sent = [json.loads(item) for item in websocket.sent]
+    error_events = [event for event in sent if event["event"] == "error"]
     assert len(error_events) == 1
     assert (
         error_events[0]["data"]["error_code"] == "session_not_found_recovery_exhausted"
