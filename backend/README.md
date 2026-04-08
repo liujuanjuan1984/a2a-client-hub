@@ -24,6 +24,7 @@ Production note:
 ## Auth Notes
 
 - Refresh auth now uses a server-side refresh-session table instead of relying only on self-contained refresh JWTs.
+- Refresh-session rotation keeps a short grace window for the immediately previous refresh JWT so normal multi-tab/browser race conditions do not revoke the whole session.
 - Users also track a legacy refresh revoke watermark so pre-session stateless refresh JWTs cannot be replayed after logout-all or password changes.
 - Legacy stateless refresh JWTs are single-use during session bootstrap: the first successful refresh consumes the legacy token `jti` before minting a persisted refresh session.
 - Legacy `/auth/logout` requests also persist per-token legacy refresh revocations by `jti`, so one logged-out legacy token cannot be replayed to bootstrap a new session.

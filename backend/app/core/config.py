@@ -328,6 +328,11 @@ class Settings(BaseSettings):
         alias="AUTH_REFRESH_DB_TIMEOUT_SECONDS",
         description="Maximum time to wait for DB-backed refresh validation before fast-failing.",
     )
+    auth_refresh_replay_grace_seconds: int = Field(
+        default=5,
+        alias="AUTH_REFRESH_REPLAY_GRACE_SECONDS",
+        description="Seconds to tolerate the immediately previous refresh JWT during rotation races.",
+    )
     auth_refresh_slow_log_threshold_ms: float = Field(
         default=750.0,
         alias="AUTH_REFRESH_SLOW_LOG_THRESHOLD_MS",
@@ -579,6 +584,10 @@ class Settings(BaseSettings):
             )
         if self.auth_refresh_db_timeout_seconds <= 0:
             raise ValueError("AUTH_REFRESH_DB_TIMEOUT_SECONDS must be positive")
+        if self.auth_refresh_replay_grace_seconds < 0:
+            raise ValueError(
+                "AUTH_REFRESH_REPLAY_GRACE_SECONDS must be zero or positive"
+            )
         if self.auth_refresh_slow_log_threshold_ms <= 0:
             raise ValueError("AUTH_REFRESH_SLOW_LOG_THRESHOLD_MS must be positive")
         if self.auth_login_rate_limit_window_seconds <= 0:

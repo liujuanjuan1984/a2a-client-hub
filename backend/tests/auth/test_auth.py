@@ -231,6 +231,156 @@ async def test_refresh_rotates_cookie_and_returns_new_access_token(
     assert sessions[0].current_jti == claims.jwt_id
 
 
+async def test_refresh_tolerates_recent_rotated_token_reuse_from_second_tab(
+    client: AsyncClient,
+    async_session_maker,
+) -> None:
+    register_payload = {
+        "email": "refresh-race@example.com",
+        "name": "Refresh Race User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+
+    register_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/register", json=register_payload
+    )
+    assert register_response.status_code == 201
+
+    login_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": register_payload["email"], "password": "Str0ngPass!1"},
+    )
+    assert login_response.status_code == 200
+    initial_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
+    assert initial_cookie
+    initial_claims = verify_refresh_token_claims(initial_cookie)
+    assert initial_claims is not None
+
+    async with create_test_client(
+        auth_router.router,
+        async_session_maker=async_session_maker,
+        base_prefix=settings.api_v1_prefix,
+    ) as second_tab_client:
+        second_tab_client.cookies.set(
+            settings.auth_refresh_cookie_name,
+            initial_cookie,
+            domain="testserver.local",
+            path=settings.auth_refresh_cookie_path,
+        )
+
+        first_refresh = await client.post(
+            f"{settings.api_v1_prefix}/auth/refresh",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert first_refresh.status_code == 200, first_refresh.text
+
+        rotated_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
+        assert rotated_cookie
+        rotated_claims = verify_refresh_token_claims(rotated_cookie)
+        assert rotated_claims is not None
+
+        stale_refresh = await second_tab_client.post(
+            f"{settings.api_v1_prefix}/auth/refresh",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert stale_refresh.status_code == 200, stale_refresh.text
+
+        healed_cookie = second_tab_client.cookies.get(
+            settings.auth_refresh_cookie_name,
+            domain="testserver.local",
+            path=settings.auth_refresh_cookie_path,
+        )
+        assert healed_cookie
+        healed_claims = verify_refresh_token_claims(healed_cookie)
+        assert healed_claims is not None
+        assert healed_claims.session_id == rotated_claims.session_id
+        assert healed_claims.jwt_id == rotated_claims.jwt_id
+        assert healed_claims.jwt_id != initial_claims.jwt_id
+
+        follow_up_refresh = await client.post(
+            f"{settings.api_v1_prefix}/auth/refresh",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert follow_up_refresh.status_code == 200, follow_up_refresh.text
+
+    async def inspect_sessions(session):
+        result = await session.execute(select(AuthRefreshSession))
+        return list(result.scalars())
+
+    sessions = await run_in_session(async_session_maker, inspect_sessions)
+    assert len(sessions) == 1
+    assert sessions[0].revoked_at is None
+    assert sessions[0].previous_jti is not None
+
+
+async def test_refresh_revokes_stale_rotated_token_when_grace_disabled(
+    client: AsyncClient,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_refresh_replay_grace_seconds", 0)
+
+    register_payload = {
+        "email": "refresh-race-strict@example.com",
+        "name": "Refresh Strict User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+
+    register_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/register", json=register_payload
+    )
+    assert register_response.status_code == 201
+
+    login_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": register_payload["email"], "password": "Str0ngPass!1"},
+    )
+    assert login_response.status_code == 200
+    initial_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
+    assert initial_cookie
+
+    async with create_test_client(
+        auth_router.router,
+        async_session_maker=async_session_maker,
+        base_prefix=settings.api_v1_prefix,
+    ) as second_tab_client:
+        second_tab_client.cookies.set(
+            settings.auth_refresh_cookie_name,
+            initial_cookie,
+            domain="testserver.local",
+            path=settings.auth_refresh_cookie_path,
+        )
+
+        first_refresh = await client.post(
+            f"{settings.api_v1_prefix}/auth/refresh",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert first_refresh.status_code == 200, first_refresh.text
+
+        stale_refresh = await second_tab_client.post(
+            f"{settings.api_v1_prefix}/auth/refresh",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert stale_refresh.status_code == 401
+
+        follow_up_refresh = await client.post(
+            f"{settings.api_v1_prefix}/auth/refresh",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert follow_up_refresh.status_code == 401
+
+    async def inspect_sessions(session):
+        result = await session.execute(select(AuthRefreshSession))
+        return list(result.scalars())
+
+    sessions = await run_in_session(async_session_maker, inspect_sessions)
+    assert len(sessions) == 1
+    assert sessions[0].revoked_at is not None
+    assert sessions[0].revoke_reason == "replayed_token"
+
+
 async def test_refresh_rejects_missing_origin_header_without_native_marker(
     client: AsyncClient, async_session_maker
 ) -> None:
