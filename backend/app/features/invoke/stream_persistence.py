@@ -9,6 +9,7 @@ from uuid import UUID
 from app.db.models.agent_message import AgentMessage
 from app.features.invoke.service import StreamOutcome
 from app.features.invoke.session_binding import resolve_invoke_session_control_intent
+from app.features.invoke.stream_payloads import coerce_message_event_to_artifact_update
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.session_identity import normalize_non_empty_text
@@ -292,6 +293,7 @@ async def persist_stream_block_update(
     ensure_headers_fn: Any = ensure_local_message_headers,
     flush_buffer_fn: Any = None,
 ) -> None:
+    coerce_message_event_to_artifact_update(event_payload)
     stream_block = stream_service.extract_stream_chunk_from_serialized_event(
         event_payload
     )

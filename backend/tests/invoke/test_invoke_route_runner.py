@@ -1842,6 +1842,87 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
 
 
 @pytest.mark.asyncio
+async def test_persist_stream_block_update_normalizes_message_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return [object()]
+
+    async def fake_commit_safely(_db):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_block_updates",
+        fake_append_agent_message_block_updates,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    refs = {
+        "user_message_id": str(uuid4()),
+        "agent_message_id": str(uuid4()),
+    }
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=None,
+        message_refs=refs,
+        next_event_seq=5,
+        persisted_block_count=0,
+    )
+
+    event_payload = {
+        "kind": "message",
+        "messageId": "msg-upstream-root",
+        "role": "agent",
+        "parts": [{"kind": "text", "text": "root text"}],
+    }
+
+    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+        state=state,
+        event_payload=event_payload,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_sse",
+        stream_enabled=True,
+    )
+
+    assert captured == {}
+    assert len(state.chunk_buffer) == 1
+    assert state.chunk_buffer[0]["content"] == "root text"
+    assert state.chunk_buffer[0]["append"] is False
+    assert event_payload["kind"] == "artifact-update"
+    assert event_payload["message_id"] == refs["agent_message_id"]
+    assert event_payload["event_id"] == f"{refs['agent_message_id']}:5"
+    assert event_payload["artifact"]["parts"] == [{"kind": "text", "text": "root text"}]
+
+
+@pytest.mark.asyncio
 async def test_persist_stream_block_update_flushes_when_block_type_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
