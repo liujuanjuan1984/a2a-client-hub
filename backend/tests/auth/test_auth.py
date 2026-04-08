@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from httpx import AsyncClient
 from sqlalchemy import select
+from starlette.requests import Request
 
 from app.core.config import settings
 from app.core.security import (
@@ -27,6 +28,8 @@ from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
 from app.features.auth import router as auth_router
 from app.features.auth import service as auth_handler
+from app.features.auth.rate_limit import SlidingWindowRateLimiter
+from app.features.auth.request_context import get_client_ip
 from app.utils.timezone_util import utc_now
 from tests.support.api_utils import create_test_client
 
@@ -38,6 +41,27 @@ TRUSTED_ORIGIN = "http://localhost:3000"
 async def run_in_session(async_session_maker, coro_fn):
     async with async_session_maker() as session:
         return await coro_fn(session)
+
+
+def _build_request(
+    *, client_host: str, headers: dict[str, str] | None = None
+) -> Request:
+    encoded_headers = [
+        (key.lower().encode("latin-1"), value.encode("latin-1"))
+        for key, value in (headers or {}).items()
+    ]
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": encoded_headers,
+            "client": (client_host, 12345),
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "query_string": b"",
+        }
+    )
 
 
 async def _create_invitation(
@@ -229,6 +253,35 @@ async def test_refresh_rejects_missing_origin_header(client: AsyncClient) -> Non
     assert refresh_response.status_code == 403
 
 
+async def test_refresh_invalid_token_is_rate_limited_before_jwt_validation(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_refresh_rate_limit_max_attempts", 2)
+    monkeypatch.setattr(settings, "auth_refresh_rate_limit_window_seconds", 60)
+    monkeypatch.setattr(auth_router, "auth_rate_limiter", SlidingWindowRateLimiter())
+
+    client.cookies.set(settings.auth_refresh_cookie_name, "invalid-refresh-token")
+
+    first = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert first.status_code == 401
+
+    second = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert second.status_code == 401
+
+    third = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert third.status_code == 429
+
+
 async def test_logout_revokes_current_refresh_session(
     client: AsyncClient, async_session_maker
 ) -> None:
@@ -269,6 +322,54 @@ async def test_logout_revokes_current_refresh_session(
 
     events = await run_in_session(async_session_maker, inspect_audit)
     assert len(events) == 1
+
+
+async def test_logout_revokes_only_current_legacy_refresh_token(
+    client: AsyncClient,
+    async_session_maker,
+) -> None:
+    payload = {
+        "email": "legacy-logout@example.com",
+        "name": "Legacy Logout User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    await client.post(f"{settings.api_v1_prefix}/auth/register", json=payload)
+
+    async def fetch_user(session):
+        result = await session.execute(
+            select(User).where(User.email == payload["email"])
+        )
+        return result.scalar_one()
+
+    user = await run_in_session(async_session_maker, fetch_user)
+    fixed_now = datetime(2026, 4, 8, 9, 30, tzinfo=timezone.utc)
+    with patch("app.core.security.utc_now", return_value=fixed_now):
+        first_cookie = create_user_refresh_token(user.id)
+        second_cookie = create_user_refresh_token(user.id)
+
+    assert first_cookie != second_cookie
+
+    client.cookies.set(settings.auth_refresh_cookie_name, first_cookie)
+    logout_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/logout",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert logout_response.status_code == 204
+
+    client.cookies.set(settings.auth_refresh_cookie_name, first_cookie)
+    revoked_refresh = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert revoked_refresh.status_code == 401
+
+    client.cookies.set(settings.auth_refresh_cookie_name, second_cookie)
+    surviving_refresh = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert surviving_refresh.status_code == 200
 
 
 async def test_logout_all_revokes_all_refresh_sessions(
@@ -1044,6 +1145,38 @@ async def test_verify_refresh_token_claims_accepts_previous_key_without_kid(
 
     claims = verify_refresh_token_claims(token)
     assert claims is not None
+
+
+async def test_get_client_ip_ignores_untrusted_forwarded_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_trust_proxy_headers", False)
+    monkeypatch.setattr(settings, "auth_trusted_proxy_ips", ["127.0.0.1"])
+
+    request = _build_request(
+        client_host="198.51.100.10",
+        headers={"X-Forwarded-For": "203.0.113.9"},
+    )
+
+    assert get_client_ip(request) == "198.51.100.10"
+
+
+async def test_get_client_ip_uses_forwarded_headers_for_trusted_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "auth_trust_proxy_headers", True)
+    monkeypatch.setattr(
+        settings,
+        "auth_trusted_proxy_ips",
+        ["198.51.100.0/24"],
+    )
+
+    request = _build_request(
+        client_host="198.51.100.10",
+        headers={"X-Forwarded-For": "203.0.113.9, 198.51.100.10"},
+    )
+
+    assert get_client_ip(request) == "203.0.113.9"
 
 
 async def test_login_and_refresh_write_audit_events(

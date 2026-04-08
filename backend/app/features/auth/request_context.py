@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ipaddress import ip_address, ip_network
 from typing import Iterable
 from urllib.parse import urlparse
 
@@ -13,14 +14,39 @@ from app.core.config import settings
 def get_client_ip(request: Request) -> str | None:
     """Extract a normalized client IP address from the request."""
 
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        first = forwarded.split(",")[0].strip()
-        if first:
-            return first
     client = getattr(request, "client", None)
     host = getattr(client, "host", None)
+    if not host:
+        return None
+
+    if settings.auth_trust_proxy_headers and _is_trusted_proxy_ip(host):
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            first = forwarded.split(",")[0].strip()
+            if first:
+                return first
+
     return host or None
+
+
+def _is_trusted_proxy_ip(candidate: str) -> bool:
+    """Check whether a direct peer IP is trusted to forward client IP headers."""
+
+    try:
+        peer_ip = ip_address(candidate)
+    except ValueError:
+        return False
+
+    for configured in settings.auth_trusted_proxy_ips:
+        value = (configured or "").strip()
+        if not value:
+            continue
+        try:
+            if peer_ip in ip_network(value, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def get_user_agent(request: Request) -> str | None:

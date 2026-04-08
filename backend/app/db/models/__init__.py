@@ -13,6 +13,7 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.auth_audit_event import AuthAuditEvent
+from app.db.models.auth_legacy_refresh_revocation import AuthLegacyRefreshRevocation
 from app.db.models.auth_refresh_session import AuthRefreshSession
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.external_session_directory_cache import (
@@ -34,6 +35,7 @@ __all__ = [
     "AgentMessageBlock",
     "AgentMessage",
     "AuthAuditEvent",
+    "AuthLegacyRefreshRevocation",
     "AuthRefreshSession",
     "ConversationThread",
     "HubA2AAgentAllowlistEntry",

@@ -42,12 +42,15 @@ from app.features.auth.schemas import (
     UserResponse,
 )
 from app.features.auth.session_service import (
+    LegacyRefreshTokenRevokedError,
     RefreshSessionNotFoundError,
     RefreshSessionReplayError,
     RefreshSessionRevokedError,
     bootstrap_legacy_refresh_session,
     create_refresh_session,
+    ensure_legacy_refresh_token_is_not_revoked,
     revoke_all_refresh_sessions_for_user,
+    revoke_legacy_refresh_token,
     revoke_refresh_session,
     rotate_refresh_session,
 )
@@ -103,26 +106,40 @@ def _enforce_login_rate_limit(*, request: Request, email: str) -> None:
 
 def _enforce_refresh_rate_limit(
     *,
-    request: Request,
+    client_ip: str,
+) -> None:
+    decision = auth_rate_limiter.check_and_record(
+        scope="auth_refresh_ip",
+        key=client_ip,
+        max_attempts=settings.auth_refresh_rate_limit_max_attempts,
+        window_seconds=settings.auth_refresh_rate_limit_window_seconds,
+    )
+    if not decision.allowed:
+        _raise_rate_limited(decision.retry_after_seconds)
+
+
+def _enforce_refresh_context_rate_limit(
+    *,
+    client_ip: str,
     subject: str | None,
     session_id: str | None,
 ) -> None:
-    client_ip = get_client_ip(request) or "unknown"
-    scopes = [f"ip:{client_ip}"]
+    key: str | None = None
     if session_id:
-        scopes.append(f"ip:{client_ip}:sid:{session_id}")
+        key = f"ip:{client_ip}:sid:{session_id}"
     elif subject:
-        scopes.append(f"ip:{client_ip}:sub:{subject}")
+        key = f"ip:{client_ip}:sub:{subject}"
+    if not key:
+        return
 
-    for key in scopes:
-        decision = auth_rate_limiter.check_and_record(
-            scope="auth_refresh",
-            key=key,
-            max_attempts=settings.auth_refresh_rate_limit_max_attempts,
-            window_seconds=settings.auth_refresh_rate_limit_window_seconds,
-        )
-        if not decision.allowed:
-            _raise_rate_limited(decision.retry_after_seconds)
+    decision = auth_rate_limiter.check_and_record(
+        scope="auth_refresh_context",
+        key=key,
+        max_attempts=settings.auth_refresh_rate_limit_max_attempts,
+        window_seconds=settings.auth_refresh_rate_limit_window_seconds,
+    )
+    if not decision.allowed:
+        _raise_rate_limited(decision.retry_after_seconds)
 
 
 def _refresh_log_payload(
@@ -391,6 +408,19 @@ async def refresh_access_token(
     phase_timings_ms: dict[str, float] = {}
     client_ip = get_client_ip(request)
     user_agent = get_user_agent(request)
+    try:
+        _enforce_refresh_rate_limit(client_ip=client_ip or "unknown")
+    except HTTPException as exc:
+        await record_auth_event(
+            db,
+            event_type="refresh_blocked",
+            outcome="blocked",
+            ip_address=client_ip,
+            user_agent=user_agent,
+            metadata={"reason": "rate_limited_ip"},
+        )
+        await commit_safely(db)
+        raise exc
     cookie = request.cookies.get(settings.auth_refresh_cookie_name)
     if not cookie:
         await record_auth_event(
@@ -424,8 +454,8 @@ async def refresh_access_token(
         )
 
     try:
-        _enforce_refresh_rate_limit(
-            request=request,
+        _enforce_refresh_context_rate_limit(
+            client_ip=client_ip or "unknown",
             subject=claims.subject,
             session_id=claims.session_id,
         )
@@ -437,7 +467,10 @@ async def refresh_access_token(
             session_jti=claims.jwt_id,
             ip_address=client_ip,
             user_agent=user_agent,
-            metadata={"reason": "rate_limited", "session_id": claims.session_id},
+            metadata={
+                "reason": "rate_limited_context",
+                "session_id": claims.session_id,
+            },
         )
         await commit_safely(db)
         raise exc
@@ -479,6 +512,11 @@ async def refresh_access_token(
                 auth_service.ensure_legacy_refresh_token_is_active(
                     user=user,
                     token_issued_at=claims.issued_at,
+                )
+                await ensure_legacy_refresh_token_is_not_revoked(
+                    db,
+                    user_id=user_id,
+                    token_jti=claims.jwt_id,
                 )
             if claims.session_id:
                 rotation = await rotate_refresh_session(
@@ -523,6 +561,7 @@ async def refresh_access_token(
         TypeError,
         ValueError,
         auth_service.LegacyRefreshTokenRevokedError,
+        LegacyRefreshTokenRevokedError,
         auth_service.UserNotFoundError,
         RefreshSessionNotFoundError,
         RefreshSessionRevokedError,
@@ -639,14 +678,23 @@ async def logout_user(
                 user_agent=user_agent,
             )
         elif user_id:
-            try:
-                await auth_service.revoke_legacy_refresh_tokens(
+            if claims.jwt_id:
+                await revoke_legacy_refresh_token(
                     db,
                     user_id=user_id,
-                    revoked_before=claims.issued_at,
+                    token_jti=claims.jwt_id,
+                    expires_at=claims.expires_at,
+                    reason="logout",
                 )
-            except auth_service.UserNotFoundError:
-                user_id = None
+            else:
+                try:
+                    await auth_service.revoke_legacy_refresh_tokens(
+                        db,
+                        user_id=user_id,
+                        revoked_before=claims.issued_at,
+                    )
+                except auth_service.UserNotFoundError:
+                    user_id = None
         await record_auth_event(
             db,
             event_type="logout",

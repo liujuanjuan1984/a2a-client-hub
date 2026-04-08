@@ -247,6 +247,22 @@ class Settings(BaseSettings):
         alias="AUTH_COOKIE_REQUIRE_ORIGIN",
         description="Require a trusted Origin or Referer header for cookie-auth endpoints.",
     )
+    auth_trust_proxy_headers: bool = Field(
+        default=False,
+        alias="AUTH_TRUST_PROXY_HEADERS",
+        description=(
+            "Trust proxy-forwarded client IP headers for auth endpoints when the "
+            "direct peer IP is explicitly allowlisted."
+        ),
+    )
+    auth_trusted_proxy_ips: list[str] = Field(
+        default_factory=list,
+        alias="AUTH_TRUSTED_PROXY_IPS",
+        description=(
+            "Trusted direct peer IPs or CIDRs allowed to supply X-Forwarded-For "
+            "to auth endpoints."
+        ),
+    )
     ws_ticket_secret_key: str = Field(
         ...,
         alias="WS_TICKET_SECRET_KEY",
@@ -620,6 +636,10 @@ class Settings(BaseSettings):
             if any(self._origin_is_local(origin) for origin in trusted_cookie_origins):
                 baseline_errors.append(
                     "AUTH cookie trusted origins must not include localhost origins in production"
+                )
+            if self.auth_trust_proxy_headers and not self.auth_trusted_proxy_ips:
+                baseline_errors.append(
+                    "AUTH_TRUSTED_PROXY_IPS must be configured when AUTH_TRUST_PROXY_HEADERS is true in production"
                 )
             if not self.ws_require_origin:
                 baseline_errors.append("WS_REQUIRE_ORIGIN must be true in production")

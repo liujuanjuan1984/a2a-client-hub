@@ -105,6 +105,7 @@ for module_path in [
     "app.db.models.agent_message",
     "app.db.models.agent_message_block",
     "app.db.models.auth_audit_event",
+    "app.db.models.auth_legacy_refresh_revocation",
     "app.db.models.auth_refresh_session",
     "app.db.models.user",
     "app.db.models.invitation",

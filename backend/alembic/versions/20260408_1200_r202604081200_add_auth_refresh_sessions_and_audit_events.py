@@ -99,6 +99,60 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "auth_legacy_refresh_revocations",
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("token_jti", sa.String(length=64), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("revoke_reason", sa.String(length=64), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            [f"{SCHEMA_NAME}.users.id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "token_jti",
+            name="uq_auth_legacy_refresh_revocations_token_jti",
+        ),
+        schema=SCHEMA_NAME,
+    )
+    op.create_index(
+        op.f("ix_auth_legacy_refresh_revocations_token_jti"),
+        "auth_legacy_refresh_revocations",
+        ["token_jti"],
+        unique=True,
+        schema=SCHEMA_NAME,
+    )
+    op.create_index(
+        op.f("ix_auth_legacy_refresh_revocations_user_id"),
+        "auth_legacy_refresh_revocations",
+        ["user_id"],
+        unique=False,
+        schema=SCHEMA_NAME,
+    )
+    op.create_index(
+        "ix_auth_legacy_refresh_revocations_user_id_expires_at",
+        "auth_legacy_refresh_revocations",
+        ["user_id", "expires_at"],
+        unique=False,
+        schema=SCHEMA_NAME,
+    )
+
+    op.create_table(
         "auth_audit_events",
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("session_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -155,6 +209,23 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_auth_legacy_refresh_revocations_user_id_expires_at",
+        table_name="auth_legacy_refresh_revocations",
+        schema=SCHEMA_NAME,
+    )
+    op.drop_index(
+        op.f("ix_auth_legacy_refresh_revocations_user_id"),
+        table_name="auth_legacy_refresh_revocations",
+        schema=SCHEMA_NAME,
+    )
+    op.drop_index(
+        op.f("ix_auth_legacy_refresh_revocations_token_jti"),
+        table_name="auth_legacy_refresh_revocations",
+        schema=SCHEMA_NAME,
+    )
+    op.drop_table("auth_legacy_refresh_revocations", schema=SCHEMA_NAME)
+
     op.drop_index(
         "ix_auth_audit_events_event_type_created_at",
         table_name="auth_audit_events",

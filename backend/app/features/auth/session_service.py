@@ -11,6 +11,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.models.auth_legacy_refresh_revocation import AuthLegacyRefreshRevocation
 from app.db.models.auth_refresh_session import AuthRefreshSession
 from app.utils.timezone_util import utc_now
 
@@ -29,6 +30,10 @@ class RefreshSessionRevokedError(RefreshSessionError):
 
 class RefreshSessionReplayError(RefreshSessionError):
     """Raised when a rotated refresh JWT is replayed."""
+
+
+class LegacyRefreshTokenRevokedError(RefreshSessionError):
+    """Raised when a legacy stateless refresh token has been revoked."""
 
 
 @dataclass(frozen=True)
@@ -108,6 +113,29 @@ async def bootstrap_legacy_refresh_session(
         next_jti=rotation.next_jti,
         was_legacy_bootstrap=True,
     )
+
+
+async def ensure_legacy_refresh_token_is_not_revoked(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    token_jti: str | None,
+) -> None:
+    """Reject legacy refresh tokens that were previously revoked by jti."""
+
+    if not token_jti:
+        return
+
+    result = await db.execute(
+        select(AuthLegacyRefreshRevocation)
+        .where(
+            AuthLegacyRefreshRevocation.user_id == user_id,
+            AuthLegacyRefreshRevocation.token_jti == token_jti,
+        )
+        .limit(1)
+    )
+    if result.scalar_one_or_none() is not None:
+        raise LegacyRefreshTokenRevokedError("Legacy refresh token is revoked")
 
 
 async def rotate_refresh_session(
@@ -216,7 +244,45 @@ async def revoke_all_refresh_sessions_for_user(
     return len(sessions)
 
 
+async def revoke_legacy_refresh_token(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    token_jti: str | None,
+    expires_at: datetime | None,
+    reason: str,
+) -> AuthLegacyRefreshRevocation | None:
+    """Revoke one legacy refresh token by jti when it can be identified."""
+
+    if not token_jti:
+        return None
+
+    result = await db.execute(
+        select(AuthLegacyRefreshRevocation)
+        .where(
+            AuthLegacyRefreshRevocation.user_id == user_id,
+            AuthLegacyRefreshRevocation.token_jti == token_jti,
+        )
+        .with_for_update()
+    )
+    revocation = result.scalar_one_or_none()
+    if revocation is not None:
+        return revocation
+
+    revocation = AuthLegacyRefreshRevocation(
+        user_id=user_id,
+        token_jti=token_jti,
+        expires_at=expires_at or _new_refresh_expiry(),
+        revoked_at=utc_now(),
+        revoke_reason=reason,
+    )
+    db.add(revocation)
+    await db.flush()
+    return revocation
+
+
 __all__ = [
+    "LegacyRefreshTokenRevokedError",
     "RefreshSessionError",
     "RefreshSessionNotFoundError",
     "RefreshSessionReplayError",
@@ -224,7 +290,9 @@ __all__ = [
     "RefreshSessionRotation",
     "bootstrap_legacy_refresh_session",
     "create_refresh_session",
+    "ensure_legacy_refresh_token_is_not_revoked",
     "revoke_all_refresh_sessions_for_user",
+    "revoke_legacy_refresh_token",
     "revoke_refresh_session",
     "rotate_refresh_session",
 ]
