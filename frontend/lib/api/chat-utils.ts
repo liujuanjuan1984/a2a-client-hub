@@ -1408,14 +1408,15 @@ export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
 ): StreamBlockUpdate | null => {
   const kind = pickString(data, ["kind"]);
-  if (kind && kind !== "artifact-update") {
+  if (kind && kind !== "artifact-update" && kind !== "message") {
     return null;
   }
   const artifact = asRecord(data.artifact);
+  const rootParts = Array.isArray(data.parts) ? data.parts : [];
   const rootMetadata = asRecord(data.metadata);
   const metadata = asRecord(artifact?.metadata) ?? rootMetadata;
   const sharedStream = extractSharedStreamMetadata(metadata, rootMetadata);
-  const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
+  const parts = Array.isArray(artifact?.parts) ? artifact.parts : rootParts;
   const textFromParts = extractTextFromParts(parts);
   const dataFromParts = extractDataFromParts(parts);
   const rawBlockType =
@@ -1516,6 +1517,7 @@ export const extractStreamBlockUpdate = (
     parseBlockOperation(pickString(data, ["op", "operation"]));
   const op =
     explicitOp ??
+    (kind === "message" ? "replace" : null) ??
     (isPrimaryTextSnapshotSource(source) || !append ? "replace" : "append");
   if (!delta && op !== "finalize") {
     return null;

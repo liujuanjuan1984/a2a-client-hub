@@ -24,6 +24,13 @@ PRIMARY_TEXT_SNAPSHOT_SOURCES = frozenset({"final_snapshot", "finalize_snapshot"
 BLOCK_OPERATION_TYPES = frozenset({"append", "replace", "finalize"})
 
 
+def _normalized_stream_event_kind(payload: dict[str, Any]) -> str | None:
+    raw_kind = payload.get("kind")
+    if not isinstance(raw_kind, str) or not raw_kind.strip():
+        return None
+    return raw_kind.strip().lower()
+
+
 def _pick_non_empty_str(
     payload: dict[str, Any],
     keys: tuple[str, ...],
@@ -103,6 +110,40 @@ def extract_stream_data_from_parts(parts: Any) -> str:
     return "\n".join(collected)
 
 
+def _resolve_stream_artifact(payload: dict[str, Any]) -> dict[str, Any]:
+    artifact = as_dict(payload.get("artifact"))
+    if artifact:
+        return artifact
+    if _normalized_stream_event_kind(payload) != "message":
+        return {}
+    parts = payload.get("parts")
+    if not isinstance(parts, list):
+        return {}
+    synthetic_artifact: dict[str, Any] = {"parts": list(parts)}
+    metadata = as_dict(payload.get("metadata"))
+    if metadata:
+        synthetic_artifact["metadata"] = dict(metadata)
+    return synthetic_artifact
+
+
+def coerce_message_event_to_artifact_update(payload: dict[str, Any]) -> None:
+    if _normalized_stream_event_kind(payload) != "message":
+        return
+    artifact = as_dict(payload.get("artifact"))
+    if not artifact:
+        parts = payload.get("parts")
+        if not isinstance(parts, list) or not parts:
+            return
+        artifact = {"parts": list(parts)}
+        metadata = as_dict(payload.get("metadata"))
+        if metadata:
+            artifact["metadata"] = dict(metadata)
+        payload["artifact"] = artifact
+    if "append" not in payload:
+        payload["append"] = False
+    payload["kind"] = "artifact-update"
+
+
 def extract_stream_content_from_parts(parts: Any, *, block_type: str) -> str:
     if block_type == "tool_call":
         return extract_stream_data_from_parts(parts) or extract_stream_text_from_parts(
@@ -175,7 +216,13 @@ def extract_artifact_id(
     root_metadata = as_dict(payload.get("metadata"))
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    for candidate in (artifact, artifact_metadata, root_metadata, shared_stream):
+    for candidate in (
+        payload,
+        artifact,
+        artifact_metadata,
+        root_metadata,
+        shared_stream,
+    ):
         artifact_id = _pick_non_empty_str(
             candidate, ("artifact_id", "artifactId", "id")
         )
@@ -215,6 +262,8 @@ def extract_block_operation(
         return "replace"
     if isinstance(append, bool):
         return "append" if append else "replace"
+    if _normalized_stream_event_kind(payload) == "message":
+        return "replace"
     return "append"
 
 
@@ -310,15 +359,11 @@ def extract_stream_sequence_from_serialized_event(
 def extract_stream_chunk_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    raw_kind = payload.get("kind")
-    if (
-        isinstance(raw_kind, str)
-        and raw_kind.strip()
-        and raw_kind.strip().lower() != "artifact-update"
-    ):
+    normalized_kind = _normalized_stream_event_kind(payload)
+    if normalized_kind not in (None, "artifact-update", "message"):
         return None
 
-    artifact = as_dict(payload.get("artifact"))
+    artifact = _resolve_stream_artifact(payload)
     if not artifact:
         return None
     artifact_metadata = as_dict(artifact.get("metadata"))
@@ -353,7 +398,11 @@ def extract_stream_chunk_from_serialized_event(
         return None
 
     append = payload.get("append")
-    resolved_append = append if isinstance(append, bool) else True
+    resolved_append = (
+        append
+        if isinstance(append, bool)
+        else False if normalized_kind == "message" else True
+    )
     resolved_is_finished = (
         payload.get("lastChunk") is True
         or payload.get("last_chunk") is True
@@ -400,18 +449,14 @@ def extract_stream_chunk_from_serialized_event(
 def analyze_stream_chunk_contract(
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
-    raw_kind = payload.get("kind")
-    if (
-        isinstance(raw_kind, str)
-        and raw_kind.strip()
-        and raw_kind.strip().lower() != "artifact-update"
-    ):
+    normalized_kind = _normalized_stream_event_kind(payload)
+    if normalized_kind not in (None, "artifact-update", "message"):
         return None, None
     stream_block = extract_stream_chunk_from_serialized_event(payload)
     if stream_block is not None:
         return stream_block, None
 
-    artifact = as_dict(payload.get("artifact"))
+    artifact = _resolve_stream_artifact(payload)
     if not artifact:
         return None, "missing_artifact"
 

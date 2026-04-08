@@ -56,6 +56,7 @@ from app.features.invoke.stream_diagnostics import (
 )
 from app.features.invoke.stream_payloads import (
     analyze_stream_chunk_contract,
+    coerce_message_event_to_artifact_update,
     extract_interrupt_lifecycle_from_serialized_event,
     extract_shared_stream_metadata,
     extract_stream_chunk_from_serialized_event,
@@ -756,6 +757,7 @@ class A2AInvokeService:
         event_sequence: int,
     ) -> None:
         payload["seq"] = event_sequence
+        coerce_message_event_to_artifact_update(payload)
         if (
             payload.get("kind") != "artifact-update"
             and cls.extract_stream_chunk_from_serialized_event(payload) is not None
@@ -789,10 +791,7 @@ class A2AInvokeService:
                 message_id = cls._pick_non_empty_str(
                     candidate, ("message_id", "messageId")
                 )
-        if (
-            message_id
-            and cls._pick_non_empty_str(payload, ("message_id", "messageId")) is None
-        ):
+        if message_id:
             payload["message_id"] = message_id
 
         event_id = None

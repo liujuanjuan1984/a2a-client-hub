@@ -2196,6 +2196,56 @@ def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
     assert chunk["message_id"] is None
 
 
+def test_extract_stream_chunk_accepts_message_payloads_with_root_parts():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "message",
+            "messageId": "msg-root-1",
+            "taskId": "task-root-1",
+            "parts": [{"kind": "text", "text": "hello from message"}],
+            "role": "agent",
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "event_id": "evt-root-1",
+                        "source": "assistant_text",
+                    }
+                }
+            },
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["event_id"] == "evt-root-1"
+    assert chunk["message_id"] == "msg-root-1"
+    assert chunk["block_type"] == "text"
+    assert chunk["content"] == "hello from message"
+    assert chunk["append"] is False
+    assert chunk["source"] == "assistant_text"
+
+
+def test_ensure_outbound_stream_contract_normalizes_message_payloads():
+    payload = {
+        "kind": "message",
+        "messageId": "msg-root-2",
+        "parts": [{"kind": "text", "text": "render me"}],
+        "role": "agent",
+    }
+
+    a2a_invoke_service._ensure_outbound_stream_contract(  # noqa: SLF001
+        payload,
+        event_sequence=4,
+    )
+
+    assert payload["kind"] == "artifact-update"
+    assert payload["seq"] == 4
+    assert payload["message_id"] == "msg-root-2"
+    assert payload["event_id"] == "msg-root-2:4"
+    assert payload["append"] is False
+    assert payload["artifact"]["parts"] == [{"kind": "text", "text": "render me"}]
+    assert payload["artifact"]["metadata"]["seq"] == 4
+
+
 def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
