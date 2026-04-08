@@ -53,7 +53,7 @@ const loadWebStorageModule = (storage: {
   }));
 
   return {
-    ...(require("../mmkv") as typeof import("../mmkv")),
+    ...(require("../mmkv.web") as typeof import("../mmkv.web")),
     sessionStorage,
   };
 };
@@ -130,7 +130,7 @@ const loadNativeStorageModule = (options: NativeModuleOptions = {}) => {
     },
   }));
 
-  const mmkv = require("../mmkv") as typeof import("../mmkv");
+  const mmkv = require("../mmkv.native") as typeof import("../mmkv.native");
   return {
     ...mmkv,
     stores,

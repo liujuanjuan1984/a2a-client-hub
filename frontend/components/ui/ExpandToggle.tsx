@@ -1,11 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useEffect } from "react";
-import { Pressable, Text } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import React from "react";
+import { Pressable, Text, View } from "react-native";
 
 interface ExpandToggleProps {
   expanded: boolean;
@@ -25,29 +20,19 @@ function ExpandToggleChevron({
   expanded: boolean;
   mini?: boolean;
 }) {
-  const rotation = useSharedValue(expanded ? 180 : 0);
-
-  useEffect(() => {
-    rotation.value = withSpring(expanded ? 180 : 0, {
-      damping: 20,
-      stiffness: 150,
-    });
-  }, [expanded, rotation]);
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ rotate: `${rotation.value}deg` }],
-    };
-  });
-
   return (
-    <Animated.View style={[{ marginLeft: mini ? 2 : 4 }, animatedStyle]}>
+    <View
+      style={{
+        marginLeft: mini ? 2 : 4,
+        transform: [{ rotate: expanded ? "180deg" : "0deg" }],
+      }}
+    >
       <Ionicons
         name="chevron-down"
         size={mini ? 10 : 14}
         color={mini ? "#64748b" : "#94a3b8"}
       />
-    </Animated.View>
+    </View>
   );
 }
 
