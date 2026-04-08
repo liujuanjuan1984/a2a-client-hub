@@ -4,6 +4,7 @@ This module contains configuration settings using Pydantic for environment
 variable management.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -191,6 +192,16 @@ class Settings(BaseSettings):
         alias="JWT_PUBLIC_KEY_PEM",
         description="PEM-encoded public key for asymmetric JWT verification",
     )
+    jwt_key_id: str = Field(
+        default="main",
+        alias="JWT_KEY_ID",
+        description="Key id (kid) attached to newly issued JWTs.",
+    )
+    jwt_previous_public_keys: list[dict[str, str]] = Field(
+        default_factory=list,
+        alias="JWT_PREVIOUS_PUBLIC_KEYS",
+        description="Previous public verification keys kept for JWT rotation compatibility.",
+    )
     jwt_issuer: str = Field(
         default="a2a-client-hub",
         alias="JWT_ISSUER",
@@ -225,6 +236,16 @@ class Settings(BaseSettings):
         default="/api/v1/auth",
         alias="AUTH_REFRESH_COOKIE_PATH",
         description="Path scope for refresh cookie",
+    )
+    auth_cookie_trusted_origins: list[str] = Field(
+        default_factory=list,
+        alias="AUTH_COOKIE_TRUSTED_ORIGINS",
+        description="Trusted origins/referers accepted by cookie-auth endpoints.",
+    )
+    auth_cookie_require_origin: bool = Field(
+        default=True,
+        alias="AUTH_COOKIE_REQUIRE_ORIGIN",
+        description="Require a trusted Origin or Referer header for cookie-auth endpoints.",
     )
     ws_ticket_secret_key: str = Field(
         ...,
@@ -266,6 +287,36 @@ class Settings(BaseSettings):
         alias="AUTH_FAILED_LOGIN_LOCK_MINUTES",
         description="Minutes to keep the account locked after exceeding failed logins",
     )
+    auth_login_rate_limit_window_seconds: int = Field(
+        default=60,
+        alias="AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+        description="Sliding window for process-local login rate limiting.",
+    )
+    auth_login_rate_limit_max_attempts: int = Field(
+        default=20,
+        alias="AUTH_LOGIN_RATE_LIMIT_MAX_ATTEMPTS",
+        description="Maximum login attempts per window for one IP/account scope.",
+    )
+    auth_refresh_rate_limit_window_seconds: int = Field(
+        default=60,
+        alias="AUTH_REFRESH_RATE_LIMIT_WINDOW_SECONDS",
+        description="Sliding window for process-local refresh rate limiting.",
+    )
+    auth_refresh_rate_limit_max_attempts: int = Field(
+        default=30,
+        alias="AUTH_REFRESH_RATE_LIMIT_MAX_ATTEMPTS",
+        description="Maximum refresh attempts per window for one IP/session scope.",
+    )
+    auth_refresh_db_timeout_seconds: float = Field(
+        default=2.5,
+        alias="AUTH_REFRESH_DB_TIMEOUT_SECONDS",
+        description="Maximum time to wait for DB-backed refresh validation before fast-failing.",
+    )
+    auth_refresh_slow_log_threshold_ms: float = Field(
+        default=750.0,
+        alias="AUTH_REFRESH_SLOW_LOG_THRESHOLD_MS",
+        description="Warn threshold for total refresh endpoint latency.",
+    )
     invitation_code_length: int = Field(
         default=32,
         alias="INVITATION_CODE_LENGTH",
@@ -293,6 +344,34 @@ class Settings(BaseSettings):
         if not isinstance(value, str):
             return value
         return value.strip().upper()
+
+    @field_validator("jwt_key_id", mode="before")
+    @classmethod
+    def _normalize_jwt_key_id(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        return normalized or "main"
+
+    @field_validator(
+        "jwt_previous_public_keys",
+        "auth_cookie_trusted_origins",
+        mode="before",
+    )
+    @classmethod
+    def _parse_json_list_settings(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return []
+            if normalized.startswith("["):
+                return json.loads(normalized)
+            return [item.strip() for item in normalized.split(",") if item.strip()]
+        return value
 
     @field_validator("auth_refresh_cookie_samesite", mode="before")
     @classmethod
@@ -439,6 +518,28 @@ class Settings(BaseSettings):
             private_key_pem=self.jwt_private_key_pem,
             public_key_pem=self.jwt_public_key_pem,
         )
+        if not self.jwt_key_id.strip():
+            raise ValueError("JWT_KEY_ID must not be empty")
+        seen_previous_kids: set[str] = set()
+        for item in self.jwt_previous_public_keys:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    "JWT_PREVIOUS_PUBLIC_KEYS entries must be JSON objects"
+                )
+            kid = str(item.get("kid", "")).strip()
+            public_key_pem = str(item.get("public_key_pem", "")).strip()
+            if not kid or not public_key_pem:
+                raise ValueError(
+                    "Each JWT_PREVIOUS_PUBLIC_KEYS entry must include kid and public_key_pem"
+                )
+            if kid == self.jwt_key_id:
+                raise ValueError(
+                    "JWT_PREVIOUS_PUBLIC_KEYS must not reuse the active JWT_KEY_ID"
+                )
+            if kid in seen_previous_kids:
+                raise ValueError("JWT_PREVIOUS_PUBLIC_KEYS kid values must be unique")
+            seen_previous_kids.add(kid)
+            self._load_jwt_public_key(public_key_pem)
 
         if self.jwt_access_token_ttl_seconds <= 0:
             raise ValueError("JWT_ACCESS_TOKEN_TTL_SECONDS must be positive")
@@ -450,6 +551,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "AUTH_REFRESH_COOKIE_SAMESITE must be one of: lax/strict/none"
             )
+        if self.auth_refresh_db_timeout_seconds <= 0:
+            raise ValueError("AUTH_REFRESH_DB_TIMEOUT_SECONDS must be positive")
+        if self.auth_refresh_slow_log_threshold_ms <= 0:
+            raise ValueError("AUTH_REFRESH_SLOW_LOG_THRESHOLD_MS must be positive")
+        if self.auth_login_rate_limit_window_seconds <= 0:
+            raise ValueError("AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS must be positive")
+        if self.auth_login_rate_limit_max_attempts <= 0:
+            raise ValueError("AUTH_LOGIN_RATE_LIMIT_MAX_ATTEMPTS must be positive")
+        if self.auth_refresh_rate_limit_window_seconds <= 0:
+            raise ValueError("AUTH_REFRESH_RATE_LIMIT_WINDOW_SECONDS must be positive")
+        if self.auth_refresh_rate_limit_max_attempts <= 0:
+            raise ValueError("AUTH_REFRESH_RATE_LIMIT_MAX_ATTEMPTS must be positive")
 
         # Browsers reject SameSite=None cookies without Secure.
         if (
@@ -492,6 +605,21 @@ class Settings(BaseSettings):
             ):
                 baseline_errors.append(
                     "BACKEND_CORS_ORIGINS must not include localhost origins in production"
+                )
+            if not self.auth_cookie_require_origin:
+                baseline_errors.append(
+                    "AUTH_COOKIE_REQUIRE_ORIGIN must be true in production"
+                )
+            trusted_cookie_origins = (
+                self.auth_cookie_trusted_origins or self.backend_cors_origins
+            )
+            if any((origin or "").strip() == "*" for origin in trusted_cookie_origins):
+                baseline_errors.append(
+                    "AUTH cookie trusted origins must not include '*' in production"
+                )
+            if any(self._origin_is_local(origin) for origin in trusted_cookie_origins):
+                baseline_errors.append(
+                    "AUTH cookie trusted origins must not include localhost origins in production"
                 )
             if not self.ws_require_origin:
                 baseline_errors.append("WS_REQUIRE_ORIGIN must be true in production")

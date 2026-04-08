@@ -9,7 +9,15 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.security import DUMMY_PASSWORD_HASH, create_user_token, get_password_hash
+from app.core.security import (
+    DUMMY_PASSWORD_HASH,
+    build_jwks_document,
+    create_user_token,
+    get_password_hash,
+    verify_refresh_token_claims,
+)
+from app.db.models.auth_audit_event import AuthAuditEvent
+from app.db.models.auth_refresh_session import AuthRefreshSession
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
 from app.features.auth import router as auth_router
@@ -18,6 +26,8 @@ from app.utils.timezone_util import utc_now
 from tests.support.api_utils import create_test_client
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
+TRUSTED_ORIGIN = "http://localhost:3000"
 
 
 async def run_in_session(async_session_maker, coro_fn):
@@ -143,6 +153,7 @@ async def test_login_sets_refresh_cookie(client: AsyncClient) -> None:
 
 async def test_refresh_rotates_cookie_and_returns_new_access_token(
     client: AsyncClient,
+    async_session_maker,
 ) -> None:
     register_payload = {
         "email": "refresh@example.com",
@@ -164,7 +175,10 @@ async def test_refresh_rotates_cookie_and_returns_new_access_token(
     before = client.cookies.get(settings.auth_refresh_cookie_name)
     assert before
 
-    refresh_response = await client.post(f"{settings.api_v1_prefix}/auth/refresh")
+    refresh_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
     assert refresh_response.status_code == 200, refresh_response.text
     payload = refresh_response.json()
     assert payload["access_token"]
@@ -174,6 +188,139 @@ async def test_refresh_rotates_cookie_and_returns_new_access_token(
     after = client.cookies.get(settings.auth_refresh_cookie_name)
     assert after
     assert after != before
+
+    claims = verify_refresh_token_claims(after)
+    assert claims is not None
+    assert claims.session_id is not None
+
+    async def inspect_sessions(session):
+        result = await session.execute(select(AuthRefreshSession))
+        return list(result.scalars())
+
+    sessions = await run_in_session(async_session_maker, inspect_sessions)
+    assert len(sessions) == 1
+    assert sessions[0].current_jti == claims.jwt_id
+
+
+async def test_refresh_rejects_missing_origin_header(client: AsyncClient) -> None:
+    payload = {
+        "email": "refresh-no-origin@example.com",
+        "name": "Refresh User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    register_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/register", json=payload
+    )
+    assert register_response.status_code == 201
+
+    login_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login_response.status_code == 200
+
+    refresh_response = await client.post(f"{settings.api_v1_prefix}/auth/refresh")
+    assert refresh_response.status_code == 403
+
+
+async def test_logout_revokes_current_refresh_session(
+    client: AsyncClient, async_session_maker
+) -> None:
+    payload = {
+        "email": "logout@example.com",
+        "name": "Logout User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    await client.post(f"{settings.api_v1_prefix}/auth/register", json=payload)
+
+    login_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login_response.status_code == 200
+    refresh_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
+    assert refresh_cookie
+
+    logout_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/logout",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert logout_response.status_code == 204
+
+    client.cookies.set(settings.auth_refresh_cookie_name, refresh_cookie)
+    refresh_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert refresh_response.status_code == 401
+
+    async def inspect_audit(session):
+        result = await session.execute(
+            select(AuthAuditEvent).where(AuthAuditEvent.event_type == "logout")
+        )
+        return list(result.scalars())
+
+    events = await run_in_session(async_session_maker, inspect_audit)
+    assert len(events) == 1
+
+
+async def test_logout_all_revokes_all_refresh_sessions(
+    client: AsyncClient, async_session_maker
+) -> None:
+    payload = {
+        "email": "logout-all@example.com",
+        "name": "Logout All User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    await client.post(f"{settings.api_v1_prefix}/auth/register", json=payload)
+
+    first_login = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert first_login.status_code == 200
+    first_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
+    assert first_cookie
+
+    second_login = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert second_login.status_code == 200
+    second_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
+    assert second_cookie and second_cookie != first_cookie
+
+    async def fetch_user(session):
+        result = await session.execute(
+            select(User).where(User.email == payload["email"])
+        )
+        return result.scalar_one()
+
+    user = await run_in_session(async_session_maker, fetch_user)
+    access_token = create_user_token(user.id)
+
+    logout_all_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/logout-all",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert logout_all_response.status_code == 204
+
+    client.cookies.set(settings.auth_refresh_cookie_name, first_cookie)
+    first_refresh = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert first_refresh.status_code == 401
+
+    client.cookies.set(settings.auth_refresh_cookie_name, second_cookie)
+    second_refresh = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert second_refresh.status_code == 401
 
 
 async def test_change_password_updates_credentials(
@@ -198,6 +345,13 @@ async def test_change_password_updates_credentials(
 
     user = await run_in_session(async_session_maker, fetch_user)
     token = create_user_token(user.id)
+    login_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login_response.status_code == 200
+    refresh_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
+    assert refresh_cookie
 
     change_response = await client.post(
         f"{settings.api_v1_prefix}/auth/password/change",
@@ -218,6 +372,13 @@ async def test_change_password_updates_credentials(
         json={"email": payload["email"], "password": payload["password"]},
     )
     assert failed_login.status_code == 401
+
+    client.cookies.set(settings.auth_refresh_cookie_name, refresh_cookie)
+    refresh_after_password_change = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert refresh_after_password_change.status_code == 401
 
     # New password should authenticate
     success_login = await client.post(
@@ -750,3 +911,49 @@ async def test_login_lockout_after_repeated_failures(
         return user
 
     await run_in_session(async_session_maker, inspect_lock)
+
+
+async def test_jwks_endpoint_exposes_active_key(client: AsyncClient) -> None:
+    response = await client.get(f"{settings.api_v1_prefix}/auth/.well-known/jwks.json")
+    assert response.status_code == 200
+    body = response.json()
+    assert body == build_jwks_document()
+    assert body["keys"][0]["kid"] == settings.jwt_key_id
+
+
+async def test_login_and_refresh_write_audit_events(
+    client: AsyncClient, async_session_maker
+) -> None:
+    payload = {
+        "email": "audit@example.com",
+        "name": "Audit User",
+        "password": "Str0ngPass!1",
+        "timezone": "UTC",
+    }
+    register_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/register", json=payload
+    )
+    assert register_response.status_code == 201
+
+    login_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login_response.status_code == 200
+
+    refresh_response = await client.post(
+        f"{settings.api_v1_prefix}/auth/refresh",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert refresh_response.status_code == 200
+
+    async def fetch_events(session):
+        result = await session.execute(
+            select(AuthAuditEvent).order_by(AuthAuditEvent.created_at.asc())
+        )
+        return list(result.scalars())
+
+    events = await run_in_session(async_session_maker, fetch_events)
+    event_types = [item.event_type for item in events]
+    assert "login_success" in event_types
+    assert "refresh_success" in event_types

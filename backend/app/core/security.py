@@ -3,11 +3,14 @@
 This module contains JWT token handling, password hashing, and authentication utilities.
 """
 
-from datetime import timedelta
+import base64
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union, cast
 from uuid import UUID, uuid4
 
 import jwt
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 
@@ -24,6 +27,19 @@ ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
 
 
+@dataclass(frozen=True)
+class VerifiedJwtClaims:
+    """Decoded JWT claims used by auth flows."""
+
+    subject: str
+    token_type: str
+    jwt_id: str | None
+    session_id: str | None
+    issued_at: datetime | None
+    expires_at: datetime | None
+    key_id: str | None
+
+
 def _jwt_signing_key() -> str:
     # Key validity is enforced in Settings() during startup.
     return cast(str, settings.jwt_private_key_pem)
@@ -34,11 +50,102 @@ def _jwt_verification_key() -> str:
     return cast(str, settings.jwt_public_key_pem)
 
 
+def _jwt_verification_keys() -> dict[str, str]:
+    keys = {settings.jwt_key_id: _jwt_verification_key()}
+    for item in settings.jwt_previous_public_keys:
+        kid = str(item["kid"]).strip()
+        public_key_pem = str(item["public_key_pem"]).strip()
+        if kid and public_key_pem:
+            keys[kid] = public_key_pem
+    return keys
+
+
+def _b64url_uint(value: int) -> str:
+    raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _pem_public_key_to_jwk(*, kid: str, public_key_pem: str) -> dict[str, str]:
+    public_key = settings._load_jwt_public_key(public_key_pem)
+    jwk: dict[str, str] = {
+        "kid": kid,
+        "use": "sig",
+        "alg": settings.jwt_algorithm,
+    }
+    if isinstance(public_key, rsa.RSAPublicKey):
+        rsa_numbers = public_key.public_numbers()
+        jwk.update(
+            {
+                "kty": "RSA",
+                "n": _b64url_uint(rsa_numbers.n),
+                "e": _b64url_uint(rsa_numbers.e),
+            }
+        )
+        return jwk
+    if isinstance(public_key, ec.EllipticCurvePublicKey):
+        ec_numbers = public_key.public_numbers()
+        curve_name = public_key.curve.name
+        curve_map = {
+            "secp256r1": "P-256",
+            "secp384r1": "P-384",
+            "secp521r1": "P-521",
+        }
+        coordinate_size = (public_key.key_size + 7) // 8
+        jwk.update(
+            {
+                "kty": "EC",
+                "crv": curve_map[curve_name],
+                "x": base64.urlsafe_b64encode(
+                    ec_numbers.x.to_bytes(coordinate_size, "big")
+                )
+                .rstrip(b"=")
+                .decode("ascii"),
+                "y": base64.urlsafe_b64encode(
+                    ec_numbers.y.to_bytes(coordinate_size, "big")
+                )
+                .rstrip(b"=")
+                .decode("ascii"),
+            }
+        )
+        return jwk
+    raise ValueError("Unsupported JWT public key type")
+
+
+def build_jwks_document() -> dict[str, list[dict[str, str]]]:
+    """Expose active and previous public keys as a JWKS document."""
+
+    keys = [
+        _pem_public_key_to_jwk(
+            kid=settings.jwt_key_id, public_key_pem=_jwt_verification_key()
+        )
+    ]
+    for item in settings.jwt_previous_public_keys:
+        keys.append(
+            _pem_public_key_to_jwk(
+                kid=str(item["kid"]).strip(),
+                public_key_pem=str(item["public_key_pem"]).strip(),
+            )
+        )
+    return {"keys": keys}
+
+
+def _timestamp_to_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    return None
+
+
 def create_jwt_token(
     *,
     subject: str,
     token_type: str,
     expires_in_seconds: int,
+    jwt_id: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     now = utc_now()
     expire = now + timedelta(seconds=expires_in_seconds)
@@ -49,17 +156,32 @@ def create_jwt_token(
         "exp": expire,
         "iss": settings.jwt_issuer,
         # Ensure tokens are unique even when refreshed within the same second.
-        "jti": uuid4().hex,
+        "jti": jwt_id or uuid4().hex,
     }
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(
         payload,
         _jwt_signing_key(),
         algorithm=settings.jwt_algorithm,
+        headers={"kid": settings.jwt_key_id},
     )
 
 
-def verify_jwt_token(token: str, *, expected_type: str) -> Optional[str]:
+def verify_jwt_token_claims(
+    token: str, *, expected_type: str
+) -> Optional[VerifiedJwtClaims]:
     try:
+        headers = jwt.get_unverified_header(token)
+        key_id = headers.get("kid")
+        verification_keys = _jwt_verification_keys()
+        verification_key = (
+            verification_keys.get(str(key_id))
+            if isinstance(key_id, str) and key_id.strip()
+            else _jwt_verification_key()
+        )
+        if verification_key is None:
+            return None
         options = {
             "require": ["exp", "iat", "sub", "typ", "iss"],
             "verify_signature": True,
@@ -67,7 +189,7 @@ def verify_jwt_token(token: str, *, expected_type: str) -> Optional[str]:
         }
         payload = jwt.decode(
             token,
-            _jwt_verification_key(),
+            verification_key,
             algorithms=[settings.jwt_algorithm],
             issuer=settings.jwt_issuer,
             options=cast(Any, options),
@@ -77,9 +199,24 @@ def verify_jwt_token(token: str, *, expected_type: str) -> Optional[str]:
         subject = payload.get("sub")
         if subject is None:
             return None
-        return str(subject)
+        return VerifiedJwtClaims(
+            subject=str(subject),
+            token_type=str(payload.get("typ")),
+            jwt_id=str(payload.get("jti")) if payload.get("jti") else None,
+            session_id=str(payload.get("sid")) if payload.get("sid") else None,
+            issued_at=_timestamp_to_datetime(payload.get("iat")),
+            expires_at=_timestamp_to_datetime(payload.get("exp")),
+            key_id=str(key_id) if isinstance(key_id, str) and key_id.strip() else None,
+        )
     except (InvalidTokenError, ValueError, TypeError):
         return None
+
+
+def verify_jwt_token(token: str, *, expected_type: str) -> Optional[str]:
+    claims = verify_jwt_token_claims(token, expected_type=expected_type)
+    if claims is None:
+        return None
+    return claims.subject
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -158,11 +295,18 @@ def create_user_access_token(user_id: Union[str, UUID]) -> str:
     )
 
 
-def create_user_refresh_token(user_id: Union[str, UUID]) -> str:
+def create_user_refresh_token(
+    user_id: Union[str, UUID],
+    *,
+    session_id: Union[str, UUID, None] = None,
+    jwt_id: str | None = None,
+) -> str:
     return create_jwt_token(
         subject=str(user_id),
         token_type=REFRESH_TOKEN_TYPE,
         expires_in_seconds=settings.jwt_refresh_token_ttl_seconds,
+        jwt_id=jwt_id,
+        session_id=str(session_id) if session_id is not None else None,
     )
 
 
@@ -172,3 +316,7 @@ def verify_access_token(token: str) -> Optional[str]:
 
 def verify_refresh_token(token: str) -> Optional[str]:
     return verify_jwt_token(token, expected_type=REFRESH_TOKEN_TYPE)
+
+
+def verify_refresh_token_claims(token: str) -> Optional[VerifiedJwtClaims]:
+    return verify_jwt_token_claims(token, expected_type=REFRESH_TOKEN_TYPE)

@@ -21,7 +21,6 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models.user import User
-from app.db.transaction import commit_safely
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -130,7 +129,7 @@ async def register_user(
     )
 
     db.add(user)
-    await commit_safely(db)
+    await db.flush()
     await db.refresh(user)
 
     return RegistrationResult(
@@ -223,7 +222,7 @@ async def change_user_password(
     current_password: str,
     new_password: str,
 ) -> None:
-    """Update password for the provided user after validating credentials."""
+    """Stage a password update for the provided user after validating credentials."""
 
     if user is None:
         if user_id is None:
@@ -245,7 +244,6 @@ async def change_user_password(
 
     setattr(user, "password_hash", get_password_hash(new_password))
     db.add(user)
-    await commit_safely(db)
 
 
 async def get_active_user(

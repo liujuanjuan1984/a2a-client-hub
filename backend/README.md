@@ -21,6 +21,15 @@ Production note:
   - `text` (default): traditional console-friendly logs
   - `json`: structured JSON logs
 
+## Auth Notes
+
+- Refresh auth now uses a server-side refresh-session table instead of relying only on self-contained refresh JWTs.
+- Cookie-auth endpoints (`/api/v1/auth/refresh` and `/api/v1/auth/logout`) validate trusted `Origin` / `Referer` headers. Configure `AUTH_COOKIE_TRUSTED_ORIGINS` when the frontend origin differs from `BACKEND_CORS_ORIGINS`.
+- `POST /api/v1/auth/logout-all` revokes every active refresh session for the authenticated user.
+- Password changes revoke all active refresh sessions for that user.
+- JWTs now carry `kid`, and the backend exposes JWKS at `/api/v1/auth/.well-known/jwks.json`. Keep previous public keys in `JWT_PREVIOUS_PUBLIC_KEYS` during rotation windows.
+- Login and refresh rate limiting is currently process-local and in-memory. It improves burst protection, but multi-instance/shared enforcement still requires an external shared store.
+
 ## Initialize Schema and Run Migrations
 
 ```bash

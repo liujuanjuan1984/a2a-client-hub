@@ -100,9 +100,14 @@ export function AuthBootstrap() {
       ensureTokenFresh();
     };
 
+    const onFocus = () => {
+      ensureTokenFresh();
+    };
+
     if (isWeb) {
       document.addEventListener("visibilitychange", onVisibilityChange);
       window.addEventListener("online", onOnline);
+      window.addEventListener("focus", onFocus);
     }
 
     return () => {
@@ -110,6 +115,7 @@ export function AuthBootstrap() {
       if (isWeb) {
         document.removeEventListener("visibilitychange", onVisibilityChange);
         window.removeEventListener("online", onOnline);
+        window.removeEventListener("focus", onFocus);
       }
     };
   }, [hydrated]);
