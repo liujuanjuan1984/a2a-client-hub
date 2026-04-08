@@ -76,11 +76,8 @@ describe("api client auth refresh flow", () => {
   it("adds a native first-party client header outside web", async () => {
     jest.resetModules();
     jest.doMock("react-native", () => {
-      const actual = jest.requireActual("react-native");
       return {
-        ...actual,
         Platform: {
-          ...actual.Platform,
           OS: "ios",
         },
       };

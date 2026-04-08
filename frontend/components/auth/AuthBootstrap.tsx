@@ -54,15 +54,7 @@ export function AuthBootstrap() {
           setHydrated(true);
         }
       }
-    })().catch((error) => {
-      if (error instanceof ApiConfigError) {
-        console.error("[AuthBootstrap] Invalid API base URL:", error.message);
-        return;
-      }
-      console.warn("[AuthBootstrap] Refresh failed:", {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
+    })().catch(() => undefined);
 
     return () => {
       cancelled = true;
@@ -75,7 +67,7 @@ export function AuthBootstrap() {
     const ensureTokenFresh = () => {
       ensureFreshAccessToken().catch((error) => {
         if (error instanceof ApiConfigError) {
-          console.error("[AuthBootstrap] Invalid API base URL:", error.message);
+          return undefined;
         }
       });
     };
@@ -143,15 +135,11 @@ export function AuthBootstrap() {
     const timer = setTimeout(() => {
       ensureFreshAccessToken().catch((error) => {
         if (error instanceof ApiConfigError) {
-          console.error("[AuthBootstrap] Invalid API base URL:", error.message);
-          return;
+          return undefined;
         }
         if (error instanceof AuthRecoverableError) {
-          return;
+          return undefined;
         }
-        console.warn("[AuthBootstrap] Timed refresh failed:", {
-          message: error instanceof Error ? error.message : String(error),
-        });
       });
     }, scheduleDelayMs);
 
