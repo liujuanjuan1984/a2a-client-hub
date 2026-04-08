@@ -139,8 +139,22 @@ def coerce_message_event_to_artifact_update(payload: dict[str, Any]) -> None:
         if metadata:
             artifact["metadata"] = dict(metadata)
         payload["artifact"] = artifact
+    message_id = _pick_non_empty_str(payload, ("message_id", "messageId"))
+    if message_id is not None:
+        payload["message_id"] = message_id
+    event_id = _pick_non_empty_str(payload, ("event_id", "eventId"))
+    if event_id is not None:
+        payload["event_id"] = event_id
+    task_id = _pick_non_empty_str(payload, ("task_id", "taskId"))
+    if task_id is not None:
+        payload["task_id"] = task_id
     if "append" not in payload:
         payload["append"] = False
+    payload.pop("messageId", None)
+    payload.pop("eventId", None)
+    payload.pop("taskId", None)
+    payload.pop("parts", None)
+    payload.pop("role", None)
     payload["kind"] = "artifact-update"
 
 

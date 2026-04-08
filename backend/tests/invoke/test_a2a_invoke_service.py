@@ -1024,6 +1024,9 @@ async def test_sse_emits_canonical_artifact_update_for_upstream_message_events()
     assert artifact_payload["artifact"]["parts"] == [
         {"kind": "text", "text": "hello from raw message"}
     ]
+    assert "messageId" not in artifact_payload
+    assert "parts" not in artifact_payload
+    assert "role" not in artifact_payload
 
 
 @pytest.mark.asyncio
@@ -1182,6 +1185,9 @@ async def test_ws_emits_canonical_artifact_update_for_upstream_message_events():
     assert artifact_payload["artifact"]["parts"] == [
         {"kind": "text", "text": "hello from raw message"}
     ]
+    assert "messageId" not in artifact_payload
+    assert "parts" not in artifact_payload
+    assert "role" not in artifact_payload
 
 
 @pytest.mark.asyncio
@@ -2328,6 +2334,9 @@ def test_ensure_outbound_stream_contract_normalizes_message_payloads():
     assert payload["append"] is False
     assert payload["artifact"]["parts"] == [{"kind": "text", "text": "render me"}]
     assert payload["artifact"]["metadata"]["seq"] == 4
+    assert "messageId" not in payload
+    assert "parts" not in payload
+    assert "role" not in payload
 
 
 def test_serialize_stream_event_normalizes_message_payload_before_validation(
@@ -2356,6 +2365,9 @@ def test_serialize_stream_event_normalizes_message_payload_before_validation(
     assert serialized["kind"] == "artifact-update"
     assert serialized["append"] is False
     assert serialized["artifact"]["parts"] == [{"kind": "text", "text": "hello"}]
+    assert "messageId" not in serialized
+    assert "parts" not in serialized
+    assert "role" not in serialized
     assert seen_payloads[0]["kind"] == "artifact-update"
 
 
