@@ -735,6 +735,7 @@ class A2AInvokeService:
             payload = dict(resolved)
         else:
             payload = resolved.model_dump(exclude_none=True)
+        coerce_message_event_to_artifact_update(payload)
         if settings.debug:
             payload["validation_errors"] = validate_message(payload)
         return payload

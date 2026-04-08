@@ -985,6 +985,48 @@ async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
 
 
 @pytest.mark.asyncio
+async def test_sse_emits_canonical_artifact_update_for_upstream_message_events():
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "message",
+                    "messageId": "msg-upstream-sse-1",
+                    "role": "agent",
+                    "parts": [{"kind": "text", "text": "hello from raw message"}],
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    frames: list[str] = []
+    async for chunk in response.body_iterator:
+        frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payloads = [
+        json.loads(line.removeprefix("data: "))
+        for line in "".join(frames).splitlines()
+        if line.startswith("data: ")
+        and ('"kind": "artifact-update"' in line or '"kind": "status-update"' in line)
+    ]
+    artifact_payload = next(
+        payload for payload in payloads if payload.get("kind") == "artifact-update"
+    )
+    assert artifact_payload["message_id"] == "msg-upstream-sse-1"
+    assert artifact_payload["append"] is False
+    assert artifact_payload["artifact"]["parts"] == [
+        {"kind": "text", "text": "hello from raw message"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_sse_breaks_stream_after_terminal_status_update():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
@@ -1098,6 +1140,48 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_ws_emits_canonical_artifact_update_for_upstream_message_events():
+    websocket = _DummyWebSocket()
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "message",
+                    "messageId": "msg-upstream-ws-1",
+                    "role": "agent",
+                    "parts": [{"kind": "text", "text": "hello from raw message"}],
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    payloads = [
+        json.loads(item)
+        for item in websocket.sent
+        if item.startswith("{")
+        and ('"kind": "artifact-update"' in item or '"kind": "status-update"' in item)
+    ]
+    artifact_payload = next(
+        payload for payload in payloads if payload.get("kind") == "artifact-update"
+    )
+    assert artifact_payload["message_id"] == "msg-upstream-ws-1"
+    assert artifact_payload["append"] is False
+    assert artifact_payload["artifact"]["parts"] == [
+        {"kind": "text", "text": "hello from raw message"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -2244,6 +2328,35 @@ def test_ensure_outbound_stream_contract_normalizes_message_payloads():
     assert payload["append"] is False
     assert payload["artifact"]["parts"] == [{"kind": "text", "text": "render me"}]
     assert payload["artifact"]["metadata"]["seq"] == 4
+
+
+def test_serialize_stream_event_normalizes_message_payload_before_validation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    seen_payloads: list[dict[str, object]] = []
+
+    def _validate(payload: dict[str, object]) -> list[object]:
+        seen_payloads.append(dict(payload))
+        return []
+
+    monkeypatch.setattr(settings, "debug", True)
+
+    serialized = a2a_invoke_service.serialize_stream_event(
+        _DumpableEvent(
+            {
+                "kind": "message",
+                "messageId": "msg-serialize-1",
+                "role": "agent",
+                "parts": [{"kind": "text", "text": "hello"}],
+            }
+        ),
+        validate_message=_validate,
+    )
+
+    assert serialized["kind"] == "artifact-update"
+    assert serialized["append"] is False
+    assert serialized["artifact"]["parts"] == [{"kind": "text", "text": "hello"}]
+    assert seen_payloads[0]["kind"] == "artifact-update"
 
 
 def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():

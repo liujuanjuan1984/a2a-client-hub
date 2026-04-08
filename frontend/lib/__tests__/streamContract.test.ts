@@ -1001,23 +1001,6 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.messageId).toBe("task:task-9");
   });
 
-  it("parses raw message events that carry text parts at the root", () => {
-    const parsed = extractStreamBlockUpdate({
-      kind: "message",
-      taskId: "task-12",
-      messageId: "msg-root-12",
-      eventId: "evt-root-12",
-      seq: 12,
-      role: "agent",
-      parts: [{ kind: "text", text: "hello from root message" }],
-    });
-    expect(parsed?.blockType).toBe("text");
-    expect(parsed?.delta).toBe("hello from root message");
-    expect(parsed?.messageId).toBe("msg-root-12");
-    expect(parsed?.eventId).toBe("evt-root-12");
-    expect(parsed?.op).toBe("replace");
-  });
-
   it("accepts text parts that use type/content shape", () => {
     const parsed = extractStreamBlockUpdate({
       kind: "artifact-update",
