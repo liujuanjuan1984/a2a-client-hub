@@ -1,10 +1,15 @@
 import { useLocalSearchParams } from "expo-router";
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 
 import { buildGeneratingTitle, PageTitle } from "@/components/layout/PageTitle";
+import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
-import { ChatScreen } from "@/screens/ChatScreen";
 import { useChatStore } from "@/store/chat";
+
+const LazyChatScreen = lazy(async () => {
+  const module = await import("@/screens/ChatScreen");
+  return { default: module.ChatScreen };
+});
 
 export default function ChatSession() {
   const { agentId, conversationId } = useLocalSearchParams<{
@@ -34,7 +39,9 @@ export default function ChatSession() {
   return (
     <>
       <PageTitle title={title} />
-      <ChatScreen agentId={agentId} conversationId={conversationId} />
+      <Suspense fallback={<FullscreenLoader message="Loading chat..." />}>
+        <LazyChatScreen agentId={agentId} conversationId={conversationId} />
+      </Suspense>
     </>
   );
 }
