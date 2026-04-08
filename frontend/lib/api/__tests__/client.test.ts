@@ -73,6 +73,41 @@ describe("api client auth refresh flow", () => {
     });
   });
 
+  it("adds a native first-party client header outside web", async () => {
+    jest.resetModules();
+    jest.doMock("react-native", () => {
+      const actual = jest.requireActual("react-native");
+      return {
+        ...actual,
+        Platform: {
+          ...actual.Platform,
+          OS: "ios",
+        },
+      };
+    });
+
+    const { client } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValue(
+      createJsonResponse(200, {
+        access_token: "native-token",
+        expires_in: 120,
+      }),
+    );
+
+    await client.refreshAccessToken({ force: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.test/api/v1/auth/refresh",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "X-A2A-Client-Platform": "native",
+        }),
+      }),
+    );
+  });
+
   it("proactively refreshes and updates session token when token is near expiry", async () => {
     const { client, useSessionStore } = loadModules();
     const fetchMock = global.fetch as jest.Mock;

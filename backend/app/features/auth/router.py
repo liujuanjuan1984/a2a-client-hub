@@ -47,8 +47,8 @@ from app.features.auth.session_service import (
     RefreshSessionReplayError,
     RefreshSessionRevokedError,
     bootstrap_legacy_refresh_session,
+    consume_legacy_refresh_token,
     create_refresh_session,
-    ensure_legacy_refresh_token_is_not_revoked,
     revoke_all_refresh_sessions_for_user,
     revoke_legacy_refresh_token,
     revoke_refresh_session,
@@ -401,13 +401,27 @@ async def refresh_access_token(
 ) -> RefreshResponse:
     """Refresh access token using HttpOnly refresh cookie."""
 
-    enforce_trusted_cookie_origin(request)
-
     request_started = time.perf_counter()
     phase_started = request_started
     phase_timings_ms: dict[str, float] = {}
     client_ip = get_client_ip(request)
     user_agent = get_user_agent(request)
+    try:
+        enforce_trusted_cookie_origin(request)
+    except HTTPException as exc:
+        await record_auth_event(
+            db,
+            event_type="refresh_blocked",
+            outcome="blocked",
+            ip_address=client_ip,
+            user_agent=user_agent,
+            metadata={
+                "reason": "untrusted_cookie_origin",
+                "status_code": exc.status_code,
+            },
+        )
+        await commit_safely(db)
+        raise
     try:
         _enforce_refresh_rate_limit(client_ip=client_ip or "unknown")
     except HTTPException as exc:
@@ -497,6 +511,11 @@ async def refresh_access_token(
     user: User | None = None
     try:
         async with asyncio.timeout(settings.auth_refresh_db_timeout_seconds):
+            await db.connection()
+            phase_timings_ms["db_connection_wait"] = (
+                time.perf_counter() - phase_started
+            ) * 1000.0
+            phase_started = time.perf_counter()
             await set_postgres_local_timeouts(
                 db,
                 statement_timeout_ms=int(
@@ -513,10 +532,11 @@ async def refresh_access_token(
                     user=user,
                     token_issued_at=claims.issued_at,
                 )
-                await ensure_legacy_refresh_token_is_not_revoked(
+                await consume_legacy_refresh_token(
                     db,
                     user_id=user_id,
                     token_jti=claims.jwt_id,
+                    expires_at=claims.expires_at,
                 )
             if claims.session_id:
                 rotation = await rotate_refresh_session(
@@ -652,9 +672,24 @@ async def logout_user(
 ) -> None:
     """Clear refresh cookie and revoke the current refresh session when present."""
 
-    enforce_trusted_cookie_origin(request)
     client_ip = get_client_ip(request)
     user_agent = get_user_agent(request)
+    try:
+        enforce_trusted_cookie_origin(request)
+    except HTTPException as exc:
+        await record_auth_event(
+            db,
+            event_type="logout_blocked",
+            outcome="blocked",
+            ip_address=client_ip,
+            user_agent=user_agent,
+            metadata={
+                "reason": "untrusted_cookie_origin",
+                "status_code": exc.status_code,
+            },
+        )
+        await commit_safely(db)
+        raise
     cookie = request.cookies.get(settings.auth_refresh_cookie_name)
     claims = verify_refresh_token_claims(cookie) if cookie else None
     user_id: UUID | None = None

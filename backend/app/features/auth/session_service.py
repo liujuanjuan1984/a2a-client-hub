@@ -8,6 +8,7 @@ from typing import cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import Select, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -113,6 +114,37 @@ async def bootstrap_legacy_refresh_session(
         next_jti=rotation.next_jti,
         was_legacy_bootstrap=True,
     )
+
+
+async def consume_legacy_refresh_token(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    token_jti: str | None,
+    expires_at: datetime | None,
+) -> None:
+    """Atomically mark one legacy refresh token as consumed for session bootstrap."""
+
+    if not token_jti:
+        raise LegacyRefreshTokenRevokedError(
+            "Legacy refresh token cannot be upgraded without jti"
+        )
+
+    statement = (
+        pg_insert(AuthLegacyRefreshRevocation)
+        .values(
+            user_id=user_id,
+            token_jti=token_jti,
+            expires_at=expires_at or _new_refresh_expiry(),
+            revoked_at=utc_now(),
+            revoke_reason="session_bootstrap",
+        )
+        .on_conflict_do_nothing(index_elements=["token_jti"])
+        .returning(AuthLegacyRefreshRevocation.id)
+    )
+    inserted = (await db.execute(statement)).scalar_one_or_none()
+    if inserted is None:
+        raise LegacyRefreshTokenRevokedError("Legacy refresh token is revoked")
 
 
 async def ensure_legacy_refresh_token_is_not_revoked(
@@ -282,6 +314,7 @@ async def revoke_legacy_refresh_token(
 
 
 __all__ = [
+    "consume_legacy_refresh_token",
     "LegacyRefreshTokenRevokedError",
     "RefreshSessionError",
     "RefreshSessionNotFoundError",
