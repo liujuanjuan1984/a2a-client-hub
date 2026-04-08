@@ -1787,6 +1787,69 @@ async def test_append_session_control_falls_back_to_prompt_async_without_stream_
 
 
 @pytest.mark.asyncio
+async def test_append_session_control_strips_shared_metadata_before_prompt_async(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension()
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    async def _fake_prompt_async(**kwargs):
+        assert kwargs["session_id"] == "ses_123"
+        assert kwargs["request_payload"] == {
+            "parts": [{"type": "text", "text": "continue"}],
+            "messageID": "msg-1",
+        }
+        assert kwargs["metadata"] == {"locale": "en"}
+        return ExtensionCallResult(
+            success=True,
+            result={"ok": True, "session_id": "ses_123"},
+            meta={},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._session_extensions,
+        "prompt_session_async",
+        _fake_prompt_async,
+    )
+
+    result = await service.append_session_control(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={
+            "parts": [{"type": "text", "text": "continue"}],
+            "messageID": "msg-1",
+        },
+        metadata={
+            "locale": "en",
+            "shared": {
+                "stream": {
+                    "thread_id": "thread-1",
+                    "turn_id": "turn-1",
+                },
+                "model": {
+                    "providerID": "openai",
+                    "modelID": "gpt-5.4",
+                },
+            },
+        },
+    )
+
+    assert result.success is True
+    assert result.result == {"ok": True, "session_id": "ses_123"}
+
+
+@pytest.mark.asyncio
 async def test_command_session_forwards_request_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

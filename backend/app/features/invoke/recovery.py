@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, Awaitable, Callable, Literal, cast
 
 from app.features.invoke.invoke_metadata import (
     apply_invoke_metadata_bindings,
@@ -20,6 +20,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
+from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeSessionBinding,
@@ -91,6 +92,104 @@ def log_session_binding_warning(
     if extra:
         merged_extra.update(extra)
     log_warning(message, extra=merged_extra)
+
+
+async def validate_provider_aware_continue_session(
+    *,
+    runtime: Any,
+    continue_payload: dict[str, Any],
+    logger: Any,
+    log_extra: dict[str, Any],
+    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
+    log_warning_fn: Callable[..., None] = log_session_binding_warning,
+) -> Literal["validated", "skipped", "failed"]:
+    provider, external_session_id = extract_rebound_continue_binding_fields(
+        continue_payload=continue_payload
+    )
+    if not external_session_id:
+        return "skipped"
+
+    try:
+        result = await extensions_service_getter().continue_session(
+            runtime=runtime,
+            session_id=external_session_id,
+        )
+    except A2AExtensionNotSupportedError:
+        return "skipped"
+    except A2AExtensionUpstreamError as exc:
+        log_warning_fn(
+            logger=logger,
+            message=(
+                "Provider-aware session recovery capability resolution failed upstream; "
+                "falling back to local rebound"
+            ),
+            log_extra=log_extra,
+            extra={
+                "session_recovery_mode": "provider_aware",
+                "session_recovery_provider": provider,
+                "session_recovery_session_id": external_session_id,
+                "session_recovery_validation_error": str(exc),
+            },
+        )
+        return "skipped"
+    except AttributeError as exc:
+        log_warning_fn(
+            logger=logger,
+            message=(
+                "Provider-aware session recovery capability resolution failed due to "
+                "runtime shape; falling back to local rebound"
+            ),
+            log_extra=log_extra,
+            extra={
+                "session_recovery_mode": "provider_aware",
+                "session_recovery_provider": provider,
+                "session_recovery_session_id": external_session_id,
+                "session_recovery_validation_error": str(exc),
+            },
+        )
+        return "skipped"
+    except A2AExtensionContractError as exc:
+        log_warning_fn(
+            logger=logger,
+            message=(
+                "Provider-aware session recovery contract invalid; "
+                "falling back to local rebound"
+            ),
+            log_extra=log_extra,
+            extra={
+                "session_recovery_mode": "provider_aware",
+                "session_recovery_provider": provider,
+                "session_recovery_session_id": external_session_id,
+                "session_recovery_validation_error": str(exc),
+            },
+        )
+        return "skipped"
+
+    if not isinstance(result, ExtensionCallResult):
+        return "validated"
+    if result.success:
+        return "validated"
+
+    unsupported_error_codes = {"method_not_supported", "method_disabled"}
+    if result.error_code in unsupported_error_codes:
+        return "skipped"
+
+    log_warning_fn(
+        logger=logger,
+        message=(
+            "Provider-aware session recovery validation failed; "
+            "skipping invoke retry"
+        ),
+        log_extra=log_extra,
+        extra={
+            "session_recovery_mode": "provider_aware",
+            "session_recovery_provider": provider,
+            "session_recovery_session_id": external_session_id,
+            "session_recovery_error_code": result.error_code,
+            "session_recovery_source": result.source,
+        },
+    )
+    return "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,4 +404,5 @@ __all__ = [
     "InvokeMetadataBindingRequiredError",
     "log_session_binding_warning",
     "resolve_session_binding_outbound_mode",
+    "validate_provider_aware_continue_session",
 ]

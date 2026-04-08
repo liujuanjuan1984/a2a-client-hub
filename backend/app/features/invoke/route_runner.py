@@ -45,6 +45,9 @@ from app.features.invoke.recovery import (
 from app.features.invoke.recovery import (
     resolve_session_binding_outbound_mode as _resolve_session_binding_outbound_mode_impl,
 )
+from app.features.invoke.recovery import (
+    validate_provider_aware_continue_session as _validate_provider_aware_continue_session,
+)
 from app.features.invoke.service import (
     StreamFinishReason,
     StreamOutcome,
@@ -624,6 +627,36 @@ async def _continue_session_with_short_transaction(
         else:
             await _close_open_transaction(short_db)
         return continue_binding
+
+
+async def _recover_rebound_invoke_payload(
+    *,
+    runtime: Any,
+    user_id: UUID,
+    payload: A2AAgentInvokeRequest,
+    logger: Any,
+    log_extra: dict[str, Any],
+) -> A2AAgentInvokeRequest | None:
+    if not isinstance(payload.conversation_id, str):
+        return None
+
+    continue_binding = await _continue_session_with_short_transaction(
+        user_id=user_id,
+        conversation_id=payload.conversation_id,
+    )
+    validation_result = await _validate_provider_aware_continue_session(
+        runtime=runtime,
+        continue_payload=continue_binding,
+        logger=logger,
+        log_extra=log_extra,
+    )
+    if validation_result == "failed":
+        return None
+
+    return _build_rebound_invoke_payload(
+        payload=payload,
+        continue_payload=continue_binding,
+    )
 
 
 def _collect_stream_hints(
@@ -1342,21 +1375,21 @@ async def run_http_invoke_with_session_recovery(
             return response
         if remaining_retries <= 0:
             return response
-        if not isinstance(current_payload.conversation_id, str):
-            return response
 
         remaining_retries -= 1
         try:
-            continue_binding = await _continue_session_with_short_transaction(
+            rebound_payload = await _recover_rebound_invoke_payload(
+                runtime=runtime,
                 user_id=user_id,
-                conversation_id=current_payload.conversation_id,
+                payload=current_payload,
+                logger=logger,
+                log_extra=log_extra,
             )
         except ValueError:
             return response
-        current_payload = _build_rebound_invoke_payload(
-            payload=current_payload,
-            continue_payload=continue_binding,
-        )
+        if rebound_payload is None:
+            return response
+        current_payload = rebound_payload
 
 
 async def run_http_invoke(
@@ -1785,23 +1818,24 @@ async def run_ws_invoke_with_session_recovery(
             await _send_recovery_failed_error()
             await a2a_invoke_service.send_ws_stream_end(websocket)
             return
-        if not isinstance(current_payload.conversation_id, str):
-            await a2a_invoke_service.send_ws_stream_end(websocket)
-            return
 
         remaining_retries -= 1
         try:
-            continue_binding = await _continue_session_with_short_transaction(
+            rebound_payload = await _recover_rebound_invoke_payload(
+                runtime=runtime,
                 user_id=user_id,
-                conversation_id=current_payload.conversation_id,
+                payload=current_payload,
+                logger=logger,
+                log_extra=log_extra,
             )
         except ValueError:
             await a2a_invoke_service.send_ws_stream_end(websocket)
             return
-        current_payload = _build_rebound_invoke_payload(
-            payload=current_payload,
-            continue_payload=continue_binding,
-        )
+        if rebound_payload is None:
+            await _send_recovery_failed_error()
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+            return
+        current_payload = rebound_payload
 
 
 async def run_ws_invoke_route(

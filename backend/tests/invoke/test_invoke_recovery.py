@@ -8,11 +8,13 @@ from app.features.invoke.recovery import (
     build_rebound_invoke_payload,
     finalize_outbound_invoke_payload,
     resolve_session_binding_outbound_mode,
+    validate_provider_aware_continue_session,
 )
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
+from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.types import (
     ResolvedInvokeMetadataExtension,
     ResolvedInvokeMetadataField,
@@ -92,6 +94,104 @@ def test_build_rebound_invoke_payload_applies_continue_binding_fields() -> None:
     assert rebound.session_binding.provider == "opencode"
     assert rebound.session_binding.external_session_id == "ses-upstream-1"
     assert rebound.metadata == {"locale": "zh-CN"}
+
+
+@pytest.mark.asyncio
+async def test_validate_provider_aware_continue_session_skips_without_session_id() -> (
+    None
+):
+    result = await validate_provider_aware_continue_session(
+        runtime=SimpleNamespace(),
+        continue_payload={"metadata": {"provider": "opencode"}},
+        logger=_fake_logger(),
+        log_extra={},
+    )
+
+    assert result == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_validate_provider_aware_continue_session_validates_with_extension_response() -> (
+    None
+):
+    observed: dict[str, object] = {}
+
+    class _ExtensionsService:
+        async def continue_session(self, *, runtime, session_id):  # noqa: ARG002
+            observed["session_id"] = session_id
+            return ExtensionCallResult(success=True, result={"ok": True})
+
+    result = await validate_provider_aware_continue_session(
+        runtime=SimpleNamespace(),
+        continue_payload={
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "ses-upstream-1",
+            }
+        },
+        logger=_fake_logger(),
+        log_extra={},
+        extensions_service_getter=lambda: _ExtensionsService(),
+    )
+
+    assert result == "validated"
+    assert observed["session_id"] == "ses-upstream-1"
+
+
+@pytest.mark.asyncio
+async def test_validate_provider_aware_continue_session_returns_failed_for_explicit_upstream_failure() -> (
+    None
+):
+    warnings: list[tuple[str, dict[str, object]]] = []
+
+    class _ExtensionsService:
+        async def continue_session(self, *, runtime, session_id):  # noqa: ARG002
+            return ExtensionCallResult(
+                success=False,
+                error_code="session_not_found",
+                source="upstream_a2a",
+            )
+
+    result = await validate_provider_aware_continue_session(
+        runtime=SimpleNamespace(),
+        continue_payload={
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "ses-upstream-1",
+            }
+        },
+        logger=_fake_logger(),
+        log_extra={},
+        extensions_service_getter=lambda: _ExtensionsService(),
+        log_warning_fn=_capture_warning(warnings),
+    )
+
+    assert result == "failed"
+    assert warnings[0][1]["session_recovery_error_code"] == "session_not_found"
+
+
+@pytest.mark.asyncio
+async def test_validate_provider_aware_continue_session_skips_when_extension_is_unsupported() -> (
+    None
+):
+    class _ExtensionsService:
+        async def continue_session(self, *, runtime, session_id):  # noqa: ARG002
+            raise A2AExtensionNotSupportedError("not supported")
+
+    result = await validate_provider_aware_continue_session(
+        runtime=SimpleNamespace(),
+        continue_payload={
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "ses-upstream-1",
+            }
+        },
+        logger=_fake_logger(),
+        log_extra={},
+        extensions_service_getter=lambda: _ExtensionsService(),
+    )
+
+    assert result == "skipped"
 
 
 @pytest.mark.asyncio
