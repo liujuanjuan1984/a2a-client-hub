@@ -83,8 +83,6 @@ type ApiRequestOptions<Body> = {
 
 type JsonRecord = Record<string, unknown>;
 
-const AUTH_LOG_SLOW_THRESHOLD_MS = 250;
-
 const buildUrl = (
   path: string,
   query?: ApiRequestOptions<unknown>["query"],
@@ -156,15 +154,6 @@ const buildFirstPartyClientHeaders = (): Record<string, string> =>
     : {
         [FIRST_PARTY_CLIENT_PLATFORM_HEADER]: NATIVE_CLIENT_PLATFORM,
       };
-
-const logAuthClientEvent = (
-  level: "info" | "warn",
-  event: string,
-  payload: Record<string, unknown>,
-) => {
-  const logger = level === "warn" ? console.warn : console.info;
-  logger(`[auth] ${event}`, payload);
-};
 
 const isAuthPath = (path: string) => {
   const authPaths = [
@@ -361,16 +350,11 @@ export const refreshAccessTokenWithOutcome = async (
       session.setAuthStatus("refreshing");
     }
     refreshPromise = (async () => {
-      const refreshStartedAt = Date.now();
       const url = buildUrl(AUTH_REFRESH_PATH);
       const controller = new AbortController();
       const timer = setTimeout(() => {
         controller.abort();
       }, REFRESH_REQUEST_TIMEOUT_MS);
-      logAuthClientEvent("info", "refresh_start", {
-        force,
-        expectedAuthVersion,
-      });
       try {
         const response = await fetch(url, {
           method: "POST",
@@ -382,18 +366,6 @@ export const refreshAccessTokenWithOutcome = async (
           signal: controller.signal,
         });
         const parsed = await parseRefreshPayloadFromResponse(response);
-        const durationMs = Date.now() - refreshStartedAt;
-        logAuthClientEvent(response.ok ? "info" : "warn", "refresh_complete", {
-          force,
-          status: response.status,
-          duration_ms: durationMs,
-          outcome: parsed
-            ? "success"
-            : response.status === 401 || response.status === 403
-              ? "unauthorized"
-              : "transient",
-          slow: durationMs >= AUTH_LOG_SLOW_THRESHOLD_MS,
-        });
         return buildRefreshFailureOutcome(response, parsed);
       } finally {
         clearTimeout(timer);
@@ -403,12 +375,6 @@ export const refreshAccessTokenWithOutcome = async (
         if (error instanceof ApiConfigError) {
           throw error;
         }
-        logAuthClientEvent("warn", "refresh_error", {
-          force,
-          expectedAuthVersion,
-          error_name: error instanceof Error ? error.name : String(error),
-          aborted: error instanceof Error && error.name === "AbortError",
-        });
         return {
           result: null,
           failureReason: "transient",
@@ -718,17 +684,9 @@ const executeRequestWithAuthRecovery = async (
   const canAutoRefresh = shouldAttemptAuthRefresh(path, tokenOverride, headers);
 
   if (canAutoRefresh) {
-    const refreshGateStartedAt = Date.now();
     token = await ensureFreshAccessToken({
       expectedAuthVersion: requestAuthVersion,
     });
-    const refreshGateDurationMs = Date.now() - refreshGateStartedAt;
-    if (refreshGateDurationMs >= AUTH_LOG_SLOW_THRESHOLD_MS) {
-      logAuthClientEvent("info", "protected_request_waited_for_refresh", {
-        path,
-        duration_ms: refreshGateDurationMs,
-      });
-    }
   }
 
   let response = await executeJsonRequest(url, method, body, headers, token);
@@ -736,12 +694,10 @@ const executeRequestWithAuthRecovery = async (
     return response;
   }
 
-  const retryRefreshStartedAt = Date.now();
   const refreshOutcome = await refreshAccessTokenWithOutcome({
     force: true,
     expectedAuthVersion: requestAuthVersion,
   });
-  const retryRefreshDurationMs = Date.now() - retryRefreshStartedAt;
   const refreshed = refreshOutcome.result;
   if (refreshOutcome.didExpireSession) {
     throw new AuthExpiredError();
@@ -759,7 +715,6 @@ const executeRequestWithAuthRecovery = async (
   applyRefreshedToken(refreshed, {
     expectedAuthVersion: requestAuthVersion,
   });
-  const retryRequestStartedAt = Date.now();
   response = await executeJsonRequest(
     url,
     method,
@@ -767,12 +722,6 @@ const executeRequestWithAuthRecovery = async (
     headers,
     refreshed.accessToken,
   );
-  logAuthClientEvent("info", "protected_request_retried_after_refresh", {
-    path,
-    refresh_duration_ms: retryRefreshDurationMs,
-    retry_request_duration_ms: Date.now() - retryRequestStartedAt,
-    retry_status: response.status,
-  });
   if (isUnauthorizedStatusCode(response.status)) {
     handleAuthExpiredOnce({
       expectedAuthVersion: requestAuthVersion,

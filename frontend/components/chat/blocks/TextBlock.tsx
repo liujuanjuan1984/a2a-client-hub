@@ -1,7 +1,7 @@
 import React from "react";
 import { View } from "react-native";
 
-import { MarkdownRender } from "../MarkdownRender";
+import { LazyMarkdownRender } from "../LazyMarkdownRender";
 
 import { type MessageBlock } from "@/lib/api/chat-utils";
 
@@ -29,7 +29,7 @@ export function TextBlock({
 
   return (
     <View key={blockId} className={!isFirst ? "mt-3" : ""}>
-      <MarkdownRender content={blockText} isAgent={isAgent} />
+      <LazyMarkdownRender content={blockText} isAgent={isAgent} />
     </View>
   );
 }

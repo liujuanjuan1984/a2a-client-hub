@@ -17,7 +17,6 @@ module.exports = {
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   transformIgnorePatterns: [
     "/node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)",
-    "/node_modules/react-native-reanimated/plugin/",
   ],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",

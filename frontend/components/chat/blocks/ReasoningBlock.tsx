@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { View } from "react-native";
 
-import { MarkdownRender } from "../MarkdownRender";
+import { LazyMarkdownRender } from "../LazyMarkdownRender";
 
 import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import { type MessageBlock } from "@/lib/api/chat-utils";
@@ -63,7 +63,7 @@ export function ReasoningBlock({
       {expanded && blockHasContent ? (
         <View>
           <View className="mt-2">
-            <MarkdownRender content={blockText} isAgent />
+            <LazyMarkdownRender content={blockText} isAgent />
           </View>
           <View className="mt-1 items-end">
             <ExpandToggle

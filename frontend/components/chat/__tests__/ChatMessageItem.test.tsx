@@ -7,9 +7,7 @@ import { ChatMessageItem } from "@/components/chat/ChatMessageItem";
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { toast } from "@/lib/toast";
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: () => null,
-}));
+jest.mock("@expo/vector-icons/Ionicons", () => () => null);
 
 jest.mock("@/components/chat/MessageBlock", () => ({
   MessageBlock: () => {

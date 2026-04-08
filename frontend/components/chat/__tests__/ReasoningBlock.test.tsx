@@ -7,8 +7,8 @@ const mockMarkdownRender = jest.fn(
   ({ content }: { content: string; isAgent?: boolean }) => content,
 );
 
-jest.mock("../MarkdownRender", () => ({
-  MarkdownRender: (props: { content: string; isAgent?: boolean }) => {
+jest.mock("../LazyMarkdownRender", () => ({
+  LazyMarkdownRender: (props: { content: string; isAgent?: boolean }) => {
     mockMarkdownRender(props);
     return null;
   },

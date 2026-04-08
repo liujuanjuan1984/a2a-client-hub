@@ -47,9 +47,7 @@ jest.mock("react-native/Libraries/Modal/Modal", () => {
   };
 });
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: () => null,
-}));
+jest.mock("@expo/vector-icons/Ionicons", () => () => null);
 
 jest.mock("@/hooks/useShortcutsQuery", () => ({
   useShortcutsQuery: () => mockShortcutState,

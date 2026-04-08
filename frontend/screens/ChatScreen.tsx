@@ -1,17 +1,41 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
 import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
-import { CodexDiscoveryModal } from "@/components/chat/CodexDiscoveryModal";
-import { InvokeMetadataModal } from "@/components/chat/InvokeMetadataModal";
-import { ModelPickerModal } from "@/components/chat/ModelPickerModal";
-import { OpencodeDirectoryModal } from "@/components/chat/OpencodeDirectoryModal";
-import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
-import { ShortcutManagerModal } from "@/components/chat/ShortcutManagerModal";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useChatScreenController } from "@/hooks/useChatScreenController";
+
+const LazyCodexDiscoveryModal = lazy(async () => {
+  const module = await import("@/components/chat/CodexDiscoveryModal");
+  return { default: module.CodexDiscoveryModal };
+});
+
+const LazyInvokeMetadataModal = lazy(async () => {
+  const module = await import("@/components/chat/InvokeMetadataModal");
+  return { default: module.InvokeMetadataModal };
+});
+
+const LazyModelPickerModal = lazy(async () => {
+  const module = await import("@/components/chat/ModelPickerModal");
+  return { default: module.ModelPickerModal };
+});
+
+const LazyOpencodeDirectoryModal = lazy(async () => {
+  const module = await import("@/components/chat/OpencodeDirectoryModal");
+  return { default: module.OpencodeDirectoryModal };
+});
+
+const LazySessionPickerModal = lazy(async () => {
+  const module = await import("@/components/chat/SessionPickerModal");
+  return { default: module.SessionPickerModal };
+});
+
+const LazyShortcutManagerModal = lazy(async () => {
+  const module = await import("@/components/chat/ShortcutManagerModal");
+  return { default: module.ShortcutManagerModal };
+});
 
 export function ChatScreen({
   agentId: routeAgentId,
@@ -93,61 +117,85 @@ export function ChatScreen({
         onElicitationReply={controller.handleElicitationReply}
       />
 
-      <ShortcutManagerModal
-        visible={controller.showShortcutManager}
-        onClose={controller.closeShortcutManager}
-        onUseShortcut={controller.handleUseShortcut}
-        initialPrompt={controller.shortcutManagerInitialPrompt}
-        agentId={controller.activeAgentId}
-      />
+      {controller.showShortcutManager ? (
+        <Suspense fallback={null}>
+          <LazyShortcutManagerModal
+            visible
+            onClose={controller.closeShortcutManager}
+            onUseShortcut={controller.handleUseShortcut}
+            initialPrompt={controller.shortcutManagerInitialPrompt}
+            agentId={controller.activeAgentId}
+          />
+        </Suspense>
+      ) : null}
 
-      <SessionPickerModal
-        visible={controller.showSessionPicker}
-        onClose={controller.closeSessionPicker}
-        agentId={controller.activeAgentId}
-        currentConversationId={controller.conversationId}
-        onSelect={controller.handleSessionSelect}
-      />
+      {controller.showSessionPicker ? (
+        <Suspense fallback={null}>
+          <LazySessionPickerModal
+            visible
+            onClose={controller.closeSessionPicker}
+            agentId={controller.activeAgentId}
+            currentConversationId={controller.conversationId}
+            onSelect={controller.handleSessionSelect}
+          />
+        </Suspense>
+      ) : null}
 
-      <ModelPickerModal
-        visible={controller.showModelPicker}
-        onClose={controller.closeModelPicker}
-        agentId={controller.activeAgentId}
-        source={controller.agent.source}
-        providerDiscoveryStatus={controller.providerDiscoveryStatus}
-        sessionMetadata={controller.session?.metadata}
-        selectedModel={controller.selectedModel}
-        onSelectModel={controller.handleModelSelect}
-        onClearModelSelection={controller.clearModelSelection}
-      />
+      {controller.showModelPicker ? (
+        <Suspense fallback={null}>
+          <LazyModelPickerModal
+            visible
+            onClose={controller.closeModelPicker}
+            agentId={controller.activeAgentId}
+            source={controller.agent.source}
+            providerDiscoveryStatus={controller.providerDiscoveryStatus}
+            sessionMetadata={controller.session?.metadata}
+            selectedModel={controller.selectedModel}
+            onSelectModel={controller.handleModelSelect}
+            onClearModelSelection={controller.clearModelSelection}
+          />
+        </Suspense>
+      ) : null}
 
-      <CodexDiscoveryModal
-        visible={controller.showCodexDiscovery}
-        onClose={controller.closeCodexDiscovery}
-        agentId={controller.activeAgentId}
-        source={controller.agent.source}
-        codexDiscoveryStatus={controller.codexDiscoveryStatus}
-        codexDiscovery={controller.codexDiscovery}
-        availableTabs={controller.codexDiscoveryAvailableTabs}
-        canReadPlugins={controller.canReadCodexPlugins}
-      />
+      {controller.showCodexDiscovery ? (
+        <Suspense fallback={null}>
+          <LazyCodexDiscoveryModal
+            visible
+            onClose={controller.closeCodexDiscovery}
+            agentId={controller.activeAgentId}
+            source={controller.agent.source}
+            codexDiscoveryStatus={controller.codexDiscoveryStatus}
+            codexDiscovery={controller.codexDiscovery}
+            availableTabs={controller.codexDiscoveryAvailableTabs}
+            canReadPlugins={controller.canReadCodexPlugins}
+          />
+        </Suspense>
+      ) : null}
 
-      <OpencodeDirectoryModal
-        visible={controller.showDirectoryPicker}
-        onClose={controller.closeDirectoryPicker}
-        currentDirectory={controller.opencodeDirectory}
-        onSave={controller.handleSaveOpencodeDirectory}
-        onClear={controller.handleClearOpencodeDirectory}
-      />
+      {controller.showDirectoryPicker ? (
+        <Suspense fallback={null}>
+          <LazyOpencodeDirectoryModal
+            visible
+            onClose={controller.closeDirectoryPicker}
+            currentDirectory={controller.opencodeDirectory}
+            onSave={controller.handleSaveOpencodeDirectory}
+            onClear={controller.handleClearOpencodeDirectory}
+          />
+        </Suspense>
+      ) : null}
 
-      <InvokeMetadataModal
-        visible={controller.showInvokeMetadataModal}
-        onClose={controller.closeInvokeMetadataModal}
-        fields={controller.invokeMetadataFields}
-        currentBindings={controller.invokeMetadataBindings}
-        onSave={controller.handleSaveInvokeMetadata}
-        onClear={controller.handleClearInvokeMetadata}
-      />
+      {controller.showInvokeMetadataModal ? (
+        <Suspense fallback={null}>
+          <LazyInvokeMetadataModal
+            visible
+            onClose={controller.closeInvokeMetadataModal}
+            fields={controller.invokeMetadataFields}
+            currentBindings={controller.invokeMetadataBindings}
+            onSave={controller.handleSaveInvokeMetadata}
+            onClear={controller.handleClearInvokeMetadata}
+          />
+        </Suspense>
+      ) : null}
 
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}

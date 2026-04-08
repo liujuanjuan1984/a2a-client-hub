@@ -2,9 +2,7 @@ import { fireEvent, render } from "@testing-library/react-native";
 
 import { AppRouteErrorBoundary } from "../AppRouteErrorBoundary";
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: () => null,
-}));
+jest.mock("@expo/vector-icons/Ionicons", () => () => null);
 
 describe("AppRouteErrorBoundary", () => {
   it("renders fallback copy with the error message", () => {

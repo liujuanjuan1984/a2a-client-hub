@@ -27,9 +27,7 @@ jest.mock("react-native/Libraries/Modal/Modal", () => {
   };
 });
 
-jest.mock("@expo/vector-icons", () => ({
-  Ionicons: () => null,
-}));
+jest.mock("@expo/vector-icons/Ionicons", () => () => null);
 
 jest.mock("@/components/ui/Button", () => ({
   Button: ({ label, onPress }: { label: string; onPress: () => void }) => {

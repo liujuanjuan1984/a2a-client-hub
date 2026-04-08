@@ -1,12 +1,6 @@
 import "@testing-library/react-native/extend-expect";
 import { queryClient } from "@/services/queryClient";
 
-jest.mock("react-native-reanimated", () => {
-  const Reanimated = require("react-native-reanimated/mock");
-  Reanimated.default.call = () => {};
-  return Reanimated;
-});
-
 if (typeof globalThis.window === "undefined") {
   globalThis.window = globalThis as unknown as Window & typeof globalThis;
 }
@@ -66,16 +60,8 @@ jest.mock("expo-clipboard", () => ({
   getStringAsync: jest.fn(async () => null),
 }));
 
-jest.mock("@expo/vector-icons", () => {
-  const MockIcon = () => null;
-  return {
-    Ionicons: MockIcon,
-    AntDesign: MockIcon,
-    FontAwesome: MockIcon,
-    FontAwesome5: MockIcon,
-    MaterialIcons: MockIcon,
-    MaterialCommunityIcons: MockIcon,
-  };
+jest.mock("@expo/vector-icons/Ionicons", () => {
+  return () => null;
 });
 
 jest.mock("react-native/Libraries/AppState/AppState", () => ({

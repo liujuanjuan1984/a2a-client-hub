@@ -1,11 +1,20 @@
+import { lazy, Suspense } from "react";
+
 import { PageTitle } from "@/components/layout/PageTitle";
-import { AgentListScreen } from "@/screens/AgentListScreen";
+import { RouteScreenFallback } from "@/components/layout/RouteScreenFallback";
+
+const LazyAgentListScreen = lazy(async () => {
+  const module = await import("@/screens/AgentListScreen");
+  return { default: module.AgentListScreen };
+});
 
 export default function Home() {
   return (
     <>
       <PageTitle title="Agents" />
-      <AgentListScreen />
+      <Suspense fallback={<RouteScreenFallback />}>
+        <LazyAgentListScreen />
+      </Suspense>
     </>
   );
 }
