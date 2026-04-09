@@ -130,6 +130,21 @@ Optional environment variables:
 - `SELF_MANAGEMENT_SWIVAL_MAX_TURNS`
 - `SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS`
 
+Recommended Gemini configuration (aligned with upstream `swival`):
+
+```bash
+export GEMINI_API_KEY=...
+export SELF_MANAGEMENT_SWIVAL_PROVIDER=google
+export SELF_MANAGEMENT_SWIVAL_MODEL=gemini-2.5-flash
+```
+
+Notes:
+
+- For Gemini, prefer `SELF_MANAGEMENT_SWIVAL_PROVIDER=google` instead of `generic`.
+- Let `swival` resolve the API key from `GEMINI_API_KEY` or `OPENAI_API_KEY`.
+- `SELF_MANAGEMENT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
+  overriding the default Google OpenAI-compatible endpoint.
+
 ## Backend Structure
 
 The backend now uses a practical feature-based structure for business-facing entrypoints and orchestration code.
