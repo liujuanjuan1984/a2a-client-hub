@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.agents_shared.actor_context import (
+from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
 )

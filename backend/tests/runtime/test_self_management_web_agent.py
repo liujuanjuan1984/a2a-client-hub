@@ -6,10 +6,10 @@ import pytest
 
 from app.api.deps import get_current_self_management_web_agent_runtime
 from app.db.models.user import User
-from app.features.agents_shared.self_management_web_agent import (
+from app.features.self_management_shared.self_management_web_agent import (
     build_self_management_web_agent_runtime,
 )
-from app.features.agents_shared.tool_gateway import SelfManagementSurface
+from app.features.self_management_shared.tool_gateway import SelfManagementSurface
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]

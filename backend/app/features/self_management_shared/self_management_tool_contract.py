@@ -7,10 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.features.agents_shared.capability_catalog import (
+from app.features.self_management_shared.capability_catalog import (
     ALL_SELF_MANAGEMENT_OPERATIONS,
 )
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
     SelfManagementOperation,
     SelfManagementSurface,

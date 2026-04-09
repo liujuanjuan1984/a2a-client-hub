@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 
 from app.core.security import create_self_management_access_token
-from app.features.agents_shared.self_management_mcp import (
+from app.features.self_management_shared.self_management_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
     _MCP_USER_ID_STATE_KEY,
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,

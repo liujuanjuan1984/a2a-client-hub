@@ -26,11 +26,18 @@ from app.core.logging import (
 from app.core.security import create_user_access_token, verify_access_token
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
-from app.features.agents_shared.actor_context import (
+from app.features.auth.service import (
+    InvalidCredentialsError,
+    UserLockedError,
+    UserNotFoundError,
+    authenticate_user,
+    get_active_user,
+)
+from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
-from app.features.agents_shared.capability_catalog import (
+from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_GET,
     SELF_AGENTS_LIST,
     SELF_AGENTS_UPDATE_CONFIG,
@@ -43,18 +50,13 @@ from app.features.agents_shared.capability_catalog import (
     SELF_SESSIONS_GET,
     SELF_SESSIONS_LIST,
 )
-from app.features.agents_shared.self_management_toolkit import SelfManagementToolkit
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.self_management_toolkit import (
+    SelfManagementToolkit,
+)
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
     SelfManagementSurface,
     SelfManagementToolGateway,
-)
-from app.features.auth.service import (
-    InvalidCredentialsError,
-    UserLockedError,
-    UserNotFoundError,
-    authenticate_user,
-    get_active_user,
 )
 
 _CLI_SESSION_FILE_ENV = "A2A_CLIENT_HUB_CLI_SESSION_FILE"

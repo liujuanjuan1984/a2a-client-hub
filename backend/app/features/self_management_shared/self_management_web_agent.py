@@ -7,17 +7,19 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.features.agents_shared.actor_context import (
+from app.features.self_management_shared.actor_context import (
     SelfManagementActorContext,
     SelfManagementActorType,
     build_self_management_actor_context,
 )
-from app.features.agents_shared.self_management_tool_contract import (
+from app.features.self_management_shared.self_management_tool_contract import (
     SelfManagementToolDefinition,
     list_self_management_tool_definitions,
 )
-from app.features.agents_shared.self_management_toolkit import SelfManagementToolkit
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.self_management_toolkit import (
+    SelfManagementToolkit,
+)
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
 )

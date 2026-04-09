@@ -15,21 +15,6 @@ from app.api.deps import (
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
-from app.features.agents_shared.capability_catalog import (
-    ADMIN_HUB_AGENT_ALLOWLIST_ADD,
-    ADMIN_HUB_AGENT_ALLOWLIST_LIST,
-    ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
-    ADMIN_HUB_AGENT_ALLOWLIST_REPLACE,
-    ADMIN_HUB_AGENTS_CREATE,
-    ADMIN_HUB_AGENTS_DELETE,
-    ADMIN_HUB_AGENTS_GET,
-    ADMIN_HUB_AGENTS_LIST,
-    ADMIN_HUB_AGENTS_UPDATE,
-)
-from app.features.agents_shared.tool_gateway import (
-    SelfManagementOperation,
-    SelfManagementToolGateway,
-)
 from app.features.hub_agents.schemas import (
     HubA2AAgentAdminCreate,
     HubA2AAgentAdminListResponse,
@@ -49,6 +34,21 @@ from app.features.hub_agents.service import (
     HubA2AAllowlistConflictError,
     HubA2AUserNotFoundError,
     hub_a2a_agent_service,
+)
+from app.features.self_management_shared.capability_catalog import (
+    ADMIN_HUB_AGENT_ALLOWLIST_ADD,
+    ADMIN_HUB_AGENT_ALLOWLIST_LIST,
+    ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
+    ADMIN_HUB_AGENT_ALLOWLIST_REPLACE,
+    ADMIN_HUB_AGENTS_CREATE,
+    ADMIN_HUB_AGENTS_DELETE,
+    ADMIN_HUB_AGENTS_GET,
+    ADMIN_HUB_AGENTS_LIST,
+    ADMIN_HUB_AGENTS_UPDATE,
+)
+from app.features.self_management_shared.tool_gateway import (
+    SelfManagementOperation,
+    SelfManagementToolGateway,
 )
 from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.logging_redaction import redact_url_for_logging

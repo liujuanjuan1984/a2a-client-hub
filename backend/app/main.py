@@ -24,17 +24,17 @@ from app.core.http_client import close_global_http_client, init_global_http_clie
 from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_with_new_session
-from app.features.agents_shared.self_management_mcp import (
+from app.features.auth.cleanup_service import ensure_auth_cleanup_job
+from app.features.schedules.job import ensure_a2a_schedule_job
+from app.features.schedules.service import (
+    ensure_a2a_schedule_execution_cleanup_job,
+)
+from app.features.self_management_shared.self_management_mcp import (
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS,
     SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS,
     build_self_management_mcp_http_app,
-)
-from app.features.auth.cleanup_service import ensure_auth_cleanup_job
-from app.features.schedules.job import ensure_a2a_schedule_job
-from app.features.schedules.service import (
-    ensure_a2a_schedule_execution_cleanup_job,
 )
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.integrations.a2a_extensions import (

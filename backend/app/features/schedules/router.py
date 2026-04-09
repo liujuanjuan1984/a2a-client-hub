@@ -16,7 +16,6 @@ from app.api.deps import (
 from app.api.retry_after import db_busy_retry_after_headers
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
-from app.features.agents_shared.tool_gateway import SelfManagementToolGateway
 from app.features.schedules.schemas import (
     A2AScheduleExecutionListMeta,
     A2AScheduleExecutionListResponse,
@@ -41,6 +40,7 @@ from app.features.schedules.service import (
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
+from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.utils.pagination import build_pagination_meta
 from app.utils.timezone_util import TimezoneNotFoundError, validate_user_timezone
 

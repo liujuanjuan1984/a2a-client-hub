@@ -18,15 +18,17 @@ from app.core.security import (
     verify_self_management_interrupt_token_claims,
 )
 from app.db.models.user import User
-from app.features.agents_shared.self_management_mcp import (
+from app.features.self_management_shared.self_management_mcp import (
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
     list_self_management_mcp_tool_definitions,
 )
-from app.features.agents_shared.self_management_tool_contract import (
+from app.features.self_management_shared.self_management_tool_contract import (
     SelfManagementToolDefinition,
 )
-from app.features.agents_shared.tool_gateway import SelfManagementConfirmationPolicy
+from app.features.self_management_shared.tool_gateway import (
+    SelfManagementConfirmationPolicy,
+)
 
 _DEFAULT_AGENT_ID = "self-management-assistant"
 _DEFAULT_AGENT_NAME = "A2A Client Hub Assistant"

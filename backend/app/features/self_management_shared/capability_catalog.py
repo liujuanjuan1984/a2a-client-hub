@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from app.features.agents_shared.actor_context import (
+from app.features.self_management_shared.actor_context import (
     SelfManagementAction,
     SelfManagementResource,
     SelfManagementScope,
 )
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
     SelfManagementOperation,
     SelfManagementSurface,

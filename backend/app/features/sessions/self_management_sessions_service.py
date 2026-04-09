@@ -8,11 +8,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.features.agents_shared.capability_catalog import (
+from app.features.self_management_shared.capability_catalog import (
     SELF_SESSIONS_GET,
     SELF_SESSIONS_LIST,
 )
-from app.features.agents_shared.tool_gateway import SelfManagementToolGateway
+from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
 from app.features.sessions.service import session_hub_service
 

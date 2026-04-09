@@ -21,8 +21,11 @@ from app.core.security import (
     verify_jwt_token_claims,
 )
 from app.db.session import AsyncSessionLocal
-from app.features.agents_shared.actor_context import SelfManagementAuthorizationError
-from app.features.agents_shared.capability_catalog import (
+from app.features.auth.service import UserNotFoundError, get_active_user
+from app.features.self_management_shared.actor_context import (
+    SelfManagementAuthorizationError,
+)
+from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_GET,
     SELF_AGENTS_LIST,
     SELF_AGENTS_UPDATE_CONFIG,
@@ -32,18 +35,17 @@ from app.features.agents_shared.capability_catalog import (
     SELF_SESSIONS_GET,
     SELF_SESSIONS_LIST,
 )
-from app.features.agents_shared.self_management_tool_contract import (
+from app.features.self_management_shared.self_management_tool_contract import (
     SelfManagementToolDefinition,
     list_self_management_tool_definitions,
 )
-from app.features.agents_shared.self_management_toolkit import (
+from app.features.self_management_shared.self_management_toolkit import (
     SelfManagementToolInputError,
 )
-from app.features.agents_shared.self_management_web_agent import (
+from app.features.self_management_shared.self_management_web_agent import (
     build_self_management_web_agent_runtime,
 )
-from app.features.agents_shared.tool_gateway import SelfManagementSurface
-from app.features.auth.service import UserNotFoundError, get_active_user
+from app.features.self_management_shared.tool_gateway import SelfManagementSurface
 
 logger = get_logger(__name__)
 

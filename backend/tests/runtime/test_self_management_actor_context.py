@@ -12,7 +12,7 @@ from app.api.deps import (
     get_current_self_management_tool_gateway,
 )
 from app.db.models.user import User
-from app.features.agents_shared.actor_context import (
+from app.features.self_management_shared.actor_context import (
     SelfManagementAction,
     SelfManagementActorType,
     SelfManagementAuthorizationError,
@@ -20,14 +20,14 @@ from app.features.agents_shared.actor_context import (
     SelfManagementScope,
     build_self_management_actor_context,
 )
-from app.features.agents_shared.capability_catalog import (
+from app.features.self_management_shared.capability_catalog import (
     ADMIN_HUB_AGENTS_CREATE,
     FIRST_WAVE_EXPOSED_OPERATIONS,
     SELF_JOBS_UPDATE_SCHEDULE,
     UNSUPPORTED_FIRST_WAVE_OPERATION_IDS,
     get_self_management_operation,
 )
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementOperation,
     SelfManagementSurface,
     SelfManagementToolGateway,

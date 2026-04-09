@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
-from app.features.agents_shared.capability_catalog import (
+from app.features.schedules.schemas import A2AScheduleTaskUpdate
+from app.features.schedules.service import a2a_schedule_service
+from app.features.self_management_shared.capability_catalog import (
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_PAUSE,
@@ -18,9 +20,7 @@ from app.features.agents_shared.capability_catalog import (
     SELF_JOBS_UPDATE_PROMPT,
     SELF_JOBS_UPDATE_SCHEDULE,
 )
-from app.features.agents_shared.tool_gateway import SelfManagementToolGateway
-from app.features.schedules.schemas import A2AScheduleTaskUpdate
-from app.features.schedules.service import a2a_schedule_service
+from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 
 logger = get_logger(__name__)
 

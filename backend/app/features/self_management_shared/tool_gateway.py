@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Awaitable, Callable, Generic, TypeVar
 from uuid import UUID
 
-from app.features.agents_shared.actor_context import (
+from app.features.self_management_shared.actor_context import (
     SelfManagementAction,
     SelfManagementActorContext,
     SelfManagementAuditFields,

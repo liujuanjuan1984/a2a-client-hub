@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from app.features.agents_shared.capability_catalog import (
+from app.features.self_management_shared.capability_catalog import (
     ADMIN_HUB_AGENTS_LIST,
     SELF_JOBS_UPDATE_SCHEDULE,
 )
-from app.features.agents_shared.self_management_tool_contract import (
+from app.features.self_management_shared.self_management_tool_contract import (
     build_self_management_tool_definition,
     list_self_management_tool_definitions,
 )
-from app.features.agents_shared.tool_gateway import SelfManagementSurface
+from app.features.self_management_shared.tool_gateway import SelfManagementSurface
 
 
 def test_build_self_management_tool_definition_exposes_operation_schema() -> None:

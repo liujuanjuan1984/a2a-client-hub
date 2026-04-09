@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.agents_shared.actor_context import (
+from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
-from app.features.agents_shared.capability_catalog import (
+from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_UPDATE_SCHEDULE,
     SELF_SESSIONS_LIST,
 )
-from app.features.agents_shared.self_management_toolkit import (
+from app.features.self_management_shared.self_management_toolkit import (
     SelfManagementToolInputError,
     SelfManagementToolkit,
 )
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
 )

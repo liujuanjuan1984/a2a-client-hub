@@ -8,17 +8,17 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.features.agents_shared.capability_catalog import (
-    SELF_AGENTS_GET,
-    SELF_AGENTS_LIST,
-    SELF_AGENTS_UPDATE_CONFIG,
-)
-from app.features.agents_shared.tool_gateway import SelfManagementToolGateway
 from app.features.personal_agents.service import (
     A2AAgentListCounts,
     A2AAgentRecord,
     a2a_agent_service,
 )
+from app.features.self_management_shared.capability_catalog import (
+    SELF_AGENTS_GET,
+    SELF_AGENTS_LIST,
+    SELF_AGENTS_UPDATE_CONFIG,
+)
+from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 
 
 class SelfManagementAgentsService:

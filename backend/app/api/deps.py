@@ -24,21 +24,21 @@ from app.db.locking import (
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import cleanup_session_safely, run_with_new_session
-from app.features.agents_shared.actor_context import (
+from app.features.auth import service as auth_service
+from app.features.self_management_shared.actor_context import (
     SelfManagementActorContext,
     SelfManagementActorType,
     SelfManagementAuthorizationError,
     build_self_management_actor_context,
 )
-from app.features.agents_shared.self_management_web_agent import (
+from app.features.self_management_shared.self_management_web_agent import (
     SelfManagementWebAgentRuntime,
     build_self_management_web_agent_runtime,
 )
-from app.features.agents_shared.tool_gateway import (
+from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
 )
-from app.features.auth import service as auth_service
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ws_ticket import (
     WsTicketError,

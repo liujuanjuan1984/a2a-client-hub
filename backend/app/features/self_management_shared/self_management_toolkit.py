@@ -10,7 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
-from app.features.agents_shared.capability_catalog import (
+from app.features.personal_agents.self_management_agents_service import (
+    self_management_agents_service,
+)
+from app.features.personal_agents.service import A2AAgentRecord
+from app.features.schedules.self_management_jobs_service import (
+    self_management_jobs_service,
+)
+from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_GET,
     SELF_AGENTS_LIST,
     SELF_AGENTS_UPDATE_CONFIG,
@@ -24,14 +31,7 @@ from app.features.agents_shared.capability_catalog import (
     SELF_SESSIONS_LIST,
     get_self_management_operation,
 )
-from app.features.agents_shared.tool_gateway import SelfManagementToolGateway
-from app.features.personal_agents.self_management_agents_service import (
-    self_management_agents_service,
-)
-from app.features.personal_agents.service import A2AAgentRecord
-from app.features.schedules.self_management_jobs_service import (
-    self_management_jobs_service,
-)
+from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
 from app.features.sessions.self_management_sessions_service import (
     self_management_sessions_service,

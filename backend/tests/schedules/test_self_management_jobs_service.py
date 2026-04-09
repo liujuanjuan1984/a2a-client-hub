@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.agents_shared.actor_context import (
-    SelfManagementActorType,
-    build_self_management_actor_context,
-)
-from app.features.agents_shared.tool_gateway import SelfManagementToolGateway
 from app.features.schedules.schemas import A2AScheduleTaskUpdate
 from app.features.schedules.self_management_jobs_service import (
     self_management_jobs_service,
 )
+from app.features.self_management_shared.actor_context import (
+    SelfManagementActorType,
+    build_self_management_actor_context,
+)
+from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
