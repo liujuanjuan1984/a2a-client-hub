@@ -20,6 +20,13 @@ from app.features.agents_shared.actor_context import (
     SelfManagementScope,
     build_self_management_actor_context,
 )
+from app.features.agents_shared.capability_catalog import (
+    ADMIN_HUB_AGENTS_CREATE,
+    FIRST_WAVE_EXPOSED_OPERATIONS,
+    SELF_JOBS_UPDATE_SCHEDULE,
+    UNSUPPORTED_FIRST_WAVE_OPERATION_IDS,
+    get_self_management_operation,
+)
 from app.features.agents_shared.tool_gateway import (
     SelfManagementOperation,
     SelfManagementToolGateway,
@@ -150,6 +157,7 @@ def test_tool_gateway_authorize_returns_canonical_audit_fields() -> None:
 
     audit_fields = gateway.authorize(
         operation=SelfManagementOperation(
+            operation_id="admin.agents.list",
             scope=SelfManagementScope.ADMIN,
             resource=SelfManagementResource.AGENTS,
             action=SelfManagementAction.READ,
@@ -162,6 +170,8 @@ def test_tool_gateway_authorize_returns_canonical_audit_fields() -> None:
     assert audit_fields["resource_type"] == "agents"
     assert audit_fields["resource_action"] == "read"
     assert audit_fields["resource_id"] == "shared-catalog"
+    assert audit_fields["operation_id"] == "admin.agents.list"
+    assert audit_fields["confirmation_policy"] == "none"
 
 
 @pytest.mark.asyncio
@@ -175,6 +185,7 @@ async def test_tool_gateway_execute_returns_result_and_audit_fields() -> None:
 
     executed = await gateway.execute(
         operation=SelfManagementOperation(
+            operation_id="self.jobs.update",
             scope=SelfManagementScope.SELF,
             resource=SelfManagementResource.JOBS,
             action=SelfManagementAction.WRITE,
@@ -187,6 +198,7 @@ async def test_tool_gateway_execute_returns_result_and_audit_fields() -> None:
     assert executed.result == "ok"
     assert executed.audit_fields.event_name == "job.update.requested"
     assert executed.audit_fields.resource_id == "job-123"
+    assert executed.audit_fields.operation_id == "self.jobs.update"
 
 
 def test_tool_gateway_rejects_unauthorized_admin_operation() -> None:
@@ -200,6 +212,7 @@ def test_tool_gateway_rejects_unauthorized_admin_operation() -> None:
     with pytest.raises(SelfManagementAuthorizationError) as exc_info:
         gateway.authorize(
             operation=SelfManagementOperation(
+                operation_id="admin.agents.update",
                 scope=SelfManagementScope.ADMIN,
                 resource=SelfManagementResource.AGENTS,
                 action=SelfManagementAction.WRITE,
@@ -250,6 +263,34 @@ def test_self_management_admin_tool_gateway_dependency_wraps_admin_actor() -> No
 
     assert gateway.actor.actor_type == SelfManagementActorType.HUMAN_API
     assert gateway.actor.admin_mode is True
+
+
+def test_first_wave_capability_catalog_marks_expected_write_confirmation() -> None:
+    operation = get_self_management_operation("self.jobs.update_schedule")
+
+    assert operation is SELF_JOBS_UPDATE_SCHEDULE
+    assert operation.first_wave_exposed is True
+    assert operation.confirmation_policy.value == "required"
+
+
+def test_first_wave_capability_catalog_contains_expected_surfaces() -> None:
+    exposed_ids = {item.operation_id for item in FIRST_WAVE_EXPOSED_OPERATIONS}
+
+    assert "self.jobs.list" in exposed_ids
+    assert "self.sessions.get" in exposed_ids
+    assert "self.agents.update_config" in exposed_ids
+    assert all(item.first_wave_exposed for item in FIRST_WAVE_EXPOSED_OPERATIONS)
+    assert all(item.surfaces for item in FIRST_WAVE_EXPOSED_OPERATIONS)
+
+
+def test_internal_admin_capability_is_not_first_wave_exposed() -> None:
+    assert ADMIN_HUB_AGENTS_CREATE.first_wave_exposed is False
+    assert {surface.value for surface in ADMIN_HUB_AGENTS_CREATE.surfaces} == {"rest"}
+
+
+def test_unsupported_first_wave_operation_ids_are_explicit() -> None:
+    assert "self.jobs.delete" in UNSUPPORTED_FIRST_WAVE_OPERATION_IDS
+    assert "admin.agents.delete" in UNSUPPORTED_FIRST_WAVE_OPERATION_IDS
 
 
 async def _return_value(value: str) -> str:

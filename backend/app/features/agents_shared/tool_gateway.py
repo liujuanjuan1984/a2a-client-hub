@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Awaitable, Callable, Generic, TypeVar
 from uuid import UUID
 
@@ -18,14 +19,36 @@ from app.features.agents_shared.actor_context import (
 _ResultT = TypeVar("_ResultT")
 
 
+class SelfManagementConfirmationPolicy(str, Enum):
+    """Confirmation policy for one self-management operation."""
+
+    NONE = "none"
+    REQUIRED = "required"
+
+
+class SelfManagementSurface(str, Enum):
+    """Entry surfaces that may expose one self-management operation."""
+
+    REST = "rest"
+    CLI = "cli"
+    WEB_AGENT = "web_agent"
+
+
 @dataclass(frozen=True)
 class SelfManagementOperation:
     """One authorized self-management operation."""
 
+    operation_id: str
     scope: SelfManagementScope
     resource: SelfManagementResource
     action: SelfManagementAction
     event_name: str
+    confirmation_policy: SelfManagementConfirmationPolicy = (
+        SelfManagementConfirmationPolicy.NONE
+    )
+    surfaces: frozenset[SelfManagementSurface] = field(default_factory=frozenset)
+    first_wave_exposed: bool = False
+    description: str | None = None
     command_name: str | None = None
     tool_name: str | None = None
     delegated_by: str | None = None
@@ -74,6 +97,8 @@ class SelfManagementToolGateway:
             command_name=operation.command_name,
             tool_name=operation.tool_name,
             delegated_by=operation.delegated_by,
+            operation_id=operation.operation_id,
+            confirmation_policy=operation.confirmation_policy.value,
         )
 
     async def execute(
@@ -97,6 +122,8 @@ class SelfManagementToolGateway:
 
 __all__ = [
     "AuthorizedExecution",
+    "SelfManagementConfirmationPolicy",
     "SelfManagementOperation",
+    "SelfManagementSurface",
     "SelfManagementToolGateway",
 ]

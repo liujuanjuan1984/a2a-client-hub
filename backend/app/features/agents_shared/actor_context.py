@@ -95,6 +95,8 @@ class SelfManagementAuditFields:
     command_name: str | None = None
     tool_name: str | None = None
     delegated_by: str | None = None
+    operation_id: str | None = None
+    confirmation_policy: str | None = None
 
     def as_log_extra(self) -> dict[str, Any]:
         """Render audit fields into logger-friendly structured metadata."""
@@ -115,6 +117,8 @@ class SelfManagementAuditFields:
             "command_name": self.command_name,
             "tool_name": self.tool_name,
             "delegated_by": self.delegated_by,
+            "operation_id": self.operation_id,
+            "confirmation_policy": self.confirmation_policy,
         }
 
 
@@ -156,6 +160,8 @@ class SelfManagementActorContext:
         command_name: str | None = None,
         tool_name: str | None = None,
         delegated_by: str | None = None,
+        operation_id: str | None = None,
+        confirmation_policy: str | None = None,
     ) -> SelfManagementAuditFields:
         """Build canonical audit fields for one actor-mediated operation."""
 
@@ -182,6 +188,8 @@ class SelfManagementActorContext:
             command_name=command_name,
             tool_name=tool_name,
             delegated_by=delegated_by,
+            operation_id=operation_id,
+            confirmation_policy=confirmation_policy,
         )
 
 

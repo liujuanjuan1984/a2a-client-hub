@@ -15,10 +15,16 @@ from app.api.deps import (
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
-from app.features.agents_shared.actor_context import (
-    SelfManagementAction,
-    SelfManagementResource,
-    SelfManagementScope,
+from app.features.agents_shared.capability_catalog import (
+    ADMIN_HUB_AGENT_ALLOWLIST_ADD,
+    ADMIN_HUB_AGENT_ALLOWLIST_LIST,
+    ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
+    ADMIN_HUB_AGENT_ALLOWLIST_REPLACE,
+    ADMIN_HUB_AGENTS_CREATE,
+    ADMIN_HUB_AGENTS_DELETE,
+    ADMIN_HUB_AGENTS_GET,
+    ADMIN_HUB_AGENTS_LIST,
+    ADMIN_HUB_AGENTS_UPDATE,
 )
 from app.features.agents_shared.tool_gateway import (
     SelfManagementOperation,
@@ -65,19 +71,6 @@ def _build_admin_audit_extra(
     ).as_log_extra()
 
 
-def _hub_agent_admin_operation(
-    *,
-    event_name: str,
-    is_write: bool,
-) -> SelfManagementOperation:
-    return SelfManagementOperation(
-        scope=SelfManagementScope.ADMIN,
-        resource=SelfManagementResource.AGENTS,
-        action=SelfManagementAction.WRITE if is_write else SelfManagementAction.READ,
-        event_name=event_name,
-    )
-
-
 def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse:
     payload: dict[str, Any] = {
         "id": record.id,
@@ -113,12 +106,7 @@ async def list_hub_agents_admin(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=200, description="Page size"),
 ) -> HubA2AAgentAdminListResponse:
-    gateway.authorize(
-        operation=_hub_agent_admin_operation(
-            event_name="hub_agent.list.requested",
-            is_write=False,
-        )
-    )
+    gateway.authorize(operation=ADMIN_HUB_AGENTS_LIST)
     items, total = await hub_a2a_agent_service.list_agents_admin(
         db, page=page, size=size
     )
@@ -160,10 +148,7 @@ async def create_hub_agent_admin(
         extra={
             **_build_admin_audit_extra(
                 gateway,
-                operation=_hub_agent_admin_operation(
-                    event_name="hub_agent.create.requested",
-                    is_write=True,
-                ),
+                operation=ADMIN_HUB_AGENTS_CREATE,
             ),
             "agent_name": payload.name,
             "card_url": redact_url_for_logging(normalized_card_url),
@@ -210,13 +195,7 @@ async def get_hub_agent_admin(
         get_current_self_management_admin_tool_gateway
     ),
 ) -> HubA2AAgentAdminResponse:
-    gateway.authorize(
-        operation=_hub_agent_admin_operation(
-            event_name="hub_agent.get.requested",
-            is_write=False,
-        ),
-        resource_id=str(agent_id),
-    )
+    gateway.authorize(operation=ADMIN_HUB_AGENTS_GET, resource_id=str(agent_id))
     try:
         record = await hub_a2a_agent_service.get_agent_admin(db, agent_id=agent_id)
     except HubA2AAgentNotFoundError as exc:
@@ -250,10 +229,7 @@ async def update_hub_agent_admin(
         extra={
             **_build_admin_audit_extra(
                 gateway,
-                operation=_hub_agent_admin_operation(
-                    event_name="hub_agent.update.requested",
-                    is_write=True,
-                ),
+                operation=ADMIN_HUB_AGENTS_UPDATE,
                 resource_id=str(agent_id),
             ),
             "agent_name": payload.name,
@@ -315,13 +291,7 @@ async def delete_hub_agent_admin(
         get_current_self_management_admin_tool_gateway
     ),
 ) -> Response:
-    gateway.authorize(
-        operation=_hub_agent_admin_operation(
-            event_name="hub_agent.delete.requested",
-            is_write=True,
-        ),
-        resource_id=str(agent_id),
-    )
+    gateway.authorize(operation=ADMIN_HUB_AGENTS_DELETE, resource_id=str(agent_id))
     current_admin_id = gateway.actor.acting_user_id
     try:
         await hub_a2a_agent_service.delete_agent_admin(
@@ -346,10 +316,7 @@ async def list_hub_agent_allowlist_admin(
     ),
 ) -> HubA2AAllowlistListResponse:
     gateway.authorize(
-        operation=_hub_agent_admin_operation(
-            event_name="hub_agent.allowlist.list.requested",
-            is_write=False,
-        ),
+        operation=ADMIN_HUB_AGENT_ALLOWLIST_LIST,
         resource_id=str(agent_id),
     )
     try:
@@ -396,10 +363,7 @@ async def add_hub_agent_allowlist_admin(
         extra={
             **_build_admin_audit_extra(
                 gateway,
-                operation=_hub_agent_admin_operation(
-                    event_name="hub_agent.allowlist.add.requested",
-                    is_write=True,
-                ),
+                operation=ADMIN_HUB_AGENT_ALLOWLIST_ADD,
                 resource_id=str(agent_id),
                 target_user_id=payload.user_id,
             ),
@@ -455,10 +419,7 @@ async def replace_hub_agent_allowlist_admin(
         extra={
             **_build_admin_audit_extra(
                 gateway,
-                operation=_hub_agent_admin_operation(
-                    event_name="hub_agent.allowlist.replace.requested",
-                    is_write=True,
-                ),
+                operation=ADMIN_HUB_AGENT_ALLOWLIST_REPLACE,
                 resource_id=str(agent_id),
             ),
             "entries_count": len(payload.entries),
@@ -515,10 +476,7 @@ async def remove_hub_agent_allowlist_admin(
     ),
 ) -> Response:
     gateway.authorize(
-        operation=_hub_agent_admin_operation(
-            event_name="hub_agent.allowlist.remove.requested",
-            is_write=True,
-        ),
+        operation=ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
         resource_id=str(agent_id),
         target_user_id=user_id,
     )
