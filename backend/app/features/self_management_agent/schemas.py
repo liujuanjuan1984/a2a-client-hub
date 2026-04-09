@@ -81,3 +81,31 @@ class SelfManagementBuiltInAgentInterruptReplyRequest(BaseModel):
     reply: Literal["once", "always", "reject"]
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class SelfManagementBuiltInAgentInterruptRecoveryRequest(BaseModel):
+    """Conversation-scoped recovery request for persisted built-in interrupts."""
+
+    conversation_id: str = Field(alias="conversationId", min_length=1)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class SelfManagementBuiltInAgentRecoveredInterrupt(BaseModel):
+    """One unresolved built-in permission interrupt restored from durable history."""
+
+    request_id: str = Field(alias="requestId")
+    session_id: str = Field(alias="sessionId")
+    type: Literal["permission"]
+    phase: Literal["asked"]
+    details: SelfManagementBuiltInAgentInterruptDetails
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class SelfManagementBuiltInAgentInterruptRecoveryResponse(BaseModel):
+    """Recovered unresolved built-in permission interrupts for one conversation."""
+
+    items: list[SelfManagementBuiltInAgentRecoveredInterrupt]
+
+    model_config = ConfigDict(extra="forbid")

@@ -12,8 +12,11 @@ from app.db.transaction import commit_safely
 from app.features.self_management_agent.schemas import (
     SelfManagementBuiltInAgentInterrupt,
     SelfManagementBuiltInAgentInterruptDetails,
+    SelfManagementBuiltInAgentInterruptRecoveryRequest,
+    SelfManagementBuiltInAgentInterruptRecoveryResponse,
     SelfManagementBuiltInAgentInterruptReplyRequest,
     SelfManagementBuiltInAgentProfileResponse,
+    SelfManagementBuiltInAgentRecoveredInterrupt,
     SelfManagementBuiltInAgentRunRequest,
     SelfManagementBuiltInAgentRunResponse,
     SelfManagementBuiltInAgentToolResponse,
@@ -110,6 +113,46 @@ async def run_self_management_built_in_agent(
 
     await commit_safely(db)
     return _to_run_response(result)
+
+
+@router.post(
+    "/interrupts:recover",
+    response_model=SelfManagementBuiltInAgentInterruptRecoveryResponse,
+)
+async def recover_self_management_built_in_agent_interrupts(
+    payload: SelfManagementBuiltInAgentInterruptRecoveryRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SelfManagementBuiltInAgentInterruptRecoveryResponse:
+    try:
+        items = await self_management_built_in_agent_service.recover_pending_interrupts(
+            db=db,
+            current_user=current_user,
+            conversation_id=payload.conversation_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return SelfManagementBuiltInAgentInterruptRecoveryResponse(
+        items=[
+            SelfManagementBuiltInAgentRecoveredInterrupt(
+                requestId=item.request_id,
+                sessionId=item.session_id,
+                type="permission",
+                phase="asked",
+                details=SelfManagementBuiltInAgentInterruptDetails(
+                    permission=item.details.get("permission"),
+                    patterns=list(item.details.get("patterns") or []),
+                    displayMessage=item.details.get("displayMessage")
+                    or item.details.get("display_message"),
+                ),
+            )
+            for item in items
+        ]
+    )
 
 
 @router.post(

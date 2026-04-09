@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -23,6 +24,7 @@ from app.core.security import (
     get_self_management_interrupt_tool_names,
     verify_self_management_interrupt_token_claims,
 )
+from app.db.models.agent_message import AgentMessage
 from app.db.models.user import User
 from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
@@ -39,8 +41,14 @@ from app.features.self_management_shared.self_management_tool_contract import (
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
 )
-from app.features.sessions import message_store
-from app.features.sessions.common import SessionSource, parse_conversation_id
+from app.features.sessions import block_store, message_store
+from app.features.sessions.common import (
+    SessionSource,
+    normalize_interrupt_lifecycle_event,
+    parse_conversation_id,
+    project_message_blocks,
+    sender_to_role,
+)
 from app.features.sessions.service import session_hub_service
 from app.features.sessions.support import SessionHubSupport
 from app.utils.timezone_util import utc_now
@@ -125,6 +133,16 @@ class SelfManagementBuiltInAgentRunResult:
     tool_names: tuple[str, ...]
     write_tools_enabled: bool
     interrupt: SelfManagementBuiltInAgentInterrupt | None = None
+
+
+@dataclass(frozen=True)
+class SelfManagementBuiltInAgentRecoveredInterrupt:
+    """One unresolved persisted interrupt recovered from durable session history."""
+
+    request_id: str
+    session_id: str
+    type: str
+    details: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -218,6 +236,72 @@ class SelfManagementBuiltInAgentService:
         )
         return executed.result
 
+    async def recover_pending_interrupts(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        conversation_id: str,
+    ) -> list[SelfManagementBuiltInAgentRecoveredInterrupt]:
+        resolved_conversation_id = parse_conversation_id(conversation_id)
+        local_session = await self._session_support.get_local_session_by_id(
+            db,
+            user_id=cast(Any, current_user.id),
+            local_session_id=resolved_conversation_id,
+        )
+        if local_session is None:
+            return []
+
+        rows = list(
+            (
+                await db.scalars(
+                    select(AgentMessage)
+                    .where(
+                        AgentMessage.user_id == cast(Any, current_user.id),
+                        AgentMessage.conversation_id == resolved_conversation_id,
+                        AgentMessage.sender == "system",
+                    )
+                    .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+                )
+            ).all()
+        )
+
+        asked_interrupts: dict[str, dict[str, Any]] = {}
+        ordered_request_ids: list[str] = []
+        for message in rows:
+            metadata = cast(dict[str, Any], message.message_metadata or {})
+            interrupt = normalize_interrupt_lifecycle_event(
+                cast(dict[str, Any] | None, metadata.get("interrupt"))
+            )
+            if interrupt is None:
+                continue
+            request_id = cast(str | None, interrupt.get("request_id"))
+            if not request_id:
+                continue
+            phase = cast(str | None, interrupt.get("phase"))
+            if phase == "asked":
+                asked_interrupts[request_id] = interrupt
+                if request_id not in ordered_request_ids:
+                    ordered_request_ids.append(request_id)
+                continue
+            if phase == "resolved":
+                asked_interrupts.pop(request_id, None)
+
+        recovered: list[SelfManagementBuiltInAgentRecoveredInterrupt] = []
+        for request_id in ordered_request_ids:
+            interrupt = asked_interrupts.get(request_id)
+            if interrupt is None:
+                continue
+            recovered.append(
+                SelfManagementBuiltInAgentRecoveredInterrupt(
+                    request_id=request_id,
+                    session_id=str(resolved_conversation_id),
+                    type=cast(str, interrupt["type"]),
+                    details=cast(dict[str, Any], interrupt.get("details") or {}),
+                )
+            )
+        return recovered
+
     async def _execute_run(
         self,
         *,
@@ -259,8 +343,10 @@ class SelfManagementBuiltInAgentService:
                 allow_write_tools=effective_write_tools
             )
             session = await self._ensure_conversation_session(
+                db=db,
                 runtime_state=runtime_state,
                 current_user=current_user,
+                conversation_id=local_session_id,
                 write_tools_enabled=effective_write_tools,
             )
             try:
@@ -695,8 +781,10 @@ class SelfManagementBuiltInAgentService:
     async def _ensure_conversation_session(
         self,
         *,
+        db: AsyncSession,
         runtime_state: _ConversationRuntimeState,
         current_user: User,
+        conversation_id: str,
         write_tools_enabled: bool,
     ) -> Any:
         if (
@@ -715,11 +803,142 @@ class SelfManagementBuiltInAgentService:
         if previous_session is not None:
             self._transfer_conversation_state(previous_session, new_session)
             await asyncio.to_thread(self._close_swival_session, previous_session)
+        else:
+            await self._best_effort_rehydrate_swival_session(
+                db=db,
+                current_user=current_user,
+                conversation_id=conversation_id,
+                session=new_session,
+            )
 
         runtime_state.session = new_session
         runtime_state.write_tools_enabled = write_tools_enabled
         runtime_state.last_accessed_monotonic = time.monotonic()
         return new_session
+
+    async def _best_effort_rehydrate_swival_session(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        conversation_id: str,
+        session: Any,
+    ) -> None:
+        persisted_messages = await self._list_persisted_runtime_messages(
+            db=db,
+            current_user=current_user,
+            conversation_id=conversation_id,
+        )
+        if not persisted_messages:
+            return
+
+        setup = getattr(session, "_setup", None)
+        if callable(setup):
+            try:
+                await asyncio.to_thread(setup)
+            except Exception:
+                return
+
+        existing_state = cast(
+            dict[str, Any] | None, getattr(session, "_conv_state", None)
+        )
+        if isinstance(existing_state, dict) and existing_state.get("messages"):
+            return
+
+        make_state = getattr(session, "_make_per_run_state", None)
+        if callable(make_state):
+            system_content = None
+            system_with_memory = getattr(session, "_system_with_memory", None)
+            if callable(system_with_memory):
+                try:
+                    system_content = system_with_memory("", policy="interactive")
+                except TypeError:
+                    system_content = system_with_memory("")
+            try:
+                state = cast(
+                    dict[str, Any],
+                    make_state(system_content=cast(str | None, system_content)),
+                )
+            except TypeError:
+                state = cast(dict[str, Any], make_state())
+        else:
+            state = {"messages": []}
+
+        existing_messages = state.get("messages")
+        system_messages = (
+            [
+                copy.deepcopy(message)
+                for message in existing_messages
+                if isinstance(message, dict) and message.get("role") == "system"
+            ]
+            if isinstance(existing_messages, list)
+            else []
+        )
+        state["messages"] = system_messages + copy.deepcopy(persisted_messages)
+        setattr(session, "_conv_state", state)
+
+    async def _list_persisted_runtime_messages(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        conversation_id: str,
+    ) -> list[dict[str, str]]:
+        resolved_conversation_id = parse_conversation_id(conversation_id)
+        sender_priority = case(
+            (AgentMessage.sender.in_(["user", "automation"]), 0),
+            else_=1,
+        )
+        rows = list(
+            (
+                await db.scalars(
+                    select(AgentMessage)
+                    .where(
+                        AgentMessage.user_id == cast(Any, current_user.id),
+                        AgentMessage.conversation_id == resolved_conversation_id,
+                        AgentMessage.sender.in_(["user", "automation", "agent"]),
+                    )
+                    .order_by(
+                        AgentMessage.created_at.asc(),
+                        sender_priority.asc(),
+                        AgentMessage.id.asc(),
+                    )
+                )
+            ).all()
+        )
+        if not rows:
+            return []
+
+        message_ids = [cast(Any, message.id) for message in rows]
+        blocks = await block_store.list_blocks_by_message_ids(
+            db,
+            user_id=cast(Any, current_user.id),
+            message_ids=message_ids,
+        )
+        blocks_by_message_id: dict[Any, list[Any]] = {}
+        for block in blocks:
+            blocks_by_message_id.setdefault(block.message_id, []).append(block)
+
+        persisted_messages: list[dict[str, str]] = []
+        for message in rows:
+            role = sender_to_role(cast(str, message.sender))
+            if role not in {"user", "agent"}:
+                continue
+            rendered_blocks, content = project_message_blocks(
+                blocks_by_message_id.get(message.id, []),
+                message_status=cast(str | None, message.status),
+            )
+            if not content and not rendered_blocks:
+                continue
+            if role == "agent" and not content:
+                continue
+            persisted_messages.append(
+                {
+                    "role": "assistant" if role == "agent" else role,
+                    "content": content,
+                }
+            )
+        return persisted_messages
 
     def _create_swival_session(
         self,
