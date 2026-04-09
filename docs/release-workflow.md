@@ -1,6 +1,6 @@
 # Release Workflow
 
-This document describes the repository release automation defined in `.github/workflows/release-prepare.yml` and `.github/workflows/release.yml`.
+This document describes the repository release automation defined in `.github/workflows/create-release-preparation-pr.yml` and `.github/workflows/release.yml`.
 
 ## Trigger Model
 
@@ -14,7 +14,7 @@ This keeps the published tag aligned with the final merged commit that contains 
 
 ## Create Release Preparation PR
 
-The preparation workflow is defined in `.github/workflows/release-prepare.yml` and is triggered manually with a target version, for example `1.3.2`.
+The preparation workflow is defined in `.github/workflows/create-release-preparation-pr.yml` and is triggered manually with a target version, for example `1.3.2`.
 
 It performs these steps:
 
@@ -102,7 +102,7 @@ python3 scripts/sync_release_version.py --version 1.0.0 --write
 
 If synchronized metadata differs from the checked-in repository files, the preparation workflow automatically opens a Draft pull request to persist those changes.
 
-Current behavior in `.github/workflows/release-prepare.yml`:
+Current behavior in `.github/workflows/create-release-preparation-pr.yml`:
 
 - PR branch pattern: `release/version-<version>`
 - Commit title style: `chore(release): sync version metadata for <version> (#586)`
