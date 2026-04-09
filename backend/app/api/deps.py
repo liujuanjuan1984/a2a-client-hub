@@ -30,6 +30,10 @@ from app.features.agents_shared.actor_context import (
     SelfManagementAuthorizationError,
     build_self_management_actor_context,
 )
+from app.features.agents_shared.self_management_web_agent import (
+    SelfManagementWebAgentRuntime,
+    build_self_management_web_agent_runtime,
+)
 from app.features.agents_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
@@ -399,3 +403,21 @@ def get_current_self_management_admin_tool_gateway(
     """Resolve the admin-mode self-management authorization gateway."""
 
     return SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
+
+
+def get_current_self_management_web_agent_runtime(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SelfManagementWebAgentRuntime:
+    """Resolve the built-in web-agent runtime for self-management operations."""
+
+    runtime = build_self_management_web_agent_runtime(
+        db=db,
+        current_user=current_user,
+    )
+    set_actor_context(
+        principal_user_id=str(runtime.actor.principal_user_id),
+        actor_type=runtime.actor.actor_type.value,
+        admin_mode=runtime.actor.admin_mode,
+    )
+    return runtime
