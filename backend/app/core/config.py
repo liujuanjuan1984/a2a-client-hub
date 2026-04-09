@@ -869,6 +869,11 @@ class Settings(BaseSettings):
         alias="SELF_MANAGEMENT_SWIVAL_API_KEY",
         description="Optional API key forwarded to swival for the built-in self-management agent runtime.",
     )
+    self_management_swival_mcp_base_url: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL",
+        description="Trusted internal base URL used by the built-in self-management agent runtime when connecting back to the local MCP adapter.",
+    )
     self_management_swival_reasoning_effort: str | None = Field(
         default=None,
         alias="SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT",
@@ -883,6 +888,11 @@ class Settings(BaseSettings):
         default=4096,
         alias="SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS",
         description="Maximum output tokens allowed for one built-in self-management agent run.",
+    )
+    self_management_swival_delegated_token_ttl_seconds: int = Field(
+        default=300,
+        alias="SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS",
+        description="Maximum lifetime in seconds for delegated built-in agent access tokens used against the internal MCP adapter.",
     )
 
     model_config = SettingsConfigDict(
@@ -916,6 +926,21 @@ class Settings(BaseSettings):
             raise ValueError("WS_TICKET_TTL_SECONDS must be positive")
         if value > 600:
             raise ValueError("WS_TICKET_TTL_SECONDS must not exceed 600")
+        return value
+
+    @field_validator("self_management_swival_delegated_token_ttl_seconds")
+    @classmethod
+    def validate_self_management_swival_delegated_token_ttl_seconds(
+        cls, value: int
+    ) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must be positive"
+            )
+        if value > 3600:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must not exceed 3600"
+            )
         return value
 
     @field_validator("opencode_sessions_cache_ttl_seconds")

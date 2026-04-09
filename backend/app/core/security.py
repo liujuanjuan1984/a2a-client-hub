@@ -4,6 +4,7 @@ This module contains JWT token handling, password hashing, and authentication ut
 """
 
 import base64
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union, cast
@@ -25,6 +26,8 @@ DUMMY_PASSWORD_HASH = "$2b$12$KIXeW.1LzBwvS./Hk.yQ1..E3.eD/.hLwQcE/M1zQ3X.qC0TqY
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
+SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM = "sm_ops"
+SELF_MANAGEMENT_DELEGATED_BY_CLAIM = "sm_delegate"
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,7 @@ class VerifiedJwtClaims:
     issued_at: datetime | None
     expires_at: datetime | None
     key_id: str | None
+    raw_payload: dict[str, Any]
 
 
 def _jwt_signing_key() -> str:
@@ -166,6 +170,7 @@ def create_jwt_token(
     expires_in_seconds: int,
     jwt_id: str | None = None,
     session_id: str | None = None,
+    extra_claims: dict[str, Any] | None = None,
 ) -> str:
     now = utc_now()
     expire = now + timedelta(seconds=expires_in_seconds)
@@ -180,6 +185,8 @@ def create_jwt_token(
     }
     if session_id:
         payload["sid"] = session_id
+    if extra_claims:
+        payload.update(extra_claims)
     return jwt.encode(
         payload,
         _jwt_signing_key(),
@@ -232,6 +239,7 @@ def verify_jwt_token_claims(
             issued_at=_timestamp_to_datetime(payload.get("iat")),
             expires_at=_timestamp_to_datetime(payload.get("exp")),
             key_id=str(key_id) if isinstance(key_id, str) and key_id.strip() else None,
+            raw_payload=payload,
         )
     except (InvalidTokenError, ValueError, TypeError):
         return None
@@ -320,6 +328,33 @@ def create_user_access_token(user_id: Union[str, UUID]) -> str:
     )
 
 
+def create_self_management_access_token(
+    user_id: Union[str, UUID],
+    *,
+    allowed_operations: Sequence[str],
+    delegated_by: str,
+) -> str:
+    normalized_operations = sorted(
+        {
+            str(operation_id).strip()
+            for operation_id in allowed_operations
+            if str(operation_id).strip()
+        }
+    )
+    return create_jwt_token(
+        subject=str(user_id),
+        token_type=ACCESS_TOKEN_TYPE,
+        expires_in_seconds=min(
+            settings.jwt_access_token_ttl_seconds,
+            settings.self_management_swival_delegated_token_ttl_seconds,
+        ),
+        extra_claims={
+            SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
+            SELF_MANAGEMENT_DELEGATED_BY_CLAIM: delegated_by,
+        },
+    )
+
+
 def create_user_refresh_token(
     user_id: Union[str, UUID],
     *,
@@ -345,3 +380,12 @@ def verify_refresh_token(token: str) -> Optional[str]:
 
 def verify_refresh_token_claims(token: str) -> Optional[VerifiedJwtClaims]:
     return verify_jwt_token_claims(token, expected_type=REFRESH_TOKEN_TYPE)
+
+
+def get_self_management_allowed_operations(
+    claims: VerifiedJwtClaims,
+) -> frozenset[str]:
+    raw_operations = claims.raw_payload.get(SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM)
+    if not isinstance(raw_operations, list):
+        return frozenset()
+    return frozenset(str(item).strip() for item in raw_operations if str(item).strip())

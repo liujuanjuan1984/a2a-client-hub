@@ -25,7 +25,10 @@ from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_with_new_session
 from app.features.agents_shared.self_management_mcp import (
-    SELF_MANAGEMENT_MCP_MOUNT_PATH,
+    SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
+    SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS,
+    SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
+    SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS,
     build_self_management_mcp_http_app,
 )
 from app.features.auth.cleanup_service import ensure_auth_cleanup_job
@@ -136,7 +139,12 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 # Create FastAPI application instance
-mcp_app = build_self_management_mcp_http_app()
+mcp_readonly_app = build_self_management_mcp_http_app(
+    operation_ids=SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS
+)
+mcp_write_app = build_self_management_mcp_http_app(
+    operation_ids=SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS
+)
 
 app = FastAPI(
     title=settings.app_name,
@@ -145,7 +153,11 @@ app = FastAPI(
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     docs_url=f"{settings.api_v1_prefix}/docs",
     redoc_url=f"{settings.api_v1_prefix}/redoc",
-    lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan),
+    lifespan=combine_lifespans(
+        app_lifespan,
+        mcp_readonly_app.lifespan,
+        mcp_write_app.lifespan,
+    ),
 )
 
 # Set up CORS middleware
@@ -185,7 +197,8 @@ def include_all_routers() -> None:
 
 
 include_all_routers()
-app.mount(SELF_MANAGEMENT_MCP_MOUNT_PATH, mcp_app)
+app.mount(SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH, mcp_readonly_app)
+app.mount(SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH, mcp_write_app)
 
 
 @app.get("/")
