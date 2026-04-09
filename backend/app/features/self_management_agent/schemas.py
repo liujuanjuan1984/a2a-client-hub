@@ -30,6 +30,7 @@ class SelfManagementBuiltInAgentRunRequest(BaseModel):
     """One user prompt routed to the built-in self-management agent."""
 
     message: str = Field(min_length=1)
+    allow_write_tools: bool = False
 
 
 class SelfManagementBuiltInAgentRunResponse(BaseModel):
@@ -40,5 +41,6 @@ class SelfManagementBuiltInAgentRunResponse(BaseModel):
     runtime: str
     resources: list[str]
     tools: list[str]
+    write_tools_enabled: bool
 
     model_config = ConfigDict(extra="forbid")

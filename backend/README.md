@@ -89,18 +89,28 @@ Notes:
 The backend also mounts an authenticated FastMCP surface for self-management.
 This is intended for agent runtimes such as `swival`, not for direct browser use.
 
-- Mounted path: `/mcp`
+- Mounted paths:
+  - `/mcp` for the default read-only tool surface
+  - `/mcp-write` for the explicitly write-enabled tool surface
 - Transport: HTTP SSE
-- Auth: standard hub bearer token in `Authorization: Bearer <token>`
-- First-wave MCP tools:
-  `self.agents.list`, `self.agents.get`, `self.agents.update_config`,
-  `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`,
+- Auth: delegated bearer token in `Authorization: Bearer <token>`
+- Read-only MCP tools:
+  `self.agents.list`, `self.agents.get`,
+  `self.jobs.list`, `self.jobs.get`,
   `self.sessions.list`, `self.sessions.get`
+- Write-enabled MCP tools add:
+  `self.agents.update_config`, `self.jobs.pause`
 
 Once the API server is running, an MCP client can connect to:
 
 ```text
 http://localhost:8000/mcp/
+```
+
+Write-enabled runs use:
+
+```text
+http://localhost:8000/mcp-write/
 ```
 
 ## Run the Swival-Backed Built-In Agent
@@ -111,15 +121,22 @@ backend.
 
 - Profile: `GET /api/v1/me/self-management/agent`
 - Run once: `POST /api/v1/me/self-management/agent:run`
+- Default run mode: read-only
+- To explicitly enable write tools for one run, send:
+  `{"message": "...", "allow_write_tools": true}`
 - Current built-in tool set:
-  `self.agents.list`, `self.agents.get`, `self.agents.update_config`,
-  `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`,
-  `self.sessions.list`, `self.sessions.get`
+  - default read-only:
+    `self.agents.list`, `self.agents.get`,
+    `self.jobs.list`, `self.jobs.get`,
+    `self.sessions.list`, `self.sessions.get`
+  - write-enabled only:
+    `self.agents.update_config`, `self.jobs.pause`
 
 Required environment variables:
 
 - `SELF_MANAGEMENT_SWIVAL_PROVIDER`
 - `SELF_MANAGEMENT_SWIVAL_MODEL`
+- `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL`
 
 Optional environment variables:
 
@@ -129,13 +146,15 @@ Optional environment variables:
 - `SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT`
 - `SELF_MANAGEMENT_SWIVAL_MAX_TURNS`
 - `SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS`
+- `SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS`
 
 Recommended Gemini configuration (aligned with upstream `swival`):
 
 ```bash
 export GEMINI_API_KEY=...
 export SELF_MANAGEMENT_SWIVAL_PROVIDER=google
-export SELF_MANAGEMENT_SWIVAL_MODEL=gemini-2.5-flash
+export SELF_MANAGEMENT_SWIVAL_MODEL=gemini-3.1-pro-preview
+export SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL=http://127.0.0.1:8000
 ```
 
 Notes:
@@ -144,6 +163,10 @@ Notes:
 - Let `swival` resolve the API key from `GEMINI_API_KEY` or `OPENAI_API_KEY`.
 - `SELF_MANAGEMENT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
   overriding the default Google OpenAI-compatible endpoint.
+- `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
+  built-in agent no longer derives its MCP target from request headers.
+- Built-in agent write tools are disabled by default and only become available
+  for runs that explicitly set `allow_write_tools=true`.
 
 ## Backend Structure
 

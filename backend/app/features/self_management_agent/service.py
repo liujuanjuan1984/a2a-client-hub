@@ -9,15 +9,17 @@ from pathlib import Path
 from typing import Any, cast
 
 from app.core.config import settings
-from app.core.security import create_user_access_token
+from app.core.security import create_self_management_access_token
 from app.db.models.user import User
 from app.features.agents_shared.self_management_mcp import (
-    SELF_MANAGEMENT_MCP_MOUNT_PATH,
+    SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
+    SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
     list_self_management_mcp_tool_definitions,
 )
 from app.features.agents_shared.self_management_tool_contract import (
     SelfManagementToolDefinition,
 )
+from app.features.agents_shared.tool_gateway import SelfManagementConfirmationPolicy
 
 _DEFAULT_AGENT_ID = "self-management-assistant"
 _DEFAULT_AGENT_NAME = "A2A Client Hub Assistant"
@@ -31,6 +33,14 @@ _DEFAULT_SYSTEM_PROMPT = (
     "provided MCP tools. Never invent resource ids. For write operations, explain "
     "the intended change briefly before using the tool. If the request is missing "
     "required identifiers, ask one concise follow-up question."
+)
+_READ_ONLY_APPENDIX = (
+    " This run is read-only. Do not attempt write operations. If the user wants a "
+    "change applied, explain that they must retry with write approval enabled."
+)
+_WRITE_ENABLED_APPENDIX = (
+    " This run includes explicitly approved write tools. Only perform a write when "
+    "the user's latest request clearly asks for that change."
 )
 
 
@@ -68,6 +78,7 @@ class SelfManagementBuiltInAgentRunResult:
     runtime: str
     resources: tuple[str, ...]
     tool_names: tuple[str, ...]
+    write_tools_enabled: bool
 
 
 class SelfManagementBuiltInAgentService:
@@ -97,6 +108,7 @@ class SelfManagementBuiltInAgentService:
         return bool(
             (settings.self_management_swival_provider or "").strip()
             and (settings.self_management_swival_model or "").strip()
+            and (settings.self_management_swival_mcp_base_url or "").strip()
         )
 
     async def run(
@@ -104,7 +116,7 @@ class SelfManagementBuiltInAgentService:
         *,
         current_user: User,
         message: str,
-        request_base_url: str,
+        allow_write_tools: bool,
     ) -> SelfManagementBuiltInAgentRunResult:
         if not self.is_configured():
             raise SelfManagementBuiltInAgentConfigError(
@@ -113,27 +125,60 @@ class SelfManagementBuiltInAgentService:
             )
 
         profile = self.get_profile()
-        token = create_user_access_token(cast(Any, current_user.id))
-        mcp_url = self._build_mcp_url(request_base_url)
+        tool_definitions = self._select_run_tool_definitions(
+            allow_write_tools=allow_write_tools
+        )
+        token = create_self_management_access_token(
+            cast(Any, current_user.id),
+            allowed_operations=[
+                definition.operation_id for definition in tool_definitions
+            ],
+            delegated_by="self_management_built_in_agent",
+        )
+        mcp_url = self._build_mcp_url(allow_write_tools=allow_write_tools)
         result = await asyncio.to_thread(
             self._run_swival_session,
             message=message,
             mcp_url=mcp_url,
             access_token=token,
+            system_prompt=self._build_system_prompt(
+                allow_write_tools=allow_write_tools
+            ),
         )
         return SelfManagementBuiltInAgentRunResult(
             answer=cast(str | None, getattr(result, "answer", None)),
             exhausted=bool(getattr(result, "exhausted", False)),
             runtime="swival",
             resources=profile.resources,
-            tool_names=tuple(
-                definition.tool_name for definition in profile.tool_definitions
-            ),
+            tool_names=tuple(definition.tool_name for definition in tool_definitions),
+            write_tools_enabled=allow_write_tools,
         )
 
-    def _build_mcp_url(self, request_base_url: str) -> str:
-        base = request_base_url.rstrip("/")
-        return f"{base}{SELF_MANAGEMENT_MCP_MOUNT_PATH}/"
+    def _build_mcp_url(self, *, allow_write_tools: bool) -> str:
+        base = cast(str, settings.self_management_swival_mcp_base_url).rstrip("/")
+        mount_path = (
+            SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH
+            if allow_write_tools
+            else SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH
+        )
+        return f"{base}{mount_path}/"
+
+    def _build_system_prompt(self, *, allow_write_tools: bool) -> str:
+        if allow_write_tools:
+            return _DEFAULT_SYSTEM_PROMPT + _WRITE_ENABLED_APPENDIX
+        return _DEFAULT_SYSTEM_PROMPT + _READ_ONLY_APPENDIX
+
+    def _select_run_tool_definitions(
+        self, *, allow_write_tools: bool
+    ) -> tuple[SelfManagementToolDefinition, ...]:
+        tool_definitions = list_self_management_mcp_tool_definitions()
+        if allow_write_tools:
+            return tool_definitions
+        return tuple(
+            definition
+            for definition in tool_definitions
+            if definition.confirmation_policy == SelfManagementConfirmationPolicy.NONE
+        )
 
     def _run_swival_session(
         self,
@@ -141,6 +186,7 @@ class SelfManagementBuiltInAgentService:
         message: str,
         mcp_url: str,
         access_token: str,
+        system_prompt: str,
     ) -> Any:
         session_cls = self._load_swival_session_cls()
         session = session_cls(
@@ -152,7 +198,7 @@ class SelfManagementBuiltInAgentService:
             max_turns=settings.self_management_swival_max_turns,
             max_output_tokens=settings.self_management_swival_max_output_tokens,
             reasoning_effort=settings.self_management_swival_reasoning_effort,
-            system_prompt=_DEFAULT_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             files="none",
             commands="none",
             no_skills=True,

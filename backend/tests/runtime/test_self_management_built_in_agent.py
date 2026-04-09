@@ -7,7 +7,10 @@ from typing import Any, cast
 import pytest
 
 from app.core.config import settings
-from app.core.security import verify_access_token
+from app.core.security import (
+    get_self_management_allowed_operations,
+    verify_jwt_token_claims,
+)
 from app.features.self_management_agent import router as self_management_agent_router
 from app.features.self_management_agent.service import (
     self_management_built_in_agent_service,
@@ -66,6 +69,11 @@ def _configure_swival_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         settings,
+        "self_management_swival_mcp_base_url",
+        "http://internal-mcp",
+    )
+    monkeypatch.setattr(
+        settings,
         "self_management_swival_reasoning_effort",
         "medium",
     )
@@ -73,7 +81,7 @@ def _configure_swival_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "self_management_swival_max_output_tokens", 2048)
 
 
-async def test_built_in_agent_profile_only_exposes_jobs_mcp_tools(
+async def test_built_in_agent_profile_exposes_full_available_tool_surface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_swival_settings(monkeypatch)
@@ -105,7 +113,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     result = await self_management_built_in_agent_service.run(
         current_user=user,
         message="List my jobs",
-        request_base_url="http://testserver/",
+        allow_write_tools=False,
     )
 
     assert result.answer == "Built-in agent reply"
@@ -115,13 +123,12 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert result.tool_names == (
         "self.agents.get",
         "self.agents.list",
-        "self.agents.update_config",
         "self.jobs.get",
         "self.jobs.list",
-        "self.jobs.pause",
         "self.sessions.get",
         "self.sessions.list",
     )
+    assert result.write_tools_enabled is False
     assert _FakeSwivalSession.last_message == "List my jobs"
     assert _FakeSwivalSession.last_init_kwargs is not None
     assert _FakeSwivalSession.last_init_kwargs["provider"] == "openai"
@@ -144,16 +151,60 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
         str,
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
+    assert "This run is read-only." in cast(
+        str,
+        _FakeSwivalSession.last_init_kwargs["system_prompt"],
+    )
     mcp_servers = cast(
         dict[str, dict[str, Any]],
         _FakeSwivalSession.last_init_kwargs["mcp_servers"],
     )
     server_config = mcp_servers["a2a-client-hub"]
-    assert server_config["url"] == "http://testserver/mcp/"
+    assert server_config["url"] == "http://internal-mcp/mcp/"
     auth_header = cast(str, server_config["headers"]["Authorization"])
     assert auth_header.startswith("Bearer ")
     raw_token = auth_header.split("Bearer ", 1)[1]
-    assert str(verify_access_token(raw_token)) == str(user.id)
+    claims = verify_jwt_token_claims(raw_token, expected_type="access")
+    assert claims is not None
+    assert claims.subject == str(user.id)
+    assert get_self_management_allowed_operations(claims) == frozenset(
+        result.tool_names
+    )
+
+
+async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+
+    result = await self_management_built_in_agent_service.run(
+        current_user=user,
+        message="Pause my job",
+        allow_write_tools=True,
+    )
+
+    assert result.tool_names == (
+        "self.agents.get",
+        "self.agents.list",
+        "self.agents.update_config",
+        "self.jobs.get",
+        "self.jobs.list",
+        "self.jobs.pause",
+        "self.sessions.get",
+        "self.sessions.list",
+    )
+    assert result.write_tools_enabled is True
+    assert _FakeSwivalSession.last_init_kwargs is not None
+    assert _FakeSwivalSession.last_init_kwargs["mcp_servers"]["a2a-client-hub"][
+        "url"
+    ] == ("http://internal-mcp/mcp-write/")
+    assert "explicitly approved write tools" in cast(
+        str,
+        _FakeSwivalSession.last_init_kwargs["system_prompt"],
+    )
 
 
 async def test_built_in_agent_profile_route_requires_auth(async_session_maker) -> None:
@@ -213,11 +264,35 @@ async def test_built_in_agent_run_route_returns_swival_result(
         "tools": [
             "self.agents.get",
             "self.agents.list",
-            "self.agents.update_config",
             "self.jobs.get",
             "self.jobs.list",
-            "self.jobs.pause",
             "self.sessions.get",
             "self.sessions.list",
         ],
+        "write_tools_enabled": False,
     }
+
+
+async def test_built_in_agent_run_route_allows_write_tools_only_when_explicitly_enabled(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        run_response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent:run",
+            json={"message": "Pause my job", "allow_write_tools": True},
+        )
+
+    assert run_response.status_code == 200
+    assert run_response.json()["write_tools_enabled"] is True
+    assert "self.jobs.pause" in run_response.json()["tools"]
