@@ -9,10 +9,10 @@ from uuid import UUID
 
 from fastmcp import Context, FastMCP
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import Headers
 from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -38,31 +38,43 @@ SELF_MANAGEMENT_MCP_MOUNT_PATH = "/mcp"
 _MCP_USER_ID_STATE_KEY = "self_management_mcp_user_id"
 
 
-class SelfManagementMcpAuthMiddleware(BaseHTTPMiddleware):
+class SelfManagementMcpAuthMiddleware:
     """Require a valid hub bearer token for every MCP HTTP request."""
 
-    async def dispatch(
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(
         self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
-    ) -> Response:
-        auth_header = request.headers.get("authorization", "")
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        auth_header = Headers(scope=scope).get("authorization", "")
         if not auth_header.startswith("Bearer "):
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=401,
                 content={"detail": "Missing or invalid Authorization header"},
             )
+            await response(scope, receive, send)
+            return
 
         token = auth_header[7:].strip()
         raw_user_id = verify_access_token(token)
         if raw_user_id is None:
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or expired token"},
             )
+            await response(scope, receive, send)
+            return
 
-        setattr(request.state, _MCP_USER_ID_STATE_KEY, raw_user_id)
-        return await call_next(request)
+        scope.setdefault("state", {})[_MCP_USER_ID_STATE_KEY] = raw_user_id
+        await self.app(scope, receive, send)
 
 
 def _require_request_user_id(ctx: Context) -> UUID:

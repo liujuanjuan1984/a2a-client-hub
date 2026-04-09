@@ -3,11 +3,15 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 
+from app.core.security import create_user_access_token
 from app.features.agents_shared.self_management_mcp import (
+    _MCP_USER_ID_STATE_KEY,
     SELF_MANAGEMENT_MCP_MOUNT_PATH,
+    SelfManagementMcpAuthMiddleware,
     build_self_management_mcp_http_app,
     execute_self_management_mcp_operation,
     self_management_mcp_server,
@@ -90,3 +94,35 @@ async def test_self_management_mcp_http_app_requires_bearer_auth(
     assert missing.json()["detail"] == "Missing or invalid Authorization header"
     assert invalid.status_code == 401
     assert invalid.json()["detail"] == "Invalid or expired token"
+
+
+async def test_self_management_mcp_auth_middleware_accepts_valid_bearer_auth(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    token = create_user_access_token(user.id)
+    app = FastAPI()
+    app.add_middleware(SelfManagementMcpAuthMiddleware)
+
+    @app.get("/")
+    async def read_root(request: Request) -> JSONResponse:
+        return JSONResponse(
+            {
+                "user_id": str(
+                    getattr(request.state, _MCP_USER_ID_STATE_KEY, ""),
+                )
+            }
+        )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == str(user.id)
