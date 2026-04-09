@@ -50,6 +50,19 @@ class SessionHubService:
             agent_id=agent_id,
         )
 
+    async def get_session(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+    ) -> tuple[dict[str, Any], bool]:
+        return await self._query.get_session(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+
     async def list_messages(
         self,
         db: AsyncSession,

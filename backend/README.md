@@ -71,13 +71,15 @@ uv run a2a-client-hub login --email alice@example.com --password 'Pass123!'
 uv run a2a-client-hub whoami
 uv run a2a-client-hub jobs list
 uv run a2a-client-hub jobs pause <job_id> --confirm
+uv run a2a-client-hub sessions list
+uv run a2a-client-hub sessions get <conversation_id>
 ```
 
 Notes:
 
 - The CLI stores its session token under `~/.config/a2a-client-hub/cli-session.json` by default.
 - Set `A2A_CLIENT_HUB_CLI_SESSION_FILE` to override that location.
-- First-wave CLI support currently targets current-user job operations only.
+- First-wave CLI support currently targets current-user jobs and sessions.
 
 ## Backend Structure
 

@@ -10,6 +10,7 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from tests.support.utils import (
     DEFAULT_TEST_PASSWORD,
     create_a2a_agent,
+    create_conversation_thread,
     create_schedule_task,
     create_user,
 )
@@ -274,3 +275,60 @@ async def test_cli_update_schedule_validates_payload_shape(
 
     assert invalid_json_exit_code == 1
     assert "must be valid JSON object text" in invalid_json_output.err
+
+
+async def test_cli_sessions_commands_use_shared_gateway_and_sessions_service(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    user = await create_user(async_db_session, password=DEFAULT_TEST_PASSWORD)
+    manual_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="CLI Manual Session",
+    )
+    scheduled_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        source="scheduled",
+        title="CLI Scheduled Session",
+    )
+    monkeypatch.setenv(
+        "A2A_CLIENT_HUB_CLI_SESSION_FILE",
+        str(tmp_path / "cli-session.json"),
+    )
+
+    assert (
+        await run_cli(
+            [
+                "login",
+                "--email",
+                user.email,
+                "--password",
+                DEFAULT_TEST_PASSWORD,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    list_exit_code = await run_cli(
+        ["sessions", "list", "--page", "1", "--size", "20", "--source", "manual"]
+    )
+    list_output = json.loads(capsys.readouterr().out)
+
+    assert list_exit_code == 0
+    assert list_output["pagination"]["total"] >= 1
+    returned_ids = {item["conversation_id"] for item in list_output["items"]}
+    assert str(manual_thread.id) in returned_ids
+    assert str(scheduled_thread.id) not in returned_ids
+
+    get_exit_code = await run_cli(["sessions", "get", str(scheduled_thread.id)])
+    get_output = json.loads(capsys.readouterr().out)
+
+    assert get_exit_code == 0
+    assert get_output["session"]["conversation_id"] == str(scheduled_thread.id)
+    assert get_output["session"]["source"] == "scheduled"
+    assert get_output["session"]["title"] == "CLI Scheduled Session"

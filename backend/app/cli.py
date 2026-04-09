@@ -52,6 +52,10 @@ from app.features.auth.service import (
 from app.features.schedules.self_management_jobs_service import (
     self_management_jobs_service,
 )
+from app.features.sessions.common import SessionSource
+from app.features.sessions.self_management_sessions_service import (
+    self_management_sessions_service,
+)
 
 _CLI_SESSION_FILE_ENV = "A2A_CLIENT_HUB_CLI_SESSION_FILE"
 
@@ -156,6 +160,30 @@ def _serialize_job(task: A2AScheduleTask, *, timezone_str: str) -> dict[str, Any
         "last_run_status": task.last_run_status,
         "consecutive_failures": int(task.consecutive_failures or 0),
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+    }
+
+
+def _serialize_session(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "conversation_id": str(item["conversationId"]),
+        "source": item.get("source"),
+        "external_provider": item.get("external_provider"),
+        "external_session_id": item.get("external_session_id"),
+        "agent_id": (
+            str(item["agent_id"]) if item.get("agent_id") is not None else None
+        ),
+        "agent_source": item.get("agent_source"),
+        "title": item.get("title"),
+        "last_active_at": (
+            item["last_active_at"].isoformat()
+            if item.get("last_active_at") is not None
+            else None
+        ),
+        "created_at": (
+            item["created_at"].isoformat()
+            if item.get("created_at") is not None
+            else None
+        ),
     }
 
 
@@ -356,6 +384,46 @@ async def _handle_jobs_pause(args: argparse.Namespace) -> None:
     _print_json({"job": _serialize_job(task, timezone_str=timezone_str)})
 
 
+async def _handle_sessions_list(args: argparse.Namespace) -> None:
+    source = cast(SessionSource | None, args.source)
+    agent_id = UUID(cast(str, args.agent_id)) if args.agent_id else None
+    async with AsyncSessionLocal() as db:
+        _, user, gateway = await _build_cli_gateway(db)
+        with _bind_cli_actor_context(user):
+            items, extra, _db_mutated = (
+                await self_management_sessions_service.list_sessions(
+                    db=db,
+                    gateway=gateway,
+                    current_user=user,
+                    page=cast(int, args.page),
+                    size=cast(int, args.size),
+                    source=source,
+                    agent_id=agent_id,
+                )
+            )
+
+    _print_json(
+        {
+            "items": [_serialize_session(item) for item in items],
+            "pagination": extra["pagination"],
+        }
+    )
+
+
+async def _handle_sessions_get(args: argparse.Namespace) -> None:
+    async with AsyncSessionLocal() as db:
+        _, user, gateway = await _build_cli_gateway(db)
+        with _bind_cli_actor_context(user):
+            session_item = await self_management_sessions_service.get_session(
+                db=db,
+                gateway=gateway,
+                current_user=user,
+                conversation_id=cast(str, args.conversation_id),
+            )
+
+    _print_json({"session": _serialize_session(session_item)})
+
+
 async def _handle_jobs_resume(args: argparse.Namespace) -> None:
     _require_confirmation(
         operation_name=SELF_JOBS_RESUME.command_name or SELF_JOBS_RESUME.operation_id,
@@ -492,6 +560,29 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_update_schedule_parser.add_argument("--schedule-timezone")
     jobs_update_schedule_parser.add_argument("--confirm", action="store_true")
 
+    sessions_parser = subparsers.add_parser(
+        "sessions", help="Manage current-user sessions."
+    )
+    sessions_subparsers = sessions_parser.add_subparsers(
+        dest="sessions_command",
+        required=True,
+    )
+
+    sessions_list_parser = sessions_subparsers.add_parser(
+        "list",
+        help="List sessions.",
+    )
+    sessions_list_parser.add_argument("--page", type=int, default=1)
+    sessions_list_parser.add_argument("--size", type=int, default=20)
+    sessions_list_parser.add_argument("--source", choices=["manual", "scheduled"])
+    sessions_list_parser.add_argument("--agent-id")
+
+    sessions_get_parser = sessions_subparsers.add_parser(
+        "get",
+        help="Read one session.",
+    )
+    sessions_get_parser.add_argument("conversation_id")
+
     return parser
 
 
@@ -533,6 +624,14 @@ async def run_cli(argv: Sequence[str] | None = None) -> int:
                 return 0
             if jobs_command == "update-schedule":
                 await _handle_jobs_update_schedule(args)
+                return 0
+        if command == "sessions":
+            sessions_command = cast(str, args.sessions_command)
+            if sessions_command == "list":
+                await _handle_sessions_list(args)
+                return 0
+            if sessions_command == "get":
+                await _handle_sessions_get(args)
                 return 0
     except CliCommandError as exc:
         sys.stderr.write(f"{exc}\n")
