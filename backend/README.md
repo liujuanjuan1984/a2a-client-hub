@@ -93,6 +93,7 @@ This is intended for agent runtimes such as `swival`, not for direct browser use
 - Transport: HTTP SSE
 - Auth: standard hub bearer token in `Authorization: Bearer <token>`
 - First-wave MCP tools:
+  `self.agents.list`, `self.agents.get`, `self.agents.update_config`,
   `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`,
   `self.sessions.list`, `self.sessions.get`
 
@@ -111,6 +112,7 @@ backend.
 - Profile: `GET /api/v1/me/self-management/agent`
 - Run once: `POST /api/v1/me/self-management/agent:run`
 - Current built-in tool set:
+  `self.agents.list`, `self.agents.get`, `self.agents.update_config`,
   `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`,
   `self.sessions.list`, `self.sessions.get`
 

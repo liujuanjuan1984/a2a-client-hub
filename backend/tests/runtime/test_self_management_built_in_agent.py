@@ -81,8 +81,11 @@ async def test_built_in_agent_profile_only_exposes_jobs_mcp_tools(
     profile = self_management_built_in_agent_service.get_profile()
 
     assert profile.configured is True
-    assert profile.resources == ("jobs", "sessions")
+    assert profile.resources == ("agents", "jobs", "sessions")
     assert [item.operation_id for item in profile.tool_definitions] == [
+        "self.agents.get",
+        "self.agents.list",
+        "self.agents.update_config",
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
@@ -108,8 +111,11 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert result.answer == "Built-in agent reply"
     assert result.exhausted is False
     assert result.runtime == "swival"
-    assert result.resources == ("jobs", "sessions")
+    assert result.resources == ("agents", "jobs", "sessions")
     assert result.tool_names == (
+        "self.agents.get",
+        "self.agents.list",
+        "self.agents.update_config",
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
@@ -186,8 +192,11 @@ async def test_built_in_agent_run_route_returns_swival_result(
         )
 
     assert profile_response.status_code == 200
-    assert profile_response.json()["resources"] == ["jobs", "sessions"]
+    assert profile_response.json()["resources"] == ["agents", "jobs", "sessions"]
     assert [item["operation_id"] for item in profile_response.json()["tools"]] == [
+        "self.agents.get",
+        "self.agents.list",
+        "self.agents.update_config",
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
@@ -199,8 +208,11 @@ async def test_built_in_agent_run_route_returns_swival_result(
         "answer": "Built-in agent reply",
         "exhausted": False,
         "runtime": "swival",
-        "resources": ["jobs", "sessions"],
+        "resources": ["agents", "jobs", "sessions"],
         "tools": [
+            "self.agents.get",
+            "self.agents.list",
+            "self.agents.update_config",
             "self.jobs.get",
             "self.jobs.list",
             "self.jobs.pause",

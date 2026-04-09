@@ -20,6 +20,9 @@ from app.core.security import verify_access_token
 from app.db.session import AsyncSessionLocal
 from app.features.agents_shared.actor_context import SelfManagementAuthorizationError
 from app.features.agents_shared.capability_catalog import (
+    SELF_AGENTS_GET,
+    SELF_AGENTS_LIST,
+    SELF_AGENTS_UPDATE_CONFIG,
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_PAUSE,
@@ -44,6 +47,9 @@ logger = get_logger(__name__)
 SELF_MANAGEMENT_MCP_MOUNT_PATH = "/mcp"
 _MCP_USER_ID_STATE_KEY = "self_management_mcp_user_id"
 SELF_MANAGEMENT_MCP_OPERATION_IDS = (
+    SELF_AGENTS_LIST.operation_id,
+    SELF_AGENTS_GET.operation_id,
+    SELF_AGENTS_UPDATE_CONFIG.operation_id,
     SELF_JOBS_LIST.operation_id,
     SELF_JOBS_GET.operation_id,
     SELF_JOBS_PAUSE.operation_id,
@@ -166,6 +172,72 @@ def build_self_management_mcp_server() -> FastMCP:
             "are scoped to the current user."
         ),
     )
+
+    @mcp.tool(
+        name=SELF_AGENTS_LIST.tool_name,
+        description=SELF_AGENTS_LIST.description,
+    )
+    async def self_agents_list(
+        page: int = 1,
+        size: int = 20,
+        health_bucket: str = "all",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        if ctx is None:
+            raise RuntimeError("FastMCP context is required.")
+        return await execute_self_management_mcp_operation(
+            user_id=_require_request_user_id(ctx),
+            operation_id=SELF_AGENTS_LIST.operation_id,
+            arguments={
+                "page": page,
+                "size": size,
+                "health_bucket": health_bucket,
+            },
+        )
+
+    @mcp.tool(
+        name=SELF_AGENTS_GET.tool_name,
+        description=SELF_AGENTS_GET.description,
+    )
+    async def self_agents_get(
+        agent_id: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        if ctx is None:
+            raise RuntimeError("FastMCP context is required.")
+        return await execute_self_management_mcp_operation(
+            user_id=_require_request_user_id(ctx),
+            operation_id=SELF_AGENTS_GET.operation_id,
+            arguments={"agent_id": agent_id},
+        )
+
+    @mcp.tool(
+        name=SELF_AGENTS_UPDATE_CONFIG.tool_name,
+        description=SELF_AGENTS_UPDATE_CONFIG.description,
+    )
+    async def self_agents_update_config(
+        agent_id: str,
+        name: str | None = None,
+        enabled: bool | None = None,
+        tags: list[str] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        invoke_metadata_defaults: dict[str, str] | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        if ctx is None:
+            raise RuntimeError("FastMCP context is required.")
+        return await execute_self_management_mcp_operation(
+            user_id=_require_request_user_id(ctx),
+            operation_id=SELF_AGENTS_UPDATE_CONFIG.operation_id,
+            arguments={
+                "agent_id": agent_id,
+                "name": name,
+                "enabled": enabled,
+                "tags": tags,
+                "extra_headers": extra_headers,
+                "invoke_metadata_defaults": invoke_metadata_defaults,
+            },
+        )
 
     @mcp.tool(
         name=SELF_JOBS_LIST.tool_name,

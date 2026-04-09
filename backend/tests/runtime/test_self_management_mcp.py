@@ -36,6 +36,9 @@ async def test_self_management_mcp_server_lists_first_wave_tools() -> None:
     tools = await self_management_mcp_server.get_tools()
     tool_names = {tool.name for tool in tools.values()}
 
+    assert "self.agents.list" in tool_names
+    assert "self.agents.get" in tool_names
+    assert "self.agents.update_config" in tool_names
     assert "self.jobs.list" in tool_names
     assert "self.jobs.get" in tool_names
     assert "self.jobs.pause" in tool_names
@@ -109,6 +112,54 @@ async def test_execute_self_management_mcp_operation_supports_sessions(
     assert get_result["ok"] is True
     assert get_result["result"]["session"]["conversation_id"] == str(thread.id)
     assert get_result["result"]["session"]["title"] == "MCP Session"
+
+
+async def test_execute_self_management_mcp_operation_supports_agents(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-agent",
+        tags=["before"],
+    )
+
+    list_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.list",
+        arguments={"page": 1, "size": 20, "health_bucket": "all"},
+        db=async_db_session,
+    )
+    get_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.get",
+        arguments={"agent_id": str(agent.id)},
+        db=async_db_session,
+    )
+    update_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.update_config",
+        arguments={
+            "agent_id": str(agent.id),
+            "name": "MCP Updated Agent",
+            "enabled": False,
+            "tags": ["after"],
+            "extra_headers": {"X-Test": "1"},
+            "invoke_metadata_defaults": {"mode": "safe"},
+        },
+        db=async_db_session,
+    )
+
+    assert list_result["ok"] is True
+    assert any(item["id"] == str(agent.id) for item in list_result["result"]["items"])
+    assert get_result["ok"] is True
+    assert get_result["result"]["agent"]["id"] == str(agent.id)
+    assert update_result["ok"] is True
+    assert update_result["result"]["agent"]["id"] == str(agent.id)
+    assert update_result["result"]["agent"]["name"] == "MCP Updated Agent"
+    assert update_result["result"]["agent"]["enabled"] is False
+    assert update_result["result"]["agent"]["tags"] == ["after"]
 
 
 async def test_self_management_mcp_http_app_requires_bearer_auth(
