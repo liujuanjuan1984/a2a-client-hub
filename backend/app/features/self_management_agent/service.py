@@ -153,11 +153,12 @@ class SelfManagementBuiltInAgentService:
             max_output_tokens=settings.self_management_swival_max_output_tokens,
             reasoning_effort=settings.self_management_swival_reasoning_effort,
             system_prompt=_DEFAULT_SYSTEM_PROMPT,
+            files="none",
+            commands="none",
             no_skills=True,
             history=False,
             memory=False,
             continue_here=False,
-            allowed_commands=[],
             yolo=False,
             mcp_servers={
                 "a2a-client-hub": {

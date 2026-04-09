@@ -134,10 +134,11 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert _FakeSwivalSession.last_init_kwargs["reasoning_effort"] == "medium"
     assert _FakeSwivalSession.last_init_kwargs["max_turns"] == 6
     assert _FakeSwivalSession.last_init_kwargs["max_output_tokens"] == 2048
+    assert _FakeSwivalSession.last_init_kwargs["files"] == "none"
+    assert _FakeSwivalSession.last_init_kwargs["commands"] == "none"
     assert _FakeSwivalSession.last_init_kwargs["no_skills"] is True
     assert _FakeSwivalSession.last_init_kwargs["history"] is False
     assert _FakeSwivalSession.last_init_kwargs["memory"] is False
-    assert _FakeSwivalSession.last_init_kwargs["allowed_commands"] == []
     assert _FakeSwivalSession.last_init_kwargs["base_dir"].endswith("/backend")
     assert "built-in a2a-client-hub self-management assistant" in cast(
         str,
