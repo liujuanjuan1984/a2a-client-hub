@@ -24,7 +24,6 @@ from app.core.logging import (
     set_user_context,
 )
 from app.core.security import create_user_access_token, verify_access_token
-from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.features.agents_shared.actor_context import (
@@ -32,12 +31,19 @@ from app.features.agents_shared.actor_context import (
     build_self_management_actor_context,
 )
 from app.features.agents_shared.capability_catalog import (
+    SELF_AGENTS_GET,
+    SELF_AGENTS_LIST,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_JOBS_GET,
+    SELF_JOBS_LIST,
     SELF_JOBS_PAUSE,
     SELF_JOBS_RESUME,
     SELF_JOBS_UPDATE_PROMPT,
     SELF_JOBS_UPDATE_SCHEDULE,
+    SELF_SESSIONS_GET,
+    SELF_SESSIONS_LIST,
 )
+from app.features.agents_shared.self_management_toolkit import SelfManagementToolkit
 from app.features.agents_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
     SelfManagementSurface,
@@ -49,17 +55,6 @@ from app.features.auth.service import (
     UserNotFoundError,
     authenticate_user,
     get_active_user,
-)
-from app.features.personal_agents.self_management_agents_service import (
-    self_management_agents_service,
-)
-from app.features.personal_agents.service import A2AAgentRecord
-from app.features.schedules.self_management_jobs_service import (
-    self_management_jobs_service,
-)
-from app.features.sessions.common import SessionSource
-from app.features.sessions.self_management_sessions_service import (
-    self_management_sessions_service,
 )
 
 _CLI_SESSION_FILE_ENV = "A2A_CLIENT_HUB_CLI_SESSION_FILE"
@@ -143,84 +138,6 @@ def _serialize_user(user: User) -> dict[str, Any]:
         "name": cast(str, user.name),
         "is_superuser": bool(user.is_superuser),
         "timezone": cast(str, user.timezone or "UTC"),
-    }
-
-
-def _serialize_job(task: A2AScheduleTask, *, timezone_str: str) -> dict[str, Any]:
-    return {
-        "id": str(cast(UUID | None, task.id)),
-        "name": task.name,
-        "agent_id": str(task.agent_id),
-        "conversation_id": (
-            str(task.conversation_id) if task.conversation_id is not None else None
-        ),
-        "conversation_policy": task.conversation_policy,
-        "prompt": task.prompt,
-        "cycle_type": task.cycle_type,
-        "time_point": dict(task.time_point or {}),
-        "schedule_timezone": timezone_str,
-        "enabled": bool(task.enabled),
-        "next_run_at_utc": task.next_run_at.isoformat() if task.next_run_at else None,
-        "last_run_at": task.last_run_at.isoformat() if task.last_run_at else None,
-        "last_run_status": task.last_run_status,
-        "consecutive_failures": int(task.consecutive_failures or 0),
-        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
-    }
-
-
-def _serialize_session(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "conversation_id": str(item["conversationId"]),
-        "source": item.get("source"),
-        "external_provider": item.get("external_provider"),
-        "external_session_id": item.get("external_session_id"),
-        "agent_id": (
-            str(item["agent_id"]) if item.get("agent_id") is not None else None
-        ),
-        "agent_source": item.get("agent_source"),
-        "title": item.get("title"),
-        "last_active_at": (
-            item["last_active_at"].isoformat()
-            if item.get("last_active_at") is not None
-            else None
-        ),
-        "created_at": (
-            item["created_at"].isoformat()
-            if item.get("created_at") is not None
-            else None
-        ),
-    }
-
-
-def _serialize_agent(record: A2AAgentRecord) -> dict[str, Any]:
-    return {
-        "id": str(record.id),
-        "name": record.name,
-        "card_url": record.card_url,
-        "auth_type": record.auth_type,
-        "auth_header": record.auth_header,
-        "auth_scheme": record.auth_scheme,
-        "enabled": record.enabled,
-        "health_status": record.health_status,
-        "consecutive_health_check_failures": record.consecutive_health_check_failures,
-        "last_health_check_at": (
-            record.last_health_check_at.isoformat()
-            if record.last_health_check_at is not None
-            else None
-        ),
-        "last_successful_health_check_at": (
-            record.last_successful_health_check_at.isoformat()
-            if record.last_successful_health_check_at is not None
-            else None
-        ),
-        "last_health_check_error": record.last_health_check_error,
-        "tags": list(record.tags),
-        "extra_headers": dict(record.extra_headers),
-        "invoke_metadata_defaults": dict(record.invoke_metadata_defaults),
-        "token_last4": record.token_last4,
-        "username_hint": record.username_hint,
-        "created_at": str(record.created_at),
-        "updated_at": str(record.updated_at),
     }
 
 
@@ -360,6 +277,21 @@ async def _build_cli_gateway(
     )
 
 
+async def _build_cli_toolkit(
+    db: AsyncSession,
+) -> tuple[CliSessionState, User, SelfManagementToolkit]:
+    session_state, user, gateway = await _build_cli_gateway(db)
+    return (
+        session_state,
+        user,
+        SelfManagementToolkit(
+            db=db,
+            current_user=user,
+            gateway=gateway,
+        ),
+    )
+
+
 async def _handle_login(args: argparse.Namespace) -> None:
     async with AsyncSessionLocal() as db:
         try:
@@ -413,49 +345,27 @@ async def _handle_whoami(_args: argparse.Namespace) -> None:
 
 async def _handle_jobs_list(args: argparse.Namespace) -> None:
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            items, total = await self_management_jobs_service.list_jobs(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                page=cast(int, args.page),
-                size=cast(int, args.size),
+            result = await toolkit.execute(
+                operation_id=SELF_JOBS_LIST.operation_id,
+                arguments={
+                    "page": cast(int, args.page),
+                    "size": cast(int, args.size),
+                },
             )
-
-    timezone_str = cast(str, user.timezone or "UTC")
-    _print_json(
-        {
-            "items": [
-                _serialize_job(item, timezone_str=timezone_str) for item in items
-            ],
-            "page": cast(int, args.page),
-            "size": cast(int, args.size),
-            "total": total,
-        }
-    )
+    _print_json(result.payload)
 
 
 async def _handle_jobs_get(args: argparse.Namespace) -> None:
-    task_id = UUID(cast(str, args.task_id))
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            task = await self_management_jobs_service.get_job(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                task_id=task_id,
+            result = await toolkit.execute(
+                operation_id=SELF_JOBS_GET.operation_id,
+                arguments={"task_id": cast(str, args.task_id)},
             )
-
-    _print_json(
-        {
-            "job": _serialize_job(
-                task,
-                timezone_str=cast(str, user.timezone or "UTC"),
-            )
-        }
-    )
+    _print_json(result.payload)
 
 
 async def _handle_jobs_pause(args: argparse.Namespace) -> None:
@@ -464,110 +374,69 @@ async def _handle_jobs_pause(args: argparse.Namespace) -> None:
         confirmation_policy=SELF_JOBS_PAUSE.confirmation_policy,
         confirmed=bool(args.confirm),
     )
-    task_id = UUID(cast(str, args.task_id))
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
-        timezone_str = cast(str, user.timezone or "UTC")
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            task = await self_management_jobs_service.pause_job(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                task_id=task_id,
-                timezone_str=timezone_str,
+            result = await toolkit.execute(
+                operation_id=SELF_JOBS_PAUSE.operation_id,
+                arguments={"task_id": cast(str, args.task_id)},
             )
-
-    _print_json({"job": _serialize_job(task, timezone_str=timezone_str)})
+    _print_json(result.payload)
 
 
 async def _handle_sessions_list(args: argparse.Namespace) -> None:
-    source = cast(SessionSource | None, args.source)
-    agent_id = UUID(cast(str, args.agent_id)) if args.agent_id else None
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            items, extra, _db_mutated = (
-                await self_management_sessions_service.list_sessions(
-                    db=db,
-                    gateway=gateway,
-                    current_user=user,
-                    page=cast(int, args.page),
-                    size=cast(int, args.size),
-                    source=source,
-                    agent_id=agent_id,
-                )
+            result = await toolkit.execute(
+                operation_id=SELF_SESSIONS_LIST.operation_id,
+                arguments={
+                    "page": cast(int, args.page),
+                    "size": cast(int, args.size),
+                    "source": cast(str | None, args.source),
+                    "agent_id": cast(str | None, args.agent_id),
+                },
             )
-
-    _print_json(
-        {
-            "items": [_serialize_session(item) for item in items],
-            "pagination": extra["pagination"],
-        }
-    )
+    _print_json(result.payload)
 
 
 async def _handle_sessions_get(args: argparse.Namespace) -> None:
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            session_item = await self_management_sessions_service.get_session(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                conversation_id=cast(str, args.conversation_id),
+            result = await toolkit.execute(
+                operation_id=SELF_SESSIONS_GET.operation_id,
+                arguments={
+                    "conversation_id": cast(str, args.conversation_id),
+                },
             )
-
-    _print_json({"session": _serialize_session(session_item)})
+    _print_json(result.payload)
 
 
 async def _handle_agents_list(args: argparse.Namespace) -> None:
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            items, total, counts = await self_management_agents_service.list_agents(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                page=cast(int, args.page),
-                size=cast(int, args.size),
-                health_bucket=cast(str, args.health_bucket),
+            result = await toolkit.execute(
+                operation_id=SELF_AGENTS_LIST.operation_id,
+                arguments={
+                    "page": cast(int, args.page),
+                    "size": cast(int, args.size),
+                    "health_bucket": cast(str, args.health_bucket),
+                },
             )
-
-    pages = (total + cast(int, args.size) - 1) // cast(int, args.size)
-    _print_json(
-        {
-            "items": [_serialize_agent(item) for item in items],
-            "pagination": {
-                "page": cast(int, args.page),
-                "size": cast(int, args.size),
-                "total": total,
-                "pages": pages,
-            },
-            "meta": {
-                "counts": {
-                    "healthy": counts.healthy,
-                    "degraded": counts.degraded,
-                    "unavailable": counts.unavailable,
-                    "unknown": counts.unknown,
-                }
-            },
-        }
-    )
+    _print_json(result.payload)
 
 
 async def _handle_agents_get(args: argparse.Namespace) -> None:
-    agent_id = UUID(cast(str, args.agent_id))
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            record = await self_management_agents_service.get_agent(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                agent_id=agent_id,
+            result = await toolkit.execute(
+                operation_id=SELF_AGENTS_GET.operation_id,
+                arguments={"agent_id": cast(str, args.agent_id)},
             )
-
-    _print_json({"agent": _serialize_agent(record)})
+    _print_json(result.payload)
 
 
 async def _handle_agents_update_config(args: argparse.Namespace) -> None:
@@ -602,23 +471,21 @@ async def _handle_agents_update_config(args: argparse.Namespace) -> None:
         raise CliCommandError(
             "`agents update-config` requires at least one supported config field to change.",
         )
-    agent_id = UUID(cast(str, args.agent_id))
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            record = await self_management_agents_service.update_config(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                agent_id=agent_id,
-                name=name,
-                enabled=enabled,
-                tags=tags,
-                extra_headers=extra_headers,
-                invoke_metadata_defaults=invoke_metadata_defaults,
+            result = await toolkit.execute(
+                operation_id=SELF_AGENTS_UPDATE_CONFIG.operation_id,
+                arguments={
+                    "agent_id": cast(str, args.agent_id),
+                    "name": name,
+                    "enabled": enabled,
+                    "tags": tags,
+                    "extra_headers": extra_headers,
+                    "invoke_metadata_defaults": invoke_metadata_defaults,
+                },
             )
-
-    _print_json({"agent": _serialize_agent(record)})
+    _print_json(result.payload)
 
 
 async def _handle_jobs_resume(args: argparse.Namespace) -> None:
@@ -627,20 +494,14 @@ async def _handle_jobs_resume(args: argparse.Namespace) -> None:
         confirmation_policy=SELF_JOBS_RESUME.confirmation_policy,
         confirmed=bool(args.confirm),
     )
-    task_id = UUID(cast(str, args.task_id))
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
-        timezone_str = cast(str, user.timezone or "UTC")
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            task = await self_management_jobs_service.resume_job(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                task_id=task_id,
-                timezone_str=timezone_str,
+            result = await toolkit.execute(
+                operation_id=SELF_JOBS_RESUME.operation_id,
+                arguments={"task_id": cast(str, args.task_id)},
             )
-
-    _print_json({"job": _serialize_job(task, timezone_str=timezone_str)})
+    _print_json(result.payload)
 
 
 async def _handle_jobs_update_prompt(args: argparse.Namespace) -> None:
@@ -651,21 +512,17 @@ async def _handle_jobs_update_prompt(args: argparse.Namespace) -> None:
         confirmation_policy=SELF_JOBS_UPDATE_PROMPT.confirmation_policy,
         confirmed=bool(args.confirm),
     )
-    task_id = UUID(cast(str, args.task_id))
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
-        timezone_str = cast(str, user.timezone or "UTC")
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            task = await self_management_jobs_service.update_prompt(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                task_id=task_id,
-                prompt=cast(str, args.prompt),
-                timezone_str=timezone_str,
+            result = await toolkit.execute(
+                operation_id=SELF_JOBS_UPDATE_PROMPT.operation_id,
+                arguments={
+                    "task_id": cast(str, args.task_id),
+                    "prompt": cast(str, args.prompt),
+                },
             )
-
-    _print_json({"job": _serialize_job(task, timezone_str=timezone_str)})
+    _print_json(result.payload)
 
 
 async def _handle_jobs_update_schedule(args: argparse.Namespace) -> None:
@@ -677,7 +534,6 @@ async def _handle_jobs_update_schedule(args: argparse.Namespace) -> None:
         confirmation_policy=SELF_JOBS_UPDATE_SCHEDULE.confirmation_policy,
         confirmed=bool(args.confirm),
     )
-    task_id = UUID(cast(str, args.task_id))
     cycle_type = cast(str | None, args.cycle_type)
     schedule_timezone = cast(str | None, args.schedule_timezone)
     time_point = _parse_time_point(cast(str | None, args.time_point_json))
@@ -686,23 +542,18 @@ async def _handle_jobs_update_schedule(args: argparse.Namespace) -> None:
             "`jobs update-schedule` requires at least one schedule field to change.",
         )
     async with AsyncSessionLocal() as db:
-        _, user, gateway = await _build_cli_gateway(db)
-        timezone_str = cast(
-            str,
-            schedule_timezone or user.timezone or "UTC",
-        )
+        _, user, toolkit = await _build_cli_toolkit(db)
         with _bind_cli_actor_context(user):
-            task = await self_management_jobs_service.update_schedule(
-                db=db,
-                gateway=gateway,
-                current_user=user,
-                task_id=task_id,
-                cycle_type=cycle_type,
-                time_point=time_point,
-                timezone_str=timezone_str,
+            result = await toolkit.execute(
+                operation_id=SELF_JOBS_UPDATE_SCHEDULE.operation_id,
+                arguments={
+                    "task_id": cast(str, args.task_id),
+                    "cycle_type": cycle_type,
+                    "time_point": time_point,
+                    "schedule_timezone": schedule_timezone,
+                },
             )
-
-    _print_json({"job": _serialize_job(task, timezone_str=timezone_str)})
+    _print_json(result.payload)
 
 
 def build_parser() -> argparse.ArgumentParser:
