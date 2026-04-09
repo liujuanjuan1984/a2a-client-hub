@@ -121,6 +121,7 @@ backend.
 
 - Profile: `GET /api/v1/me/self-management/agent`
 - Run once: `POST /api/v1/me/self-management/agent:run`
+- Recover pending interrupts: `POST /api/v1/me/self-management/agent/interrupts:recover`
 - Default run mode: read-only
 - Built-in runs are conversation-backed and must include `conversationId`
 - To explicitly enable write tools for one run, send:
@@ -179,6 +180,9 @@ Notes:
 - The swival runtime object itself is still process-local and TTL-managed; this
   PR persists the durable session history and interrupt lifecycle, not full
   cross-process swival runtime restoration.
+- If the in-memory swival runtime expires, the backend now best-effort
+  rehydrates the next built-in session from persisted user/agent turns in the
+  same durable conversation before resuming.
 - The built-in runtime applies a compatibility shim for older `swival` MCP
   adapters that still emit private `_mcp_*` tool metadata rejected by Gemini's
   OpenAI-compatible endpoint.

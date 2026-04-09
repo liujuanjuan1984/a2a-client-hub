@@ -36,6 +36,18 @@ type SelfManagementBuiltInAgentInterruptResponse = {
   };
 };
 
+type SelfManagementBuiltInAgentRecoveredInterruptResponse = {
+  requestId: string;
+  sessionId: string;
+  type: "permission";
+  phase: "asked";
+  details: {
+    permission?: string | null;
+    patterns?: string[];
+    displayMessage?: string | null;
+  };
+};
+
 export type SelfManagementBuiltInAgentRunResponse = {
   status: "completed" | "interrupted";
   answer: string | null;
@@ -77,15 +89,61 @@ export const replySelfManagementBuiltInAgentPermissionInterrupt = (payload: {
     body: payload,
   });
 
+export const recoverSelfManagementBuiltInAgentInterrupts = async (payload: {
+  conversationId: string;
+}) => {
+  const response = await apiRequest<{
+    items?: SelfManagementBuiltInAgentRecoveredInterruptResponse[];
+  }>("/me/self-management/agent/interrupts:recover", {
+    method: "POST",
+    body: payload,
+  });
+  const items = Array.isArray(response.items) ? response.items : [];
+  return {
+    items: items
+      .map((interrupt) => toRecoveredPendingRuntimeInterrupt(interrupt))
+      .filter((interrupt): interrupt is PendingRuntimeInterrupt =>
+        Boolean(interrupt),
+      ),
+  };
+};
+
+const buildInterruptDetails = (
+  interrupt:
+    | SelfManagementBuiltInAgentInterruptResponse
+    | SelfManagementBuiltInAgentRecoveredInterruptResponse,
+) => ({
+  permission: interrupt.details.permission ?? null,
+  patterns: interrupt.details.patterns ?? [],
+  displayMessage: interrupt.details.displayMessage ?? null,
+});
+
 export const toPendingRuntimeInterrupt = (
   interrupt: SelfManagementBuiltInAgentInterruptResponse,
 ): PendingRuntimeInterrupt => ({
   requestId: interrupt.requestId,
   type: interrupt.type,
   phase: interrupt.phase,
-  details: {
-    permission: interrupt.details.permission ?? null,
-    patterns: interrupt.details.patterns ?? [],
-    displayMessage: interrupt.details.displayMessage ?? null,
-  },
+  details: buildInterruptDetails(interrupt),
 });
+
+export const toRecoveredPendingRuntimeInterrupt = (
+  interrupt: SelfManagementBuiltInAgentRecoveredInterruptResponse,
+): PendingRuntimeInterrupt | null => {
+  const requestId = interrupt.requestId.trim();
+  const sessionId = interrupt.sessionId.trim();
+  if (!requestId || !sessionId) {
+    return null;
+  }
+  return {
+    requestId,
+    sessionId,
+    type: interrupt.type,
+    phase: interrupt.phase,
+    source: "recovery",
+    taskId: null,
+    contextId: null,
+    expiresAt: null,
+    details: buildInterruptDetails(interrupt),
+  };
+};

@@ -35,6 +35,7 @@ import type {
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
   getSelfManagementBuiltInAgentProfile,
+  recoverSelfManagementBuiltInAgentInterrupts,
   isSelfManagementBuiltInAgent,
   replySelfManagementBuiltInAgentPermissionInterrupt,
   runSelfManagementBuiltInAgent,
@@ -919,6 +920,47 @@ export function useChatScreenController({
     [interruptRecoveryStatus, replaceRecoveredInterrupts],
   );
 
+  const recoverBuiltInPendingInterrupts = useCallback(
+    async ({ nextConversationId }: { nextConversationId: string }) => {
+      const resolvedSessionId = nextConversationId.trim();
+      if (!resolvedSessionId) {
+        return;
+      }
+
+      const recoveryKey = `${resolvedSessionId}:${resolvedSessionId}`;
+      const lastRecovery = lastInterruptRecoveryRef.current;
+      if (
+        lastRecovery &&
+        lastRecovery.key === recoveryKey &&
+        Date.now() - lastRecovery.triggeredAt < INTERRUPT_RECOVERY_THROTTLE_MS
+      ) {
+        return;
+      }
+      lastInterruptRecoveryRef.current = {
+        key: recoveryKey,
+        triggeredAt: Date.now(),
+      };
+
+      try {
+        const result = await recoverSelfManagementBuiltInAgentInterrupts({
+          conversationId: resolvedSessionId,
+        });
+        replaceRecoveredInterrupts(nextConversationId, result.items, {
+          sessionId: resolvedSessionId,
+        });
+      } catch (error) {
+        console.warn("[Chat] built-in interrupt recovery failed", {
+          conversationId: nextConversationId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "built_in_interrupt_recovery_failed",
+        });
+      }
+    },
+    [replaceRecoveredInterrupts],
+  );
+
   const {
     interruptAction,
     questionAnswers,
@@ -1089,9 +1131,9 @@ export function useChatScreenController({
     if (
       !conversationId ||
       !activeAgentId ||
-      isBuiltInSelfManagementAgent ||
       !agent?.source ||
-      !boundExternalSessionId
+      !boundExternalSessionId ||
+      isBuiltInSelfManagementAgent
     ) {
       return;
     }
@@ -1115,20 +1157,43 @@ export function useChatScreenController({
   ]);
 
   useEffect(() => {
+    if (!conversationId || !activeAgentId || !isBuiltInSelfManagementAgent) {
+      return;
+    }
+    recoverBuiltInPendingInterrupts({
+      nextConversationId: conversationId,
+    });
+  }, [
+    activeAgentId,
+    conversationId,
+    isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
+  ]);
+
+  useEffect(() => {
     if (
       session?.streamState !== "recoverable" ||
       !conversationId ||
       !activeAgentId ||
-      isBuiltInSelfManagementAgent ||
-      !agent?.source ||
-      !boundExternalSessionId
+      (!isBuiltInSelfManagementAgent &&
+        (!agent?.source || !boundExternalSessionId))
     ) {
+      return;
+    }
+    if (isBuiltInSelfManagementAgent) {
+      recoverBuiltInPendingInterrupts({
+        nextConversationId: conversationId,
+      });
+      return;
+    }
+    const nextAgentSource = agent?.source;
+    if (!nextAgentSource) {
       return;
     }
     recoverPendingInterrupts({
       nextConversationId: conversationId,
       nextAgentId: activeAgentId,
-      nextAgentSource: agent.source,
+      nextAgentSource,
       nextSessionId: boundExternalSessionId,
     });
   }, [
@@ -1137,6 +1202,7 @@ export function useChatScreenController({
     boundExternalSessionId,
     conversationId,
     isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
     recoverPendingInterrupts,
     session?.streamState,
   ]);

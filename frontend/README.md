@@ -120,6 +120,7 @@ Message id contract:
 - Built-in self-management runs are conversation-backed: the frontend sends the current `conversationId`, so follow-up turns reuse the same server-side swival session instead of restarting from a stateless one-shot run.
 - For built-in permission interrupts, `Allow once` resumes just the current turn, while `Always allow` enables write tools for the current built-in conversation until that server-side session expires.
 - Because built-in runs now project into the normal sessions domain, the same `conversationId` can later be reopened from the Sessions directory and its persisted history survives beyond the in-memory swival runtime object.
+- Reopening a built-in conversation now also recovers unresolved permission interrupts from durable session history, so the existing interrupt card can resume the pending approval flow after a refresh or reopen.
 
 ## Block-based Streaming
 

@@ -16,6 +16,7 @@ const mockInvokeAgent = jest.fn();
 const mockInvokeHubAgent = jest.fn();
 const mockGetSelfManagementBuiltInAgentProfile = jest.fn();
 const mockRunSelfManagementBuiltInAgent = jest.fn();
+const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
 const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
 const mockAddConversationOverlayMessage = jest.fn();
 const mockUpdateConversationMessage = jest.fn();
@@ -462,6 +463,8 @@ jest.mock("@/lib/api/selfManagementAgent", () => ({
     mockGetSelfManagementBuiltInAgentProfile(...args),
   runSelfManagementBuiltInAgent: (...args: unknown[]) =>
     mockRunSelfManagementBuiltInAgent(...args),
+  recoverSelfManagementBuiltInAgentInterrupts: (...args: unknown[]) =>
+    mockRecoverSelfManagementBuiltInAgentInterrupts(...args),
   replySelfManagementBuiltInAgentPermissionInterrupt: (...args: unknown[]) =>
     mockReplySelfManagementBuiltInAgentPermissionInterrupt(...args),
   toPendingRuntimeInterrupt: (interrupt: {
@@ -510,6 +513,7 @@ describe("ChatScreen interrupt handling", () => {
   const conversationId = "conversation-1";
 
   beforeEach(() => {
+    mockAgentStoreState.activeAgentId = "agent-1";
     mockAddShortcut.mockReset().mockResolvedValue(undefined);
     mockUpdateShortcut.mockReset().mockResolvedValue(undefined);
     mockRemoveShortcut.mockReset().mockResolvedValue(undefined);
@@ -568,6 +572,9 @@ describe("ChatScreen interrupt handling", () => {
       write_tools_enabled: false,
       interrupt: null,
     });
+    mockRecoverSelfManagementBuiltInAgentInterrupts
+      .mockReset()
+      .mockResolvedValue({ items: [] });
     mockReplySelfManagementBuiltInAgentPermissionInterrupt
       .mockReset()
       .mockResolvedValue({
@@ -686,6 +693,67 @@ describe("ChatScreen interrupt handling", () => {
         },
       ],
       { sessionId: "sess-1" },
+    );
+  });
+
+  it("recovers pending interrupts for the built-in agent from durable history", async () => {
+    mockAgentStoreState.activeAgentId = SELF_MANAGEMENT_AGENT_ID;
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      agentId: SELF_MANAGEMENT_AGENT_ID,
+    };
+    mockRecoverSelfManagementBuiltInAgentInterrupts.mockResolvedValue({
+      items: [
+        {
+          requestId: "perm-builtin-1",
+          sessionId: conversationId,
+          type: "permission",
+          phase: "asked",
+          source: "recovery",
+          taskId: null,
+          contextId: null,
+          expiresAt: null,
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve pause access",
+          },
+        },
+      ],
+    });
+
+    renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      mockRecoverSelfManagementBuiltInAgentInterrupts,
+    ).toHaveBeenCalledWith({
+      conversationId,
+    });
+    expect(mockRecoverInterrupts).not.toHaveBeenCalled();
+    expect(mockChatState.replaceRecoveredInterrupts).toHaveBeenCalledWith(
+      conversationId,
+      [
+        {
+          requestId: "perm-builtin-1",
+          sessionId: conversationId,
+          type: "permission",
+          phase: "asked",
+          source: "recovery",
+          taskId: null,
+          contextId: null,
+          expiresAt: null,
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve pause access",
+          },
+        },
+      ],
+      { sessionId: conversationId },
     );
   });
 
