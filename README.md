@@ -132,6 +132,9 @@ You can observe these via `/health` under `a2a.ops_metrics`:
 
 ## Key docs
 
+- Dependency automation
+  - Dependabot opens at most one weekly grouped version-update PR for `backend/` (`uv`) and at most one for `frontend/` (`npm`).
+  - Existing audit workflows remain in place for explicit vulnerability review and do not replace human triage.
 - Documentation index: [docs/README.md](docs/README.md)
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Automation protocol: [AGENTS.md](AGENTS.md)
