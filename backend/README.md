@@ -61,6 +61,24 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
+## Run the CLI
+
+The backend also ships a minimal authenticated CLI for first-wave self-management.
+
+```bash
+cd backend
+uv run a2a-client-hub-cli login --email alice@example.com --password 'Pass123!'
+uv run a2a-client-hub-cli whoami
+uv run a2a-client-hub-cli jobs list
+uv run a2a-client-hub-cli jobs pause <job_id> --confirm
+```
+
+Notes:
+
+- The CLI stores its session token under `~/.config/a2a-client-hub/cli-session.json` by default.
+- Set `A2A_CLIENT_HUB_CLI_SESSION_FILE` to override that location.
+- First-wave CLI support currently targets current-user job operations only.
+
 ## Backend Structure
 
 The backend now uses a practical feature-based structure for business-facing entrypoints and orchestration code.
