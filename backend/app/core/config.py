@@ -844,6 +844,46 @@ class Settings(BaseSettings):
         alias="OPENCODE_SESSIONS_REFRESH_CONCURRENCY",
         description="Maximum concurrent upstream refreshes when updating cached OpenCode session listings.",
     )
+    self_management_swival_import_paths: list[str] = Field(
+        default_factory=list,
+        alias="SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS",
+        description="Optional extra import roots used before importing swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_provider: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_PROVIDER",
+        description="Configured swival provider id for the built-in self-management agent runtime.",
+    )
+    self_management_swival_model: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_MODEL",
+        description="Configured swival model id for the built-in self-management agent runtime.",
+    )
+    self_management_swival_base_url: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_BASE_URL",
+        description="Optional base URL forwarded to swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_api_key: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_API_KEY",
+        description="Optional API key forwarded to swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_reasoning_effort: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT",
+        description="Optional reasoning effort forwarded to swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_max_turns: int = Field(
+        default=12,
+        alias="SELF_MANAGEMENT_SWIVAL_MAX_TURNS",
+        description="Maximum number of turns allowed for one built-in self-management agent run.",
+    )
+    self_management_swival_max_output_tokens: int = Field(
+        default=4096,
+        alias="SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS",
+        description="Maximum output tokens allowed for one built-in self-management agent run.",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -903,6 +943,28 @@ class Settings(BaseSettings):
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must be positive")
         if value > 20:
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must not exceed 20")
+        return value
+
+    @field_validator("self_management_swival_max_turns")
+    @classmethod
+    def validate_self_management_swival_max_turns(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SELF_MANAGEMENT_SWIVAL_MAX_TURNS must be positive")
+        if value > 100:
+            raise ValueError("SELF_MANAGEMENT_SWIVAL_MAX_TURNS must not exceed 100")
+        return value
+
+    @field_validator("self_management_swival_max_output_tokens")
+    @classmethod
+    def validate_self_management_swival_max_output_tokens(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS must be positive"
+            )
+        if value > 32768:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS must not exceed 32768"
+            )
         return value
 
     @field_validator("a2a_stream_heartbeat_interval")

@@ -24,18 +24,28 @@ from app.features.agents_shared.capability_catalog import (
     SELF_JOBS_LIST,
     SELF_JOBS_PAUSE,
 )
+from app.features.agents_shared.self_management_tool_contract import (
+    SelfManagementToolDefinition,
+    list_self_management_tool_definitions,
+)
 from app.features.agents_shared.self_management_toolkit import (
     SelfManagementToolInputError,
 )
 from app.features.agents_shared.self_management_web_agent import (
     build_self_management_web_agent_runtime,
 )
+from app.features.agents_shared.tool_gateway import SelfManagementSurface
 from app.features.auth.service import UserNotFoundError, get_active_user
 
 logger = get_logger(__name__)
 
 SELF_MANAGEMENT_MCP_MOUNT_PATH = "/mcp"
 _MCP_USER_ID_STATE_KEY = "self_management_mcp_user_id"
+SELF_MANAGEMENT_MCP_OPERATION_IDS = (
+    SELF_JOBS_LIST.operation_id,
+    SELF_JOBS_GET.operation_id,
+    SELF_JOBS_PAUSE.operation_id,
+)
 
 
 class SelfManagementMcpAuthMiddleware:
@@ -217,11 +227,27 @@ def build_self_management_mcp_http_app() -> Any:
     )
 
 
+def list_self_management_mcp_tool_definitions() -> (
+    tuple[SelfManagementToolDefinition, ...]
+):
+    """List tool definitions currently exposed by the FastMCP adapter."""
+
+    return tuple(
+        definition
+        for definition in list_self_management_tool_definitions(
+            surface=SelfManagementSurface.WEB_AGENT,
+        )
+        if definition.operation_id in SELF_MANAGEMENT_MCP_OPERATION_IDS
+    )
+
+
 __all__ = [
+    "SELF_MANAGEMENT_MCP_OPERATION_IDS",
     "SELF_MANAGEMENT_MCP_MOUNT_PATH",
     "SelfManagementMcpAuthMiddleware",
     "build_self_management_mcp_http_app",
     "build_self_management_mcp_server",
     "execute_self_management_mcp_operation",
+    "list_self_management_mcp_tool_definitions",
     "self_management_mcp_server",
 ]

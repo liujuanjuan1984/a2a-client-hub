@@ -100,6 +100,30 @@ Once the API server is running, an MCP client can connect to:
 http://localhost:8000/mcp/
 ```
 
+## Run the Swival-Backed Built-In Agent
+
+The backend also exposes a first-wave built-in self-management agent surface
+that uses `swival` as the runtime and the authenticated MCP surface as its tool
+backend.
+
+- Profile: `GET /api/v1/me/self-management/agent`
+- Run once: `POST /api/v1/me/self-management/agent:run`
+- Current built-in tool set: `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`
+
+Required environment variables:
+
+- `SELF_MANAGEMENT_SWIVAL_PROVIDER`
+- `SELF_MANAGEMENT_SWIVAL_MODEL`
+
+Optional environment variables:
+
+- `SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS`
+- `SELF_MANAGEMENT_SWIVAL_BASE_URL`
+- `SELF_MANAGEMENT_SWIVAL_API_KEY`
+- `SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT`
+- `SELF_MANAGEMENT_SWIVAL_MAX_TURNS`
+- `SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS`
+
 ## Backend Structure
 
 The backend now uses a practical feature-based structure for business-facing entrypoints and orchestration code.
