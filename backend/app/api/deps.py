@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.retry_after import append_retry_after_hint
 from app.core.config import settings
-from app.core.logging import get_logger, set_user_context
+from app.core.logging import get_logger, set_actor_context, set_user_context
 from app.core.security import verify_access_token
 from app.db.locking import (
     RetryableDbLockError,
@@ -24,6 +24,12 @@ from app.db.locking import (
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import cleanup_session_safely, run_with_new_session
+from app.features.agents_shared.actor_context import (
+    SelfManagementActorContext,
+    SelfManagementActorType,
+    SelfManagementAuthorizationError,
+    build_self_management_actor_context,
+)
 from app.features.auth import service as auth_service
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ws_ticket import (
@@ -97,6 +103,11 @@ async def get_current_user(
             session_factory=AsyncSessionLocal,
         )
         set_user_context(str(user.id))
+        set_actor_context(
+            principal_user_id=str(user.id),
+            actor_type=SelfManagementActorType.HUMAN_API.value,
+            admin_mode=False,
+        )
         return user
     except auth_service.UserNotFoundError as exc:
         raise HTTPException(
@@ -220,6 +231,11 @@ async def get_ws_ticket_user(
         )
         websocket.state.selected_subprotocol = protocol_selection.accepted_subprotocol
         set_user_context(str(user.id))
+        set_actor_context(
+            principal_user_id=str(user.id),
+            actor_type=SelfManagementActorType.HUMAN_API.value,
+            admin_mode=False,
+        )
         return user
     except RetryableDbLockError as exc:
         ops_metrics.increment_ws_ticket_lock_conflicts()
@@ -314,4 +330,50 @@ def get_current_admin_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The user doesn't have enough privileges",
         )
+    set_actor_context(
+        principal_user_id=str(current_user.id),
+        actor_type=SelfManagementActorType.HUMAN_API.value,
+        admin_mode=True,
+    )
     return current_user
+
+
+def get_current_self_management_actor(
+    current_user: User = Depends(get_current_user),
+) -> SelfManagementActorContext:
+    """Resolve the default authenticated actor for self-management operations."""
+
+    actor = build_self_management_actor_context(
+        user=current_user,
+        actor_type=SelfManagementActorType.HUMAN_API,
+    )
+    set_actor_context(
+        principal_user_id=str(actor.principal_user_id),
+        actor_type=actor.actor_type.value,
+        admin_mode=actor.admin_mode,
+    )
+    return actor
+
+
+def get_current_self_management_admin_actor(
+    current_user: User = Depends(get_current_user),
+) -> SelfManagementActorContext:
+    """Resolve an admin-mode actor for self-management operations."""
+
+    try:
+        actor = build_self_management_actor_context(
+            user=current_user,
+            actor_type=SelfManagementActorType.HUMAN_API,
+            admin_mode=True,
+        )
+    except SelfManagementAuthorizationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    set_actor_context(
+        principal_user_id=str(actor.principal_user_id),
+        actor_type=actor.actor_type.value,
+        admin_mode=actor.admin_mode,
+    )
+    return actor

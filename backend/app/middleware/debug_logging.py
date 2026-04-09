@@ -15,10 +15,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.logging import (
+    clear_actor_context,
     clear_user_context,
     get_logger,
+    reset_actor_context,
     reset_request_id,
     reset_user_context,
+    set_actor_context,
     set_request_id,
     set_user_context,
 )
@@ -40,6 +43,7 @@ class DebugLoggingMiddleware(BaseHTTPMiddleware):
         request_id = uuid.uuid4().hex[:8]
         token = set_request_id(request_id)
         user_token = clear_user_context()
+        actor_token = clear_actor_context()
         auth_header = request.headers.get("authorization")
         if auth_header:
             scheme, _, credentials = auth_header.partition(" ")
@@ -47,6 +51,11 @@ class DebugLoggingMiddleware(BaseHTTPMiddleware):
                 user_id = verify_access_token(credentials)
                 if user_id:
                     set_user_context(user_id)
+                    set_actor_context(
+                        principal_user_id=str(user_id),
+                        actor_type="human_api",
+                        admin_mode=False,
+                    )
                     request.state.user_id = user_id
         request.state.request_id = request_id
 
@@ -82,6 +91,7 @@ class DebugLoggingMiddleware(BaseHTTPMiddleware):
             cleanup_scheduled = True
             reset_request_id(token)
             reset_user_context(user_token)
+            reset_actor_context(actor_token)
 
         # Process the request
         try:
