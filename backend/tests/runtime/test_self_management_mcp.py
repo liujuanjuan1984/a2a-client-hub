@@ -36,8 +36,8 @@ async def _app_lifespan(_app: FastAPI):
 
 
 async def test_self_management_mcp_server_lists_first_wave_tools() -> None:
-    tools = await self_management_mcp_server.get_tools()
-    tool_names = {tool.name for tool in tools.values()}
+    tools = await self_management_mcp_server.list_tools()
+    tool_names = {tool.name for tool in tools}
 
     assert "self.agents.list" in tool_names
     assert "self.agents.get" in tool_names
@@ -48,8 +48,8 @@ async def test_self_management_mcp_server_lists_first_wave_tools() -> None:
 
 
 async def test_self_management_write_mcp_server_lists_write_tools() -> None:
-    tools = await self_management_write_mcp_server.get_tools()
-    tool_names = {tool.name for tool in tools.values()}
+    tools = await self_management_write_mcp_server.list_tools()
+    tool_names = {tool.name for tool in tools}
 
     assert "self.agents.update_config" in tool_names
     assert "self.jobs.pause" in tool_names
