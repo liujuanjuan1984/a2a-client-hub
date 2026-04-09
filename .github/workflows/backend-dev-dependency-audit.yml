@@ -1,4 +1,4 @@
-name: Dependency Audit (Dev)
+name: Backend Dev Dependency Audit
 
 on:
   workflow_dispatch:

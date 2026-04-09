@@ -1,4 +1,4 @@
-name: CI
+name: Repository Checks
 
 on:
   pull_request:
@@ -11,14 +11,14 @@ on:
 
 jobs:
   backend:
-    name: Backend Checks
+    name: Backend Verification
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
@@ -28,7 +28,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres # pragma: allowlist secret
     defaults:
       run:
         working-directory: backend
@@ -85,7 +85,7 @@ jobs:
         run: uv run pip-audit --requirement /tmp/backend-runtime-requirements.txt
 
   frontend:
-    name: Frontend Checks
+    name: Frontend Verification
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -1,20 +1,20 @@
 # Release Workflow
 
-This document describes the repository release automation defined in `.github/workflows/release-prepare.yml` and `.github/workflows/release.yml`.
+This document describes the repository release automation defined in `.github/workflows/create-release-preparation-pr.yml` and `.github/workflows/release.yml`.
 
 ## Trigger Model
 
 The repository now uses a two-stage release flow:
 
-1. A maintainer manually starts `Prepare Release`.
+1. A maintainer manually starts `Create Release Preparation PR`.
 2. The workflow opens a Draft PR that synchronizes version metadata.
-3. After that PR is merged into `master`, `Release` creates the Git tag and ensures the GitHub Release exists for the synchronized `master` commit.
+3. After that PR is merged into `master`, `Publish GitHub Release` creates the Git tag and ensures the GitHub Release exists for the synchronized `master` commit.
 
 This keeps the published tag aligned with the final merged commit that contains the authoritative version metadata.
 
-## Prepare Release
+## Create Release Preparation PR
 
-The preparation workflow is defined in `.github/workflows/release-prepare.yml` and is triggered manually with a target version, for example `1.3.2`.
+The preparation workflow is defined in `.github/workflows/create-release-preparation-pr.yml` and is triggered manually with a target version, for example `1.3.2`.
 
 It performs these steps:
 
@@ -24,7 +24,7 @@ It performs these steps:
 4. Validate the synchronized metadata with `scripts/sync_release_version.py --check`.
 5. Open a Draft PR with the synchronized version files.
 
-## Release
+## Publish GitHub Release
 
 The publishing workflow is defined in `.github/workflows/release.yml`.
 
@@ -63,7 +63,7 @@ The workflow currently checks and may update these files:
 ## Recommended Release Flow
 
 1. Choose the target version.
-2. Run `Prepare Release` with a version such as `1.3.2`.
+2. Run `Create Release Preparation PR` with a version such as `1.3.2`.
 3. Review and merge the auto-created Draft PR.
 4. Let `.github/workflows/release.yml` create the Git tag and GitHub Release from the merged `master` commit.
 
@@ -71,7 +71,7 @@ The workflow currently checks and may update these files:
 
 If the release workflow succeeds in pushing the tag but fails before the GitHub Release is created, use the manual reconciliation path:
 
-1. Open the `Release` workflow in GitHub Actions.
+1. Open the `Publish GitHub Release` workflow in GitHub Actions.
 2. Choose `Run workflow`.
 3. Provide the existing release tag, for example `v1.3.2`.
 4. Run the workflow on `master`.
@@ -102,7 +102,7 @@ python3 scripts/sync_release_version.py --version 1.0.0 --write
 
 If synchronized metadata differs from the checked-in repository files, the preparation workflow automatically opens a Draft pull request to persist those changes.
 
-Current behavior in `.github/workflows/release-prepare.yml`:
+Current behavior in `.github/workflows/create-release-preparation-pr.yml`:
 
 - PR branch pattern: `release/version-<version>`
 - Commit title style: `chore(release): sync version metadata for <version> (#586)`

@@ -1,4 +1,4 @@
-name: Frontend Dependency Audit
+name: Frontend Dependency Audit and Auto-Fix
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   frontend-dependency-audit:
-    name: Frontend Dependency Audit
+    name: Audit frontend dependencies and propose fixes
     runs-on: ubuntu-latest
     defaults:
       run:
