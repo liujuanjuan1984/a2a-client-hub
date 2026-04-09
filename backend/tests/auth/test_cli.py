@@ -74,6 +74,47 @@ async def test_cli_requires_login_for_job_commands(
     assert "Run `a2a-client-hub-cli login` first." in captured.err
 
 
+async def test_cli_write_commands_require_explicit_confirmation_in_non_tty_mode(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    user = await create_user(async_db_session, password=DEFAULT_TEST_PASSWORD)
+    agent = await create_a2a_agent(
+        async_db_session, user_id=user.id, suffix="cli-confirm"
+    )
+    task = await create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+    )
+    monkeypatch.setenv(
+        "A2A_CLIENT_HUB_CLI_SESSION_FILE",
+        str(tmp_path / "cli-session.json"),
+    )
+
+    assert (
+        await run_cli(
+            [
+                "login",
+                "--email",
+                user.email,
+                "--password",
+                DEFAULT_TEST_PASSWORD,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    exit_code = await run_cli(["jobs", "pause", str(task.id)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "requires explicit confirmation" in captured.err
+
+
 async def test_cli_jobs_commands_use_shared_gateway_and_jobs_service(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
@@ -175,3 +216,61 @@ async def test_cli_jobs_commands_use_shared_gateway_and_jobs_service(
     assert refreshed.prompt == "cli updated prompt"
     assert refreshed.enabled is True
     assert refreshed.time_point["time"] == "14:45"
+
+
+async def test_cli_update_schedule_validates_payload_shape(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    user = await create_user(async_db_session, password=DEFAULT_TEST_PASSWORD)
+    agent = await create_a2a_agent(
+        async_db_session, user_id=user.id, suffix="cli-schedule-validate"
+    )
+    task = await create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+    )
+    monkeypatch.setenv(
+        "A2A_CLIENT_HUB_CLI_SESSION_FILE",
+        str(tmp_path / "cli-session.json"),
+    )
+
+    assert (
+        await run_cli(
+            [
+                "login",
+                "--email",
+                user.email,
+                "--password",
+                DEFAULT_TEST_PASSWORD,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    missing_fields_exit_code = await run_cli(
+        ["jobs", "update-schedule", str(task.id), "--confirm"]
+    )
+    missing_fields_output = capsys.readouterr()
+
+    assert missing_fields_exit_code == 1
+    assert "requires at least one schedule field to change" in missing_fields_output.err
+
+    invalid_json_exit_code = await run_cli(
+        [
+            "jobs",
+            "update-schedule",
+            str(task.id),
+            "--time-point-json",
+            "not-json",
+            "--confirm",
+        ]
+    )
+    invalid_json_output = capsys.readouterr()
+
+    assert invalid_json_exit_code == 1
+    assert "must be valid JSON object text" in invalid_json_output.err

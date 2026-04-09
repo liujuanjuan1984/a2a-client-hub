@@ -413,12 +413,18 @@ async def _handle_jobs_update_schedule(args: argparse.Namespace) -> None:
         confirmed=bool(args.confirm),
     )
     task_id = UUID(cast(str, args.task_id))
+    cycle_type = cast(str | None, args.cycle_type)
+    schedule_timezone = cast(str | None, args.schedule_timezone)
     time_point = _parse_time_point(cast(str | None, args.time_point_json))
+    if cycle_type is None and time_point is None and schedule_timezone is None:
+        raise CliCommandError(
+            "`jobs update-schedule` requires at least one schedule field to change.",
+        )
     async with AsyncSessionLocal() as db:
         _, user, gateway = await _build_cli_gateway(db)
         timezone_str = cast(
             str,
-            cast(str | None, args.schedule_timezone) or user.timezone or "UTC",
+            schedule_timezone or user.timezone or "UTC",
         )
         with _bind_cli_actor_context(user):
             task = await self_management_jobs_service.update_schedule(
@@ -426,7 +432,7 @@ async def _handle_jobs_update_schedule(args: argparse.Namespace) -> None:
                 gateway=gateway,
                 current_user=user,
                 task_id=task_id,
-                cycle_type=cast(str | None, args.cycle_type),
+                cycle_type=cycle_type,
                 time_point=time_point,
                 timezone_str=timezone_str,
             )
