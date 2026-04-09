@@ -8,6 +8,8 @@ from fastapi import HTTPException
 from app.api.deps import (
     get_current_self_management_actor,
     get_current_self_management_admin_actor,
+    get_current_self_management_admin_tool_gateway,
+    get_current_self_management_tool_gateway,
 )
 from app.db.models.user import User
 from app.features.agents_shared.actor_context import (
@@ -17,6 +19,10 @@ from app.features.agents_shared.actor_context import (
     SelfManagementResource,
     SelfManagementScope,
     build_self_management_actor_context,
+)
+from app.features.agents_shared.tool_gateway import (
+    SelfManagementOperation,
+    SelfManagementToolGateway,
 )
 
 
@@ -133,6 +139,77 @@ def test_actor_context_builds_canonical_audit_fields() -> None:
     assert audit_fields["delegated_by"] == "web_built_in_agent"
 
 
+def test_tool_gateway_authorize_returns_canonical_audit_fields() -> None:
+    user = _build_user(is_superuser=True)
+    actor = build_self_management_actor_context(
+        user=user,
+        actor_type=SelfManagementActorType.HUMAN_API,
+        admin_mode=True,
+    )
+    gateway = SelfManagementToolGateway(actor)
+
+    audit_fields = gateway.authorize(
+        operation=SelfManagementOperation(
+            scope=SelfManagementScope.ADMIN,
+            resource=SelfManagementResource.AGENTS,
+            action=SelfManagementAction.READ,
+            event_name="hub_agent.list.requested",
+        ),
+        resource_id="shared-catalog",
+    ).as_log_extra()
+
+    assert audit_fields["audit_event_name"] == "hub_agent.list.requested"
+    assert audit_fields["resource_type"] == "agents"
+    assert audit_fields["resource_action"] == "read"
+    assert audit_fields["resource_id"] == "shared-catalog"
+
+
+@pytest.mark.asyncio
+async def test_tool_gateway_execute_returns_result_and_audit_fields() -> None:
+    user = _build_user(is_superuser=False)
+    actor = build_self_management_actor_context(
+        user=user,
+        actor_type=SelfManagementActorType.HUMAN_API,
+    )
+    gateway = SelfManagementToolGateway(actor)
+
+    executed = await gateway.execute(
+        operation=SelfManagementOperation(
+            scope=SelfManagementScope.SELF,
+            resource=SelfManagementResource.JOBS,
+            action=SelfManagementAction.WRITE,
+            event_name="job.update.requested",
+        ),
+        resource_id="job-123",
+        handler=lambda: _return_value("ok"),
+    )
+
+    assert executed.result == "ok"
+    assert executed.audit_fields.event_name == "job.update.requested"
+    assert executed.audit_fields.resource_id == "job-123"
+
+
+def test_tool_gateway_rejects_unauthorized_admin_operation() -> None:
+    user = _build_user(is_superuser=False)
+    actor = build_self_management_actor_context(
+        user=user,
+        actor_type=SelfManagementActorType.HUMAN_API,
+    )
+    gateway = SelfManagementToolGateway(actor)
+
+    with pytest.raises(SelfManagementAuthorizationError) as exc_info:
+        gateway.authorize(
+            operation=SelfManagementOperation(
+                scope=SelfManagementScope.ADMIN,
+                resource=SelfManagementResource.AGENTS,
+                action=SelfManagementAction.WRITE,
+                event_name="hub_agent.update.requested",
+            )
+        )
+
+    assert str(exc_info.value) == "Actor is not allowed to perform admin:agents:write"
+
+
 def test_self_management_actor_dependency_returns_default_human_api_actor() -> None:
     user = _build_user(is_superuser=False)
 
@@ -143,6 +220,17 @@ def test_self_management_actor_dependency_returns_default_human_api_actor() -> N
     assert actor.principal_user_id == user.id
 
 
+def test_self_management_tool_gateway_dependency_wraps_default_actor() -> None:
+    user = _build_user(is_superuser=False)
+
+    gateway = get_current_self_management_tool_gateway(
+        actor=get_current_self_management_actor(current_user=user)
+    )
+
+    assert gateway.actor.actor_type == SelfManagementActorType.HUMAN_API
+    assert gateway.actor.admin_mode is False
+
+
 def test_self_management_admin_actor_dependency_rejects_non_superuser() -> None:
     user = _build_user(is_superuser=False)
 
@@ -151,3 +239,18 @@ def test_self_management_admin_actor_dependency_rejects_non_superuser() -> None:
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Admin mode requires superuser privileges"
+
+
+def test_self_management_admin_tool_gateway_dependency_wraps_admin_actor() -> None:
+    user = _build_user(is_superuser=True)
+
+    gateway = get_current_self_management_admin_tool_gateway(
+        actor=get_current_self_management_admin_actor(current_user=user)
+    )
+
+    assert gateway.actor.actor_type == SelfManagementActorType.HUMAN_API
+    assert gateway.actor.admin_mode is True
+
+
+async def _return_value(value: str) -> str:
+    return value

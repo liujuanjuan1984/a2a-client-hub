@@ -30,6 +30,7 @@ from app.features.agents_shared.actor_context import (
     SelfManagementAuthorizationError,
     build_self_management_actor_context,
 )
+from app.features.agents_shared.tool_gateway import SelfManagementToolGateway
 from app.features.auth import service as auth_service
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ws_ticket import (
@@ -377,3 +378,21 @@ def get_current_self_management_admin_actor(
         admin_mode=actor.admin_mode,
     )
     return actor
+
+
+def get_current_self_management_tool_gateway(
+    actor: SelfManagementActorContext = Depends(get_current_self_management_actor),
+) -> SelfManagementToolGateway:
+    """Resolve the default self-management authorization gateway."""
+
+    return SelfManagementToolGateway(actor)
+
+
+def get_current_self_management_admin_tool_gateway(
+    actor: SelfManagementActorContext = Depends(
+        get_current_self_management_admin_actor
+    ),
+) -> SelfManagementToolGateway:
+    """Resolve the admin-mode self-management authorization gateway."""
+
+    return SelfManagementToolGateway(actor)
