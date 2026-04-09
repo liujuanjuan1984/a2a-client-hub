@@ -17,7 +17,12 @@ from app.features.agents_shared.self_management_mcp import (
     self_management_mcp_server,
 )
 from app.main import combine_lifespans
-from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
+from tests.support.utils import (
+    create_a2a_agent,
+    create_conversation_thread,
+    create_schedule_task,
+    create_user,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -27,13 +32,15 @@ async def _app_lifespan(_app: FastAPI):
     yield
 
 
-async def test_self_management_mcp_server_lists_first_wave_job_tools() -> None:
+async def test_self_management_mcp_server_lists_first_wave_tools() -> None:
     tools = await self_management_mcp_server.get_tools()
     tool_names = {tool.name for tool in tools.values()}
 
     assert "self.jobs.list" in tool_names
     assert "self.jobs.get" in tool_names
     assert "self.jobs.pause" in tool_names
+    assert "self.sessions.list" in tool_names
+    assert "self.sessions.get" in tool_names
 
 
 async def test_execute_self_management_mcp_operation_returns_swival_envelope(
@@ -69,6 +76,39 @@ async def test_execute_self_management_mcp_operation_returns_swival_envelope(
     assert any(item["id"] == str(task.id) for item in list_result["result"]["items"])
     assert get_result["ok"] is True
     assert get_result["result"]["job"]["prompt"] == "mcp prompt"
+
+
+async def test_execute_self_management_mcp_operation_supports_sessions(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="MCP Session",
+    )
+
+    list_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.list",
+        arguments={"page": 1, "size": 20},
+        db=async_db_session,
+    )
+    get_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.get",
+        arguments={"conversation_id": str(thread.id)},
+        db=async_db_session,
+    )
+
+    assert list_result["ok"] is True
+    assert any(
+        item["conversation_id"] == str(thread.id)
+        for item in list_result["result"]["items"]
+    )
+    assert get_result["ok"] is True
+    assert get_result["result"]["session"]["conversation_id"] == str(thread.id)
+    assert get_result["result"]["session"]["title"] == "MCP Session"
 
 
 async def test_self_management_mcp_http_app_requires_bearer_auth(

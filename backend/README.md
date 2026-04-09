@@ -92,7 +92,9 @@ This is intended for agent runtimes such as `swival`, not for direct browser use
 - Mounted path: `/mcp`
 - Transport: HTTP SSE
 - Auth: standard hub bearer token in `Authorization: Bearer <token>`
-- First-wave MCP tools: `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`
+- First-wave MCP tools:
+  `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`,
+  `self.sessions.list`, `self.sessions.get`
 
 Once the API server is running, an MCP client can connect to:
 
@@ -108,7 +110,9 @@ backend.
 
 - Profile: `GET /api/v1/me/self-management/agent`
 - Run once: `POST /api/v1/me/self-management/agent:run`
-- Current built-in tool set: `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`
+- Current built-in tool set:
+  `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`,
+  `self.sessions.list`, `self.sessions.get`
 
 Required environment variables:
 

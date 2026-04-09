@@ -81,11 +81,13 @@ async def test_built_in_agent_profile_only_exposes_jobs_mcp_tools(
     profile = self_management_built_in_agent_service.get_profile()
 
     assert profile.configured is True
-    assert profile.resources == ("jobs",)
+    assert profile.resources == ("jobs", "sessions")
     assert [item.operation_id for item in profile.tool_definitions] == [
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
+        "self.sessions.get",
+        "self.sessions.list",
     ]
 
 
@@ -106,11 +108,13 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert result.answer == "Built-in agent reply"
     assert result.exhausted is False
     assert result.runtime == "swival"
-    assert result.resources == ("jobs",)
+    assert result.resources == ("jobs", "sessions")
     assert result.tool_names == (
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
+        "self.sessions.get",
+        "self.sessions.list",
     )
     assert _FakeSwivalSession.last_message == "List my jobs"
     assert _FakeSwivalSession.last_init_kwargs is not None
@@ -182,17 +186,25 @@ async def test_built_in_agent_run_route_returns_swival_result(
         )
 
     assert profile_response.status_code == 200
-    assert profile_response.json()["resources"] == ["jobs"]
+    assert profile_response.json()["resources"] == ["jobs", "sessions"]
     assert [item["operation_id"] for item in profile_response.json()["tools"]] == [
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
+        "self.sessions.get",
+        "self.sessions.list",
     ]
     assert run_response.status_code == 200
     assert run_response.json() == {
         "answer": "Built-in agent reply",
         "exhausted": False,
         "runtime": "swival",
-        "resources": ["jobs"],
-        "tools": ["self.jobs.get", "self.jobs.list", "self.jobs.pause"],
+        "resources": ["jobs", "sessions"],
+        "tools": [
+            "self.jobs.get",
+            "self.jobs.list",
+            "self.jobs.pause",
+            "self.sessions.get",
+            "self.sessions.list",
+        ],
     }
