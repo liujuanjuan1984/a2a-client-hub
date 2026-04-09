@@ -53,6 +53,9 @@ async def create_a2a_agent(
     card_url: str | None = None,
     auth_type: str = "none",
     enabled: bool = True,
+    tags: list[str] | None = None,
+    extra_headers: dict[str, str] | None = None,
+    invoke_metadata_defaults: dict[str, str] | None = None,
 ) -> A2AAgent:
     agent = A2AAgent(
         user_id=user_id,
@@ -60,6 +63,9 @@ async def create_a2a_agent(
         card_url=card_url or f"https://example.com/{suffix}",
         auth_type=auth_type,
         enabled=enabled,
+        tags=tags,
+        extra_headers=extra_headers,
+        invoke_metadata_defaults=invoke_metadata_defaults,
     )
     session.add(agent)
     await session.commit()

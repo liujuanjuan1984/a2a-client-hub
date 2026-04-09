@@ -73,13 +73,16 @@ uv run a2a-client-hub jobs list
 uv run a2a-client-hub jobs pause <job_id> --confirm
 uv run a2a-client-hub sessions list
 uv run a2a-client-hub sessions get <conversation_id>
+uv run a2a-client-hub agents list
+uv run a2a-client-hub agents get <agent_id>
+uv run a2a-client-hub agents update-config <agent_id> --name 'Updated Agent' --confirm
 ```
 
 Notes:
 
 - The CLI stores its session token under `~/.config/a2a-client-hub/cli-session.json` by default.
 - Set `A2A_CLIENT_HUB_CLI_SESSION_FILE` to override that location.
-- First-wave CLI support currently targets current-user jobs and sessions.
+- First-wave CLI support currently targets current-user jobs, sessions, and personal agents.
 
 ## Backend Structure
 

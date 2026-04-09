@@ -332,3 +332,144 @@ async def test_cli_sessions_commands_use_shared_gateway_and_sessions_service(
     assert get_output["session"]["conversation_id"] == str(scheduled_thread.id)
     assert get_output["session"]["source"] == "scheduled"
     assert get_output["session"]["title"] == "CLI Scheduled Session"
+
+
+async def test_cli_agents_commands_use_shared_gateway_and_agents_service(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    user = await create_user(async_db_session, password=DEFAULT_TEST_PASSWORD)
+    first = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="cli-agent-a",
+        tags=["alpha"],
+    )
+    second = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="cli-agent-b",
+    )
+    monkeypatch.setenv(
+        "A2A_CLIENT_HUB_CLI_SESSION_FILE",
+        str(tmp_path / "cli-session.json"),
+    )
+
+    assert (
+        await run_cli(
+            [
+                "login",
+                "--email",
+                user.email,
+                "--password",
+                DEFAULT_TEST_PASSWORD,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    list_exit_code = await run_cli(
+        ["agents", "list", "--page", "1", "--size", "20", "--health-bucket", "all"]
+    )
+    list_output = json.loads(capsys.readouterr().out)
+
+    assert list_exit_code == 0
+    returned_ids = {item["id"] for item in list_output["items"]}
+    assert str(first.id) in returned_ids
+    assert str(second.id) in returned_ids
+
+    get_exit_code = await run_cli(["agents", "get", str(first.id)])
+    get_output = json.loads(capsys.readouterr().out)
+
+    assert get_exit_code == 0
+    assert get_output["agent"]["id"] == str(first.id)
+    assert get_output["agent"]["tags"] == ["alpha"]
+
+    update_exit_code = await run_cli(
+        [
+            "agents",
+            "update-config",
+            str(first.id),
+            "--name",
+            "CLI Updated Agent",
+            "--enabled",
+            "false",
+            "--tags-json",
+            '["cli","updated"]',
+            "--extra-headers-json",
+            '{"X-Test":"1"}',
+            "--invoke-metadata-defaults-json",
+            '{"model":"gpt-5"}',
+            "--confirm",
+        ]
+    )
+    update_output = json.loads(capsys.readouterr().out)
+
+    assert update_exit_code == 0
+    assert update_output["agent"]["name"] == "CLI Updated Agent"
+    assert update_output["agent"]["enabled"] is False
+    assert update_output["agent"]["tags"] == ["cli", "updated"]
+    assert update_output["agent"]["extra_headers"] == {"X-Test": "1"}
+    assert update_output["agent"]["invoke_metadata_defaults"] == {"model": "gpt-5"}
+
+
+async def test_cli_agent_update_config_validates_payload_shape(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    user = await create_user(async_db_session, password=DEFAULT_TEST_PASSWORD)
+    record = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="cli-agent-validate",
+    )
+    monkeypatch.setenv(
+        "A2A_CLIENT_HUB_CLI_SESSION_FILE",
+        str(tmp_path / "cli-session.json"),
+    )
+
+    assert (
+        await run_cli(
+            [
+                "login",
+                "--email",
+                user.email,
+                "--password",
+                DEFAULT_TEST_PASSWORD,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    missing_fields_exit_code = await run_cli(
+        ["agents", "update-config", str(record.id), "--confirm"]
+    )
+    missing_fields_output = capsys.readouterr()
+
+    assert missing_fields_exit_code == 1
+    assert (
+        "requires at least one supported config field to change"
+        in missing_fields_output.err
+    )
+
+    invalid_tags_exit_code = await run_cli(
+        [
+            "agents",
+            "update-config",
+            str(record.id),
+            "--tags-json",
+            '{"bad":"shape"}',
+            "--confirm",
+        ]
+    )
+    invalid_tags_output = capsys.readouterr()
+
+    assert invalid_tags_exit_code == 1
+    assert "must be valid JSON array text" not in invalid_tags_output.err
+    assert "`--tags-json` must decode to a JSON array." in invalid_tags_output.err

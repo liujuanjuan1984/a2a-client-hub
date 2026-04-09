@@ -32,6 +32,7 @@ from app.features.agents_shared.actor_context import (
     build_self_management_actor_context,
 )
 from app.features.agents_shared.capability_catalog import (
+    SELF_AGENTS_UPDATE_CONFIG,
     SELF_JOBS_PAUSE,
     SELF_JOBS_RESUME,
     SELF_JOBS_UPDATE_PROMPT,
@@ -49,6 +50,10 @@ from app.features.auth.service import (
     authenticate_user,
     get_active_user,
 )
+from app.features.personal_agents.self_management_agents_service import (
+    self_management_agents_service,
+)
+from app.features.personal_agents.service import A2AAgentRecord
 from app.features.schedules.self_management_jobs_service import (
     self_management_jobs_service,
 )
@@ -187,6 +192,38 @@ def _serialize_session(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _serialize_agent(record: A2AAgentRecord) -> dict[str, Any]:
+    return {
+        "id": str(record.id),
+        "name": record.name,
+        "card_url": record.card_url,
+        "auth_type": record.auth_type,
+        "auth_header": record.auth_header,
+        "auth_scheme": record.auth_scheme,
+        "enabled": record.enabled,
+        "health_status": record.health_status,
+        "consecutive_health_check_failures": record.consecutive_health_check_failures,
+        "last_health_check_at": (
+            record.last_health_check_at.isoformat()
+            if record.last_health_check_at is not None
+            else None
+        ),
+        "last_successful_health_check_at": (
+            record.last_successful_health_check_at.isoformat()
+            if record.last_successful_health_check_at is not None
+            else None
+        ),
+        "last_health_check_error": record.last_health_check_error,
+        "tags": list(record.tags),
+        "extra_headers": dict(record.extra_headers),
+        "invoke_metadata_defaults": dict(record.invoke_metadata_defaults),
+        "token_last4": record.token_last4,
+        "username_hint": record.username_hint,
+        "created_at": str(record.created_at),
+        "updated_at": str(record.updated_at),
+    }
+
+
 def _parse_time_point(raw: str | None) -> dict[str, object] | None:
     if raw is None:
         return None
@@ -199,6 +236,65 @@ def _parse_time_point(raw: str | None) -> dict[str, object] | None:
     if not isinstance(parsed, dict):
         raise CliCommandError("`--time-point-json` must decode to a JSON object.")
     return cast(dict[str, object], parsed)
+
+
+def _parse_json_object(
+    *,
+    raw: str | None,
+    option_name: str,
+) -> dict[str, str] | None:
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise CliCommandError(
+            f"`{option_name}` must be valid JSON object text."
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise CliCommandError(f"`{option_name}` must decode to a JSON object.")
+    normalized: dict[str, str] = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise CliCommandError(
+                f"`{option_name}` must contain only string keys and string values."
+            )
+        normalized[key] = value
+    return normalized
+
+
+def _parse_json_string_list(
+    *,
+    raw: str | None,
+    option_name: str,
+) -> list[str] | None:
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise CliCommandError(
+            f"`{option_name}` must be valid JSON array text."
+        ) from exc
+    if not isinstance(parsed, list):
+        raise CliCommandError(f"`{option_name}` must decode to a JSON array.")
+    normalized: list[str] = []
+    for item in parsed:
+        if not isinstance(item, str):
+            raise CliCommandError(f"`{option_name}` must contain only strings.")
+        normalized.append(item)
+    return normalized
+
+
+def _parse_optional_bool(raw: str | None) -> bool | None:
+    if raw is None:
+        return None
+    normalized = raw.strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise CliCommandError("`--enabled` must be one of true/false/yes/no/1/0/on/off.")
 
 
 def _require_confirmation(
@@ -424,6 +520,107 @@ async def _handle_sessions_get(args: argparse.Namespace) -> None:
     _print_json({"session": _serialize_session(session_item)})
 
 
+async def _handle_agents_list(args: argparse.Namespace) -> None:
+    async with AsyncSessionLocal() as db:
+        _, user, gateway = await _build_cli_gateway(db)
+        with _bind_cli_actor_context(user):
+            items, total, counts = await self_management_agents_service.list_agents(
+                db=db,
+                gateway=gateway,
+                current_user=user,
+                page=cast(int, args.page),
+                size=cast(int, args.size),
+                health_bucket=cast(str, args.health_bucket),
+            )
+
+    pages = (total + cast(int, args.size) - 1) // cast(int, args.size)
+    _print_json(
+        {
+            "items": [_serialize_agent(item) for item in items],
+            "pagination": {
+                "page": cast(int, args.page),
+                "size": cast(int, args.size),
+                "total": total,
+                "pages": pages,
+            },
+            "meta": {
+                "counts": {
+                    "healthy": counts.healthy,
+                    "degraded": counts.degraded,
+                    "unavailable": counts.unavailable,
+                    "unknown": counts.unknown,
+                }
+            },
+        }
+    )
+
+
+async def _handle_agents_get(args: argparse.Namespace) -> None:
+    agent_id = UUID(cast(str, args.agent_id))
+    async with AsyncSessionLocal() as db:
+        _, user, gateway = await _build_cli_gateway(db)
+        with _bind_cli_actor_context(user):
+            record = await self_management_agents_service.get_agent(
+                db=db,
+                gateway=gateway,
+                current_user=user,
+                agent_id=agent_id,
+            )
+
+    _print_json({"agent": _serialize_agent(record)})
+
+
+async def _handle_agents_update_config(args: argparse.Namespace) -> None:
+    _require_confirmation(
+        operation_name=(
+            SELF_AGENTS_UPDATE_CONFIG.command_name
+            or SELF_AGENTS_UPDATE_CONFIG.operation_id
+        ),
+        confirmation_policy=SELF_AGENTS_UPDATE_CONFIG.confirmation_policy,
+        confirmed=bool(args.confirm),
+    )
+    name = cast(str | None, args.name)
+    enabled = _parse_optional_bool(cast(str | None, args.enabled))
+    tags = _parse_json_string_list(
+        raw=cast(str | None, args.tags_json), option_name="--tags-json"
+    )
+    extra_headers = _parse_json_object(
+        raw=cast(str | None, args.extra_headers_json),
+        option_name="--extra-headers-json",
+    )
+    invoke_metadata_defaults = _parse_json_object(
+        raw=cast(str | None, args.invoke_metadata_defaults_json),
+        option_name="--invoke-metadata-defaults-json",
+    )
+    if (
+        name is None
+        and enabled is None
+        and tags is None
+        and extra_headers is None
+        and invoke_metadata_defaults is None
+    ):
+        raise CliCommandError(
+            "`agents update-config` requires at least one supported config field to change.",
+        )
+    agent_id = UUID(cast(str, args.agent_id))
+    async with AsyncSessionLocal() as db:
+        _, user, gateway = await _build_cli_gateway(db)
+        with _bind_cli_actor_context(user):
+            record = await self_management_agents_service.update_config(
+                db=db,
+                gateway=gateway,
+                current_user=user,
+                agent_id=agent_id,
+                name=name,
+                enabled=enabled,
+                tags=tags,
+                extra_headers=extra_headers,
+                invoke_metadata_defaults=invoke_metadata_defaults,
+            )
+
+    _print_json({"agent": _serialize_agent(record)})
+
+
 async def _handle_jobs_resume(args: argparse.Namespace) -> None:
     _require_confirmation(
         operation_name=SELF_JOBS_RESUME.command_name or SELF_JOBS_RESUME.operation_id,
@@ -583,6 +780,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sessions_get_parser.add_argument("conversation_id")
 
+    agents_parser = subparsers.add_parser("agents", help="Manage current-user agents.")
+    agents_subparsers = agents_parser.add_subparsers(
+        dest="agents_command",
+        required=True,
+    )
+
+    agents_list_parser = agents_subparsers.add_parser("list", help="List agents.")
+    agents_list_parser.add_argument("--page", type=int, default=1)
+    agents_list_parser.add_argument("--size", type=int, default=20)
+    agents_list_parser.add_argument(
+        "--health-bucket",
+        choices=["all", "healthy", "degraded", "unavailable", "unknown", "attention"],
+        default="all",
+    )
+
+    agents_get_parser = agents_subparsers.add_parser("get", help="Read one agent.")
+    agents_get_parser.add_argument("agent_id")
+
+    agents_update_parser = agents_subparsers.add_parser(
+        "update-config",
+        help="Update a constrained subset of one agent config.",
+    )
+    agents_update_parser.add_argument("agent_id")
+    agents_update_parser.add_argument("--name")
+    agents_update_parser.add_argument("--enabled")
+    agents_update_parser.add_argument("--tags-json")
+    agents_update_parser.add_argument("--extra-headers-json")
+    agents_update_parser.add_argument("--invoke-metadata-defaults-json")
+    agents_update_parser.add_argument("--confirm", action="store_true")
+
     return parser
 
 
@@ -632,6 +859,17 @@ async def run_cli(argv: Sequence[str] | None = None) -> int:
                 return 0
             if sessions_command == "get":
                 await _handle_sessions_get(args)
+                return 0
+        if command == "agents":
+            agents_command = cast(str, args.agents_command)
+            if agents_command == "list":
+                await _handle_agents_list(args)
+                return 0
+            if agents_command == "get":
+                await _handle_agents_get(args)
+                return 0
+            if agents_command == "update-config":
+                await _handle_agents_update_config(args)
                 return 0
     except CliCommandError as exc:
         sys.stderr.write(f"{exc}\n")
