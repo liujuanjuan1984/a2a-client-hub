@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import importlib
+import shutil
 import sys
 import threading
 import time
@@ -203,10 +205,8 @@ class SelfManagementBuiltInAgentService:
         )
 
     def is_configured(self) -> bool:
-        return bool(
-            (settings.self_management_swival_provider or "").strip()
-            and (settings.self_management_swival_model or "").strip()
-            and (settings.self_management_swival_mcp_base_url or "").strip()
+        return (
+            self._has_required_runtime_configuration() and self._is_swival_importable()
         )
 
     async def run(
@@ -1006,16 +1006,10 @@ class SelfManagementBuiltInAgentService:
                 return
 
     def _load_swival_session_cls(self) -> type[Any]:
-        for raw_path in settings.self_management_swival_import_paths:
-            candidate = raw_path.strip()
-            if not candidate:
-                continue
-            resolved = str(Path(candidate).expanduser().resolve())
-            if resolved not in sys.path:
-                sys.path.insert(0, resolved)
+        self._inject_swival_import_paths()
 
         try:
-            module = __import__("swival", fromlist=["Session"])
+            module = importlib.import_module("swival")
         except ImportError as exc:
             raise SelfManagementBuiltInAgentUnavailableError(
                 "swival is not installed or not importable for the built-in agent runtime."
@@ -1060,6 +1054,97 @@ class SelfManagementBuiltInAgentService:
             True,
         )
         setattr(module, "_mcp_tool_to_openai", _patched_mcp_tool_to_openai)
+
+    def _has_required_runtime_configuration(self) -> bool:
+        return bool(
+            (settings.self_management_swival_provider or "").strip()
+            and (settings.self_management_swival_model or "").strip()
+            and (settings.self_management_swival_mcp_base_url or "").strip()
+        )
+
+    def _is_swival_importable(self) -> bool:
+        loaded_module = sys.modules.get("swival")
+        if (
+            loaded_module is not None
+            and getattr(loaded_module, "Session", None) is not None
+        ):
+            return True
+
+        try:
+            importlib.import_module("swival")
+            return True
+        except ImportError:
+            pass
+
+        for candidate in self._resolve_swival_import_paths():
+            if candidate not in sys.path:
+                sys.path.insert(0, candidate)
+            try:
+                importlib.import_module("swival")
+                return True
+            except ImportError:
+                continue
+
+        return False
+
+    def _inject_swival_import_paths(self) -> None:
+        for candidate in self._resolve_swival_import_paths():
+            if candidate not in sys.path:
+                sys.path.insert(0, candidate)
+
+    def _resolve_swival_import_paths(self) -> list[str]:
+        resolved_paths: list[str] = []
+        seen: set[str] = set()
+        for raw_path in settings.self_management_swival_import_paths:
+            candidate = raw_path.strip()
+            if not candidate:
+                continue
+            resolved = str(Path(candidate).expanduser().resolve())
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            resolved_paths.append(resolved)
+
+        for discovered in self._discover_swival_tool_import_paths():
+            if discovered in seen:
+                continue
+            seen.add(discovered)
+            resolved_paths.append(discovered)
+
+        return resolved_paths
+
+    def _discover_swival_tool_import_paths(self) -> list[str]:
+        executable_setting = (
+            settings.self_management_swival_tool_executable or ""
+        ).strip()
+        executable_path: str | None = None
+        if executable_setting:
+            candidate = Path(executable_setting).expanduser()
+            if candidate.exists():
+                executable_path = str(candidate.resolve())
+            else:
+                executable_path = shutil.which(executable_setting)
+        else:
+            executable_path = shutil.which("swival")
+
+        if not executable_path:
+            return []
+
+        resolved_executable = Path(executable_path).expanduser().resolve()
+        venv_bin_dir = resolved_executable.parent
+        if venv_bin_dir.name not in {"bin", "Scripts"}:
+            return []
+
+        venv_root = venv_bin_dir.parent
+        candidate_paths: list[str] = []
+        for site_packages in sorted(venv_root.glob("lib/python*/site-packages")):
+            candidate_paths.append(str(site_packages.resolve()))
+
+        windows_site_packages = venv_root / "Lib" / "site-packages"
+        if windows_site_packages.exists():
+            candidate_paths.append(str(windows_site_packages.resolve()))
+
+        return candidate_paths
 
 
 self_management_built_in_agent_service = SelfManagementBuiltInAgentService()

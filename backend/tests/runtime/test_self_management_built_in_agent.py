@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -91,6 +92,11 @@ def _configure_swival_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         settings,
+        "self_management_swival_tool_executable",
+        None,
+    )
+    monkeypatch.setattr(
+        settings,
         "self_management_swival_base_url",
         "https://example.com/v1",
     )
@@ -137,6 +143,58 @@ async def test_built_in_agent_profile_exposes_full_available_tool_surface(
         "self.sessions.get",
         "self.sessions.list",
     ]
+
+
+async def test_built_in_agent_profile_reports_unconfigured_without_importable_swival(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    monkeypatch.setattr(
+        self_management_built_in_agent_service,
+        "_is_swival_importable",
+        lambda: False,
+    )
+
+    profile = self_management_built_in_agent_service.get_profile()
+
+    assert profile.configured is False
+
+
+async def test_built_in_agent_loads_swival_from_tool_installed_site_packages(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+
+    tool_root = tmp_path / "tool-runtime"
+    executable = tool_root / "bin" / "swival"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    site_packages = tool_root / "lib" / "python3.13" / "site-packages"
+    package_dir = site_packages / "swival"
+    package_dir.mkdir(parents=True)
+    package_dir.joinpath("__init__.py").write_text(
+        "class Session:\n"
+        "    def __init__(self, **kwargs):\n"
+        "        self.kwargs = kwargs\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        settings,
+        "self_management_swival_tool_executable",
+        str(executable),
+    )
+    monkeypatch.delitem(sys.modules, "swival", raising=False)
+
+    session_cls = self_management_built_in_agent_service._load_swival_session_cls()
+
+    assert session_cls.__name__ == "Session"
+    assert str(site_packages.resolve()) in sys.path
 
 
 async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(

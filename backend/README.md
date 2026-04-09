@@ -143,6 +143,7 @@ Required environment variables:
 Optional environment variables:
 
 - `SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS`
+- `SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE`
 - `SELF_MANAGEMENT_SWIVAL_BASE_URL`
 - `SELF_MANAGEMENT_SWIVAL_API_KEY`
 - `SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT`
@@ -161,12 +162,26 @@ export SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL=http://127.0.0.1:8000
 
 Notes:
 
+- Preferred production deployment: install the exact `swival` build that you
+  intend to run into the backend Python environment so `uv run python -c "import swival"`
+  succeeds directly.
+- If you currently ship a locally patched `swival` through `uv tool install`,
+  set `SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE` to that tool binary (prefer an
+  absolute path). The backend will resolve the tool-managed virtualenv's
+  `site-packages` and import `swival` from there as a compatibility fallback.
+- `SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS` remains available as a last-resort
+  development escape hatch, but it is less stable than installing an exact
+  wheel into the backend environment or resolving from an explicitly managed
+  tool executable.
 - For Gemini, prefer `SELF_MANAGEMENT_SWIVAL_PROVIDER=google` instead of `generic`.
 - Let `swival` resolve the API key from `GEMINI_API_KEY` or `OPENAI_API_KEY`.
 - `SELF_MANAGEMENT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
   overriding the default Google OpenAI-compatible endpoint.
 - `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
   built-in agent no longer derives its MCP target from request headers.
+- The built-in profile now reports `configured=true` only when the required
+  runtime settings are present and `swival` is actually importable from the
+  backend process.
 - Built-in agent write tools are disabled by default and only become available
   for runs that explicitly set `allow_write_tools=true`.
 - Built-in runs now bind their `conversationId` to the normal sessions domain:

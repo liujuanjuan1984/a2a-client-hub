@@ -849,6 +849,11 @@ class Settings(BaseSettings):
         alias="SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS",
         description="Optional extra import roots used before importing swival for the built-in self-management agent runtime.",
     )
+    self_management_swival_tool_executable: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE",
+        description="Optional absolute path or command name used to discover a uv tool-installed swival runtime when the backend environment cannot import swival directly.",
+    )
     self_management_swival_provider: str | None = Field(
         default=None,
         alias="SELF_MANAGEMENT_SWIVAL_PROVIDER",
