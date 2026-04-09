@@ -29,6 +29,7 @@ from app.features.agents_shared.capability_catalog import (
 )
 from app.features.agents_shared.tool_gateway import (
     SelfManagementOperation,
+    SelfManagementSurface,
     SelfManagementToolGateway,
 )
 
@@ -153,7 +154,7 @@ def test_tool_gateway_authorize_returns_canonical_audit_fields() -> None:
         actor_type=SelfManagementActorType.HUMAN_API,
         admin_mode=True,
     )
-    gateway = SelfManagementToolGateway(actor)
+    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
 
     audit_fields = gateway.authorize(
         operation=SelfManagementOperation(
@@ -181,7 +182,7 @@ async def test_tool_gateway_execute_returns_result_and_audit_fields() -> None:
         user=user,
         actor_type=SelfManagementActorType.HUMAN_API,
     )
-    gateway = SelfManagementToolGateway(actor)
+    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
 
     executed = await gateway.execute(
         operation=SelfManagementOperation(
@@ -207,7 +208,7 @@ def test_tool_gateway_rejects_unauthorized_admin_operation() -> None:
         user=user,
         actor_type=SelfManagementActorType.HUMAN_API,
     )
-    gateway = SelfManagementToolGateway(actor)
+    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
 
     with pytest.raises(SelfManagementAuthorizationError) as exc_info:
         gateway.authorize(
@@ -221,6 +222,32 @@ def test_tool_gateway_rejects_unauthorized_admin_operation() -> None:
         )
 
     assert str(exc_info.value) == "Actor is not allowed to perform admin:agents:write"
+
+
+def test_tool_gateway_rejects_surface_not_exposed_by_operation() -> None:
+    user = _build_user(is_superuser=False)
+    actor = build_self_management_actor_context(
+        user=user,
+        actor_type=SelfManagementActorType.HUMAN_CLI,
+    )
+    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.CLI)
+
+    with pytest.raises(SelfManagementAuthorizationError) as exc_info:
+        gateway.authorize(
+            operation=SelfManagementOperation(
+                operation_id="self.jobs.rest_only",
+                scope=SelfManagementScope.SELF,
+                resource=SelfManagementResource.JOBS,
+                action=SelfManagementAction.READ,
+                event_name="self_job.list.requested",
+                surfaces=frozenset({SelfManagementSurface.REST}),
+            )
+        )
+
+    assert (
+        str(exc_info.value)
+        == "Operation `self.jobs.rest_only` is not exposed on `cli`."
+    )
 
 
 def test_self_management_actor_dependency_returns_default_human_api_actor() -> None:
@@ -242,6 +269,7 @@ def test_self_management_tool_gateway_dependency_wraps_default_actor() -> None:
 
     assert gateway.actor.actor_type == SelfManagementActorType.HUMAN_API
     assert gateway.actor.admin_mode is False
+    assert gateway.surface == SelfManagementSurface.REST
 
 
 def test_self_management_admin_actor_dependency_rejects_non_superuser() -> None:
@@ -263,6 +291,7 @@ def test_self_management_admin_tool_gateway_dependency_wraps_admin_actor() -> No
 
     assert gateway.actor.actor_type == SelfManagementActorType.HUMAN_API
     assert gateway.actor.admin_mode is True
+    assert gateway.surface == SelfManagementSurface.REST
 
 
 def test_first_wave_capability_catalog_marks_expected_write_confirmation() -> None:
@@ -281,6 +310,10 @@ def test_first_wave_capability_catalog_contains_expected_surfaces() -> None:
     assert "self.agents.update_config" in exposed_ids
     assert all(item.first_wave_exposed for item in FIRST_WAVE_EXPOSED_OPERATIONS)
     assert all(item.surfaces for item in FIRST_WAVE_EXPOSED_OPERATIONS)
+    assert all(
+        SelfManagementSurface.REST in item.surfaces
+        for item in FIRST_WAVE_EXPOSED_OPERATIONS
+    )
 
 
 def test_internal_admin_capability_is_not_first_wave_exposed() -> None:

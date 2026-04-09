@@ -13,6 +13,14 @@ from app.features.agents_shared.tool_gateway import (
     SelfManagementSurface,
 )
 
+_SELF_ENTRY_SURFACES = frozenset(
+    {
+        SelfManagementSurface.REST,
+        SelfManagementSurface.CLI,
+        SelfManagementSurface.WEB_AGENT,
+    }
+)
+
 SELF_AGENTS_LIST = SelfManagementOperation(
     operation_id="self.agents.list",
     scope=SelfManagementScope.SELF,
@@ -22,7 +30,7 @@ SELF_AGENTS_LIST = SelfManagementOperation(
     command_name="agents.list",
     tool_name="self.agents.list",
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="List the current user's agents.",
 )
 
@@ -35,7 +43,7 @@ SELF_AGENTS_GET = SelfManagementOperation(
     command_name="agents.get",
     tool_name="self.agents.get",
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Read one current-user agent in detail.",
 )
 
@@ -49,7 +57,7 @@ SELF_AGENTS_UPDATE_CONFIG = SelfManagementOperation(
     tool_name="self.agents.update_config",
     confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Update a constrained subset of the current user's agent config.",
 )
 
@@ -62,7 +70,7 @@ SELF_SESSIONS_LIST = SelfManagementOperation(
     command_name="sessions.list",
     tool_name="self.sessions.list",
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="List the current user's sessions.",
 )
 
@@ -75,7 +83,7 @@ SELF_SESSIONS_GET = SelfManagementOperation(
     command_name="sessions.get",
     tool_name="self.sessions.get",
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Read one current-user session in detail.",
 )
 
@@ -88,7 +96,7 @@ SELF_JOBS_LIST = SelfManagementOperation(
     command_name="jobs.list",
     tool_name="self.jobs.list",
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="List the current user's jobs.",
 )
 
@@ -101,7 +109,7 @@ SELF_JOBS_GET = SelfManagementOperation(
     command_name="jobs.get",
     tool_name="self.jobs.get",
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Read one current-user job in detail.",
 )
 
@@ -115,7 +123,7 @@ SELF_JOBS_PAUSE = SelfManagementOperation(
     tool_name="self.jobs.pause",
     confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Pause one current-user job.",
 )
 
@@ -129,7 +137,7 @@ SELF_JOBS_RESUME = SelfManagementOperation(
     tool_name="self.jobs.resume",
     confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Resume one current-user job.",
 )
 
@@ -143,7 +151,7 @@ SELF_JOBS_UPDATE_PROMPT = SelfManagementOperation(
     tool_name="self.jobs.update_prompt",
     confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Update the prompt of one current-user job.",
 )
 
@@ -157,7 +165,7 @@ SELF_JOBS_UPDATE_SCHEDULE = SelfManagementOperation(
     tool_name="self.jobs.update_schedule",
     confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
     first_wave_exposed=True,
-    surfaces=frozenset({SelfManagementSurface.CLI, SelfManagementSurface.WEB_AGENT}),
+    surfaces=_SELF_ENTRY_SURFACES,
     description="Update the schedule of one current-user job.",
 )
 

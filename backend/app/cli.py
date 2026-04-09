@@ -39,6 +39,7 @@ from app.features.agents_shared.capability_catalog import (
 )
 from app.features.agents_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
+    SelfManagementSurface,
     SelfManagementToolGateway,
 )
 from app.features.auth.service import (
@@ -228,7 +229,11 @@ async def _build_cli_gateway(
         user=user,
         actor_type=SelfManagementActorType.HUMAN_CLI,
     )
-    return session_state, user, SelfManagementToolGateway(actor)
+    return (
+        session_state,
+        user,
+        SelfManagementToolGateway(actor, surface=SelfManagementSurface.CLI),
+    )
 
 
 async def _handle_login(args: argparse.Namespace) -> None:

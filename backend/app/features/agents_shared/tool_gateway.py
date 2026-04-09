@@ -65,8 +65,14 @@ class AuthorizedExecution(Generic[_ResultT]):
 class SelfManagementToolGateway:
     """Authorization gateway shared by API, built-in agent, and CLI layers."""
 
-    def __init__(self, actor: SelfManagementActorContext) -> None:
+    def __init__(
+        self,
+        actor: SelfManagementActorContext,
+        *,
+        surface: SelfManagementSurface | None = None,
+    ) -> None:
         self.actor = actor
+        self.surface = surface
 
     def authorize(
         self,
@@ -85,6 +91,15 @@ class SelfManagementToolGateway:
             raise SelfManagementAuthorizationError(
                 "Actor is not allowed to perform "
                 f"{operation.scope.value}:{operation.resource.value}:{operation.action.value}"
+            )
+        if (
+            self.surface is not None
+            and operation.surfaces
+            and self.surface not in operation.surfaces
+        ):
+            raise SelfManagementAuthorizationError(
+                f"Operation `{operation.operation_id}` is not exposed on "
+                f"`{self.surface.value}`."
             )
 
         return self.actor.build_audit_fields(
