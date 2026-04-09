@@ -27,6 +27,12 @@ import {
   validateHubAgentCard,
   type HubA2AAgentUserResponse,
 } from "@/lib/api/hubA2aAgentsUser";
+import {
+  getSelfManagementBuiltInAgentProfile,
+  SELF_MANAGEMENT_BUILT_IN_AGENT_CARD_URL,
+  SELF_MANAGEMENT_BUILT_IN_AGENT_ID,
+  type SelfManagementBuiltInAgentProfileResponse,
+} from "@/lib/api/selfManagementAgent";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentConfig, useAgentStore } from "@/store/agents";
 
@@ -67,6 +73,24 @@ const toSharedAgentConfig = (agent: HubA2AAgentUserResponse): AgentConfig => ({
   source: "shared",
   name: agent.name,
   cardUrl: agent.card_url,
+  authType: "none",
+  bearerToken: "",
+  apiKeyHeader: "X-API-Key",
+  apiKeyValue: "",
+  basicUsername: "",
+  basicPassword: "",
+  extraHeaders: [],
+  invokeMetadataDefaults: [],
+  status: "idle",
+});
+
+const toSelfManagementBuiltInAgentConfig = (
+  profile: SelfManagementBuiltInAgentProfileResponse,
+): AgentConfig => ({
+  id: profile.id,
+  source: "shared",
+  name: profile.name,
+  cardUrl: SELF_MANAGEMENT_BUILT_IN_AGENT_CARD_URL,
   authType: "none",
   bearerToken: "",
   apiKeyHeader: "X-API-Key",
@@ -141,16 +165,23 @@ export function useAgentsCatalogQuery(enabled = true) {
         queryClient.getQueryData<AgentConfig[]>(queryKeys.agents.catalog()),
       );
 
-      const [personalResult, sharedResult] = await Promise.allSettled([
-        listAgents(1, 200),
-        listHubAgents(1, 200),
-      ]);
+      const [personalResult, sharedResult, selfManagementProfileResult] =
+        await Promise.allSettled([
+          listAgents(1, 200),
+          listHubAgents(1, 200),
+          getSelfManagementBuiltInAgentProfile(),
+        ]);
 
       if (
         personalResult.status === "rejected" &&
-        sharedResult.status === "rejected"
+        sharedResult.status === "rejected" &&
+        selfManagementProfileResult.status === "rejected"
       ) {
-        throw personalResult.reason ?? sharedResult.reason;
+        throw (
+          personalResult.reason ??
+          sharedResult.reason ??
+          selfManagementProfileResult.reason
+        );
       }
 
       const personalAgents =
@@ -161,10 +192,27 @@ export function useAgentsCatalogQuery(enabled = true) {
       const sharedAgents =
         sharedResult.status === "fulfilled"
           ? sharedResult.value.items.map(toSharedAgentConfig)
-          : previousAgents.filter((agent) => agent.source === "shared");
+          : previousAgents.filter(
+              (agent) =>
+                agent.source === "shared" &&
+                agent.id !== SELF_MANAGEMENT_BUILT_IN_AGENT_ID,
+            );
+
+      const previousSelfManagementAgents = previousAgents.filter(
+        (agent) => agent.id === SELF_MANAGEMENT_BUILT_IN_AGENT_ID,
+      );
+      const selfManagementAgents =
+        selfManagementProfileResult.status === "fulfilled" &&
+        selfManagementProfileResult.value.configured
+          ? [
+              toSelfManagementBuiltInAgentConfig(
+                selfManagementProfileResult.value,
+              ),
+            ]
+          : previousSelfManagementAgents;
 
       return mergeTransientAgentState(
-        [...personalAgents, ...sharedAgents],
+        [...personalAgents, ...sharedAgents, ...selfManagementAgents],
         previousAgents,
       );
     },

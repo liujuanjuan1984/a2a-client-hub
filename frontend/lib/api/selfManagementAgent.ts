@@ -1,0 +1,90 @@
+import type { PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
+import { apiRequest } from "@/lib/api/client";
+
+export const SELF_MANAGEMENT_BUILT_IN_AGENT_ID = "self-management-assistant";
+export const SELF_MANAGEMENT_BUILT_IN_AGENT_CARD_URL =
+  "builtin://self-management-assistant";
+
+export const isSelfManagementBuiltInAgent = (agentId?: string | null) =>
+  (agentId ?? "").trim() === SELF_MANAGEMENT_BUILT_IN_AGENT_ID;
+
+export type SelfManagementBuiltInAgentToolResponse = {
+  operation_id: string;
+  tool_name: string;
+  description: string;
+  confirmation_policy: string;
+};
+
+export type SelfManagementBuiltInAgentProfileResponse = {
+  id: string;
+  name: string;
+  description: string;
+  runtime: string;
+  configured: boolean;
+  resources: string[];
+  tools: SelfManagementBuiltInAgentToolResponse[];
+};
+
+type SelfManagementBuiltInAgentInterruptResponse = {
+  requestId: string;
+  type: "permission";
+  phase: "asked";
+  details: {
+    permission?: string | null;
+    patterns?: string[];
+    displayMessage?: string | null;
+  };
+};
+
+export type SelfManagementBuiltInAgentRunResponse = {
+  status: "completed" | "interrupted";
+  answer: string | null;
+  exhausted: boolean;
+  runtime: string;
+  resources: string[];
+  tools: string[];
+  write_tools_enabled: boolean;
+  interrupt?: SelfManagementBuiltInAgentInterruptResponse | null;
+};
+
+export const getSelfManagementBuiltInAgentProfile = () =>
+  apiRequest<SelfManagementBuiltInAgentProfileResponse>(
+    "/me/self-management/agent",
+  );
+
+export const runSelfManagementBuiltInAgent = (payload: {
+  message: string;
+  allow_write_tools?: boolean;
+}) =>
+  apiRequest<
+    SelfManagementBuiltInAgentRunResponse,
+    { message: string; allow_write_tools?: boolean }
+  >("/me/self-management/agent:run", {
+    method: "POST",
+    body: payload,
+  });
+
+export const replySelfManagementBuiltInAgentPermissionInterrupt = (payload: {
+  requestId: string;
+  reply: "once" | "always" | "reject";
+}) =>
+  apiRequest<
+    SelfManagementBuiltInAgentRunResponse,
+    { requestId: string; reply: "once" | "always" | "reject" }
+  >("/me/self-management/agent/interrupts/permission:reply", {
+    method: "POST",
+    body: payload,
+  });
+
+export const toPendingRuntimeInterrupt = (
+  interrupt: SelfManagementBuiltInAgentInterruptResponse,
+): PendingRuntimeInterrupt => ({
+  requestId: interrupt.requestId,
+  type: interrupt.type,
+  phase: interrupt.phase,
+  details: {
+    permission: interrupt.details.permission ?? null,
+    patterns: interrupt.details.patterns ?? [],
+    displayMessage: interrupt.details.displayMessage ?? null,
+  },
+});

@@ -35,6 +35,13 @@ type UseChatInterruptControllerParams = {
   pendingQuestionCount: number;
   sessionMetadata?: Record<string, unknown>;
   clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
+  onPermissionReplyOverride?:
+    | ((input: {
+        requestId: string;
+        reply: "once" | "always" | "reject";
+      }) => Promise<void>)
+    | null;
+  permissionReplySuccessMessage?: string | null;
 };
 
 export function useChatInterruptController({
@@ -46,6 +53,8 @@ export function useChatInterruptController({
   pendingQuestionCount,
   sessionMetadata,
   clearPendingInterrupt,
+  onPermissionReplyOverride,
+  permissionReplySuccessMessage,
 }: UseChatInterruptControllerParams) {
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
@@ -321,21 +330,26 @@ export function useChatInterruptController({
       runInterruptAction(
         `permission:${reply}`,
         async () => {
-          await replyPermissionInterrupt({
-            source: agentSource,
-            agentId: activeAgentId,
-            requestId,
-            reply,
-            metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
-          });
+          if (onPermissionReplyOverride) {
+            await onPermissionReplyOverride({ requestId, reply });
+          } else {
+            await replyPermissionInterrupt({
+              source: agentSource,
+              agentId: activeAgentId,
+              requestId,
+              reply,
+              metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+            });
+          }
           acknowledgeLocalInterruptResolution(
             requestId,
             "permission",
-            "replied",
+            reply === "reject" ? "rejected" : "replied",
           );
           clearPendingInterrupt(conversationId, requestId);
         },
-        "Permission reply delivered to upstream.",
+        permissionReplySuccessMessage ??
+          "Permission reply delivered to upstream.",
         {
           conversationId,
           requestId,
@@ -351,6 +365,8 @@ export function useChatInterruptController({
       pendingInterrupt,
       runInterruptAction,
       sessionMetadata,
+      onPermissionReplyOverride,
+      permissionReplySuccessMessage,
     ],
   );
 
