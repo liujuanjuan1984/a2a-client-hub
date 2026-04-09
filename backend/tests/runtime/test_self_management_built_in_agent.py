@@ -385,6 +385,31 @@ async def test_built_in_agent_run_route_returns_swival_result(
     }
 
 
+async def test_built_in_agent_run_route_invalid_conversation_id_returns_400(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent:run",
+            json={"conversationId": "test-1", "message": "List my jobs"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid_conversation_id"
+
+
 async def test_built_in_agent_run_persists_session_thread_and_messages(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
