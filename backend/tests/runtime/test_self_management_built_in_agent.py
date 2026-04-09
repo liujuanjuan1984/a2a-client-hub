@@ -9,10 +9,13 @@ import pytest
 from app.core.config import settings
 from app.core.security import (
     get_self_management_allowed_operations,
+    get_self_management_interrupt_message,
+    get_self_management_interrupt_tool_names,
     verify_jwt_token_claims,
 )
 from app.features.self_management_agent import router as self_management_agent_router
 from app.features.self_management_agent.service import (
+    _WRITE_APPROVAL_SENTINEL,
     self_management_built_in_agent_service,
 )
 from tests.support.api_utils import create_test_client
@@ -24,18 +27,23 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 class _FakeSwivalSession:
     last_init_kwargs: dict[str, object] | None = None
     last_message: str | None = None
+    next_answer: str = "Built-in agent reply"
+    run_call_count: int = 0
 
     def __init__(self, **kwargs: object) -> None:
         type(self).last_init_kwargs = dict(kwargs)
 
     def run(self, message: str) -> object:
         type(self).last_message = message
-        return SimpleNamespace(answer="Built-in agent reply", exhausted=False)
+        type(self).run_call_count += 1
+        return SimpleNamespace(answer=type(self).next_answer, exhausted=False)
 
 
 def _install_fake_swival(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeSwivalSession.last_init_kwargs = None
     _FakeSwivalSession.last_message = None
+    _FakeSwivalSession.next_answer = "Built-in agent reply"
+    _FakeSwivalSession.run_call_count = 0
     module = ModuleType("swival")
     module.Session = _FakeSwivalSession
     monkeypatch.setitem(sys.modules, "swival", module)
@@ -117,6 +125,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     )
 
     assert result.answer == "Built-in agent reply"
+    assert result.status == "completed"
     assert result.exhausted is False
     assert result.runtime == "swival"
     assert result.resources == ("agents", "jobs", "sessions")
@@ -129,6 +138,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
         "self.sessions.list",
     )
     assert result.write_tools_enabled is False
+    assert result.interrupt is None
     assert _FakeSwivalSession.last_message == "List my jobs"
     assert _FakeSwivalSession.last_init_kwargs is not None
     assert _FakeSwivalSession.last_init_kwargs["provider"] == "openai"
@@ -196,6 +206,7 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
         "self.sessions.get",
         "self.sessions.list",
     )
+    assert result.status == "completed"
     assert result.write_tools_enabled is True
     assert _FakeSwivalSession.last_init_kwargs is not None
     assert _FakeSwivalSession.last_init_kwargs["mcp_servers"]["a2a-client-hub"][
@@ -257,6 +268,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
     ]
     assert run_response.status_code == 200
     assert run_response.json() == {
+        "status": "completed",
         "answer": "Built-in agent reply",
         "exhausted": False,
         "runtime": "swival",
@@ -270,6 +282,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
             "self.sessions.list",
         ],
         "write_tools_enabled": False,
+        "interrupt": None,
     }
 
 
@@ -294,5 +307,174 @@ async def test_built_in_agent_run_route_allows_write_tools_only_when_explicitly_
         )
 
     assert run_response.status_code == 200
+    assert run_response.json()["status"] == "completed"
     assert run_response.json()["write_tools_enabled"] is True
     assert "self.jobs.pause" in run_response.json()["tools"]
+
+
+async def test_built_in_agent_read_only_run_can_raise_permission_interrupt(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+    user = await create_user(async_db_session)
+
+    result = await self_management_built_in_agent_service.run(
+        current_user=user,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+
+    assert result.status == "interrupted"
+    assert (
+        result.answer == "I can pause the requested job after you approve write access."
+    )
+    assert result.write_tools_enabled is False
+    assert result.interrupt is not None
+    assert result.interrupt.permission == "self-management-write"
+    assert result.interrupt.patterns == (
+        "self.agents.update_config",
+        "self.jobs.pause",
+    )
+    claims = verify_jwt_token_claims(
+        result.interrupt.request_id,
+        expected_type="self_management_interrupt",
+    )
+    assert claims is not None
+    assert claims.subject == str(user.id)
+    assert get_self_management_interrupt_message(claims) == "Pause my job"
+    assert get_self_management_interrupt_tool_names(claims) == (
+        "self.agents.update_config",
+        "self.jobs.pause",
+    )
+
+
+async def test_built_in_agent_permission_reply_once_resumes_with_write_tools(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    interrupt = self_management_built_in_agent_service._build_permission_interrupt(
+        current_user=user,
+        message="Pause my job",
+        answer="Need approval",
+    )
+
+    result = await self_management_built_in_agent_service.reply_permission_interrupt(
+        current_user=user,
+        request_id=interrupt.request_id,
+        reply="once",
+    )
+
+    assert result.status == "completed"
+    assert result.write_tools_enabled is True
+    assert "self.jobs.pause" in result.tool_names
+    assert _FakeSwivalSession.run_call_count == 1
+    assert _FakeSwivalSession.last_message == "Pause my job"
+    assert _FakeSwivalSession.last_init_kwargs is not None
+    assert _FakeSwivalSession.last_init_kwargs["mcp_servers"]["a2a-client-hub"][
+        "url"
+    ] == ("http://internal-mcp/mcp-write/")
+
+
+async def test_built_in_agent_permission_reply_reject_returns_no_change_result(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    interrupt = self_management_built_in_agent_service._build_permission_interrupt(
+        current_user=user,
+        message="Pause my job",
+        answer="Need approval",
+    )
+
+    result = await self_management_built_in_agent_service.reply_permission_interrupt(
+        current_user=user,
+        request_id=interrupt.request_id,
+        reply="reject",
+    )
+
+    assert result.status == "completed"
+    assert result.answer == "Write approval was rejected. No changes were made."
+    assert result.write_tools_enabled is False
+    assert result.exhausted is False
+    assert _FakeSwivalSession.run_call_count == 0
+
+
+async def test_built_in_agent_permission_reply_route_resumes_or_rejects(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        interrupt_response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent:run",
+            json={"message": "Pause my job"},
+        )
+        assert interrupt_response.status_code == 200
+        interrupt_payload = interrupt_response.json()
+        assert interrupt_payload["status"] == "interrupted"
+        request_id = interrupt_payload["interrupt"]["requestId"]
+
+        _FakeSwivalSession.next_answer = "Paused the requested job."
+        approve_response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent/interrupts/permission:reply",
+            json={"requestId": request_id, "reply": "once"},
+        )
+
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "completed"
+    assert approve_response.json()["write_tools_enabled"] is True
+    assert approve_response.json()["interrupt"] is None
+
+
+async def test_built_in_agent_permission_reply_route_rejects_other_user_interrupt(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    owner = await create_user(async_db_session)
+    other_user = await create_user(async_db_session)
+    interrupt = self_management_built_in_agent_service._build_permission_interrupt(
+        current_user=owner,
+        message="Pause my job",
+        answer="Need approval",
+    )
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=other_user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent/interrupts/permission:reply",
+            json={"requestId": interrupt.request_id, "reply": "once"},
+        )
+
+    assert response.status_code == 400
+    assert "does not belong to the current user" in response.json()["detail"]

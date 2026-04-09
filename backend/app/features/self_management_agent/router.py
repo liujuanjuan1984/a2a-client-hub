@@ -8,6 +8,9 @@ from app.api.deps import get_current_user
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
 from app.features.self_management_agent.schemas import (
+    SelfManagementBuiltInAgentInterrupt,
+    SelfManagementBuiltInAgentInterruptDetails,
+    SelfManagementBuiltInAgentInterruptReplyRequest,
     SelfManagementBuiltInAgentProfileResponse,
     SelfManagementBuiltInAgentRunRequest,
     SelfManagementBuiltInAgentRunResponse,
@@ -15,6 +18,7 @@ from app.features.self_management_agent.schemas import (
 )
 from app.features.self_management_agent.service import (
     SelfManagementBuiltInAgentConfigError,
+    SelfManagementBuiltInAgentRunResult,
     SelfManagementBuiltInAgentUnavailableError,
     self_management_built_in_agent_service,
 )
@@ -23,6 +27,34 @@ router = StrictAPIRouter(
     prefix="/me/self-management/agent",
     tags=["self-management-agent"],
 )
+
+
+def _to_run_response(
+    result: SelfManagementBuiltInAgentRunResult,
+) -> SelfManagementBuiltInAgentRunResponse:
+    interrupt = None
+    if result.interrupt is not None:
+        interrupt = SelfManagementBuiltInAgentInterrupt(
+            requestId=result.interrupt.request_id,
+            type="permission",
+            phase="asked",
+            details=SelfManagementBuiltInAgentInterruptDetails(
+                permission=result.interrupt.permission,
+                patterns=list(result.interrupt.patterns),
+                displayMessage=result.interrupt.display_message,
+            ),
+        )
+
+    return SelfManagementBuiltInAgentRunResponse(
+        status=result.status.value,
+        answer=result.answer,
+        exhausted=result.exhausted,
+        runtime=result.runtime,
+        resources=list(result.resources),
+        tools=list(result.tool_names),
+        write_tools_enabled=result.write_tools_enabled,
+        interrupt=interrupt,
+    )
 
 
 @router.get("", response_model=SelfManagementBuiltInAgentProfileResponse)
@@ -71,11 +103,34 @@ async def run_self_management_built_in_agent(
             detail=str(exc),
         ) from exc
 
-    return SelfManagementBuiltInAgentRunResponse(
-        answer=result.answer,
-        exhausted=result.exhausted,
-        runtime=result.runtime,
-        resources=list(result.resources),
-        tools=list(result.tool_names),
-        write_tools_enabled=result.write_tools_enabled,
-    )
+    return _to_run_response(result)
+
+
+@router.post(
+    "/interrupts/permission:reply",
+    response_model=SelfManagementBuiltInAgentRunResponse,
+)
+async def reply_self_management_built_in_agent_permission_interrupt(
+    payload: SelfManagementBuiltInAgentInterruptReplyRequest,
+    current_user: User = Depends(get_current_user),
+) -> SelfManagementBuiltInAgentRunResponse:
+    try:
+        result = (
+            await self_management_built_in_agent_service.reply_permission_interrupt(
+                current_user=current_user,
+                request_id=payload.request_id,
+                reply=payload.reply,
+            )
+        )
+    except SelfManagementBuiltInAgentConfigError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except SelfManagementBuiltInAgentUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return _to_run_response(result)

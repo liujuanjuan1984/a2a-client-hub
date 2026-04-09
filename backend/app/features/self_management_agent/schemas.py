@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -33,14 +35,46 @@ class SelfManagementBuiltInAgentRunRequest(BaseModel):
     allow_write_tools: bool = False
 
 
-class SelfManagementBuiltInAgentRunResponse(BaseModel):
-    """One completed built-in self-management agent run."""
+class SelfManagementBuiltInAgentInterruptDetails(BaseModel):
+    """Display-safe details for a built-in agent permission interrupt."""
 
+    permission: str | None = None
+    patterns: list[str] = Field(default_factory=list)
+    display_message: str | None = Field(alias="displayMessage", default=None)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class SelfManagementBuiltInAgentInterrupt(BaseModel):
+    """One interrupt emitted by the built-in self-management agent."""
+
+    request_id: str = Field(alias="requestId")
+    type: Literal["permission"]
+    phase: Literal["asked"]
+    details: SelfManagementBuiltInAgentInterruptDetails
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class SelfManagementBuiltInAgentRunResponse(BaseModel):
+    """One completed or interrupted built-in self-management agent run."""
+
+    status: Literal["completed", "interrupted"]
     answer: str | None
     exhausted: bool
     runtime: str
     resources: list[str]
     tools: list[str]
     write_tools_enabled: bool
+    interrupt: SelfManagementBuiltInAgentInterrupt | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+
+class SelfManagementBuiltInAgentInterruptReplyRequest(BaseModel):
+    """Permission interrupt reply payload for the built-in self-management agent."""
+
+    request_id: str = Field(alias="requestId", min_length=1)
+    reply: Literal["once", "always", "reject"]
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")

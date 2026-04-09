@@ -26,8 +26,11 @@ DUMMY_PASSWORD_HASH = "$2b$12$KIXeW.1LzBwvS./Hk.yQ1..E3.eD/.hLwQcE/M1zQ3X.qC0TqY
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
+SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE = "self_management_interrupt"
 SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM = "sm_ops"
 SELF_MANAGEMENT_DELEGATED_BY_CLAIM = "sm_delegate"
+SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM = "sm_interrupt_message"
+SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM = "sm_interrupt_tool_names"
 
 
 @dataclass(frozen=True)
@@ -355,6 +358,26 @@ def create_self_management_access_token(
     )
 
 
+def create_self_management_interrupt_token(
+    user_id: Union[str, UUID],
+    *,
+    message: str,
+    tool_names: Sequence[str],
+) -> str:
+    normalized_tool_names = sorted(
+        {str(tool_name).strip() for tool_name in tool_names if str(tool_name).strip()}
+    )
+    return create_jwt_token(
+        subject=str(user_id),
+        token_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
+        expires_in_seconds=settings.self_management_interrupt_ttl_seconds,
+        extra_claims={
+            SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM: message,
+            SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM: normalized_tool_names,
+        },
+    )
+
+
 def create_user_refresh_token(
     user_id: Union[str, UUID],
     *,
@@ -382,6 +405,14 @@ def verify_refresh_token_claims(token: str) -> Optional[VerifiedJwtClaims]:
     return verify_jwt_token_claims(token, expected_type=REFRESH_TOKEN_TYPE)
 
 
+def verify_self_management_interrupt_token_claims(
+    token: str,
+) -> Optional[VerifiedJwtClaims]:
+    return verify_jwt_token_claims(
+        token, expected_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE
+    )
+
+
 def get_self_management_allowed_operations(
     claims: VerifiedJwtClaims,
 ) -> frozenset[str]:
@@ -389,3 +420,20 @@ def get_self_management_allowed_operations(
     if not isinstance(raw_operations, list):
         return frozenset()
     return frozenset(str(item).strip() for item in raw_operations if str(item).strip())
+
+
+def get_self_management_interrupt_message(claims: VerifiedJwtClaims) -> str | None:
+    raw_message = claims.raw_payload.get(SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM)
+    if not isinstance(raw_message, str):
+        return None
+    message = raw_message.strip()
+    return message or None
+
+
+def get_self_management_interrupt_tool_names(
+    claims: VerifiedJwtClaims,
+) -> tuple[str, ...]:
+    raw_tool_names = claims.raw_payload.get(SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM)
+    if not isinstance(raw_tool_names, list):
+        return ()
+    return tuple(str(item).strip() for item in raw_tool_names if str(item).strip())

@@ -894,6 +894,11 @@ class Settings(BaseSettings):
         alias="SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS",
         description="Maximum lifetime in seconds for delegated built-in agent access tokens used against the internal MCP adapter.",
     )
+    self_management_interrupt_ttl_seconds: int = Field(
+        default=900,
+        alias="SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS",
+        description="Maximum lifetime in seconds for built-in self-management interrupt request tokens.",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -940,6 +945,17 @@ class Settings(BaseSettings):
         if value > 3600:
             raise ValueError(
                 "SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must not exceed 3600"
+            )
+        return value
+
+    @field_validator("self_management_interrupt_ttl_seconds")
+    @classmethod
+    def validate_self_management_interrupt_ttl_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS must be positive")
+        if value > 86400:
+            raise ValueError(
+                "SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS must not exceed 86400"
             )
         return value
 
