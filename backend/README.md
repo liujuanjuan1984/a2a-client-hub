@@ -168,10 +168,17 @@ Notes:
   built-in agent no longer derives its MCP target from request headers.
 - Built-in agent write tools are disabled by default and only become available
   for runs that explicitly set `allow_write_tools=true`.
+- Built-in runs now bind their `conversationId` to the normal sessions domain:
+  the thread, user/agent messages, and permission interrupt lifecycle events are
+  persisted under `/me/conversations`, rather than existing only in process
+  memory.
 - When the built-in agent returns a permission interrupt, `reply=once` enables
   write tools only for the resumed turn, while `reply=always` enables
   auto-approved write tools for the current built-in conversation until the
   server-side swival session expires.
+- The swival runtime object itself is still process-local and TTL-managed; this
+  PR persists the durable session history and interrupt lifecycle, not full
+  cross-process swival runtime restoration.
 - The built-in runtime applies a compatibility shim for older `swival` MCP
   adapters that still emit private `_mcp_*` tool metadata rejected by Gemini's
   OpenAI-compatible endpoint.

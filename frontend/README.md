@@ -119,6 +119,7 @@ Message id contract:
 - The built-in self-management assistant is injected into the normal agent catalog and reuses the existing permission interrupt card: read-only runs can return a `permission` interrupt, and the same UI resolves it through the dedicated self-management reply endpoint.
 - Built-in self-management runs are conversation-backed: the frontend sends the current `conversationId`, so follow-up turns reuse the same server-side swival session instead of restarting from a stateless one-shot run.
 - For built-in permission interrupts, `Allow once` resumes just the current turn, while `Always allow` enables write tools for the current built-in conversation until that server-side session expires.
+- Because built-in runs now project into the normal sessions domain, the same `conversationId` can later be reopened from the Sessions directory and its persisted history survives beyond the in-memory swival runtime object.
 
 ## Block-based Streaming
 

@@ -12,6 +12,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 from app.core.security import (
     create_self_management_access_token,
@@ -22,6 +24,10 @@ from app.core.security import (
     verify_self_management_interrupt_token_claims,
 )
 from app.db.models.user import User
+from app.features.self_management_shared.constants import (
+    SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
+    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+)
 from app.features.self_management_shared.self_management_mcp import (
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
@@ -33,8 +39,13 @@ from app.features.self_management_shared.self_management_tool_contract import (
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
 )
+from app.features.sessions import message_store
+from app.features.sessions.common import SessionSource, parse_conversation_id
+from app.features.sessions.service import session_hub_service
+from app.features.sessions.support import SessionHubSupport
+from app.utils.timezone_util import utc_now
 
-_DEFAULT_AGENT_ID = "self-management-assistant"
+_DEFAULT_AGENT_ID = SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID
 _DEFAULT_AGENT_NAME = "A2A Client Hub Assistant"
 _DEFAULT_AGENT_DESCRIPTION = (
     "A built-in assistant powered by swival that can manage the authenticated "
@@ -116,6 +127,17 @@ class SelfManagementBuiltInAgentRunResult:
     interrupt: SelfManagementBuiltInAgentInterrupt | None = None
 
 
+@dataclass(frozen=True)
+class _ExecutedBuiltInRun:
+    """Internal swival execution result together with durable session context."""
+
+    result: SelfManagementBuiltInAgentRunResult
+    profile: SelfManagementBuiltInAgentProfile
+    local_session: Any
+    local_session_id: str
+    local_source: SessionSource
+
+
 @dataclass
 class _ConversationRuntimeState:
     """One in-memory swival conversation runtime owned by one user conversation."""
@@ -140,6 +162,7 @@ class SelfManagementBuiltInAgentService:
             tuple[str, str], _ConversationRuntimeState
         ] = {}
         self._registry_lock = threading.Lock()
+        self._session_support = SessionHubSupport()
 
     def get_profile(self) -> SelfManagementBuiltInAgentProfile:
         tool_definitions = list_self_management_mcp_tool_definitions()
@@ -171,11 +194,39 @@ class SelfManagementBuiltInAgentService:
     async def run(
         self,
         *,
+        db: AsyncSession,
         current_user: User,
         conversation_id: str,
         message: str,
         allow_write_tools: bool,
     ) -> SelfManagementBuiltInAgentRunResult:
+        executed = await self._execute_run(
+            db=db,
+            current_user=current_user,
+            conversation_id=conversation_id,
+            message=message,
+            allow_write_tools=allow_write_tools,
+        )
+        await self._persist_run_turn(
+            db=db,
+            current_user=current_user,
+            local_session=executed.local_session,
+            local_session_id=executed.local_session_id,
+            local_source=executed.local_source,
+            query=message,
+            result=executed.result,
+        )
+        return executed.result
+
+    async def _execute_run(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        conversation_id: str,
+        message: str,
+        allow_write_tools: bool,
+    ) -> _ExecutedBuiltInRun:
         if not self.is_configured():
             raise SelfManagementBuiltInAgentConfigError(
                 "The self-management built-in agent is not configured. "
@@ -188,10 +239,16 @@ class SelfManagementBuiltInAgentService:
                 "conversation_id is required for the built-in agent runtime."
             )
 
+        local_session, local_source = await self._ensure_local_builtin_session(
+            db=db,
+            current_user=current_user,
+            conversation_id=normalized_conversation_id,
+        )
+        local_session_id = str(local_session.id)
         profile = self.get_profile()
         runtime_state = await self._get_conversation_runtime_state(
             current_user_id=str(current_user.id),
-            conversation_id=normalized_conversation_id,
+            conversation_id=local_session_id,
         )
         tool_definitions: tuple[SelfManagementToolDefinition, ...]
         async with runtime_state.get_lock():
@@ -218,35 +275,50 @@ class SelfManagementBuiltInAgentService:
         if not effective_write_tools and self._answer_requests_write_approval(answer):
             interrupt = self._build_permission_interrupt(
                 current_user=current_user,
-                conversation_id=normalized_conversation_id,
+                conversation_id=local_session_id,
                 message=message,
                 answer=answer,
             )
-            return SelfManagementBuiltInAgentRunResult(
-                status=SelfManagementBuiltInAgentRunStatus.INTERRUPTED,
-                answer=self._strip_write_approval_sentinel(answer),
+            return _ExecutedBuiltInRun(
+                result=SelfManagementBuiltInAgentRunResult(
+                    status=SelfManagementBuiltInAgentRunStatus.INTERRUPTED,
+                    answer=self._strip_write_approval_sentinel(answer),
+                    exhausted=exhausted,
+                    runtime="swival",
+                    resources=profile.resources,
+                    tool_names=tuple(
+                        definition.tool_name for definition in tool_definitions
+                    ),
+                    write_tools_enabled=False,
+                    interrupt=interrupt,
+                ),
+                profile=profile,
+                local_session=local_session,
+                local_session_id=local_session_id,
+                local_source=local_source,
+            )
+        return _ExecutedBuiltInRun(
+            result=SelfManagementBuiltInAgentRunResult(
+                status=SelfManagementBuiltInAgentRunStatus.COMPLETED,
+                answer=answer,
                 exhausted=exhausted,
                 runtime="swival",
                 resources=profile.resources,
                 tool_names=tuple(
                     definition.tool_name for definition in tool_definitions
                 ),
-                write_tools_enabled=False,
-                interrupt=interrupt,
-            )
-        return SelfManagementBuiltInAgentRunResult(
-            status=SelfManagementBuiltInAgentRunStatus.COMPLETED,
-            answer=answer,
-            exhausted=exhausted,
-            runtime="swival",
-            resources=profile.resources,
-            tool_names=tuple(definition.tool_name for definition in tool_definitions),
-            write_tools_enabled=effective_write_tools,
+                write_tools_enabled=effective_write_tools,
+            ),
+            profile=profile,
+            local_session=local_session,
+            local_session_id=local_session_id,
+            local_source=local_source,
         )
 
     async def reply_permission_interrupt(
         self,
         *,
+        db: AsyncSession,
         current_user: User,
         request_id: str,
         reply: str,
@@ -261,17 +333,6 @@ class SelfManagementBuiltInAgentService:
                 "The write approval request does not belong to the current user."
             )
 
-        if reply == "reject":
-            return SelfManagementBuiltInAgentRunResult(
-                status=SelfManagementBuiltInAgentRunStatus.COMPLETED,
-                answer="Write approval was rejected. No changes were made.",
-                exhausted=False,
-                runtime="swival",
-                resources=self.get_profile().resources,
-                tool_names=tuple(get_self_management_interrupt_tool_names(claims)),
-                write_tools_enabled=False,
-            )
-
         conversation_id = get_self_management_interrupt_conversation_id(claims)
         if conversation_id is None:
             raise SelfManagementBuiltInAgentUnavailableError(
@@ -283,6 +344,41 @@ class SelfManagementBuiltInAgentService:
                 "The write approval request is missing the original prompt."
             )
 
+        if reply == "reject":
+            result = SelfManagementBuiltInAgentRunResult(
+                status=SelfManagementBuiltInAgentRunStatus.COMPLETED,
+                answer="Write approval was rejected. No changes were made.",
+                exhausted=False,
+                runtime="swival",
+                resources=self.get_profile().resources,
+                tool_names=tuple(get_self_management_interrupt_tool_names(claims)),
+                write_tools_enabled=False,
+            )
+            await self._persist_interrupt_resolution(
+                db=db,
+                current_user=current_user,
+                conversation_id=conversation_id,
+                request_id=request_id,
+                resolution="rejected",
+            )
+            await self._persist_follow_up_agent_message(
+                db=db,
+                current_user=current_user,
+                conversation_id=conversation_id,
+                answer=result.answer,
+                metadata={
+                    "built_in_agent": True,
+                    "runtime": result.runtime,
+                    "reply_resolution": "rejected",
+                    "interrupt_request_id": request_id,
+                    "tools": list(result.tool_names),
+                    "write_tools_enabled": result.write_tools_enabled,
+                },
+                status="done",
+                finish_reason="interrupt_rejected",
+            )
+            return result
+
         if reply == "always":
             runtime_state = await self._get_conversation_runtime_state(
                 current_user_id=str(current_user.id),
@@ -292,12 +388,54 @@ class SelfManagementBuiltInAgentService:
                 runtime_state.auto_approve_writes = True
                 runtime_state.last_accessed_monotonic = time.monotonic()
 
-        return await self.run(
+        executed = await self._execute_run(
+            db=db,
             current_user=current_user,
             conversation_id=conversation_id,
             message=interrupt_message,
             allow_write_tools=True,
         )
+        await self._persist_interrupt_resolution(
+            db=db,
+            current_user=current_user,
+            conversation_id=conversation_id,
+            request_id=request_id,
+            resolution="replied",
+        )
+        await self._persist_follow_up_agent_message(
+            db=db,
+            current_user=current_user,
+            conversation_id=conversation_id,
+            answer=executed.result.answer,
+            metadata={
+                "built_in_agent": True,
+                "runtime": executed.result.runtime,
+                "reply_resolution": "replied",
+                "interrupt_request_id": request_id,
+                "tools": list(executed.result.tool_names),
+                "write_tools_enabled": executed.result.write_tools_enabled,
+            },
+            status=(
+                "interrupted"
+                if executed.result.status
+                == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                else "done"
+            ),
+            finish_reason=(
+                "interrupt"
+                if executed.result.status
+                == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                else "completed"
+            ),
+        )
+        if executed.result.interrupt is not None:
+            await self._persist_permission_interrupt(
+                db=db,
+                current_user=current_user,
+                local_session_id=executed.local_session_id,
+                interrupt=executed.result.interrupt,
+            )
+        return executed.result
 
     def _build_mcp_url(self, *, allow_write_tools: bool) -> str:
         base = cast(str, settings.self_management_swival_mcp_base_url).rstrip("/")
@@ -364,6 +502,160 @@ class SelfManagementBuiltInAgentService:
             definition
             for definition in tool_definitions
             if definition.confirmation_policy == SelfManagementConfirmationPolicy.NONE
+        )
+
+    async def _ensure_local_builtin_session(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        conversation_id: str,
+    ) -> tuple[Any, SessionSource]:
+        session, source = await session_hub_service.ensure_local_session_for_invoke(
+            db,
+            user_id=cast(Any, current_user.id),
+            agent_id=SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
+            agent_source="builtin",
+            conversation_id=conversation_id,
+        )
+        if session is None or source is None:
+            raise SelfManagementBuiltInAgentUnavailableError(
+                "Failed to bind the built-in agent conversation to a durable session."
+            )
+        return session, source
+
+    async def _persist_run_turn(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        local_session: Any,
+        local_session_id: str,
+        local_source: SessionSource,
+        query: str,
+        result: SelfManagementBuiltInAgentRunResult,
+    ) -> None:
+        await session_hub_service.record_local_invoke_messages(
+            db,
+            session=local_session,
+            source=local_source,
+            user_id=cast(Any, current_user.id),
+            agent_id=SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
+            agent_source="builtin",
+            query=query,
+            response_content=result.answer or "",
+            success=result.status == SelfManagementBuiltInAgentRunStatus.COMPLETED,
+            context_id=None,
+            extra_metadata={
+                "built_in_agent": True,
+                "built_in_agent_id": SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+                "runtime": result.runtime,
+                "resources": list(result.resources),
+                "write_tools_enabled": result.write_tools_enabled,
+            },
+            response_metadata={
+                "tools": list(result.tool_names),
+                "write_tools_enabled": result.write_tools_enabled,
+                "built_in_agent": True,
+            },
+            agent_status=(
+                "interrupted"
+                if result.status == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                else "done"
+            ),
+            finish_reason=(
+                "interrupt"
+                if result.status == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                else "completed"
+            ),
+            error_code=None,
+        )
+        if result.interrupt is None:
+            return
+        await self._persist_permission_interrupt(
+            db=db,
+            current_user=current_user,
+            local_session_id=local_session_id,
+            interrupt=result.interrupt,
+        )
+
+    async def _persist_permission_interrupt(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        local_session_id: str,
+        interrupt: SelfManagementBuiltInAgentInterrupt,
+    ) -> None:
+        await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
+            db,
+            local_session_id=parse_conversation_id(local_session_id),
+            user_id=cast(Any, current_user.id),
+            event={
+                "request_id": interrupt.request_id,
+                "type": "permission",
+                "phase": "asked",
+                "details": {
+                    "permission": interrupt.permission,
+                    "patterns": list(interrupt.patterns),
+                    "displayMessage": interrupt.display_message,
+                },
+            },
+        )
+
+    async def _persist_interrupt_resolution(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        conversation_id: str,
+        request_id: str,
+        resolution: str,
+    ) -> None:
+        await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
+            db,
+            local_session_id=parse_conversation_id(conversation_id),
+            user_id=cast(Any, current_user.id),
+            event={
+                "request_id": request_id,
+                "type": "permission",
+                "phase": "resolved",
+                "resolution": resolution,
+            },
+        )
+
+    async def _persist_follow_up_agent_message(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        conversation_id: str,
+        answer: str | None,
+        metadata: dict[str, Any],
+        status: str,
+        finish_reason: str | None,
+    ) -> None:
+        local_session, _ = await self._ensure_local_builtin_session(
+            db=db,
+            current_user=current_user,
+            conversation_id=conversation_id,
+        )
+        setattr(local_session, "last_active_at", utc_now())
+        agent_message = await message_store.create_agent_message(
+            db,
+            user_id=cast(Any, current_user.id),
+            sender="agent",
+            conversation_id=cast(Any, local_session.id),
+            status=status,
+            finish_reason=finish_reason,
+            metadata=metadata,
+        )
+        await self._session_support.upsert_single_text_block(
+            db,
+            user_id=cast(Any, current_user.id),
+            message_id=cast(Any, agent_message.id),
+            content=answer or "",
+            source="self_management_built_in_reply",
         )
 
     async def _get_conversation_runtime_state(

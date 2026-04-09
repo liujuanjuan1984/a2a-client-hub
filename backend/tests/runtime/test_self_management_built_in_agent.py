@@ -3,8 +3,10 @@ from __future__ import annotations
 import sys
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.security import (
@@ -13,11 +15,13 @@ from app.core.security import (
     get_self_management_interrupt_tool_names,
     verify_jwt_token_claims,
 )
+from app.db.models.agent_message import AgentMessage
 from app.features.self_management_agent import router as self_management_agent_router
 from app.features.self_management_agent.service import (
     _WRITE_APPROVAL_SENTINEL,
     self_management_built_in_agent_service,
 )
+from app.features.sessions.service import session_hub_service
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
 
@@ -109,6 +113,10 @@ def _configure_swival_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "self_management_swival_max_output_tokens", 2048)
 
 
+def _new_conversation_id() -> str:
+    return str(uuid4())
+
+
 async def test_built_in_agent_profile_exposes_full_available_tool_surface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -139,10 +147,12 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
 
     result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="List my jobs",
         allow_write_tools=False,
     )
@@ -214,10 +224,12 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
 
     result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Pause my job",
         allow_write_tools=True,
     )
@@ -267,6 +279,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
 
     async with create_test_client(
         self_management_agent_router.router,
@@ -279,7 +292,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
         )
         run_response = await client.post(
             f"{settings.api_v1_prefix}/me/self-management/agent:run",
-            json={"conversationId": "conversation-1", "message": "Pause my job"},
+            json={"conversationId": conversation_id, "message": "Pause my job"},
         )
 
     assert profile_response.status_code == 200
@@ -314,6 +327,115 @@ async def test_built_in_agent_run_route_returns_swival_result(
     }
 
 
+async def test_built_in_agent_run_persists_session_thread_and_messages(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+
+    result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="List my jobs",
+        allow_write_tools=False,
+    )
+
+    assert result.status == "completed"
+
+    session_item, _db_mutated = await session_hub_service.get_session(
+        async_db_session,
+        user_id=cast(Any, user.id),
+        conversation_id=conversation_id,
+    )
+    assert session_item["conversationId"] == conversation_id
+    assert session_item["agent_id"] == "self-management-assistant"
+    assert session_item["agent_source"] == "builtin"
+
+    messages, _extra, _db_mutated = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=cast(Any, user.id),
+        conversation_id=conversation_id,
+        before=None,
+        limit=20,
+    )
+    assert [item["role"] for item in messages] == ["user", "agent"]
+    assert messages[0]["content"] == "List my jobs"
+    assert messages[1]["content"] == "Built-in agent reply"
+
+
+async def test_built_in_agent_interrupt_and_resolution_are_persisted(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    interrupt_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+    assert interrupt_result.interrupt is not None
+
+    reject_result = (
+        await self_management_built_in_agent_service.reply_permission_interrupt(
+            db=async_db_session,
+            current_user=user,
+            request_id=interrupt_result.interrupt.request_id,
+            reply="reject",
+        )
+    )
+    assert reject_result.answer == "Write approval was rejected. No changes were made."
+
+    messages, _extra, _db_mutated = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=cast(Any, user.id),
+        conversation_id=conversation_id,
+        before=None,
+        limit=20,
+    )
+    assert [item["role"] for item in messages] == ["user", "agent", "agent"]
+
+    system_messages = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessage)
+                .where(
+                    AgentMessage.user_id == cast(Any, user.id),
+                    AgentMessage.conversation_id == UUID(conversation_id),
+                    AgentMessage.sender == "system",
+                )
+                .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+            )
+        ).all()
+    )
+    assert len(system_messages) == 2
+    asked_interrupt = cast(dict[str, Any], system_messages[0].message_metadata)[
+        "interrupt"
+    ]
+    resolved_interrupt = cast(dict[str, Any], system_messages[1].message_metadata)[
+        "interrupt"
+    ]
+    assert asked_interrupt["phase"] == "asked"
+    assert asked_interrupt["type"] == "permission"
+    assert resolved_interrupt["phase"] == "resolved"
+    assert resolved_interrupt["resolution"] == "rejected"
+
+
 async def test_built_in_agent_run_route_allows_write_tools_only_when_explicitly_enabled(
     async_session_maker,
     async_db_session,
@@ -323,6 +445,7 @@ async def test_built_in_agent_run_route_allows_write_tools_only_when_explicitly_
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
 
     async with create_test_client(
         self_management_agent_router.router,
@@ -333,7 +456,7 @@ async def test_built_in_agent_run_route_allows_write_tools_only_when_explicitly_
         run_response = await client.post(
             f"{settings.api_v1_prefix}/me/self-management/agent:run",
             json={
-                "conversationId": "conversation-1",
+                "conversationId": conversation_id,
                 "message": "Pause my job",
                 "allow_write_tools": True,
             },
@@ -357,10 +480,12 @@ async def test_built_in_agent_read_only_run_can_raise_permission_interrupt(
         f"{_WRITE_APPROVAL_SENTINEL}"
     )
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
 
     result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Pause my job",
         allow_write_tools=False,
     )
@@ -397,14 +522,16 @@ async def test_built_in_agent_permission_reply_once_resumes_with_write_tools(
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
     interrupt = self_management_built_in_agent_service._build_permission_interrupt(
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
     )
 
     result = await self_management_built_in_agent_service.reply_permission_interrupt(
+        db=async_db_session,
         current_user=user,
         request_id=interrupt.request_id,
         reply="once",
@@ -430,14 +557,16 @@ async def test_built_in_agent_permission_reply_reject_returns_no_change_result(
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
     interrupt = self_management_built_in_agent_service._build_permission_interrupt(
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
     )
 
     result = await self_management_built_in_agent_service.reply_permission_interrupt(
+        db=async_db_session,
         current_user=user,
         request_id=interrupt.request_id,
         reply="reject",
@@ -459,6 +588,7 @@ async def test_built_in_agent_permission_reply_route_resumes_or_rejects(
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
     _FakeSwivalSession.next_answer = (
         "I can pause the requested job after you approve write access.\n"
         f"{_WRITE_APPROVAL_SENTINEL}"
@@ -472,7 +602,7 @@ async def test_built_in_agent_permission_reply_route_resumes_or_rejects(
     ) as client:
         interrupt_response = await client.post(
             f"{settings.api_v1_prefix}/me/self-management/agent:run",
-            json={"conversationId": "conversation-1", "message": "Pause my job"},
+            json={"conversationId": conversation_id, "message": "Pause my job"},
         )
         assert interrupt_response.status_code == 200
         interrupt_payload = interrupt_response.json()
@@ -501,9 +631,10 @@ async def test_built_in_agent_permission_reply_route_rejects_other_user_interrup
     _install_fake_swival(monkeypatch)
     owner = await create_user(async_db_session)
     other_user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
     interrupt = self_management_built_in_agent_service._build_permission_interrupt(
         current_user=owner,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
     )
@@ -531,16 +662,19 @@ async def test_built_in_agent_reuses_conversation_session_for_follow_up_turns(
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
 
     await self_management_built_in_agent_service.run(
+        db=async_db_session,
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="List my jobs",
         allow_write_tools=False,
     )
     await self_management_built_in_agent_service.run(
+        db=async_db_session,
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Now list my agents",
         allow_write_tools=False,
     )
@@ -559,23 +693,26 @@ async def test_built_in_agent_permission_reply_always_enables_session_scoped_wri
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
     interrupt = self_management_built_in_agent_service._build_permission_interrupt(
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
     )
 
     always_result = (
         await self_management_built_in_agent_service.reply_permission_interrupt(
+            db=async_db_session,
             current_user=user,
             request_id=interrupt.request_id,
             reply="always",
         )
     )
     follow_up_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
         current_user=user,
-        conversation_id="conversation-1",
+        conversation_id=conversation_id,
         message="Pause it now",
         allow_write_tools=False,
     )

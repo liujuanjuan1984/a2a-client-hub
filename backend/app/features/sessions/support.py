@@ -14,6 +14,7 @@ from app.db.models.conversation_thread import ConversationThread
 from app.features.sessions import block_store
 from app.features.sessions.common import (
     ResolvedConversationTarget,
+    SessionAgentSource,
     build_query_hash,
     create_block_with_conflict_recovery,
     normalize_non_empty_text,
@@ -77,7 +78,7 @@ class SessionHubSupport:
         user_id: UUID,
         conversation_id: UUID,
         agent_id: UUID | None,
-        agent_source: Literal["personal", "shared"] | None,
+        agent_source: SessionAgentSource | None,
         title: str,
         source: Literal["manual", "scheduled"],
     ) -> bool:

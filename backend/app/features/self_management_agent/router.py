@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_async_db, get_current_user
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
+from app.db.transaction import commit_safely
 from app.features.self_management_agent.schemas import (
     SelfManagementBuiltInAgentInterrupt,
     SelfManagementBuiltInAgentInterruptDetails,
@@ -84,10 +86,12 @@ async def get_self_management_built_in_agent_profile(
 @router.post(":run", response_model=SelfManagementBuiltInAgentRunResponse)
 async def run_self_management_built_in_agent(
     payload: SelfManagementBuiltInAgentRunRequest,
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SelfManagementBuiltInAgentRunResponse:
     try:
         result = await self_management_built_in_agent_service.run(
+            db=db,
             current_user=current_user,
             conversation_id=payload.conversation_id,
             message=payload.message,
@@ -104,6 +108,7 @@ async def run_self_management_built_in_agent(
             detail=str(exc),
         ) from exc
 
+    await commit_safely(db)
     return _to_run_response(result)
 
 
@@ -113,11 +118,13 @@ async def run_self_management_built_in_agent(
 )
 async def reply_self_management_built_in_agent_permission_interrupt(
     payload: SelfManagementBuiltInAgentInterruptReplyRequest,
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SelfManagementBuiltInAgentRunResponse:
     try:
         result = (
             await self_management_built_in_agent_service.reply_permission_interrupt(
+                db=db,
                 current_user=current_user,
                 request_id=payload.request_id,
                 reply=payload.reply,
@@ -134,4 +141,5 @@ async def reply_self_management_built_in_agent_permission_interrupt(
             detail=str(exc),
         ) from exc
 
+    await commit_safely(db)
     return _to_run_response(result)
