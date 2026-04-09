@@ -1,4 +1,4 @@
-name: Prepare Release
+name: Create Release Preparation PR
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   prepare-release:
-    name: Create release preparation pull request
+    name: Create release preparation draft pull request
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
