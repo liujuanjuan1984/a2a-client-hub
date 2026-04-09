@@ -71,7 +71,7 @@ async def test_cli_requires_login_for_job_commands(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "Run `a2a-client-hub-cli login` first." in captured.err
+    assert "Run `a2a-client-hub login` first." in captured.err
 
 
 async def test_cli_write_commands_require_explicit_confirmation_in_non_tty_mode(

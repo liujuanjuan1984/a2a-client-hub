@@ -101,7 +101,7 @@ def _load_session() -> CliSessionState:
     session_file = _session_file()
     if not session_file.exists():
         raise CliCommandError(
-            "No active CLI session. Run `a2a-client-hub-cli login` first.",
+            "No active CLI session. Run `a2a-client-hub login` first.",
         )
 
     payload = json.loads(session_file.read_text(encoding="utf-8"))
@@ -109,7 +109,7 @@ def _load_session() -> CliSessionState:
         return CliSessionState(**payload)
     except TypeError as exc:
         raise CliCommandError(
-            "Saved CLI session is invalid. Run `a2a-client-hub-cli login` again.",
+            "Saved CLI session is invalid. Run `a2a-client-hub login` again.",
         ) from exc
 
 
@@ -221,7 +221,7 @@ async def _build_cli_gateway(
     if user_id is None:
         raise CliCommandError(
             "Saved CLI session is invalid or expired. "
-            "Run `a2a-client-hub-cli login` again.",
+            "Run `a2a-client-hub login` again.",
         )
 
     user = await get_active_user(db, user_id=UUID(user_id))
@@ -444,7 +444,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
 
     parser = argparse.ArgumentParser(
-        prog="a2a-client-hub-cli",
+        prog="a2a-client-hub",
         description="Authenticated CLI for self-management operations.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)

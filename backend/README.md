@@ -67,10 +67,10 @@ The backend also ships a minimal authenticated CLI for first-wave self-managemen
 
 ```bash
 cd backend
-uv run a2a-client-hub-cli login --email alice@example.com --password 'Pass123!'
-uv run a2a-client-hub-cli whoami
-uv run a2a-client-hub-cli jobs list
-uv run a2a-client-hub-cli jobs pause <job_id> --confirm
+uv run a2a-client-hub login --email alice@example.com --password 'Pass123!'
+uv run a2a-client-hub whoami
+uv run a2a-client-hub jobs list
+uv run a2a-client-hub jobs pause <job_id> --confirm
 ```
 
 Notes:
