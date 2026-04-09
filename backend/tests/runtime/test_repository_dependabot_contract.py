@@ -24,5 +24,7 @@ def test_readme_documents_dependabot_and_audit_split() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
 
-    assert "Dependabot opens at most one weekly grouped version-update PR" in readme_text
+    assert (
+        "Dependabot opens at most one weekly grouped version-update PR" in readme_text
+    )
     assert "Existing audit workflows remain in place" in readme_text
