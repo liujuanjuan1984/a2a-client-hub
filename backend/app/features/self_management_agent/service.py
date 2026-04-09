@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -13,6 +16,7 @@ from app.core.config import settings
 from app.core.security import (
     create_self_management_access_token,
     create_self_management_interrupt_token,
+    get_self_management_interrupt_conversation_id,
     get_self_management_interrupt_message,
     get_self_management_interrupt_tool_names,
     verify_self_management_interrupt_token_claims,
@@ -112,8 +116,30 @@ class SelfManagementBuiltInAgentRunResult:
     interrupt: SelfManagementBuiltInAgentInterrupt | None = None
 
 
+@dataclass
+class _ConversationRuntimeState:
+    """One in-memory swival conversation runtime owned by one user conversation."""
+
+    session: Any | None = None
+    write_tools_enabled: bool = False
+    auto_approve_writes: bool = False
+    last_accessed_monotonic: float = 0.0
+    lock: asyncio.Lock | None = None
+
+    def get_lock(self) -> asyncio.Lock:
+        if self.lock is None:
+            self.lock = asyncio.Lock()
+        return self.lock
+
+
 class SelfManagementBuiltInAgentService:
     """High-level facade for the swival-driven built-in self-management agent."""
+
+    def __init__(self) -> None:
+        self._conversation_registry: dict[
+            tuple[str, str], _ConversationRuntimeState
+        ] = {}
+        self._registry_lock = threading.Lock()
 
     def get_profile(self) -> SelfManagementBuiltInAgentProfile:
         tool_definitions = list_self_management_mcp_tool_definitions()
@@ -146,6 +172,7 @@ class SelfManagementBuiltInAgentService:
         self,
         *,
         current_user: User,
+        conversation_id: str,
         message: str,
         allow_write_tools: bool,
     ) -> SelfManagementBuiltInAgentRunResult:
@@ -155,32 +182,43 @@ class SelfManagementBuiltInAgentService:
                 "Set SELF_MANAGEMENT_SWIVAL_PROVIDER and SELF_MANAGEMENT_SWIVAL_MODEL."
             )
 
+        normalized_conversation_id = conversation_id.strip()
+        if not normalized_conversation_id:
+            raise SelfManagementBuiltInAgentUnavailableError(
+                "conversation_id is required for the built-in agent runtime."
+            )
+
         profile = self.get_profile()
-        tool_definitions = self._select_run_tool_definitions(
-            allow_write_tools=allow_write_tools
+        runtime_state = await self._get_conversation_runtime_state(
+            current_user_id=str(current_user.id),
+            conversation_id=normalized_conversation_id,
         )
-        token = create_self_management_access_token(
-            cast(Any, current_user.id),
-            allowed_operations=[
-                definition.operation_id for definition in tool_definitions
-            ],
-            delegated_by="self_management_built_in_agent",
-        )
-        mcp_url = self._build_mcp_url(allow_write_tools=allow_write_tools)
-        result = await asyncio.to_thread(
-            self._run_swival_session,
-            message=message,
-            mcp_url=mcp_url,
-            access_token=token,
-            system_prompt=self._build_system_prompt(
-                allow_write_tools=allow_write_tools
-            ),
-        )
+        tool_definitions: tuple[SelfManagementToolDefinition, ...]
+        async with runtime_state.get_lock():
+            effective_write_tools = (
+                allow_write_tools or runtime_state.auto_approve_writes
+            )
+            tool_definitions = self._select_run_tool_definitions(
+                allow_write_tools=effective_write_tools
+            )
+            session = await self._ensure_conversation_session(
+                runtime_state=runtime_state,
+                current_user=current_user,
+                write_tools_enabled=effective_write_tools,
+            )
+            try:
+                result = await asyncio.to_thread(session.ask, message)
+            except Exception as exc:  # pragma: no cover - exercised with integration
+                raise SelfManagementBuiltInAgentUnavailableError(
+                    f"swival built-in agent run failed: {exc}"
+                ) from exc
+            runtime_state.last_accessed_monotonic = time.monotonic()
         answer = cast(str | None, getattr(result, "answer", None))
         exhausted = bool(getattr(result, "exhausted", False))
-        if not allow_write_tools and self._answer_requests_write_approval(answer):
+        if not effective_write_tools and self._answer_requests_write_approval(answer):
             interrupt = self._build_permission_interrupt(
                 current_user=current_user,
+                conversation_id=normalized_conversation_id,
                 message=message,
                 answer=answer,
             )
@@ -203,7 +241,7 @@ class SelfManagementBuiltInAgentService:
             runtime="swival",
             resources=profile.resources,
             tool_names=tuple(definition.tool_name for definition in tool_definitions),
-            write_tools_enabled=allow_write_tools,
+            write_tools_enabled=effective_write_tools,
         )
 
     async def reply_permission_interrupt(
@@ -234,14 +272,29 @@ class SelfManagementBuiltInAgentService:
                 write_tools_enabled=False,
             )
 
+        conversation_id = get_self_management_interrupt_conversation_id(claims)
+        if conversation_id is None:
+            raise SelfManagementBuiltInAgentUnavailableError(
+                "The write approval request is missing the conversation context."
+            )
         interrupt_message = get_self_management_interrupt_message(claims)
         if interrupt_message is None:
             raise SelfManagementBuiltInAgentUnavailableError(
                 "The write approval request is missing the original prompt."
             )
 
+        if reply == "always":
+            runtime_state = await self._get_conversation_runtime_state(
+                current_user_id=str(current_user.id),
+                conversation_id=conversation_id,
+            )
+            async with runtime_state.get_lock():
+                runtime_state.auto_approve_writes = True
+                runtime_state.last_accessed_monotonic = time.monotonic()
+
         return await self.run(
             current_user=current_user,
+            conversation_id=conversation_id,
             message=interrupt_message,
             allow_write_tools=True,
         )
@@ -275,6 +328,7 @@ class SelfManagementBuiltInAgentService:
         self,
         *,
         current_user: User,
+        conversation_id: str,
         message: str,
         answer: str | None,
     ) -> SelfManagementBuiltInAgentInterrupt:
@@ -285,6 +339,7 @@ class SelfManagementBuiltInAgentService:
         )
         request_id = create_self_management_interrupt_token(
             cast(Any, current_user.id),
+            conversation_id=conversation_id,
             message=message,
             tool_names=write_tool_names,
         )
@@ -311,15 +366,86 @@ class SelfManagementBuiltInAgentService:
             if definition.confirmation_policy == SelfManagementConfirmationPolicy.NONE
         )
 
-    def _run_swival_session(
+    async def _get_conversation_runtime_state(
         self,
         *,
-        message: str,
-        mcp_url: str,
-        access_token: str,
-        system_prompt: str,
+        current_user_id: str,
+        conversation_id: str,
+    ) -> _ConversationRuntimeState:
+        await self._cleanup_expired_conversations()
+        key = (current_user_id, conversation_id)
+        with self._registry_lock:
+            runtime_state = self._conversation_registry.get(key)
+            if runtime_state is None:
+                runtime_state = _ConversationRuntimeState(
+                    last_accessed_monotonic=time.monotonic()
+                )
+                self._conversation_registry[key] = runtime_state
+            return runtime_state
+
+    async def _cleanup_expired_conversations(self) -> None:
+        cutoff = time.monotonic() - settings.self_management_swival_session_ttl_seconds
+        expired_sessions: list[Any] = []
+        with self._registry_lock:
+            expired_keys = [
+                key
+                for key, runtime_state in self._conversation_registry.items()
+                if runtime_state.last_accessed_monotonic
+                and runtime_state.last_accessed_monotonic < cutoff
+            ]
+            for key in expired_keys:
+                runtime_state = self._conversation_registry.pop(key)
+                if runtime_state.session is not None:
+                    expired_sessions.append(runtime_state.session)
+        for session in expired_sessions:
+            await asyncio.to_thread(self._close_swival_session, session)
+
+    async def _ensure_conversation_session(
+        self,
+        *,
+        runtime_state: _ConversationRuntimeState,
+        current_user: User,
+        write_tools_enabled: bool,
+    ) -> Any:
+        if (
+            runtime_state.session is not None
+            and runtime_state.write_tools_enabled == write_tools_enabled
+        ):
+            runtime_state.last_accessed_monotonic = time.monotonic()
+            return runtime_state.session
+
+        previous_session = runtime_state.session
+        new_session = await asyncio.to_thread(
+            self._create_swival_session,
+            current_user=current_user,
+            write_tools_enabled=write_tools_enabled,
+        )
+        if previous_session is not None:
+            self._transfer_conversation_state(previous_session, new_session)
+            await asyncio.to_thread(self._close_swival_session, previous_session)
+
+        runtime_state.session = new_session
+        runtime_state.write_tools_enabled = write_tools_enabled
+        runtime_state.last_accessed_monotonic = time.monotonic()
+        return new_session
+
+    def _create_swival_session(
+        self,
+        *,
+        current_user: User,
+        write_tools_enabled: bool,
     ) -> Any:
         session_cls = self._load_swival_session_cls()
+        tool_definitions = self._select_run_tool_definitions(
+            allow_write_tools=write_tools_enabled
+        )
+        token = create_self_management_access_token(
+            cast(Any, current_user.id),
+            allowed_operations=[
+                definition.operation_id for definition in tool_definitions
+            ],
+            delegated_by="self_management_built_in_agent",
+        )
         session = session_cls(
             base_dir=str(Path(__file__).resolve().parents[3]),
             provider=cast(str, settings.self_management_swival_provider),
@@ -329,7 +455,9 @@ class SelfManagementBuiltInAgentService:
             max_turns=settings.self_management_swival_max_turns,
             max_output_tokens=settings.self_management_swival_max_output_tokens,
             reasoning_effort=settings.self_management_swival_reasoning_effort,
-            system_prompt=system_prompt,
+            system_prompt=self._build_system_prompt(
+                allow_write_tools=write_tools_enabled
+            ),
             files="none",
             commands="none",
             no_skills=True,
@@ -339,17 +467,32 @@ class SelfManagementBuiltInAgentService:
             yolo=False,
             mcp_servers={
                 "a2a-client-hub": {
-                    "url": mcp_url,
-                    "headers": {"Authorization": f"Bearer {access_token}"},
+                    "url": self._build_mcp_url(allow_write_tools=write_tools_enabled),
+                    "headers": {"Authorization": f"Bearer {token}"},
                 }
             },
         )
-        try:
-            return session.run(message)
-        except Exception as exc:  # pragma: no cover - exercised with integration
-            raise SelfManagementBuiltInAgentUnavailableError(
-                f"swival built-in agent run failed: {exc}"
-            ) from exc
+        return session
+
+    def _transfer_conversation_state(
+        self,
+        previous_session: Any,
+        next_session: Any,
+    ) -> None:
+        conv_state = getattr(previous_session, "_conv_state", None)
+        if conv_state is not None:
+            setattr(next_session, "_conv_state", copy.deepcopy(conv_state))
+        trace_session_id = getattr(previous_session, "_trace_session_id", None)
+        if isinstance(trace_session_id, str) and trace_session_id.strip():
+            setattr(next_session, "_trace_session_id", trace_session_id)
+
+    def _close_swival_session(self, session: Any) -> None:
+        close = getattr(session, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                return
 
     def _load_swival_session_cls(self) -> type[Any]:
         for raw_path in settings.self_management_swival_import_paths:
@@ -366,6 +509,7 @@ class SelfManagementBuiltInAgentService:
             raise SelfManagementBuiltInAgentUnavailableError(
                 "swival is not installed or not importable for the built-in agent runtime."
             ) from exc
+        self._apply_swival_compatibility_patches()
 
         session_cls = getattr(module, "Session", None)
         if session_cls is None:
@@ -373,6 +517,38 @@ class SelfManagementBuiltInAgentService:
                 "swival.Session is required for the built-in agent runtime."
             )
         return cast(type[Any], session_cls)
+
+    def _apply_swival_compatibility_patches(self) -> None:
+        try:
+            module = __import__("swival.mcp_client", fromlist=["_mcp_tool_to_openai"])
+        except ImportError:
+            return
+
+        converter = getattr(module, "_mcp_tool_to_openai", None)
+        if not callable(converter) or getattr(
+            converter,
+            "_a2a_client_hub_private_field_patch",
+            False,
+        ):
+            return
+
+        def _patched_mcp_tool_to_openai(
+            server_name: str, tool: Any
+        ) -> tuple[dict, str]:
+            schema, original_name = converter(server_name, tool)
+            function_schema = schema.get("function")
+            if isinstance(function_schema, dict):
+                for key in list(function_schema.keys()):
+                    if key.startswith("_mcp_"):
+                        function_schema.pop(key, None)
+            return schema, original_name
+
+        setattr(
+            _patched_mcp_tool_to_openai,
+            "_a2a_client_hub_private_field_patch",
+            True,
+        )
+        setattr(module, "_mcp_tool_to_openai", _patched_mcp_tool_to_openai)
 
 
 self_management_built_in_agent_service = SelfManagementBuiltInAgentService()

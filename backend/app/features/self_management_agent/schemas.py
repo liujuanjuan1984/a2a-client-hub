@@ -31,8 +31,11 @@ class SelfManagementBuiltInAgentProfileResponse(BaseModel):
 class SelfManagementBuiltInAgentRunRequest(BaseModel):
     """One user prompt routed to the built-in self-management agent."""
 
+    conversation_id: str = Field(alias="conversationId", min_length=1)
     message: str = Field(min_length=1)
     allow_write_tools: bool = False
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class SelfManagementBuiltInAgentInterruptDetails(BaseModel):

@@ -53,12 +53,13 @@ export const getSelfManagementBuiltInAgentProfile = () =>
   );
 
 export const runSelfManagementBuiltInAgent = (payload: {
+  conversationId: string;
   message: string;
   allow_write_tools?: boolean;
 }) =>
   apiRequest<
     SelfManagementBuiltInAgentRunResponse,
-    { message: string; allow_write_tools?: boolean }
+    { conversationId: string; message: string; allow_write_tools?: boolean }
   >("/me/self-management/agent:run", {
     method: "POST",
     body: payload,

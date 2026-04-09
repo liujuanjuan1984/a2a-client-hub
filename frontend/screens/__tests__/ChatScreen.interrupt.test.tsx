@@ -1478,6 +1478,7 @@ describe("ChatScreen interrupt handling", () => {
     });
 
     expect(mockRunSelfManagementBuiltInAgent).toHaveBeenCalledWith({
+      conversationId,
       message: "Pause my job",
     });
     expect(mockAddConversationOverlayMessage).toHaveBeenCalledWith(

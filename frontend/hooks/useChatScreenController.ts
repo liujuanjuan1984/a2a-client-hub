@@ -422,6 +422,7 @@ export function useChatScreenController({
 
       try {
         const result = await runSelfManagementBuiltInAgent({
+          conversationId: nextConversationId,
           message: trimmedContent,
         });
         const nextInterrupt: PendingRuntimeInterrupt | null = result.interrupt

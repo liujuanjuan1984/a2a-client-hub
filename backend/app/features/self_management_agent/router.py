@@ -89,6 +89,7 @@ async def run_self_management_built_in_agent(
     try:
         result = await self_management_built_in_agent_service.run(
             current_user=current_user,
+            conversation_id=payload.conversation_id,
             message=payload.message,
             allow_write_tools=payload.allow_write_tools,
         )

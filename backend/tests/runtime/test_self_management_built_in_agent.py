@@ -28,25 +28,45 @@ class _FakeSwivalSession:
     last_init_kwargs: dict[str, object] | None = None
     last_message: str | None = None
     next_answer: str = "Built-in agent reply"
-    run_call_count: int = 0
+    ask_call_count: int = 0
+    instance_count: int = 0
+    instances: list["_FakeSwivalSession"] = []
 
     def __init__(self, **kwargs: object) -> None:
         type(self).last_init_kwargs = dict(kwargs)
+        type(self).instance_count += 1
+        type(self).instances.append(self)
+        self._conv_state: dict[str, object] | None = None
+        self.closed = False
 
-    def run(self, message: str) -> object:
+    def ask(self, message: str) -> object:
         type(self).last_message = message
-        type(self).run_call_count += 1
+        type(self).ask_call_count += 1
+        if self._conv_state is None:
+            self._conv_state = {"messages": []}
+        messages = cast(list[dict[str, str]], self._conv_state["messages"])
+        messages.append({"role": "user", "content": message})
+        messages.append({"role": "assistant", "content": type(self).next_answer})
         return SimpleNamespace(answer=type(self).next_answer, exhausted=False)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def _install_fake_swival(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeSwivalSession.last_init_kwargs = None
     _FakeSwivalSession.last_message = None
     _FakeSwivalSession.next_answer = "Built-in agent reply"
-    _FakeSwivalSession.run_call_count = 0
+    _FakeSwivalSession.ask_call_count = 0
+    _FakeSwivalSession.instance_count = 0
+    _FakeSwivalSession.instances = []
     module = ModuleType("swival")
     module.Session = _FakeSwivalSession
     monkeypatch.setitem(sys.modules, "swival", module)
+
+
+def _reset_built_in_agent_runtime() -> None:
+    self_management_built_in_agent_service._conversation_registry.clear()
 
 
 def _configure_swival_settings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,6 +112,7 @@ def _configure_swival_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_built_in_agent_profile_exposes_full_available_tool_surface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
 
     profile = self_management_built_in_agent_service.get_profile()
@@ -114,12 +135,14 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
 
     result = await self_management_built_in_agent_service.run(
         current_user=user,
+        conversation_id="conversation-1",
         message="List my jobs",
         allow_write_tools=False,
     )
@@ -140,6 +163,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert result.write_tools_enabled is False
     assert result.interrupt is None
     assert _FakeSwivalSession.last_message == "List my jobs"
+    assert _FakeSwivalSession.ask_call_count == 1
     assert _FakeSwivalSession.last_init_kwargs is not None
     assert _FakeSwivalSession.last_init_kwargs["provider"] == "openai"
     assert _FakeSwivalSession.last_init_kwargs["model"] == "gpt-test"
@@ -186,12 +210,14 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
 
     result = await self_management_built_in_agent_service.run(
         current_user=user,
+        conversation_id="conversation-1",
         message="Pause my job",
         allow_write_tools=True,
     )
@@ -219,6 +245,7 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
 
 
 async def test_built_in_agent_profile_route_requires_auth(async_session_maker) -> None:
+    _reset_built_in_agent_runtime()
     async with create_test_client(
         self_management_agent_router.router,
         async_session_maker=async_session_maker,
@@ -236,6 +263,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
@@ -251,7 +279,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
         )
         run_response = await client.post(
             f"{settings.api_v1_prefix}/me/self-management/agent:run",
-            json={"message": "Pause my job"},
+            json={"conversationId": "conversation-1", "message": "Pause my job"},
         )
 
     assert profile_response.status_code == 200
@@ -291,6 +319,7 @@ async def test_built_in_agent_run_route_allows_write_tools_only_when_explicitly_
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
@@ -303,7 +332,11 @@ async def test_built_in_agent_run_route_allows_write_tools_only_when_explicitly_
     ) as client:
         run_response = await client.post(
             f"{settings.api_v1_prefix}/me/self-management/agent:run",
-            json={"message": "Pause my job", "allow_write_tools": True},
+            json={
+                "conversationId": "conversation-1",
+                "message": "Pause my job",
+                "allow_write_tools": True,
+            },
         )
 
     assert run_response.status_code == 200
@@ -316,6 +349,7 @@ async def test_built_in_agent_read_only_run_can_raise_permission_interrupt(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     _FakeSwivalSession.next_answer = (
@@ -326,6 +360,7 @@ async def test_built_in_agent_read_only_run_can_raise_permission_interrupt(
 
     result = await self_management_built_in_agent_service.run(
         current_user=user,
+        conversation_id="conversation-1",
         message="Pause my job",
         allow_write_tools=False,
     )
@@ -358,11 +393,13 @@ async def test_built_in_agent_permission_reply_once_resumes_with_write_tools(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     interrupt = self_management_built_in_agent_service._build_permission_interrupt(
         current_user=user,
+        conversation_id="conversation-1",
         message="Pause my job",
         answer="Need approval",
     )
@@ -376,23 +413,26 @@ async def test_built_in_agent_permission_reply_once_resumes_with_write_tools(
     assert result.status == "completed"
     assert result.write_tools_enabled is True
     assert "self.jobs.pause" in result.tool_names
-    assert _FakeSwivalSession.run_call_count == 1
+    assert _FakeSwivalSession.ask_call_count == 1
     assert _FakeSwivalSession.last_message == "Pause my job"
     assert _FakeSwivalSession.last_init_kwargs is not None
     assert _FakeSwivalSession.last_init_kwargs["mcp_servers"]["a2a-client-hub"][
         "url"
     ] == ("http://internal-mcp/mcp-write/")
+    assert _FakeSwivalSession.instance_count == 1
 
 
 async def test_built_in_agent_permission_reply_reject_returns_no_change_result(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     interrupt = self_management_built_in_agent_service._build_permission_interrupt(
         current_user=user,
+        conversation_id="conversation-1",
         message="Pause my job",
         answer="Need approval",
     )
@@ -407,7 +447,7 @@ async def test_built_in_agent_permission_reply_reject_returns_no_change_result(
     assert result.answer == "Write approval was rejected. No changes were made."
     assert result.write_tools_enabled is False
     assert result.exhausted is False
-    assert _FakeSwivalSession.run_call_count == 0
+    assert _FakeSwivalSession.ask_call_count == 0
 
 
 async def test_built_in_agent_permission_reply_route_resumes_or_rejects(
@@ -415,6 +455,7 @@ async def test_built_in_agent_permission_reply_route_resumes_or_rejects(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
@@ -431,7 +472,7 @@ async def test_built_in_agent_permission_reply_route_resumes_or_rejects(
     ) as client:
         interrupt_response = await client.post(
             f"{settings.api_v1_prefix}/me/self-management/agent:run",
-            json={"message": "Pause my job"},
+            json={"conversationId": "conversation-1", "message": "Pause my job"},
         )
         assert interrupt_response.status_code == 200
         interrupt_payload = interrupt_response.json()
@@ -455,12 +496,14 @@ async def test_built_in_agent_permission_reply_route_rejects_other_user_interrup
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
     _install_fake_swival(monkeypatch)
     owner = await create_user(async_db_session)
     other_user = await create_user(async_db_session)
     interrupt = self_management_built_in_agent_service._build_permission_interrupt(
         current_user=owner,
+        conversation_id="conversation-1",
         message="Pause my job",
         answer="Need approval",
     )
@@ -478,3 +521,109 @@ async def test_built_in_agent_permission_reply_route_rejects_other_user_interrup
 
     assert response.status_code == 400
     assert "does not belong to the current user" in response.json()["detail"]
+
+
+async def test_built_in_agent_reuses_conversation_session_for_follow_up_turns(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+
+    await self_management_built_in_agent_service.run(
+        current_user=user,
+        conversation_id="conversation-1",
+        message="List my jobs",
+        allow_write_tools=False,
+    )
+    await self_management_built_in_agent_service.run(
+        current_user=user,
+        conversation_id="conversation-1",
+        message="Now list my agents",
+        allow_write_tools=False,
+    )
+
+    assert _FakeSwivalSession.instance_count == 1
+    assert _FakeSwivalSession.ask_call_count == 2
+    assert _FakeSwivalSession.instances[0]._conv_state is not None
+    assert len(_FakeSwivalSession.instances[0]._conv_state["messages"]) == 4
+
+
+async def test_built_in_agent_permission_reply_always_enables_session_scoped_write_tools(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    interrupt = self_management_built_in_agent_service._build_permission_interrupt(
+        current_user=user,
+        conversation_id="conversation-1",
+        message="Pause my job",
+        answer="Need approval",
+    )
+
+    always_result = (
+        await self_management_built_in_agent_service.reply_permission_interrupt(
+            current_user=user,
+            request_id=interrupt.request_id,
+            reply="always",
+        )
+    )
+    follow_up_result = await self_management_built_in_agent_service.run(
+        current_user=user,
+        conversation_id="conversation-1",
+        message="Pause it now",
+        allow_write_tools=False,
+    )
+
+    assert always_result.write_tools_enabled is True
+    assert follow_up_result.write_tools_enabled is True
+    assert "self.jobs.pause" in follow_up_result.tool_names
+    assert _FakeSwivalSession.instance_count == 1
+    assert _FakeSwivalSession.ask_call_count == 2
+    assert _FakeSwivalSession.last_init_kwargs is not None
+    assert _FakeSwivalSession.last_init_kwargs["mcp_servers"]["a2a-client-hub"][
+        "url"
+    ] == ("http://internal-mcp/mcp-write/")
+
+
+async def test_built_in_agent_runtime_patches_private_swival_mcp_tool_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+
+    swival_module = ModuleType("swival")
+    swival_module.Session = _FakeSwivalSession
+    mcp_module = ModuleType("swival.mcp_client")
+
+    def _fake_converter(
+        _server_name: str, tool: object
+    ) -> tuple[dict[str, object], str]:
+        return (
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp__demo__tool",
+                    "_mcp_original_name": getattr(tool, "name", "demo.tool"),
+                },
+            },
+            getattr(tool, "name", "demo.tool"),
+        )
+
+    mcp_module._mcp_tool_to_openai = _fake_converter
+    monkeypatch.setitem(sys.modules, "swival", swival_module)
+    monkeypatch.setitem(sys.modules, "swival.mcp_client", mcp_module)
+
+    session_cls = self_management_built_in_agent_service._load_swival_session_cls()
+
+    assert session_cls is _FakeSwivalSession
+    schema, _original_name = mcp_module._mcp_tool_to_openai(
+        "demo", SimpleNamespace(name="demo.tool")
+    )
+    assert schema["function"]["name"] == "mcp__demo__tool"
+    assert "_mcp_original_name" not in schema["function"]

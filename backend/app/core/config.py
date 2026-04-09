@@ -899,6 +899,11 @@ class Settings(BaseSettings):
         alias="SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS",
         description="Maximum lifetime in seconds for built-in self-management interrupt request tokens.",
     )
+    self_management_swival_session_ttl_seconds: int = Field(
+        default=30 * 60,
+        alias="SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS",
+        description="Maximum idle lifetime in seconds for one built-in self-management swival conversation session.",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -956,6 +961,19 @@ class Settings(BaseSettings):
         if value > 86400:
             raise ValueError(
                 "SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS must not exceed 86400"
+            )
+        return value
+
+    @field_validator("self_management_swival_session_ttl_seconds")
+    @classmethod
+    def validate_self_management_swival_session_ttl_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS must be positive"
+            )
+        if value > 86400:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS must not exceed 86400"
             )
         return value
 

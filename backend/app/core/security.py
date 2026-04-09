@@ -31,6 +31,7 @@ SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM = "sm_ops"
 SELF_MANAGEMENT_DELEGATED_BY_CLAIM = "sm_delegate"
 SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM = "sm_interrupt_message"
 SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM = "sm_interrupt_tool_names"
+SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM = "sm_interrupt_conversation_id"
 
 
 @dataclass(frozen=True)
@@ -361,9 +362,13 @@ def create_self_management_access_token(
 def create_self_management_interrupt_token(
     user_id: Union[str, UUID],
     *,
+    conversation_id: str,
     message: str,
     tool_names: Sequence[str],
 ) -> str:
+    normalized_conversation_id = str(conversation_id).strip()
+    if not normalized_conversation_id:
+        raise ValueError("conversation_id is required")
     normalized_tool_names = sorted(
         {str(tool_name).strip() for tool_name in tool_names if str(tool_name).strip()}
     )
@@ -372,6 +377,7 @@ def create_self_management_interrupt_token(
         token_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
         expires_in_seconds=settings.self_management_interrupt_ttl_seconds,
         extra_claims={
+            SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM: normalized_conversation_id,
             SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM: message,
             SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM: normalized_tool_names,
         },
@@ -437,3 +443,15 @@ def get_self_management_interrupt_tool_names(
     if not isinstance(raw_tool_names, list):
         return ()
     return tuple(str(item).strip() for item in raw_tool_names if str(item).strip())
+
+
+def get_self_management_interrupt_conversation_id(
+    claims: VerifiedJwtClaims,
+) -> str | None:
+    raw_conversation_id = claims.raw_payload.get(
+        SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM
+    )
+    if not isinstance(raw_conversation_id, str):
+        return None
+    conversation_id = raw_conversation_id.strip()
+    return conversation_id or None
