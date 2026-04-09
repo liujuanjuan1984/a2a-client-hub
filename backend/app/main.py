@@ -3,7 +3,7 @@
 import importlib
 import inspect
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Awaitable, Callable, Dict, cast
 
 import uvicorn
@@ -24,6 +24,10 @@ from app.core.http_client import close_global_http_client, init_global_http_clie
 from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_with_new_session
+from app.features.agents_shared.self_management_mcp import (
+    SELF_MANAGEMENT_MCP_MOUNT_PATH,
+    build_self_management_mcp_http_app,
+)
 from app.features.auth.cleanup_service import ensure_auth_cleanup_job
 from app.features.schedules.job import ensure_a2a_schedule_job
 from app.features.schedules.service import (
@@ -45,6 +49,23 @@ from app.utils.timezone_util import utc_now_iso
 setup_logging()
 
 logger = get_logger(__name__)
+
+
+def combine_lifespans(
+    *lifespans: Callable[[FastAPI], AbstractAsyncContextManager[None]],
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+    """Combine multiple ASGI lifespan context managers into one."""
+
+    @asynccontextmanager
+    async def _combined(app: FastAPI) -> AsyncIterator[None]:
+        async with lifespans[0](app):
+            if len(lifespans) == 1:
+                yield
+                return
+            async with combine_lifespans(*lifespans[1:])(app):
+                yield
+
+    return _combined
 
 
 # Lifecycle management for the FastAPI application.
@@ -115,6 +136,8 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 # Create FastAPI application instance
+mcp_app = build_self_management_mcp_http_app()
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
@@ -122,7 +145,7 @@ app = FastAPI(
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     docs_url=f"{settings.api_v1_prefix}/docs",
     redoc_url=f"{settings.api_v1_prefix}/redoc",
-    lifespan=app_lifespan,
+    lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan),
 )
 
 # Set up CORS middleware
@@ -162,6 +185,7 @@ def include_all_routers() -> None:
 
 
 include_all_routers()
+app.mount(SELF_MANAGEMENT_MCP_MOUNT_PATH, mcp_app)
 
 
 @app.get("/")

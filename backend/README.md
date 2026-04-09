@@ -84,6 +84,22 @@ Notes:
 - Set `A2A_CLIENT_HUB_CLI_SESSION_FILE` to override that location.
 - First-wave CLI support currently targets current-user jobs, sessions, and personal agents.
 
+## Run the MCP Surface
+
+The backend also mounts an authenticated FastMCP surface for self-management.
+This is intended for agent runtimes such as `swival`, not for direct browser use.
+
+- Mounted path: `/mcp`
+- Transport: HTTP SSE
+- Auth: standard hub bearer token in `Authorization: Bearer <token>`
+- First-wave MCP tools: `self.jobs.list`, `self.jobs.get`, `self.jobs.pause`
+
+Once the API server is running, an MCP client can connect to:
+
+```text
+http://localhost:8000/mcp/
+```
+
 ## Backend Structure
 
 The backend now uses a practical feature-based structure for business-facing entrypoints and orchestration code.

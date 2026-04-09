@@ -61,6 +61,7 @@ dependencies = [
     "passlib[bcrypt]==1.7.4",
     "bcrypt==4.0.1",
     "cryptography>=46.0.7",
+    "fastmcp>=2.13.0,<3",
 ]
 
 [project.optional-dependencies]
