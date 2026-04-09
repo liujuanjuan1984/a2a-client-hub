@@ -227,7 +227,7 @@ export type CodexDiscoveryStatus =
 
 export type CodexDiscoveryListKind = "skills" | "apps" | "plugins";
 
-export type CodexDiscoverySkill = {
+type CodexDiscoverySkill = {
   name: string;
   path: string;
   description: string;
@@ -237,14 +237,14 @@ export type CodexDiscoverySkill = {
   codex: Record<string, unknown>;
 };
 
-export type CodexDiscoverySkillScope = {
+type CodexDiscoverySkillScope = {
   cwd: string;
   skills: CodexDiscoverySkill[];
   errors: Record<string, unknown>[];
   codex: Record<string, unknown>;
 };
 
-export type CodexDiscoveryApp = {
+type CodexDiscoveryApp = {
   id: string;
   name: string;
   description: string | null;
@@ -257,7 +257,7 @@ export type CodexDiscoveryApp = {
   codex: Record<string, unknown>;
 };
 
-export type CodexDiscoveryPluginSummary = {
+type CodexDiscoveryPluginSummary = {
   name: string;
   description: string | null;
   enabled: boolean | null;
@@ -266,7 +266,7 @@ export type CodexDiscoveryPluginSummary = {
   codex: Record<string, unknown>;
 };
 
-export type CodexDiscoveryPluginMarketplace = {
+type CodexDiscoveryPluginMarketplace = {
   marketplaceName: string;
   marketplacePath: string;
   interface: Record<string, unknown> | null;
@@ -303,12 +303,12 @@ export type CodexDiscoveryPluginsListResult = {
   remoteSyncError: string | null;
 };
 
-export type CodexDiscoveryListResult =
+type CodexDiscoveryListResult =
   | CodexDiscoverySkillsListResult
   | CodexDiscoveryAppsListResult
   | CodexDiscoveryPluginsListResult;
 
-export type CodexDiscoveryPluginReadResult = {
+type CodexDiscoveryPluginReadResult = {
   item: CodexDiscoveryPluginDetail | null;
 };
 

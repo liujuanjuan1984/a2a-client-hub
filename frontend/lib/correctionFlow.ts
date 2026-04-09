@@ -1,8 +1,8 @@
-export type CorrectionExecutionResult<T> =
+type CorrectionExecutionResult<T> =
   | { status: "completed"; value: T }
   | { status: "cancelled" };
 
-export type CorrectionPlan<TContext> = {
+type CorrectionPlan<TContext> = {
   context: TContext;
   confirm: (context: TContext) => Promise<boolean>;
   apply: (context: TContext) => Promise<void>;

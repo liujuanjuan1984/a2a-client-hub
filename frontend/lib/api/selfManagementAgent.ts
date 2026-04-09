@@ -8,7 +8,7 @@ export const SELF_MANAGEMENT_BUILT_IN_AGENT_CARD_URL =
 export const isSelfManagementBuiltInAgent = (agentId?: string | null) =>
   (agentId ?? "").trim() === SELF_MANAGEMENT_BUILT_IN_AGENT_ID;
 
-export type SelfManagementBuiltInAgentToolResponse = {
+type SelfManagementBuiltInAgentToolResponse = {
   operation_id: string;
   tool_name: string;
   description: string;
@@ -48,7 +48,7 @@ type SelfManagementBuiltInAgentRecoveredInterruptResponse = {
   };
 };
 
-export type SelfManagementBuiltInAgentRunResponse = {
+type SelfManagementBuiltInAgentRunResponse = {
   status: "completed" | "interrupted";
   answer: string | null;
   exhausted: boolean;
@@ -127,7 +127,7 @@ export const toPendingRuntimeInterrupt = (
   details: buildInterruptDetails(interrupt),
 });
 
-export const toRecoveredPendingRuntimeInterrupt = (
+const toRecoveredPendingRuntimeInterrupt = (
   interrupt: SelfManagementBuiltInAgentRecoveredInterruptResponse,
 ): PendingRuntimeInterrupt | null => {
   const requestId = interrupt.requestId.trim();
