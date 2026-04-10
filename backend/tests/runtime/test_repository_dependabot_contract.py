@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_dependabot_keeps_backend_grouped_and_frontend_split_by_risk() -> None:
+def test_dependabot_keeps_only_backend_grouped_updates() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     dependabot_config = (repo_root / ".github" / "dependabot.yml").read_text(
         encoding="utf-8"
@@ -12,49 +12,16 @@ def test_dependabot_keeps_backend_grouped_and_frontend_split_by_risk() -> None:
     assert 'package-ecosystem: "uv"' in dependabot_config
     assert 'directory: "/backend"' in dependabot_config
     assert "backend-all-updates" in dependabot_config
-
-    assert 'package-ecosystem: "npm"' in dependabot_config
-    assert 'directory: "/frontend"' in dependabot_config
-    assert "open-pull-requests-limit: 3" in dependabot_config
-    assert 'dependency-name: "*"' in dependabot_config
-    assert "version-update:semver-major" in dependabot_config
-    assert 'dependency-name: "react"' in dependabot_config
-    assert 'dependency-name: "react-dom"' in dependabot_config
-    assert 'dependency-name: "react-native"' in dependabot_config
-    assert 'dependency-name: "react-native-gesture-handler"' in dependabot_config
-    assert 'dependency-name: "react-native-safe-area-context"' in dependabot_config
-    assert 'dependency-name: "react-native-screens"' in dependabot_config
-    assert 'dependency-name: "react-test-renderer"' in dependabot_config
-    assert 'dependency-name: "@types/react"' in dependabot_config
-    assert 'dependency-name: "@types/react-test-renderer"' in dependabot_config
-    assert "frontend-expo-sdk" in dependabot_config
-    assert "frontend-react-native-core" in dependabot_config
-    assert "frontend-state-storage" in dependabot_config
-    assert "frontend-dev-tooling" in dependabot_config
-    assert "frontend-runtime-misc" in dependabot_config
-    assert 'dependency-type: "development"' in dependabot_config
-    assert 'dependency-type: "production"' in dependabot_config
-    assert '  - "react-test-renderer"' in dependabot_config
-    assert '  - "@types/react"' in dependabot_config
-    assert '  - "@types/react-test-renderer"' in dependabot_config
-    assert '  - "react-native-*"' not in dependabot_config
+    assert "open-pull-requests-limit: 1" in dependabot_config
+    assert 'package-ecosystem: "npm"' not in dependabot_config
+    assert 'directory: "/frontend"' not in dependabot_config
     assert "labels:" not in dependabot_config
 
 
-def test_contributing_documents_dependabot_and_audit_split() -> None:
+def test_contributing_documents_backend_dependabot_and_audit_flow() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     contributing_text = (repo_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
 
     assert "Dependabot keeps backend updates grouped weekly" in contributing_text
-    assert (
-        "Frontend npm updates are split into smaller patch/minor review lanes"
-        in contributing_text
-    )
-    assert (
-        "Semver-major frontend updates are intentionally ignored" in contributing_text
-    )
-    assert (
-        "React / React Native core and renderer-aligned minor upgrades are planned manually"
-        in contributing_text
-    )
+    assert "Frontend dependency updates are planned manually" in contributing_text
     assert "Existing audit workflows remain in place" in contributing_text
