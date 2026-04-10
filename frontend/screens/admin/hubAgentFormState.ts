@@ -177,6 +177,30 @@ const hasDraftValue = (values: HubAgentFormValues): boolean =>
     (row) => row.key.trim() || row.value.trim(),
   );
 
+const createEmptyHeaderRow = (): HeaderRow => ({
+  id: generateId(),
+  key: "",
+  value: "",
+});
+
+const updateHeaderRows = (
+  rows: HeaderRow[],
+  id: string,
+  field: "key" | "value",
+  value: string,
+): HeaderRow[] =>
+  rows.map((row) => (row.id === id ? { ...row, [field]: value } : row));
+
+const removeHeaderRows = (rows: HeaderRow[], id: string): HeaderRow[] => {
+  const next = rows.filter((row) => row.id !== id);
+  return next.length ? next : recordToHeaderRows({});
+};
+
+const appendHeaderRow = (rows: HeaderRow[]): HeaderRow[] => [
+  ...rows,
+  createEmptyHeaderRow(),
+];
+
 export const useHubAgentFormState = () => {
   const [values, setValues] = useState<HubAgentFormValues>(
     createDefaultHubAgentFormValues(),
@@ -248,9 +272,7 @@ export const useHubAgentFormState = () => {
     (id: string, field: "key" | "value", value: string) => {
       setValues((prev) => ({
         ...prev,
-        extraHeaders: prev.extraHeaders.map((row) =>
-          row.id === id ? { ...row, [field]: value } : row,
-        ),
+        extraHeaders: updateHeaderRows(prev.extraHeaders, id, field, value),
       }));
     },
     [],
@@ -258,10 +280,9 @@ export const useHubAgentFormState = () => {
 
   const removeHeaderRow = useCallback((id: string) => {
     setValues((prev) => {
-      const next = prev.extraHeaders.filter((row) => row.id !== id);
       return {
         ...prev,
-        extraHeaders: next.length ? next : recordToHeaderRows({}),
+        extraHeaders: removeHeaderRows(prev.extraHeaders, id),
       };
     });
   }, []);
@@ -269,10 +290,7 @@ export const useHubAgentFormState = () => {
   const addHeaderRow = useCallback(() => {
     setValues((prev) => ({
       ...prev,
-      extraHeaders: [
-        ...prev.extraHeaders,
-        { id: generateId(), key: "", value: "" },
-      ],
+      extraHeaders: appendHeaderRow(prev.extraHeaders),
     }));
   }, []);
 
@@ -280,8 +298,11 @@ export const useHubAgentFormState = () => {
     (id: string, field: "key" | "value", value: string) => {
       setValues((prev) => ({
         ...prev,
-        invokeMetadataDefaults: prev.invokeMetadataDefaults.map((row) =>
-          row.id === id ? { ...row, [field]: value } : row,
+        invokeMetadataDefaults: updateHeaderRows(
+          prev.invokeMetadataDefaults,
+          id,
+          field,
+          value,
         ),
       }));
     },
@@ -290,10 +311,12 @@ export const useHubAgentFormState = () => {
 
   const removeInvokeMetadataDefaultRow = useCallback((id: string) => {
     setValues((prev) => {
-      const next = prev.invokeMetadataDefaults.filter((row) => row.id !== id);
       return {
         ...prev,
-        invokeMetadataDefaults: next.length ? next : recordToHeaderRows({}),
+        invokeMetadataDefaults: removeHeaderRows(
+          prev.invokeMetadataDefaults,
+          id,
+        ),
       };
     });
   }, []);
@@ -301,10 +324,7 @@ export const useHubAgentFormState = () => {
   const addInvokeMetadataDefaultRow = useCallback(() => {
     setValues((prev) => ({
       ...prev,
-      invokeMetadataDefaults: [
-        ...prev.invokeMetadataDefaults,
-        { id: generateId(), key: "", value: "" },
-      ],
+      invokeMetadataDefaults: appendHeaderRow(prev.invokeMetadataDefaults),
     }));
   }, []);
 
