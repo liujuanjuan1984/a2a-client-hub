@@ -26,7 +26,10 @@ BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 if BACKEND_ROOT not in sys.path:
     sys.path.insert(0, BACKEND_ROOT)
 
-from app.core.security import get_password_hash, validate_password_strength  # noqa: E402
+from app.core.security import (  # noqa: E402
+    get_password_hash,
+    validate_password_strength,
+)
 from app.db.models.user import User  # noqa: E402
 from app.db.session import AsyncSessionLocal  # noqa: E402
 from app.features.auth import service as auth_service  # noqa: E402
@@ -90,9 +93,7 @@ async def export_users(path: Path) -> None:
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(User)
-            .where(User.disabled_at.is_(None))
-            .order_by(User.email.asc())
+            select(User).where(User.disabled_at.is_(None)).order_by(User.email.asc())
         )
         users = list(result.scalars())
 
@@ -222,13 +223,10 @@ async def apply_rows(rows: Sequence[CredentialResetRow], *, dry_run: bool) -> No
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(User)
-            .where(User.disabled_at.is_(None))
-            .order_by(User.email.asc())
+            select(User).where(User.disabled_at.is_(None)).order_by(User.email.asc())
         )
         users = {
-            _normalize_email(cast(str, user.email)): user
-            for user in result.scalars()
+            _normalize_email(cast(str, user.email)): user for user in result.scalars()
         }
 
         missing_users = sorted(
