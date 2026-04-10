@@ -71,6 +71,7 @@ Notes:
 - Dependabot keeps backend updates grouped weekly for `backend/` (`uv`).
 - Frontend npm updates are split into smaller patch/minor review lanes for Expo SDK, React Native core, state/storage, development tooling, and miscellaneous runtime packages.
 - Semver-major frontend updates are intentionally ignored for automatic PR creation and are expected to be planned manually.
+- React / React Native core and renderer-aligned minor upgrades are planned manually because they require coordinated Expo SDK, test preset, and peer dependency review.
 - Existing audit workflows remain in place for explicit vulnerability review and do not replace human triage.
 
 ## Security

@@ -23,6 +23,34 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # Framework-coupled frontend minor bumps are planned manually.
+      - dependency-name: "react"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "react-dom"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "react-native"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "react-native-gesture-handler"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "react-native-safe-area-context"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "react-native-screens"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "react-test-renderer"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "@types/react"
+        update-types:
+          - "version-update:semver-minor"
+      - dependency-name: "@types/react-test-renderer"
+        update-types:
+          - "version-update:semver-minor"
     groups:
       # Keep Expo SDK updates together, but only for patch/minor changes.
       frontend-expo-sdk:
@@ -42,10 +70,12 @@ updates:
           - "react"
           - "react-dom"
           - "react-native"
-          - "react-native-*"
-        exclude-patterns:
-          - "@react-native-async-storage/async-storage"
-          - "react-native-mmkv"
+          - "react-native-gesture-handler"
+          - "react-native-safe-area-context"
+          - "react-native-screens"
+          - "react-test-renderer"
+          - "@types/react"
+          - "@types/react-test-renderer"
         update-types:
           - "patch"
           - "minor"
@@ -71,6 +101,15 @@ updates:
           - "expo-*"
           - "babel-preset-expo"
           - "jest-expo"
+          - "react"
+          - "react-dom"
+          - "react-native"
+          - "react-native-gesture-handler"
+          - "react-native-safe-area-context"
+          - "react-native-screens"
+          - "react-test-renderer"
+          - "@types/react"
+          - "@types/react-test-renderer"
         update-types:
           - "patch"
           - "minor"
@@ -87,7 +126,9 @@ updates:
           - "react"
           - "react-dom"
           - "react-native"
-          - "react-native-*"
+          - "react-native-gesture-handler"
+          - "react-native-safe-area-context"
+          - "react-native-screens"
           - "@react-native-async-storage/async-storage"
           - "react-native-mmkv"
           - "zustand"
