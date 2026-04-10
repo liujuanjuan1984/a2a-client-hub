@@ -7,13 +7,18 @@ import type {
   HubA2AAvailabilityPolicy,
   HubA2ACredentialMode,
 } from "@/lib/api/hubA2aAgentsAdmin";
-import { generateId } from "@/lib/id";
+import { isValidHttpUrl } from "@/lib/httpUrl";
+import {
+  appendKeyValueRow,
+  removeKeyValueRow,
+  updateKeyValueRows,
+  type KeyValueRow,
+} from "@/lib/keyValueRows";
 import {
   type HeaderRow,
   headerRowsToRecord,
   parseTags,
   recordToHeaderRows,
-  validateHttpUrl,
 } from "@/screens/admin/hubAgentFormUtils";
 
 export type HubAgentFormErrors = {
@@ -177,29 +182,8 @@ const hasDraftValue = (values: HubAgentFormValues): boolean =>
     (row) => row.key.trim() || row.value.trim(),
   );
 
-const createEmptyHeaderRow = (): HeaderRow => ({
-  id: generateId(),
-  key: "",
-  value: "",
-});
-
-const updateHeaderRows = (
-  rows: HeaderRow[],
-  id: string,
-  field: "key" | "value",
-  value: string,
-): HeaderRow[] =>
-  rows.map((row) => (row.id === id ? { ...row, [field]: value } : row));
-
-const removeHeaderRows = (rows: HeaderRow[], id: string): HeaderRow[] => {
-  const next = rows.filter((row) => row.id !== id);
-  return next.length ? next : recordToHeaderRows({});
-};
-
-const appendHeaderRow = (rows: HeaderRow[]): HeaderRow[] => [
-  ...rows,
-  createEmptyHeaderRow(),
-];
+const removeHeaderRows = (rows: KeyValueRow[], id: string): HeaderRow[] =>
+  removeKeyValueRow(rows, id, { ensureOne: true });
 
 export const useHubAgentFormState = () => {
   const [values, setValues] = useState<HubAgentFormValues>(
@@ -272,7 +256,7 @@ export const useHubAgentFormState = () => {
     (id: string, field: "key" | "value", value: string) => {
       setValues((prev) => ({
         ...prev,
-        extraHeaders: updateHeaderRows(prev.extraHeaders, id, field, value),
+        extraHeaders: updateKeyValueRows(prev.extraHeaders, id, field, value),
       }));
     },
     [],
@@ -290,7 +274,7 @@ export const useHubAgentFormState = () => {
   const addHeaderRow = useCallback(() => {
     setValues((prev) => ({
       ...prev,
-      extraHeaders: appendHeaderRow(prev.extraHeaders),
+      extraHeaders: appendKeyValueRow(prev.extraHeaders),
     }));
   }, []);
 
@@ -298,7 +282,7 @@ export const useHubAgentFormState = () => {
     (id: string, field: "key" | "value", value: string) => {
       setValues((prev) => ({
         ...prev,
-        invokeMetadataDefaults: updateHeaderRows(
+        invokeMetadataDefaults: updateKeyValueRows(
           prev.invokeMetadataDefaults,
           id,
           field,
@@ -324,7 +308,7 @@ export const useHubAgentFormState = () => {
   const addInvokeMetadataDefaultRow = useCallback(() => {
     setValues((prev) => ({
       ...prev,
-      invokeMetadataDefaults: appendHeaderRow(prev.invokeMetadataDefaults),
+      invokeMetadataDefaults: appendKeyValueRow(prev.invokeMetadataDefaults),
     }));
   }, []);
 
@@ -338,7 +322,7 @@ export const useHubAgentFormState = () => {
     if (!values.name.trim()) nextErrors.name = "Name is required.";
     if (!values.cardUrl.trim())
       nextErrors.cardUrl = "Agent Card URL is required.";
-    if (values.cardUrl.trim() && !validateHttpUrl(values.cardUrl.trim())) {
+    if (values.cardUrl.trim() && !isValidHttpUrl(values.cardUrl.trim())) {
       nextErrors.cardUrl = "Please enter a valid http(s) URL.";
     }
     setErrors(nextErrors);
