@@ -161,9 +161,9 @@ describe("AccountSecurityScreen", () => {
     await pressButtonByText("Change Password");
 
     expect(mockChangePasswordMutateAsync).toHaveBeenCalledWith({
-      current_password: "OldPass!23",
-      new_password: "NewPass!23",
-      new_password_confirm: "NewPass!23",
+      current_password: "OldPass!23", // pragma: allowlist secret
+      new_password: "NewPass!23", // pragma: allowlist secret
+      new_password_confirm: "NewPass!23", // pragma: allowlist secret
     });
     expect(mockToastSuccess).toHaveBeenCalledWith(
       "Password updated",
