@@ -58,8 +58,7 @@ dependencies = [
     # JWT handling
     "PyJWT>=2.12.0",
     "pyasn1>=0.6.3",
-    "passlib[bcrypt]==1.7.4",
-    "bcrypt==5.0.0",
+    "argon2-cffi==25.1.0",
     "cryptography>=46.0.7",
 ]
 
@@ -136,7 +135,6 @@ strict_equality = true
 module = [
     "alembic.*",
     "apscheduler.*",
-    "passlib.*",
     "psycopg2.*",
 ]
 ignore_missing_imports = true
@@ -155,10 +153,6 @@ markers = [
     "unit: marks tests as unit tests",
     "asyncio: marks tests as async tests",
 ]
-filterwarnings = [
-    "ignore::DeprecationWarning:passlib.*:",
-]
-
 [tool.coverage.run]
 source = ["app"]
 omit = [

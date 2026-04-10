@@ -1,6 +1,7 @@
 import { useMemo, useCallback } from "react";
 import { RefreshControl, FlatList, Text, View } from "react-native";
 
+import { AccountEntryButton } from "@/components/auth/AccountEntryButton";
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
@@ -109,6 +110,11 @@ export function SessionsScreen() {
       <PageHeader
         title="Sessions"
         subtitle="Browse sessions across all agents."
+        rightElement={
+          <View className="flex-row gap-2">
+            <AccountEntryButton />
+          </View>
+        }
       />
 
       {loading && items.length === 0 ? (

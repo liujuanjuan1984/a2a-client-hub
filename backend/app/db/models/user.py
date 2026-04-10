@@ -34,7 +34,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     )
     name = Column(String(100), nullable=False, comment="User display name")
     password_hash = Column(
-        String(255), nullable=False, comment="Hashed password using bcrypt"
+        String(255), nullable=False, comment="Hashed password using argon2id"
     )
     timezone = Column(
         String(64),

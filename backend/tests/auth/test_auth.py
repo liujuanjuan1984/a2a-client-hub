@@ -20,6 +20,7 @@ from app.core.security import (
     create_user_refresh_token,
     create_user_token,
     get_password_hash,
+    verify_password,
     verify_refresh_token_claims,
 )
 from app.db.models.auth_audit_event import AuthAuditEvent
@@ -36,6 +37,14 @@ from tests.support.api_utils import create_test_client
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 TRUSTED_ORIGIN = "http://localhost:3000"
+LEGACY_BCRYPT_HASH = "".join(
+    (
+        "$2b$12$WFmS1Ad.h.m39",
+        "Av0g6hj4OU0IFNrKk4P6",
+        "oAHOBdMIkrTmNtd/4am6",
+    )
+)
+LONG_UTF8_PASSWORD = "Aa" * 34 + "1!" + "界"  # pragma: allowlist secret
 
 
 async def run_in_session(async_session_maker, coro_fn):
@@ -1088,6 +1097,23 @@ async def test_register_rejects_weak_password(client: AsyncClient) -> None:
     assert "Password" in response.json()["detail"]
 
 
+async def test_register_accepts_password_longer_than_72_utf8_bytes(
+    client: AsyncClient,
+) -> None:
+    payload = {
+        "email": "toolong@example.com",
+        "name": "Too Long",
+        "password": LONG_UTF8_PASSWORD,
+        "timezone": "UTC",
+    }
+
+    response = await client.post(
+        f"{settings.api_v1_prefix}/auth/register", json=payload
+    )
+
+    assert response.status_code == 201
+
+
 async def test_authenticate_user_not_found_runs_dummy_hash_verification(
     async_db_session,
 ) -> None:
@@ -1159,6 +1185,71 @@ async def test_login_disabled_user_returns_unauthorized(
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid credentials"
+
+
+async def test_login_nonexistent_user_with_overlong_password_returns_invalid_credentials(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={
+            "email": "missing@example.com",
+            "password": LONG_UTF8_PASSWORD,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+
+
+async def test_verify_password_accepts_existing_argon2_hash() -> None:
+    password = "Str0ngPass!1"
+    hashed = get_password_hash(password)
+
+    assert verify_password(password, hashed) is True
+
+
+async def test_verify_password_rejects_legacy_bcrypt_hash() -> None:
+    assert verify_password("Str0ngPass!1", LEGACY_BCRYPT_HASH) is False
+
+
+async def test_change_password_accepts_new_password_longer_than_72_utf8_bytes(
+    client: AsyncClient, async_session_maker
+) -> None:
+    payload = {
+        "email": "change-too-long@example.com",
+        "name": "Changer",
+        "password": "InitPass!1",
+        "timezone": "UTC",
+    }
+    await client.post(f"{settings.api_v1_prefix}/auth/register", json=payload)
+
+    async def fetch_user(session):
+        result = await session.execute(
+            select(User).where(User.email == payload["email"])
+        )
+        return result.scalar_one()
+
+    user = await run_in_session(async_session_maker, fetch_user)
+    token = create_user_token(user.id)
+
+    response = await client.post(
+        f"{settings.api_v1_prefix}/auth/password/change",
+        json={
+            "current_password": payload["password"],
+            "new_password": LONG_UTF8_PASSWORD,
+            "new_password_confirm": LONG_UTF8_PASSWORD,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+
+    success_login = await client.post(
+        f"{settings.api_v1_prefix}/auth/login",
+        json={"email": payload["email"], "password": LONG_UTF8_PASSWORD},
+    )
+    assert success_login.status_code == 200
 
 
 async def test_login_returns_user_timezone(
