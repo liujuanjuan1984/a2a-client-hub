@@ -11,8 +11,6 @@ import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
-import { executeWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
-import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import {
   deleteHubAgentAdmin,
   getHubAgentAdmin,
@@ -29,6 +27,7 @@ import {
   buildHubAgentComparablePayloadFromRecord,
   useHubAgentFormState,
 } from "@/screens/admin/hubAgentFormState";
+import { saveHubAgentWithAutoAllowlist } from "@/screens/admin/hubAgentSave";
 
 type AdminHubAgentDetailScreenProps = {
   agentId: string;
@@ -151,37 +150,23 @@ export function AdminHubAgentDetailScreen({
     setSaving(true);
     try {
       const payload = buildPayload();
-      const result = await executeWithAdminAutoAllowlist({
+      await saveHubAgentWithAutoAllowlist({
+        mode: "update",
         isAdmin,
         cardUrl: payload.card_url,
         run: () => updateHubAgentAdmin(agentId, payload),
-        confirmAddHost: (host) =>
-          confirmAction({
-            title: "Host not allowlisted",
-            message: `The card URL host "${host}" is not in the proxy allowlist. Add it automatically and continue saving the shared agent?`,
-            confirmLabel: "Add and Continue",
-            cancelLabel: "Keep Editing",
-          }),
-        addHostToAllowlist: async (host) => {
-          await createProxyAllowlistEntry({ host_pattern: host });
-        },
         onCancel: async () => undefined,
+        onSuccess: async () => {
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.admin.hubAgents(),
+          });
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.admin.hubAgent(agentId),
+          });
+          allowNextNavigation();
+          router.replace("/admin/hub-a2a");
+        },
       });
-      if (result.status === "cancelled") {
-        return;
-      }
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.hubAgents(),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.hubAgent(agentId),
-      });
-      toast.success("Saved", "Shared agent updated.");
-      allowNextNavigation();
-      router.replace("/admin/hub-a2a");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Save failed.";
-      toast.error("Save failed", message);
     } finally {
       setSaving(false);
     }

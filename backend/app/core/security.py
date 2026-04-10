@@ -10,18 +10,18 @@ from typing import Any, Optional, Union, cast
 from uuid import UUID, uuid4
 
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from jwt.exceptions import InvalidTokenError
-from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.utils.timezone_util import utc_now
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+PASSWORD_HASHER = PasswordHasher()
 
 # Dummy hash for mitigating timing attacks during authentication
-DUMMY_PASSWORD_HASH = "$2b$12$KIXeW.1LzBwvS./Hk.yQ1..E3.eD/.hLwQcE/M1zQ3X.qC0TqYFOW"
+DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash("dummy-password-not-used")
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
@@ -255,12 +255,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         True if password matches, False otherwise
     """
-    return cast(bool, pwd_context.verify(plain_password, hashed_password))
+    try:
+        return PASSWORD_HASHER.verify(hashed_password, plain_password)
+    except VerifyMismatchError:
+        return False
+    except (InvalidHashError, VerificationError):
+        return False
 
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password using bcrypt
+    Hash a password using argon2id
 
     Args:
         password: Plain text password
@@ -268,7 +273,7 @@ def get_password_hash(password: str) -> str:
     Returns:
         Hashed password string
     """
-    return cast(str, pwd_context.hash(password))
+    return PASSWORD_HASHER.hash(password)
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:

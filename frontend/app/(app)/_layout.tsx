@@ -119,6 +119,10 @@ export default function AppLayout() {
           name="chat/[agentId]/[conversationId]"
           options={{ title: "Chat" }}
         />
+        <Stack.Screen
+          name="account"
+          options={{ title: "Account", presentation: "modal" }}
+        />
       </Stack>
       {isLoading ? (
         <View pointerEvents="none" className="absolute inset-0">

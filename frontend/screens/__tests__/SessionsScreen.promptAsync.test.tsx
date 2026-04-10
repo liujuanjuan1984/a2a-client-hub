@@ -43,6 +43,10 @@ jest.mock("@/components/layout/ScreenContainer", () => ({
   ScreenContainer: ({ children }: { children: unknown }) => children,
 }));
 
+jest.mock("@/components/auth/AccountEntryButton", () => ({
+  AccountEntryButton: () => null,
+}));
+
 jest.mock("@/components/ui/PageHeader", () => ({
   PageHeader: () => null,
 }));

@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useMemo, useState, useCallback } from "react";
 import { RefreshControl, FlatList, Text, View } from "react-native";
 
+import { AccountEntryButton } from "@/components/auth/AccountEntryButton";
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { ScheduledJobCard } from "@/components/scheduled/ScheduledJobCard";
@@ -153,6 +154,7 @@ export function ScheduledJobsScreen() {
         subtitle="Configure recurring prompts and inspect execution history."
         rightElement={
           <View className="flex-row gap-2">
+            <AccountEntryButton />
             <IconButton
               accessibilityLabel="Create job"
               icon="add"

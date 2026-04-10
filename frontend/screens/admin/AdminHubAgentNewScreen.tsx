@@ -11,16 +11,13 @@ import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
-import { executeWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
-import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import { createHubAgentAdmin } from "@/lib/api/hubA2aAgentsAdmin";
-import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
-import { toast } from "@/lib/toast";
 import { HubAgentFormSections } from "@/screens/admin/HubAgentFormSections";
 import { useHubAgentFormState } from "@/screens/admin/hubAgentFormState";
+import { saveHubAgentWithAutoAllowlist } from "@/screens/admin/hubAgentSave";
 
 export function AdminHubAgentNewScreen() {
   const router = useRouter();
@@ -67,37 +64,23 @@ export function AdminHubAgentNewScreen() {
     setSaving(true);
     try {
       const payload = buildPayload();
-      const result = await executeWithAdminAutoAllowlist({
+      await saveHubAgentWithAutoAllowlist({
+        mode: "create",
         isAdmin,
         cardUrl: payload.card_url,
         run: () => createHubAgentAdmin(payload),
-        confirmAddHost: (host) =>
-          confirmAction({
-            title: "Host not allowlisted",
-            message: `The card URL host "${host}" is not in the proxy allowlist. Add it automatically and continue creating the agent?`,
-            confirmLabel: "Add and Continue",
-            cancelLabel: "Exit Create",
-          }),
-        addHostToAllowlist: async (host) => {
-          await createProxyAllowlistEntry({ host_pattern: host });
-        },
         onCancel: async () => {
           allowNextNavigation();
           backOrHome(router, "/admin/hub-a2a");
         },
+        onSuccess: async () => {
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.admin.hubAgents(),
+          });
+          allowNextNavigation();
+          router.replace("/admin/hub-a2a");
+        },
       });
-      if (result.status === "cancelled") {
-        return;
-      }
-
-      const created = result.value;
-      queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
-      toast.success("Shared agent created", created.name);
-      allowNextNavigation();
-      router.replace("/admin/hub-a2a");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Create failed.";
-      toast.error("Create failed", message);
     } finally {
       setSaving(false);
     }
