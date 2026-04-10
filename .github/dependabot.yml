@@ -7,8 +7,6 @@ updates:
     open-pull-requests-limit: 1
     commit-message:
       prefix: "deps"
-    labels:
-      - "dependencies"
     groups:
       backend-all-updates:
         patterns:
@@ -18,12 +16,81 @@ updates:
     directory: "/frontend"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "deps"
-    labels:
-      - "dependencies"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     groups:
-      frontend-all-updates:
+      # Keep Expo SDK updates together, but only for patch/minor changes.
+      frontend-expo-sdk:
+        patterns:
+          - "@expo/*"
+          - "expo"
+          - "expo-*"
+          - "babel-preset-expo"
+          - "jest-expo"
+        update-types:
+          - "patch"
+          - "minor"
+
+      # React and React Native move together and deserve their own review lane.
+      frontend-react-native-core:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "react-native"
+          - "react-native-*"
+        exclude-patterns:
+          - "@react-native-async-storage/async-storage"
+          - "react-native-mmkv"
+        update-types:
+          - "patch"
+          - "minor"
+
+      # State and persistence changes are operationally sensitive even when small.
+      frontend-state-storage:
+        patterns:
+          - "@react-native-async-storage/async-storage"
+          - "react-native-mmkv"
+          - "zustand"
+        update-types:
+          - "patch"
+          - "minor"
+
+      # Keep the remaining development tooling together.
+      frontend-dev-tooling:
+        dependency-type: "development"
         patterns:
           - "*"
+        exclude-patterns:
+          - "@expo/*"
+          - "expo"
+          - "expo-*"
+          - "babel-preset-expo"
+          - "jest-expo"
+        update-types:
+          - "patch"
+          - "minor"
+
+      # Production dependencies outside the framework and storage lanes.
+      frontend-runtime-misc:
+        dependency-type: "production"
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@expo/*"
+          - "expo"
+          - "expo-*"
+          - "react"
+          - "react-dom"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native-async-storage/async-storage"
+          - "react-native-mmkv"
+          - "zustand"
+        update-types:
+          - "patch"
+          - "minor"
