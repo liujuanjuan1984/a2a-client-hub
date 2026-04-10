@@ -28,14 +28,16 @@ def test_dependabot_keeps_backend_grouped_and_frontend_split_by_risk() -> None:
     assert "labels:" not in dependabot_config
 
 
-def test_readme_documents_dependabot_and_audit_split() -> None:
+def test_contributing_documents_dependabot_and_audit_split() -> None:
     repo_root = Path(__file__).resolve().parents[3]
-    readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+    contributing_text = (repo_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
 
-    assert "Dependabot keeps backend updates grouped weekly" in readme_text
+    assert "Dependabot keeps backend updates grouped weekly" in contributing_text
     assert (
         "Frontend npm updates are split into smaller patch/minor review lanes"
-        in readme_text
+        in contributing_text
     )
-    assert "Semver-major frontend updates are intentionally ignored" in readme_text
-    assert "Existing audit workflows remain in place" in readme_text
+    assert (
+        "Semver-major frontend updates are intentionally ignored" in contributing_text
+    )
+    assert "Existing audit workflows remain in place" in contributing_text
