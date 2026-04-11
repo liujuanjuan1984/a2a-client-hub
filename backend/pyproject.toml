@@ -38,7 +38,7 @@ dependencies = [
     # Core FastAPI dependencies
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
-    "a2a-sdk==0.3.25",
+    "a2a-sdk==0.3.26",
     # Scheduling
     "APScheduler>=3.10.4",
     # Database dependencies
@@ -58,8 +58,7 @@ dependencies = [
     # JWT handling
     "PyJWT>=2.12.0",
     "pyasn1>=0.6.3",
-    "passlib[bcrypt]==1.7.4",
-    "bcrypt==4.0.1",
+    "argon2-cffi==25.1.0",
     "cryptography>=46.0.7",
     "fastmcp>=3.2.0,<4",
     "Pygments>=2.20.0",
@@ -68,7 +67,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "black>=26.3.1",
-    "isort==8.0.0",
+    "isort==8.0.1",
     "mypy>=1.10.0",
     "pip-audit>=2.9.0",
     "pre-commit>=3.0.0",
@@ -139,7 +138,6 @@ strict_equality = true
 module = [
     "alembic.*",
     "apscheduler.*",
-    "passlib.*",
     "psycopg2.*",
 ]
 ignore_missing_imports = true
@@ -158,10 +156,6 @@ markers = [
     "unit: marks tests as unit tests",
     "asyncio: marks tests as async tests",
 ]
-filterwarnings = [
-    "ignore::DeprecationWarning:passlib.*:",
-]
-
 [tool.coverage.run]
 source = ["app"]
 omit = [

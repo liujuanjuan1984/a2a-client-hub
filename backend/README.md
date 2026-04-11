@@ -35,6 +35,8 @@ Production note:
 - JWTs now carry `kid`, and the backend exposes JWKS at `/api/v1/auth/.well-known/jwks.json`. Keep previous public keys in `JWT_PREVIOUS_PUBLIC_KEYS` during rotation windows.
 - Login and refresh rate limiting is currently process-local and in-memory. It improves burst protection, but multi-instance/shared enforcement still requires an external shared store.
 - A daily auth cleanup job prunes expired legacy refresh revocations and applies retention windows to refresh-session rows and auth audit events. Tune with `AUTH_REFRESH_SESSION_RETENTION_DAYS` and `AUTH_AUDIT_EVENT_RETENTION_DAYS`.
+- Password hashing now uses `argon2id` only. Legacy bcrypt hashes are intentionally not supported at runtime; existing users must be reset during the rollout.
+- Use `uv run python scripts/reset_user_passwords.py --export-users users.csv` to generate a template for the current active users, fill in the new credentials, then apply it with `uv run python scripts/reset_user_passwords.py --apply users.csv`. Add `--prompt-passwords` if you do not want passwords stored in the CSV.
 
 ## Initialize Schema and Run Migrations
 

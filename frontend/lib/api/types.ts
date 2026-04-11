@@ -20,6 +20,16 @@ export interface RegisterRequest {
   invite_code?: string;
 }
 
+export interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
+  new_password_confirm?: string;
+}
+
+export interface PasswordChangeResponse {
+  message: string;
+}
+
 export interface UserProfile {
   id: UUID;
   email: string;

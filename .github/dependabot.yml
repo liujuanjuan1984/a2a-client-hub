@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "deps"
+    groups:
+      backend-all-updates:
+        patterns:
+          - "*"

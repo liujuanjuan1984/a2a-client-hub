@@ -30,7 +30,14 @@ import {
 } from "@/lib/api/hubA2aAgentsUser";
 import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
-import { generateId } from "@/lib/id";
+import { isValidHttpUrl } from "@/lib/httpUrl";
+import {
+  appendKeyValueRow,
+  ensureKeyValueRows,
+  removeKeyValueRow,
+  trimKeyValueRows,
+  updateKeyValueRows,
+} from "@/lib/keyValueRows";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
@@ -43,21 +50,6 @@ const authTypes: { label: string; value: AgentAuthType }[] = [
   { label: "API Key", value: "api_key" },
   { label: "Basic", value: "basic" },
 ];
-
-const createHeader = (): AgentHeader => ({
-  id: generateId(),
-  key: "",
-  value: "",
-});
-
-const validateUrl = (value: string) => {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-};
 
 type AgentFormScreenProps = {
   agentId?: string;
@@ -96,12 +88,8 @@ const buildSnapshot = (value: {
   apiKeyValue: value.apiKeyValue.trim(),
   basicUsername: value.basicUsername.trim(),
   basicPassword: value.basicPassword.trim(),
-  extraHeaders: value.extraHeaders
-    .map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
-    .filter((item) => item.key || item.value),
-  invokeMetadataDefaults: value.invokeMetadataDefaults
-    .map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
-    .filter((item) => item.key || item.value),
+  extraHeaders: trimKeyValueRows(value.extraHeaders),
+  invokeMetadataDefaults: trimKeyValueRows(value.invokeMetadataDefaults),
 });
 
 export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
@@ -137,15 +125,11 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     agent?.basicPassword ?? "",
   );
   const [extraHeaders, setExtraHeaders] = useState<AgentHeader[]>(
-    agent?.extraHeaders?.length ? agent.extraHeaders : [createHeader()],
+    ensureKeyValueRows(agent?.extraHeaders ?? []),
   );
   const [invokeMetadataDefaults, setInvokeMetadataDefaults] = useState<
     AgentHeader[]
-  >(
-    agent?.invokeMetadataDefaults?.length
-      ? agent.invokeMetadataDefaults
-      : [createHeader()],
-  );
+  >(ensureKeyValueRows(agent?.invokeMetadataDefaults ?? []));
   const [errors, setErrors] = useState<{ name?: string; cardUrl?: string }>({});
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "success" | "error"
@@ -208,13 +192,9 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     setApiKeyValue(agent.apiKeyValue ?? "");
     setBasicUsername(agent.basicUsername ?? "");
     setBasicPassword(agent.basicPassword ?? "");
-    setExtraHeaders(
-      agent.extraHeaders?.length ? agent.extraHeaders : [createHeader()],
-    );
+    setExtraHeaders(ensureKeyValueRows(agent.extraHeaders ?? []));
     setInvokeMetadataDefaults(
-      agent.invokeMetadataDefaults?.length
-        ? agent.invokeMetadataDefaults
-        : [createHeader()],
+      ensureKeyValueRows(agent.invokeMetadataDefaults ?? []),
     );
 
     initialSnapshotRef.current = buildSnapshot({
@@ -296,7 +276,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   }, [agent, agentId, validateAgentMutation]);
 
   const handleAddHeader = () => {
-    setExtraHeaders((prev) => [...prev, createHeader()]);
+    setExtraHeaders((prev) => appendKeyValueRow(prev));
   };
 
   const handleHeaderChange = (
@@ -304,17 +284,15 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     key: "key" | "value",
     value: string,
   ) => {
-    setExtraHeaders((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, [key]: value } : item)),
-    );
+    setExtraHeaders((prev) => updateKeyValueRows(prev, id, key, value));
   };
 
   const handleHeaderRemove = (id: string) => {
-    setExtraHeaders((prev) => prev.filter((item) => item.id !== id));
+    setExtraHeaders((prev) => removeKeyValueRow(prev, id));
   };
 
   const handleAddInvokeMetadataDefault = () => {
-    setInvokeMetadataDefaults((prev) => [...prev, createHeader()]);
+    setInvokeMetadataDefaults((prev) => appendKeyValueRow(prev));
   };
 
   const handleInvokeMetadataDefaultChange = (
@@ -323,12 +301,12 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     value: string,
   ) => {
     setInvokeMetadataDefaults((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, [key]: value } : item)),
+      updateKeyValueRows(prev, id, key, value),
     );
   };
 
   const handleInvokeMetadataDefaultRemove = (id: string) => {
-    setInvokeMetadataDefaults((prev) => prev.filter((item) => item.id !== id));
+    setInvokeMetadataDefaults((prev) => removeKeyValueRow(prev, id));
   };
 
   const handleAuthTypeChange = (nextType: AgentAuthType) => {
@@ -348,7 +326,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     if (!name.trim()) {
       nextErrors.name = "Agent name is required.";
     }
-    if (!cardUrl.trim() || !validateUrl(cardUrl.trim())) {
+    if (!cardUrl.trim() || !isValidHttpUrl(cardUrl.trim())) {
       nextErrors.cardUrl = "Valid card URL is required.";
     }
     setErrors(nextErrors);

@@ -66,6 +66,12 @@ Notes:
 - Link related issue(s).
 - Document config or behavior changes in [README.md](README.md) or [docs/](docs/) when needed.
 
+## Dependency Automation
+
+- Dependabot keeps backend updates grouped weekly for `backend/` (`uv`).
+- Frontend dependency updates are planned manually to avoid noisy lockfile churn and framework-coupled merge risk on `master`.
+- Existing audit workflows remain in place for explicit vulnerability review and do not replace human triage.
+
 ## Security
 
 - Never commit secrets (`.env`, private keys, tokens, credentials).

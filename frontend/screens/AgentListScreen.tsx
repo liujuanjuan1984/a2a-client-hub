@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
 
+import { AccountEntryButton } from "@/components/auth/AccountEntryButton";
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
@@ -567,6 +568,7 @@ export function AgentListScreen() {
         subtitle="Manage your connected A2A services."
         rightElement={
           <View className="flex-row gap-2">
+            <AccountEntryButton />
             {user?.is_superuser ? (
               <IconButton
                 accessibilityLabel="Open admin"

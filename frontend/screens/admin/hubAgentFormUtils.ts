@@ -1,34 +1,17 @@
-import { generateId } from "@/lib/id";
+import {
+  type KeyValueRow,
+  keyValueRowsToRecord,
+  recordToKeyValueRows,
+} from "@/lib/keyValueRows";
 
-export type HeaderRow = {
-  id: string;
-  key: string;
-  value: string;
-};
+export type HeaderRow = KeyValueRow;
 
 export const recordToHeaderRows = (
   record: Record<string, string>,
-): HeaderRow[] => {
-  const rows = Object.entries(record).map(([key, value]) => ({
-    id: generateId(),
-    key,
-    value,
-  }));
-  return rows.length ? rows : [{ id: generateId(), key: "", value: "" }];
-};
+): HeaderRow[] => recordToKeyValueRows(record);
 
-export const headerRowsToRecord = (
-  rows: HeaderRow[],
-): Record<string, string> => {
-  const record: Record<string, string> = {};
-  for (const row of rows) {
-    const key = row.key.trim();
-    const value = row.value.trim();
-    if (!key) continue;
-    record[key] = value;
-  }
-  return record;
-};
+export const headerRowsToRecord = (rows: HeaderRow[]): Record<string, string> =>
+  keyValueRowsToRecord(rows);
 
 export const parseTags = (value: string): string[] => {
   const raw = value
@@ -44,13 +27,4 @@ export const parseTags = (value: string): string[] => {
     tags.push(tag);
   }
   return tags;
-};
-
-export const validateHttpUrl = (value: string) => {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 };

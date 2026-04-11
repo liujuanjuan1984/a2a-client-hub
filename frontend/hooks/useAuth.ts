@@ -5,6 +5,8 @@ import { apiRequest } from "@/lib/api/client";
 import {
   type AuthResponse,
   type LoginRequest,
+  type PasswordChangeRequest,
+  type PasswordChangeResponse,
   type RegisterRequest,
   type UserProfile,
 } from "@/lib/api/types";
@@ -85,5 +87,24 @@ export const useRegister = () => {
         expiresInSeconds: data.expires_in,
       });
     },
+  });
+};
+
+export const useChangePassword = () => {
+  return useMutation({
+    mutationFn: (payload: PasswordChangeRequest) =>
+      apiRequest<PasswordChangeResponse>("/auth/password/change", {
+        method: "POST",
+        body: payload,
+      }),
+  });
+};
+
+export const useLogout = () => {
+  return useMutation({
+    mutationFn: () =>
+      apiRequest<Record<string, never>>("/auth/logout", {
+        method: "POST",
+      }),
   });
 };
