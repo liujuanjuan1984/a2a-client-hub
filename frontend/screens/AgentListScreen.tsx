@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
@@ -19,6 +19,10 @@ import {
   type A2AAgentResponse,
 } from "@/lib/api/a2aAgents";
 import { type HubA2AAgentUserResponse } from "@/lib/api/hubA2aAgentsUser";
+import {
+  getSelfManagementBuiltInAgentProfile,
+  type SelfManagementBuiltInAgentProfileResponse,
+} from "@/lib/api/selfManagementAgent";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
@@ -30,6 +34,10 @@ import { useSessionStore } from "@/store/session";
 
 const PERSONAL_PAGE_SIZE = 12;
 const SHARED_PAGE_SIZE = 8;
+const SELF_MANAGEMENT_BUILT_IN_PROFILE_QUERY_KEY = [
+  "self-management-built-in-agent",
+  "profile",
+] as const;
 
 const HEALTH_BADGE_STYLES: Record<
   A2AAgentResponse["health_status"],
@@ -78,6 +86,15 @@ export function AgentListScreen() {
     size: SHARED_PAGE_SIZE,
     enabled: !isPersonalView,
   });
+  const builtInAgentProfileQuery = useQuery({
+    queryKey: SELF_MANAGEMENT_BUILT_IN_PROFILE_QUERY_KEY,
+    enabled: !isPersonalView,
+    queryFn: getSelfManagementBuiltInAgentProfile,
+  });
+  const builtInAgentProfile =
+    builtInAgentProfileQuery.data?.configured === true
+      ? builtInAgentProfileQuery.data
+      : null;
 
   const invalidateAgentQueries = async () => {
     await Promise.all([
@@ -339,6 +356,46 @@ export function AgentListScreen() {
     [handleChat, router],
   );
 
+  const renderBuiltInAgentCard = useCallback(
+    (profile: SelfManagementBuiltInAgentProfileResponse) => (
+      <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
+        <View className="px-4 py-4">
+          <View className="flex-row items-center justify-between">
+            <Text
+              className="flex-1 pr-4 text-[13px] font-semibold text-white"
+              numberOfLines={1}
+            >
+              {profile.name}
+            </Text>
+            <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-green">
+              BUILT-IN
+            </Text>
+          </View>
+          <Text className="mt-3 text-xs text-slate-400">
+            Manage your own {profile.resources.join(", ")} inside a2a-client-hub
+            through constrained built-in tools.
+          </Text>
+        </View>
+
+        <View className="flex-row items-center justify-end gap-2 bg-black/20 px-4 py-2.5">
+          <Button
+            label="Chat"
+            size="sm"
+            variant="primary"
+            iconRight="chevron-forward"
+            onPress={() => handleChat(profile.id)}
+            accessibilityRole="button"
+            accessibilityLabel="Open built-in assistant"
+            accessibilityHint={`Open chat with ${profile.name}`}
+          />
+        </View>
+      </View>
+    ),
+    [handleChat],
+  );
+
+  const sharedListData = useMemo(() => sharedQuery.items, [sharedQuery.items]);
+
   const renderHeader = useMemo(
     () => (
       <View className="mb-5">
@@ -380,14 +437,18 @@ export function AgentListScreen() {
               />
             </View>
           </View>
+        ) : builtInAgentProfile ? (
+          renderBuiltInAgentCard(builtInAgentProfile)
         ) : null}
       </View>
     ),
     [
       activePersonalHealthFilter,
       batchHealthMutation,
+      builtInAgentProfile,
       counts,
       isPersonalView,
+      renderBuiltInAgentCard,
       setActivePersonalHealthFilter,
       visiblePersonalHealthFilters,
     ],
@@ -490,10 +551,11 @@ export function AgentListScreen() {
           <Text className="text-[11px] font-bold text-black">A2A</Text>
         </View>
         <Text className="text-base font-bold text-white">
-          No shared agents available
+          No more shared agents available
         </Text>
         <Text className="mt-2 text-center text-sm text-slate-400">
-          Shared agents published by admins will appear here.
+          Shared agents published by admins will appear here alongside the
+          built-in assistant.
         </Text>
       </View>
     );
@@ -566,7 +628,7 @@ export function AgentListScreen() {
         />
       ) : (
         <FlatList
-          data={sharedQuery.items}
+          data={sharedListData}
           renderItem={renderSharedAgentItem}
           keyExtractor={(item) => item.id}
           style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}

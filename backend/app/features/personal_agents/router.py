@@ -443,6 +443,14 @@ async def validate_agent_card(
             resolved=runtime.resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
+        logger.exception(
+            "Personal A2A agent card validation failed",
+            extra={
+                "user_id": str(current_user_id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
@@ -482,6 +490,14 @@ async def proxy_agent_card(
             resolved=resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
+        logger.exception(
+            "Personal A2A agent card proxy failed",
+            extra={
+                "user_id": str(current_user_id),
+                "card_url": redact_url_for_logging(card_url),
+                "auth_type": payload.auth_type,
+            },
+        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

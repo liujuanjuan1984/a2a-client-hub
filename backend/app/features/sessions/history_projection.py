@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal, cast
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -16,6 +16,7 @@ from app.db.models.conversation_thread import ConversationThread
 from app.db.transaction import rollback_safely
 from app.features.sessions import block_store, message_store
 from app.features.sessions.common import (
+    SessionAgentSource,
     SessionSource,
     build_interrupt_lifecycle_message_content,
     build_interrupt_lifecycle_message_id,
@@ -194,7 +195,7 @@ class SessionHistoryProjectionService:
         *,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         conversation_id: str | None,
     ) -> tuple[ConversationThread | None, SessionSource | None]:
         from app.features.sessions.common import parse_conversation_id
@@ -296,7 +297,7 @@ class SessionHistoryProjectionService:
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         query: str,
         response_content: str,
         success: bool,
@@ -680,7 +681,7 @@ class SessionHistoryProjectionService:
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         query: str,
         response_content: str,
         success: bool,
@@ -733,7 +734,7 @@ class SessionHistoryProjectionService:
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         query: str,
         context_id: str | None,
         invoke_metadata: dict[str, Any] | None = None,

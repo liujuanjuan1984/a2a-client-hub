@@ -844,6 +844,76 @@ class Settings(BaseSettings):
         alias="OPENCODE_SESSIONS_REFRESH_CONCURRENCY",
         description="Maximum concurrent upstream refreshes when updating cached OpenCode session listings.",
     )
+    self_management_swival_import_paths: list[str] = Field(
+        default_factory=list,
+        alias="SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS",
+        description="Optional extra import roots used before importing swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_tool_executable: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE",
+        description="Optional absolute path or command name used to discover a uv tool-installed swival runtime when the backend environment cannot import swival directly.",
+    )
+    self_management_swival_runtime_root: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT",
+        description="Optional root directory used to isolate built-in swival runtime files per authenticated user.",
+    )
+    self_management_swival_provider: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_PROVIDER",
+        description="Configured swival provider id for the built-in self-management agent runtime.",
+    )
+    self_management_swival_model: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_MODEL",
+        description="Configured swival model id for the built-in self-management agent runtime.",
+    )
+    self_management_swival_base_url: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_BASE_URL",
+        description="Optional base URL forwarded to swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_api_key: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_API_KEY",
+        description="Optional API key forwarded to swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_mcp_base_url: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL",
+        description="Trusted internal base URL used by the built-in self-management agent runtime when connecting back to the local MCP adapter.",
+    )
+    self_management_swival_reasoning_effort: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT",
+        description="Optional reasoning effort forwarded to swival for the built-in self-management agent runtime.",
+    )
+    self_management_swival_max_turns: int = Field(
+        default=12,
+        alias="SELF_MANAGEMENT_SWIVAL_MAX_TURNS",
+        description="Maximum number of turns allowed for one built-in self-management agent run.",
+    )
+    self_management_swival_max_output_tokens: int = Field(
+        default=4096,
+        alias="SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS",
+        description="Maximum output tokens allowed for one built-in self-management agent run.",
+    )
+    self_management_swival_delegated_token_ttl_seconds: int = Field(
+        default=300,
+        alias="SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS",
+        description="Maximum lifetime in seconds for delegated built-in agent access tokens used against the internal MCP adapter.",
+    )
+    self_management_interrupt_ttl_seconds: int = Field(
+        default=900,
+        alias="SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS",
+        description="Maximum lifetime in seconds for built-in self-management interrupt request tokens.",
+    )
+    self_management_swival_session_ttl_seconds: int = Field(
+        default=30 * 60,
+        alias="SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS",
+        description="Maximum idle lifetime in seconds for one built-in self-management swival conversation session.",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -878,6 +948,45 @@ class Settings(BaseSettings):
             raise ValueError("WS_TICKET_TTL_SECONDS must not exceed 600")
         return value
 
+    @field_validator("self_management_swival_delegated_token_ttl_seconds")
+    @classmethod
+    def validate_self_management_swival_delegated_token_ttl_seconds(
+        cls, value: int
+    ) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must be positive"
+            )
+        if value > 3600:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must not exceed 3600"
+            )
+        return value
+
+    @field_validator("self_management_interrupt_ttl_seconds")
+    @classmethod
+    def validate_self_management_interrupt_ttl_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS must be positive")
+        if value > 86400:
+            raise ValueError(
+                "SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS must not exceed 86400"
+            )
+        return value
+
+    @field_validator("self_management_swival_session_ttl_seconds")
+    @classmethod
+    def validate_self_management_swival_session_ttl_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS must be positive"
+            )
+        if value > 86400:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS must not exceed 86400"
+            )
+        return value
+
     @field_validator("opencode_sessions_cache_ttl_seconds")
     @classmethod
     def validate_opencode_sessions_cache_ttl_seconds(cls, value: int) -> int:
@@ -903,6 +1012,28 @@ class Settings(BaseSettings):
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must be positive")
         if value > 20:
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must not exceed 20")
+        return value
+
+    @field_validator("self_management_swival_max_turns")
+    @classmethod
+    def validate_self_management_swival_max_turns(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SELF_MANAGEMENT_SWIVAL_MAX_TURNS must be positive")
+        if value > 100:
+            raise ValueError("SELF_MANAGEMENT_SWIVAL_MAX_TURNS must not exceed 100")
+        return value
+
+    @field_validator("self_management_swival_max_output_tokens")
+    @classmethod
+    def validate_self_management_swival_max_output_tokens(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS must be positive"
+            )
+        if value > 32768:
+            raise ValueError(
+                "SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS must not exceed 32768"
+            )
         return value
 
     @field_validator("a2a_stream_heartbeat_interval")

@@ -1,1 +1,1 @@
-"""Shared A2A agent feature helpers."""
+"""Shared helpers for reusable external A2A agent workflows."""

@@ -28,16 +28,34 @@ import {
   commandSession,
   recoverInterrupts,
 } from "@/lib/api/a2aExtensions";
-import type { ChatMessage } from "@/lib/api/chat-utils";
+import type {
+  ChatMessage,
+  PendingRuntimeInterrupt,
+} from "@/lib/api/chat-utils";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
+import {
+  getSelfManagementBuiltInAgentProfile,
+  recoverSelfManagementBuiltInAgentInterrupts,
+  isSelfManagementBuiltInAgent,
+  replySelfManagementBuiltInAgentPermissionInterrupt,
+  runSelfManagementBuiltInAgent,
+  toPendingRuntimeInterrupt,
+} from "@/lib/api/selfManagementAgent";
 import { continueSession } from "@/lib/api/sessions";
 import {
+  buildPendingInterruptState,
   buildInvokePayload,
+  createAgentSession,
   getPendingInterrupt,
   getPendingInterruptQueue,
   getSharedModelSelection,
+  type ResolvedRuntimeInterruptRecord,
 } from "@/lib/chat-utils";
-import { addConversationOverlayMessage } from "@/lib/chatHistoryCache";
+import {
+  addConversationMessage,
+  addConversationOverlayMessage,
+  updateConversationMessage,
+} from "@/lib/chatHistoryCache";
 import {
   getAnchoredOffsetAfterContentResize,
   shouldShowScrollToBottom,
@@ -86,6 +104,7 @@ export function useChatScreenController({
     () => agents.find((item) => item.id === activeAgentId),
     [agents, activeAgentId],
   );
+  const isBuiltInSelfManagementAgent = isSelfManagementBuiltInAgent(agent?.id);
   const ensureSession = useChatStore((state) => state.ensureSession);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const retryMessage = useChatStore((state) => state.retryMessage);
@@ -169,46 +188,69 @@ export function useChatScreenController({
   const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
     agentId: activeAgentId,
     source: agent?.source,
+    enabled: !isBuiltInSelfManagementAgent,
   });
-  const runtimeStatusContract =
-    extensionCapabilitiesQuery.runtimeStatusContract ?? undefined;
+  const runtimeStatusContract = isBuiltInSelfManagementAgent
+    ? undefined
+    : (extensionCapabilitiesQuery.runtimeStatusContract ?? undefined);
   const modelSelectionStatus: GenericCapabilityStatus =
-    !activeAgentId || !agent?.source
+    isBuiltInSelfManagementAgent
       ? "unsupported"
-      : extensionCapabilitiesQuery.modelSelectionStatus;
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.modelSelectionStatus;
   const providerDiscoveryStatus: GenericCapabilityStatus =
-    !activeAgentId || !agent?.source
+    isBuiltInSelfManagementAgent
       ? "unsupported"
-      : extensionCapabilitiesQuery.providerDiscoveryStatus;
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.providerDiscoveryStatus;
   const interruptRecoveryStatus: GenericCapabilityStatus =
-    !activeAgentId || !agent?.source
+    isBuiltInSelfManagementAgent
       ? "unsupported"
-      : extensionCapabilitiesQuery.interruptRecoveryStatus;
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.interruptRecoveryStatus;
   const sessionCommandStatus: GenericCapabilityStatus =
-    !activeAgentId || !agent?.source
+    isBuiltInSelfManagementAgent
       ? "unsupported"
-      : extensionCapabilitiesQuery.sessionCommandStatus;
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.sessionCommandStatus;
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
-    !activeAgentId || !agent?.source
+    isBuiltInSelfManagementAgent
       ? "unsupported"
-      : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
   const codexTurnSteerStatus: GenericCapabilityStatus =
-    !activeAgentId || !agent?.source
+    isBuiltInSelfManagementAgent
       ? "unsupported"
-      : extensionCapabilitiesQuery.codexTurnSteerStatus;
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.codexTurnSteerStatus;
   const invokeMetadataStatus: GenericCapabilityStatus =
-    !activeAgentId || !agent?.source
+    isBuiltInSelfManagementAgent
       ? "unsupported"
-      : extensionCapabilitiesQuery.invokeMetadataStatus;
-  const codexDiscoveryStatus =
-    !activeAgentId || !agent?.source
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.invokeMetadataStatus;
+  const codexDiscoveryStatus = isBuiltInSelfManagementAgent
+    ? "unsupported"
+    : !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.codexDiscoveryStatus;
-  const codexDiscovery = extensionCapabilitiesQuery.codexDiscovery;
-  const codexDiscoveryAvailableTabs =
-    extensionCapabilitiesQuery.codexDiscoveryAvailableTabs;
-  const canReadCodexPlugins = extensionCapabilitiesQuery.canReadCodexPlugins;
+  const codexDiscovery = isBuiltInSelfManagementAgent
+    ? null
+    : extensionCapabilitiesQuery.codexDiscovery;
+  const codexDiscoveryAvailableTabs = isBuiltInSelfManagementAgent
+    ? []
+    : extensionCapabilitiesQuery.codexDiscoveryAvailableTabs;
+  const canReadCodexPlugins = isBuiltInSelfManagementAgent
+    ? false
+    : extensionCapabilitiesQuery.canReadCodexPlugins;
   const canBrowseCodexDiscovery =
+    !isBuiltInSelfManagementAgent &&
     Boolean(activeAgentId && agent?.source) &&
     extensionCapabilitiesQuery.canShowCodexDiscovery;
   const latestMissingParams = useMemo(() => {
@@ -296,6 +338,248 @@ export function useChatScreenController({
     (error as Error & { skipToast?: boolean }).skipToast = true;
     return error;
   }, []);
+
+  const applyBuiltInAgentSessionUpdate = useCallback(
+    (
+      nextConversationId: string,
+      nextAgentId: string,
+      updater: (
+        current: ReturnType<typeof createAgentSession>,
+      ) => ReturnType<typeof createAgentSession>,
+    ) => {
+      useChatStore.setState((state) => {
+        const current =
+          state.sessions[nextConversationId] ?? createAgentSession(nextAgentId);
+        return {
+          sessions: {
+            ...state.sessions,
+            [nextConversationId]: updater(current),
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const buildBuiltInResolvedInterruptRecord = useCallback(
+    (
+      requestId: string,
+      resolution: "replied" | "rejected",
+    ): ResolvedRuntimeInterruptRecord => ({
+      requestId,
+      type: "permission",
+      phase: "resolved",
+      resolution,
+      observedAt: new Date().toISOString(),
+    }),
+    [],
+  );
+
+  const sendBuiltInSelfManagementMessage = useCallback(
+    async (
+      nextConversationId: string,
+      nextAgentId: string,
+      content: string,
+    ) => {
+      const trimmedContent = content.trim();
+      if (!trimmedContent) {
+        return;
+      }
+
+      const userMessageId = generateUuid();
+      const agentMessageId = generateUuid();
+      const createdAt = new Date().toISOString();
+
+      ensureSession(nextConversationId, nextAgentId);
+      applyBuiltInAgentSessionUpdate(
+        nextConversationId,
+        nextAgentId,
+        (current) => ({
+          ...current,
+          agentId: nextAgentId,
+          lastActiveAt: createdAt,
+          streamState: "streaming",
+          lastStreamError: null,
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+          lastResolvedInterrupt: null,
+          ...buildPendingInterruptState([]),
+        }),
+      );
+
+      addConversationMessage(nextConversationId, {
+        id: userMessageId,
+        role: "user",
+        content: trimmedContent,
+        createdAt,
+        status: "done",
+      });
+      addConversationMessage(nextConversationId, {
+        id: agentMessageId,
+        role: "agent",
+        content: "",
+        createdAt,
+        status: "streaming",
+        blocks: [],
+      });
+
+      try {
+        const result = await runSelfManagementBuiltInAgent({
+          conversationId: nextConversationId,
+          message: trimmedContent,
+          userMessageId,
+          agentMessageId,
+        });
+        const nextInterrupt: PendingRuntimeInterrupt | null = result.interrupt
+          ? toPendingRuntimeInterrupt(result.interrupt)
+          : null;
+
+        updateConversationMessage(nextConversationId, agentMessageId, {
+          content: result.answer ?? "",
+          status: result.status === "interrupted" ? "interrupted" : "done",
+        });
+        applyBuiltInAgentSessionUpdate(
+          nextConversationId,
+          nextAgentId,
+          (current) => ({
+            ...current,
+            agentId: nextAgentId,
+            lastActiveAt: new Date().toISOString(),
+            streamState: "idle",
+            lastStreamError: null,
+            ...buildPendingInterruptState(nextInterrupt ? [nextInterrupt] : []),
+          }),
+        );
+      } catch (error) {
+        updateConversationMessage(nextConversationId, agentMessageId, {
+          content:
+            error instanceof Error
+              ? error.message
+              : "Built-in assistant request failed.",
+          status: "error",
+        });
+        applyBuiltInAgentSessionUpdate(
+          nextConversationId,
+          nextAgentId,
+          (current) => ({
+            ...current,
+            agentId: nextAgentId,
+            lastActiveAt: new Date().toISOString(),
+            streamState: "error",
+            lastStreamError:
+              error instanceof Error
+                ? error.message
+                : "Built-in assistant request failed.",
+            ...buildPendingInterruptState([]),
+          }),
+        );
+        throw error;
+      }
+    },
+    [applyBuiltInAgentSessionUpdate, ensureSession],
+  );
+
+  const handleBuiltInPermissionReply = useCallback(
+    async ({
+      requestId,
+      reply,
+    }: {
+      requestId: string;
+      reply: "once" | "always" | "reject";
+    }) => {
+      if (!conversationId || !activeAgentId) {
+        return;
+      }
+
+      const nextAgentMessageId = generateUuid();
+      const createdAt = new Date().toISOString();
+      applyBuiltInAgentSessionUpdate(
+        conversationId,
+        activeAgentId,
+        (current) => ({
+          ...current,
+          agentId: activeAgentId,
+          lastActiveAt: createdAt,
+          streamState: "streaming",
+          lastStreamError: null,
+          lastAgentMessageId: nextAgentMessageId,
+        }),
+      );
+      addConversationMessage(conversationId, {
+        id: nextAgentMessageId,
+        role: "agent",
+        content: "",
+        createdAt,
+        status: "streaming",
+        blocks: [],
+      });
+
+      try {
+        const result = await replySelfManagementBuiltInAgentPermissionInterrupt(
+          {
+            requestId,
+            reply,
+            agentMessageId: nextAgentMessageId,
+          },
+        );
+
+        const resolution = reply === "reject" ? "rejected" : "replied";
+        const nextInterrupt: PendingRuntimeInterrupt | null = result.interrupt
+          ? toPendingRuntimeInterrupt(result.interrupt)
+          : null;
+
+        updateConversationMessage(conversationId, nextAgentMessageId, {
+          content: result.answer ?? "",
+          status: result.status === "interrupted" ? "interrupted" : "done",
+        });
+        applyBuiltInAgentSessionUpdate(
+          conversationId,
+          activeAgentId,
+          (current) => ({
+            ...current,
+            agentId: activeAgentId,
+            lastActiveAt: new Date().toISOString(),
+            streamState: "idle",
+            lastStreamError: null,
+            lastResolvedInterrupt: buildBuiltInResolvedInterruptRecord(
+              requestId,
+              resolution,
+            ),
+            ...buildPendingInterruptState(nextInterrupt ? [nextInterrupt] : []),
+          }),
+        );
+      } catch (error) {
+        updateConversationMessage(conversationId, nextAgentMessageId, {
+          content:
+            error instanceof Error
+              ? error.message
+              : "Built-in assistant request failed.",
+          status: "error",
+        });
+        applyBuiltInAgentSessionUpdate(
+          conversationId,
+          activeAgentId,
+          (current) => ({
+            ...current,
+            agentId: activeAgentId,
+            lastActiveAt: new Date().toISOString(),
+            streamState: "error",
+            lastStreamError:
+              error instanceof Error
+                ? error.message
+                : "Built-in assistant request failed.",
+          }),
+        );
+        throw error;
+      }
+    },
+    [
+      activeAgentId,
+      applyBuiltInAgentSessionUpdate,
+      buildBuiltInResolvedInterruptRecord,
+      conversationId,
+    ],
+  );
 
   const invokeSessionControl = useCallback(
     async (
@@ -567,6 +851,24 @@ export function useChatScreenController({
         useChatStore.getState().sessions[nextConversationId];
       const isActivelyStreaming = currentSession?.streamState === "streaming";
 
+      if (isSelfManagementBuiltInAgent(nextAgentId)) {
+        if (isActivelyStreaming) {
+          toast.info(
+            "Interrupt required",
+            "The assistant is still working. Interrupt it before sending a new message.",
+          );
+          throw buildSkippedToastError(
+            "Interrupt the current response before sending a new message.",
+          );
+        }
+        await sendBuiltInSelfManagementMessage(
+          nextConversationId,
+          nextAgentId,
+          effectiveContent,
+        );
+        return;
+      }
+
       if (isActivelyStreaming) {
         if (isAppendAvailableForSession(currentSession)) {
           await appendMessageToRunningSession(
@@ -599,6 +901,7 @@ export function useChatScreenController({
       buildSkippedToastError,
       isAppendAvailableForSession,
       runtimeStatusContract,
+      sendBuiltInSelfManagementMessage,
       sendMessage,
       sessionCommandStatus,
     ],
@@ -668,6 +971,47 @@ export function useChatScreenController({
     [interruptRecoveryStatus, replaceRecoveredInterrupts],
   );
 
+  const recoverBuiltInPendingInterrupts = useCallback(
+    async ({ nextConversationId }: { nextConversationId: string }) => {
+      const resolvedSessionId = nextConversationId.trim();
+      if (!resolvedSessionId) {
+        return;
+      }
+
+      const recoveryKey = `${resolvedSessionId}:${resolvedSessionId}`;
+      const lastRecovery = lastInterruptRecoveryRef.current;
+      if (
+        lastRecovery &&
+        lastRecovery.key === recoveryKey &&
+        Date.now() - lastRecovery.triggeredAt < INTERRUPT_RECOVERY_THROTTLE_MS
+      ) {
+        return;
+      }
+      lastInterruptRecoveryRef.current = {
+        key: recoveryKey,
+        triggeredAt: Date.now(),
+      };
+
+      try {
+        const result = await recoverSelfManagementBuiltInAgentInterrupts({
+          conversationId: resolvedSessionId,
+        });
+        replaceRecoveredInterrupts(nextConversationId, result.items, {
+          sessionId: resolvedSessionId,
+        });
+      } catch (error) {
+        console.warn("[Chat] built-in interrupt recovery failed", {
+          conversationId: nextConversationId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "built_in_interrupt_recovery_failed",
+        });
+      }
+    },
+    [replaceRecoveredInterrupts],
+  );
+
   const {
     interruptAction,
     questionAnswers,
@@ -689,6 +1033,12 @@ export function useChatScreenController({
     pendingQuestionCount,
     sessionMetadata: session?.metadata,
     clearPendingInterrupt,
+    onPermissionReplyOverride: isBuiltInSelfManagementAgent
+      ? handleBuiltInPermissionReply
+      : null,
+    permissionReplySuccessMessage: isBuiltInSelfManagementAgent
+      ? "Authorization request handled."
+      : null,
   });
 
   const canAppendToRunningStream = useMemo(() => {
@@ -763,7 +1113,8 @@ export function useChatScreenController({
   }, [activeAgentId, conversationId, ensureSession]);
 
   useEffect(() => {
-    if (!conversationId || !activeAgentId) return;
+    if (!conversationId || !activeAgentId || isBuiltInSelfManagementAgent)
+      return;
     const boundAgentId = activeAgentId;
     const normalizedConversationId = conversationId;
     const hasHistory = messages.length > 0;
@@ -820,6 +1171,7 @@ export function useChatScreenController({
   }, [
     activeAgentId,
     ensureSession,
+    isBuiltInSelfManagementAgent,
     messages.length,
     conversationId,
     router,
@@ -831,7 +1183,8 @@ export function useChatScreenController({
       !conversationId ||
       !activeAgentId ||
       !agent?.source ||
-      !boundExternalSessionId
+      !boundExternalSessionId ||
+      isBuiltInSelfManagementAgent
     ) {
       return;
     }
@@ -849,8 +1202,23 @@ export function useChatScreenController({
     agent?.source,
     boundExternalSessionId,
     conversationId,
+    isBuiltInSelfManagementAgent,
     interruptRecoveryStatus,
     recoverPendingInterrupts,
+  ]);
+
+  useEffect(() => {
+    if (!conversationId || !activeAgentId || !isBuiltInSelfManagementAgent) {
+      return;
+    }
+    recoverBuiltInPendingInterrupts({
+      nextConversationId: conversationId,
+    });
+  }, [
+    activeAgentId,
+    conversationId,
+    isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
   ]);
 
   useEffect(() => {
@@ -858,15 +1226,25 @@ export function useChatScreenController({
       session?.streamState !== "recoverable" ||
       !conversationId ||
       !activeAgentId ||
-      !agent?.source ||
-      !boundExternalSessionId
+      (!isBuiltInSelfManagementAgent &&
+        (!agent?.source || !boundExternalSessionId))
     ) {
+      return;
+    }
+    if (isBuiltInSelfManagementAgent) {
+      recoverBuiltInPendingInterrupts({
+        nextConversationId: conversationId,
+      });
+      return;
+    }
+    const nextAgentSource = agent?.source;
+    if (!nextAgentSource) {
       return;
     }
     recoverPendingInterrupts({
       nextConversationId: conversationId,
       nextAgentId: activeAgentId,
-      nextAgentSource: agent.source,
+      nextAgentSource,
       nextSessionId: boundExternalSessionId,
     });
   }, [
@@ -874,6 +1252,8 @@ export function useChatScreenController({
     agent?.source,
     boundExternalSessionId,
     conversationId,
+    isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
     recoverPendingInterrupts,
     session?.streamState,
   ]);
@@ -925,6 +1305,7 @@ export function useChatScreenController({
       }
       if (
         activeAgentId &&
+        !isBuiltInSelfManagementAgent &&
         agent?.source &&
         boundExternalSessionId &&
         interruptRecoveryStatus === "supported"
@@ -944,6 +1325,7 @@ export function useChatScreenController({
       agent?.source,
       boundExternalSessionId,
       conversationId,
+      isBuiltInSelfManagementAgent,
       interruptRecoveryStatus,
       recoverPendingInterrupts,
       scheduleStickToBottom,
@@ -1031,6 +1413,16 @@ export function useChatScreenController({
     if (!activeAgentId || !agent) return;
     blurActiveElement();
     try {
+      if (isBuiltInSelfManagementAgent) {
+        const profile = await getSelfManagementBuiltInAgentProfile();
+        if (!profile.configured) {
+          throw new Error(
+            "Built-in self-management assistant is not configured.",
+          );
+        }
+        toast.success("Connection OK", `${profile.name} is ready.`);
+        return;
+      }
       await validateAgentMutation.mutateAsync(activeAgentId);
       toast.success("Connection OK", `${agent.name} is online.`);
     } catch (error) {
@@ -1038,7 +1430,12 @@ export function useChatScreenController({
         error instanceof Error ? error.message : "Connection failed.";
       toast.error("Test failed", message);
     }
-  }, [activeAgentId, agent, validateAgentMutation]);
+  }, [
+    activeAgentId,
+    agent,
+    isBuiltInSelfManagementAgent,
+    validateAgentMutation,
+  ]);
 
   useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
 

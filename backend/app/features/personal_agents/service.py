@@ -459,6 +459,23 @@ class A2AAgentService(AgentValidationMixin):
 
         return await self._get_agent(db, user_id=user_id, agent_id=agent_id)
 
+    async def get_agent_record(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent_id: UUID,
+    ) -> A2AAgentRecord:
+        """Return one serialized agent record owned by the user."""
+
+        agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
+        credential = await get_agent_credential(db, agent_id=agent_id)
+        return self._build_record(
+            agent,
+            token_last4=cast(str | None, getattr(credential, "token_last4", None)),
+            username_hint=cast(str | None, getattr(credential, "username_hint", None)),
+        )
+
     async def create_agent(
         self,
         db: AsyncSession,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.features.sessions.common import (
         BindInflightTaskReport,
         PreemptedInvokeReport,
+        SessionAgentSource,
         SessionSource,
     )
 
@@ -48,6 +49,19 @@ class SessionHubService:
             size=size,
             source=source,
             agent_id=agent_id,
+        )
+
+    async def get_session(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+    ) -> tuple[dict[str, Any], bool]:
+        return await self._query.get_session(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
         )
 
     async def list_messages(
@@ -200,7 +214,7 @@ class SessionHubService:
         *,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         conversation_id: str | None,
     ) -> tuple[ConversationThread | None, SessionSource | None]:
         return await self._history.ensure_local_session_for_invoke(
@@ -219,7 +233,7 @@ class SessionHubService:
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         query: str,
         response_content: str,
         success: bool,
@@ -264,7 +278,7 @@ class SessionHubService:
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         query: str,
         response_content: str,
         success: bool,
@@ -309,7 +323,7 @@ class SessionHubService:
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
+        agent_source: SessionAgentSource,
         query: str,
         context_id: str | None,
         invoke_metadata: dict[str, Any] | None = None,

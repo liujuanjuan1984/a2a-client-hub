@@ -3,7 +3,7 @@
 import importlib
 import inspect
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Awaitable, Callable, Dict, cast
 
 import uvicorn
@@ -29,6 +29,13 @@ from app.features.schedules.job import ensure_a2a_schedule_job
 from app.features.schedules.service import (
     ensure_a2a_schedule_execution_cleanup_job,
 )
+from app.features.self_management_shared.self_management_mcp import (
+    SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
+    SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS,
+    SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
+    SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS,
+    build_self_management_mcp_http_app,
+)
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.integrations.a2a_extensions import (
     get_a2a_extensions_service,
@@ -45,6 +52,23 @@ from app.utils.timezone_util import utc_now_iso
 setup_logging()
 
 logger = get_logger(__name__)
+
+
+def combine_lifespans(
+    *lifespans: Callable[[FastAPI], AbstractAsyncContextManager[None]],
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+    """Combine multiple ASGI lifespan context managers into one."""
+
+    @asynccontextmanager
+    async def _combined(app: FastAPI) -> AsyncIterator[None]:
+        async with lifespans[0](app):
+            if len(lifespans) == 1:
+                yield
+                return
+            async with combine_lifespans(*lifespans[1:])(app):
+                yield
+
+    return _combined
 
 
 # Lifecycle management for the FastAPI application.
@@ -115,6 +139,13 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 # Create FastAPI application instance
+mcp_readonly_app = build_self_management_mcp_http_app(
+    operation_ids=SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS
+)
+mcp_write_app = build_self_management_mcp_http_app(
+    operation_ids=SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS
+)
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
@@ -122,7 +153,11 @@ app = FastAPI(
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     docs_url=f"{settings.api_v1_prefix}/docs",
     redoc_url=f"{settings.api_v1_prefix}/redoc",
-    lifespan=app_lifespan,
+    lifespan=combine_lifespans(
+        app_lifespan,
+        mcp_readonly_app.lifespan,
+        mcp_write_app.lifespan,
+    ),
 )
 
 # Set up CORS middleware
@@ -162,6 +197,8 @@ def include_all_routers() -> None:
 
 
 include_all_routers()
+app.mount(SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH, mcp_readonly_app)
+app.mount(SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH, mcp_write_app)
 
 
 @app.get("/")

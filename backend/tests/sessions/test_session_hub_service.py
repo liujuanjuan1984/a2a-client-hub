@@ -875,7 +875,7 @@ async def test_list_sessions_filters_by_agent_id(async_db_session):
     )
 
     assert len(items) == 1
-    assert items[0]["agent_id"] == kept_agent_id
+    assert items[0]["agent_id"] == str(kept_agent_id)
 
 
 async def test_bind_external_session_with_state_updates_title_from_invoke_hints(
