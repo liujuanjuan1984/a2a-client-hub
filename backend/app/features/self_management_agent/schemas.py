@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +34,8 @@ class SelfManagementBuiltInAgentRunRequest(BaseModel):
 
     conversation_id: str = Field(alias="conversationId", min_length=1)
     message: str = Field(min_length=1)
+    user_message_id: UUID | None = Field(alias="userMessageId", default=None)
+    agent_message_id: UUID | None = Field(alias="agentMessageId", default=None)
     allow_write_tools: bool = False
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
@@ -79,6 +82,7 @@ class SelfManagementBuiltInAgentInterruptReplyRequest(BaseModel):
 
     request_id: str = Field(alias="requestId", min_length=1)
     reply: Literal["once", "always", "reject"]
+    agent_message_id: UUID | None = Field(alias="agentMessageId", default=None)
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 

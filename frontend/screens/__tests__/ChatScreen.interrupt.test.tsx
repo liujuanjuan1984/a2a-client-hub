@@ -18,6 +18,7 @@ const mockGetSelfManagementBuiltInAgentProfile = jest.fn();
 const mockRunSelfManagementBuiltInAgent = jest.fn();
 const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
 const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
+const mockAddConversationMessage = jest.fn();
 const mockAddConversationOverlayMessage = jest.fn();
 const mockUpdateConversationMessage = jest.fn();
 const mockToastInfo = jest.fn();
@@ -449,6 +450,8 @@ jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
 }));
 
 jest.mock("@/lib/chatHistoryCache", () => ({
+  addConversationMessage: (...args: unknown[]) =>
+    mockAddConversationMessage(...args),
   addConversationOverlayMessage: (...args: unknown[]) =>
     mockAddConversationOverlayMessage(...args),
   updateConversationMessage: (...args: unknown[]) =>
@@ -588,6 +591,7 @@ describe("ChatScreen interrupt handling", () => {
         interrupt: null,
       });
     mockRecoverInterrupts.mockReset().mockResolvedValue({ items: [] });
+    mockAddConversationMessage.mockReset();
     mockAddConversationOverlayMessage.mockReset();
     mockUpdateConversationMessage.mockReset();
     mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
@@ -1548,12 +1552,22 @@ describe("ChatScreen interrupt handling", () => {
     expect(mockRunSelfManagementBuiltInAgent).toHaveBeenCalledWith({
       conversationId,
       message: "Pause my job",
+      userMessageId: expect.any(String),
+      agentMessageId: expect.any(String),
     });
-    expect(mockAddConversationOverlayMessage).toHaveBeenCalledWith(
+    expect(mockAddConversationMessage).toHaveBeenCalledWith(
       conversationId,
       expect.objectContaining({
         role: "user",
         content: "Pause my job",
+      }),
+    );
+    expect(mockAddConversationMessage).toHaveBeenCalledWith(
+      conversationId,
+      expect.objectContaining({
+        role: "agent",
+        content: "",
+        status: "streaming",
       }),
     );
     expect(mockUpdateConversationMessage).toHaveBeenCalledWith(
@@ -1626,7 +1640,24 @@ describe("ChatScreen interrupt handling", () => {
     ).toHaveBeenCalledWith({
       requestId: "builtin-perm-2",
       reply: "once",
+      agentMessageId: expect.any(String),
     });
+    expect(mockAddConversationMessage).toHaveBeenCalledWith(
+      conversationId,
+      expect.objectContaining({
+        role: "agent",
+        content: "",
+        status: "streaming",
+      }),
+    );
+    expect(mockUpdateConversationMessage).toHaveBeenCalledWith(
+      conversationId,
+      expect.any(String),
+      expect.objectContaining({
+        content: "Write approval was handled.",
+        status: "done",
+      }),
+    );
     expect(mockChatState.sessions[conversationId]?.pendingInterrupt).toBeNull();
     expect(
       mockChatState.sessions[conversationId]?.lastResolvedInterrupt,
@@ -1636,14 +1667,6 @@ describe("ChatScreen interrupt handling", () => {
       phase: "resolved",
       resolution: "replied",
     });
-    expect(mockAddConversationOverlayMessage).toHaveBeenCalledWith(
-      conversationId,
-      expect.objectContaining({
-        role: "agent",
-        content: "Write approval was handled.",
-        status: "done",
-      }),
-    );
     expect(mockToastSuccess).toHaveBeenCalledWith(
       "Action submitted",
       "Authorization request handled.",

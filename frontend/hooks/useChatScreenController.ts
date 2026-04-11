@@ -52,6 +52,7 @@ import {
   type ResolvedRuntimeInterruptRecord,
 } from "@/lib/chat-utils";
 import {
+  addConversationMessage,
   addConversationOverlayMessage,
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
@@ -406,25 +407,28 @@ export function useChatScreenController({
         }),
       );
 
-      addConversationOverlayMessage(nextConversationId, {
+      addConversationMessage(nextConversationId, {
         id: userMessageId,
         role: "user",
         content: trimmedContent,
         createdAt,
         status: "done",
       });
-      addConversationOverlayMessage(nextConversationId, {
+      addConversationMessage(nextConversationId, {
         id: agentMessageId,
         role: "agent",
         content: "",
         createdAt,
         status: "streaming",
+        blocks: [],
       });
 
       try {
         const result = await runSelfManagementBuiltInAgent({
           conversationId: nextConversationId,
           message: trimmedContent,
+          userMessageId,
+          agentMessageId,
         });
         const nextInterrupt: PendingRuntimeInterrupt | null = result.interrupt
           ? toPendingRuntimeInterrupt(result.interrupt)
@@ -487,40 +491,87 @@ export function useChatScreenController({
         return;
       }
 
-      const result = await replySelfManagementBuiltInAgentPermissionInterrupt({
-        requestId,
-        reply,
-      });
-
-      const resolution = reply === "reject" ? "rejected" : "replied";
-      const nextInterrupt: PendingRuntimeInterrupt | null = result.interrupt
-        ? toPendingRuntimeInterrupt(result.interrupt)
-        : null;
-
+      const nextAgentMessageId = generateUuid();
+      const createdAt = new Date().toISOString();
       applyBuiltInAgentSessionUpdate(
         conversationId,
         activeAgentId,
         (current) => ({
           ...current,
           agentId: activeAgentId,
-          lastActiveAt: new Date().toISOString(),
-          streamState: "idle",
+          lastActiveAt: createdAt,
+          streamState: "streaming",
           lastStreamError: null,
-          lastResolvedInterrupt: buildBuiltInResolvedInterruptRecord(
-            requestId,
-            resolution,
-          ),
-          ...buildPendingInterruptState(nextInterrupt ? [nextInterrupt] : []),
+          lastAgentMessageId: nextAgentMessageId,
         }),
       );
-
-      addConversationOverlayMessage(conversationId, {
-        id: generateUuid(),
+      addConversationMessage(conversationId, {
+        id: nextAgentMessageId,
         role: "agent",
-        content: result.answer ?? "",
-        createdAt: new Date().toISOString(),
-        status: result.status === "interrupted" ? "interrupted" : "done",
+        content: "",
+        createdAt,
+        status: "streaming",
+        blocks: [],
       });
+
+      try {
+        const result = await replySelfManagementBuiltInAgentPermissionInterrupt(
+          {
+            requestId,
+            reply,
+            agentMessageId: nextAgentMessageId,
+          },
+        );
+
+        const resolution = reply === "reject" ? "rejected" : "replied";
+        const nextInterrupt: PendingRuntimeInterrupt | null = result.interrupt
+          ? toPendingRuntimeInterrupt(result.interrupt)
+          : null;
+
+        updateConversationMessage(conversationId, nextAgentMessageId, {
+          content: result.answer ?? "",
+          status: result.status === "interrupted" ? "interrupted" : "done",
+        });
+        applyBuiltInAgentSessionUpdate(
+          conversationId,
+          activeAgentId,
+          (current) => ({
+            ...current,
+            agentId: activeAgentId,
+            lastActiveAt: new Date().toISOString(),
+            streamState: "idle",
+            lastStreamError: null,
+            lastResolvedInterrupt: buildBuiltInResolvedInterruptRecord(
+              requestId,
+              resolution,
+            ),
+            ...buildPendingInterruptState(nextInterrupt ? [nextInterrupt] : []),
+          }),
+        );
+      } catch (error) {
+        updateConversationMessage(conversationId, nextAgentMessageId, {
+          content:
+            error instanceof Error
+              ? error.message
+              : "Built-in assistant request failed.",
+          status: "error",
+        });
+        applyBuiltInAgentSessionUpdate(
+          conversationId,
+          activeAgentId,
+          (current) => ({
+            ...current,
+            agentId: activeAgentId,
+            lastActiveAt: new Date().toISOString(),
+            streamState: "error",
+            lastStreamError:
+              error instanceof Error
+                ? error.message
+                : "Built-in assistant request failed.",
+          }),
+        );
+        throw error;
+      }
     },
     [
       activeAgentId,

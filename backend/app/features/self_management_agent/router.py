@@ -98,6 +98,8 @@ async def run_self_management_built_in_agent(
             current_user=current_user,
             conversation_id=payload.conversation_id,
             message=payload.message,
+            user_message_id=payload.user_message_id,
+            agent_message_id=payload.agent_message_id,
             allow_write_tools=payload.allow_write_tools,
         )
     except SelfManagementBuiltInAgentConfigError as exc:
@@ -176,6 +178,7 @@ async def reply_self_management_built_in_agent_permission_interrupt(
                 current_user=current_user,
                 request_id=payload.request_id,
                 reply=payload.reply,
+                agent_message_id=payload.agent_message_id,
             )
         )
     except SelfManagementBuiltInAgentConfigError as exc:

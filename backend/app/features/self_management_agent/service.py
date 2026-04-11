@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -217,6 +218,8 @@ class SelfManagementBuiltInAgentService:
         conversation_id: str,
         message: str,
         allow_write_tools: bool,
+        user_message_id: UUID | None = None,
+        agent_message_id: UUID | None = None,
     ) -> SelfManagementBuiltInAgentRunResult:
         executed = await self._execute_run(
             db=db,
@@ -232,6 +235,8 @@ class SelfManagementBuiltInAgentService:
             local_session_id=executed.local_session_id,
             local_source=executed.local_source,
             query=message,
+            user_message_id=user_message_id,
+            agent_message_id=agent_message_id,
             result=executed.result,
         )
         return executed.result
@@ -408,6 +413,7 @@ class SelfManagementBuiltInAgentService:
         current_user: User,
         request_id: str,
         reply: str,
+        agent_message_id: UUID | None = None,
     ) -> SelfManagementBuiltInAgentRunResult:
         claims = verify_self_management_interrupt_token_claims(request_id)
         if claims is None:
@@ -452,6 +458,7 @@ class SelfManagementBuiltInAgentService:
                 current_user=current_user,
                 conversation_id=conversation_id,
                 answer=result.answer,
+                agent_message_id=agent_message_id,
                 metadata={
                     "built_in_agent": True,
                     "runtime": result.runtime,
@@ -493,6 +500,7 @@ class SelfManagementBuiltInAgentService:
             current_user=current_user,
             conversation_id=conversation_id,
             answer=executed.result.answer,
+            agent_message_id=agent_message_id,
             metadata={
                 "built_in_agent": True,
                 "runtime": executed.result.runtime,
@@ -619,6 +627,8 @@ class SelfManagementBuiltInAgentService:
         local_session_id: str,
         local_source: SessionSource,
         query: str,
+        user_message_id: UUID | None,
+        agent_message_id: UUID | None,
         result: SelfManagementBuiltInAgentRunResult,
     ) -> None:
         await session_hub_service.record_local_invoke_messages(
@@ -644,6 +654,8 @@ class SelfManagementBuiltInAgentService:
                 "write_tools_enabled": result.write_tools_enabled,
                 "built_in_agent": True,
             },
+            user_message_id=user_message_id,
+            agent_message_id=agent_message_id,
             agent_status=(
                 "interrupted"
                 if result.status == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
@@ -717,6 +729,7 @@ class SelfManagementBuiltInAgentService:
         current_user: User,
         conversation_id: str,
         answer: str | None,
+        agent_message_id: UUID | None,
         metadata: dict[str, Any],
         status: str,
         finish_reason: str | None,
@@ -727,14 +740,19 @@ class SelfManagementBuiltInAgentService:
             conversation_id=conversation_id,
         )
         setattr(local_session, "last_active_at", utc_now())
+        create_kwargs: dict[str, Any] = {
+            "user_id": cast(Any, current_user.id),
+            "sender": "agent",
+            "conversation_id": cast(Any, local_session.id),
+            "status": status,
+            "finish_reason": finish_reason,
+            "metadata": metadata,
+        }
+        if agent_message_id is not None:
+            create_kwargs["id"] = agent_message_id
         agent_message = await message_store.create_agent_message(
             db,
-            user_id=cast(Any, current_user.id),
-            sender="agent",
-            conversation_id=cast(Any, local_session.id),
-            status=status,
-            finish_reason=finish_reason,
-            metadata=metadata,
+            **create_kwargs,
         )
         await self._session_support.upsert_single_text_block(
             db,

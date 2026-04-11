@@ -451,6 +451,41 @@ async def test_built_in_agent_run_persists_session_thread_and_messages(
     assert messages[1]["content"] == "Built-in agent reply"
 
 
+async def test_built_in_agent_run_persists_supplied_message_ids(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    user_message_id = uuid4()
+    agent_message_id = uuid4()
+
+    result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="List my jobs",
+        user_message_id=user_message_id,
+        agent_message_id=agent_message_id,
+        allow_write_tools=False,
+    )
+
+    assert result.status == "completed"
+
+    messages, _extra, _db_mutated = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=cast(Any, user.id),
+        conversation_id=conversation_id,
+        before=None,
+        limit=20,
+    )
+    assert messages[0]["id"] == str(user_message_id)
+    assert messages[1]["id"] == str(agent_message_id)
+
+
 async def test_built_in_agent_interrupt_and_resolution_are_persisted(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
@@ -517,6 +552,55 @@ async def test_built_in_agent_interrupt_and_resolution_are_persisted(
     assert asked_interrupt["type"] == "permission"
     assert resolved_interrupt["phase"] == "resolved"
     assert resolved_interrupt["resolution"] == "rejected"
+
+
+async def test_built_in_agent_permission_reply_persists_supplied_agent_message_id(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    interrupt_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+    assert interrupt_result.interrupt is not None
+
+    _FakeSwivalSession.next_answer = "Paused the requested job."
+    follow_up_agent_message_id = uuid4()
+    result = await self_management_built_in_agent_service.reply_permission_interrupt(
+        db=async_db_session,
+        current_user=user,
+        request_id=interrupt_result.interrupt.request_id,
+        reply="once",
+        agent_message_id=follow_up_agent_message_id,
+    )
+
+    assert result.status == "completed"
+
+    messages, _extra, _db_mutated = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=cast(Any, user.id),
+        conversation_id=conversation_id,
+        before=None,
+        limit=20,
+    )
+    assert [item["role"] for item in messages] == ["user", "agent", "agent"]
+    matching_reply = next(
+        item for item in messages if item["content"] == "Paused the requested job."
+    )
+    assert matching_reply["id"] == str(follow_up_agent_message_id)
 
 
 async def test_built_in_agent_can_recover_unresolved_permission_interrupts(

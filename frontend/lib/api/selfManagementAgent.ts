@@ -67,11 +67,19 @@ export const getSelfManagementBuiltInAgentProfile = () =>
 export const runSelfManagementBuiltInAgent = (payload: {
   conversationId: string;
   message: string;
+  userMessageId?: string;
+  agentMessageId?: string;
   allow_write_tools?: boolean;
 }) =>
   apiRequest<
     SelfManagementBuiltInAgentRunResponse,
-    { conversationId: string; message: string; allow_write_tools?: boolean }
+    {
+      conversationId: string;
+      message: string;
+      userMessageId?: string;
+      agentMessageId?: string;
+      allow_write_tools?: boolean;
+    }
   >("/me/self-management/agent:run", {
     method: "POST",
     body: payload,
@@ -80,10 +88,15 @@ export const runSelfManagementBuiltInAgent = (payload: {
 export const replySelfManagementBuiltInAgentPermissionInterrupt = (payload: {
   requestId: string;
   reply: "once" | "always" | "reject";
+  agentMessageId?: string;
 }) =>
   apiRequest<
     SelfManagementBuiltInAgentRunResponse,
-    { requestId: string; reply: "once" | "always" | "reject" }
+    {
+      requestId: string;
+      reply: "once" | "always" | "reject";
+      agentMessageId?: string;
+    }
   >("/me/self-management/agent/interrupts/permission:reply", {
     method: "POST",
     body: payload,
