@@ -976,7 +976,7 @@ class SelfManagementBuiltInAgentService:
             delegated_by="self_management_built_in_agent",
         )
         session = session_cls(
-            base_dir=str(Path(__file__).resolve().parents[3]),
+            base_dir=self._resolve_swival_base_dir(current_user),
             provider=cast(str, settings.self_management_swival_provider),
             model=cast(str, settings.self_management_swival_model),
             api_key=settings.self_management_swival_api_key,
@@ -1002,6 +1002,22 @@ class SelfManagementBuiltInAgentService:
             },
         )
         return session
+
+    def _resolve_swival_base_dir(self, current_user: User) -> str:
+        configured_root = (settings.self_management_swival_runtime_root or "").strip()
+        if configured_root:
+            runtime_root = Path(configured_root).expanduser()
+        else:
+            runtime_root = Path.home() / ".a2a-client-hub" / "swival-users"
+
+        user_runtime_dir = runtime_root / str(current_user.id)
+        user_runtime_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for candidate in (runtime_root, user_runtime_dir):
+            try:
+                candidate.chmod(0o700)
+            except OSError:
+                continue
+        return str(user_runtime_dir.resolve())
 
     def _transfer_conversation_state(
         self,

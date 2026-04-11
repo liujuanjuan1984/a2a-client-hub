@@ -97,6 +97,11 @@ def _configure_swival_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         settings,
+        "self_management_swival_runtime_root",
+        None,
+    )
+    monkeypatch.setattr(
+        settings,
         "self_management_swival_base_url",
         "https://example.com/v1",
     )
@@ -200,9 +205,15 @@ async def test_built_in_agent_loads_swival_from_tool_installed_site_packages(
 async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "self_management_swival_runtime_root",
+        str(tmp_path / "swival-runtime"),
+    )
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     conversation_id = _new_conversation_id()
@@ -248,7 +259,9 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert _FakeSwivalSession.last_init_kwargs["no_skills"] is True
     assert _FakeSwivalSession.last_init_kwargs["history"] is False
     assert _FakeSwivalSession.last_init_kwargs["memory"] is False
-    assert _FakeSwivalSession.last_init_kwargs["base_dir"].endswith("/backend")
+    assert _FakeSwivalSession.last_init_kwargs["base_dir"] == str(
+        (tmp_path / "swival-runtime" / str(user.id)).resolve()
+    )
     assert "built-in a2a-client-hub self-management assistant" in cast(
         str,
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
@@ -274,12 +287,66 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     )
 
 
-async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
+async def test_built_in_agent_reuses_same_swival_base_dir_for_same_user(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "self_management_swival_runtime_root",
+        str(tmp_path / "swival-runtime"),
+    )
+    user = await create_user(async_db_session)
+
+    first_dir = self_management_built_in_agent_service._resolve_swival_base_dir(user)
+    second_dir = self_management_built_in_agent_service._resolve_swival_base_dir(user)
+
+    assert first_dir == second_dir
+    assert first_dir == str((tmp_path / "swival-runtime" / str(user.id)).resolve())
+
+
+async def test_built_in_agent_uses_distinct_swival_base_dirs_per_user(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "self_management_swival_runtime_root",
+        str(tmp_path / "swival-runtime"),
+    )
+    first_user = await create_user(async_db_session)
+    second_user = await create_user(async_db_session)
+
+    first_dir = self_management_built_in_agent_service._resolve_swival_base_dir(
+        first_user
+    )
+    second_dir = self_management_built_in_agent_service._resolve_swival_base_dir(
+        second_user
+    )
+
+    assert first_dir != second_dir
+    assert first_dir.endswith(str(first_user.id))
+    assert second_dir.endswith(str(second_user.id))
+
+
+async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "self_management_swival_runtime_root",
+        str(tmp_path / "swival-runtime"),
+    )
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     conversation_id = _new_conversation_id()

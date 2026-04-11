@@ -152,6 +152,7 @@ Optional environment variables:
 - `SELF_MANAGEMENT_SWIVAL_MAX_TURNS`
 - `SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS`
 - `SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS`
+- `SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT`
 
 Recommended Gemini configuration (aligned with upstream `swival`):
 
@@ -181,6 +182,10 @@ Notes:
   overriding the default Google OpenAI-compatible endpoint.
 - `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
   built-in agent no longer derives its MCP target from request headers.
+- `SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT` controls where the built-in runtime keeps
+  swival's per-user working state. Each authenticated user gets a dedicated
+  subdirectory under this root, and the runtime no longer uses the shared
+  backend repository directory as its `base_dir`.
 - The built-in profile now reports `configured=true` only when the required
   runtime settings are present and `swival` is actually importable from the
   backend process.

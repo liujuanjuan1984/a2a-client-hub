@@ -854,6 +854,11 @@ class Settings(BaseSettings):
         alias="SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE",
         description="Optional absolute path or command name used to discover a uv tool-installed swival runtime when the backend environment cannot import swival directly.",
     )
+    self_management_swival_runtime_root: str | None = Field(
+        default=None,
+        alias="SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT",
+        description="Optional root directory used to isolate built-in swival runtime files per authenticated user.",
+    )
     self_management_swival_provider: str | None = Field(
         default=None,
         alias="SELF_MANAGEMENT_SWIVAL_PROVIDER",
