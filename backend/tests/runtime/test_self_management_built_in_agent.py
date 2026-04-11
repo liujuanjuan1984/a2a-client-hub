@@ -452,6 +452,49 @@ async def test_built_in_agent_run_route_returns_swival_result(
     }
 
 
+async def test_built_in_agent_run_route_logs_traceback_for_unavailable_error(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    user = await create_user(async_db_session)
+    logged: list[dict[str, Any]] = []
+
+    async def _raise_unavailable(**_kwargs: Any) -> Any:
+        raise self_management_agent_router.SelfManagementBuiltInAgentUnavailableError(
+            "swival failed"
+        )
+
+    def _capture(message: str, *args: Any, **kwargs: Any) -> None:
+        logged.append({"message": message, **kwargs})
+
+    monkeypatch.setattr(
+        self_management_agent_router.self_management_built_in_agent_service,
+        "run",
+        _raise_unavailable,
+    )
+    monkeypatch.setattr(self_management_agent_router.logger, "exception", _capture)
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent:run",
+            json={"conversationId": _new_conversation_id(), "message": "List my jobs"},
+        )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "swival failed"
+    assert len(logged) == 1
+    assert logged[0]["message"] == "Built-in self-management agent run failed"
+    assert logged[0]["extra"]["user_id"] == str(user.id)
+    assert isinstance(logged[0]["extra"]["conversation_id"], str)
+
+
 async def test_built_in_agent_run_route_invalid_conversation_id_returns_400(
     async_session_maker,
     async_db_session,
@@ -983,6 +1026,55 @@ async def test_built_in_agent_interrupt_recovery_route_returns_unresolved_interr
                     "self.jobs.pause",
                 ],
                 "displayMessage": "I can pause the requested job after you approve write access.",
+            },
+        }
+    ]
+
+
+async def test_built_in_agent_permission_reply_route_logs_traceback_for_unavailable_error(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    user = await create_user(async_db_session)
+    logged: list[dict[str, Any]] = []
+
+    async def _raise_unavailable(**_kwargs: Any) -> Any:
+        raise self_management_agent_router.SelfManagementBuiltInAgentUnavailableError(
+            "invalid approval request"
+        )
+
+    def _capture(message: str, *args: Any, **kwargs: Any) -> None:
+        logged.append({"message": message, **kwargs})
+
+    monkeypatch.setattr(
+        self_management_agent_router.self_management_built_in_agent_service,
+        "reply_permission_interrupt",
+        _raise_unavailable,
+    )
+    monkeypatch.setattr(self_management_agent_router.logger, "exception", _capture)
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent/interrupts/permission:reply",
+            json={"requestId": "req-1", "reply": "once"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid approval request"
+    assert logged == [
+        {
+            "message": "Built-in self-management agent permission reply failed",
+            "extra": {
+                "user_id": str(user.id),
+                "request_id": "req-1",
+                "reply": "once",
             },
         }
     ]

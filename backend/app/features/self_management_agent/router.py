@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
 from app.api.routing import StrictAPIRouter
+from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.transaction import commit_safely
 from app.features.self_management_agent.schemas import (
@@ -32,6 +33,7 @@ router = StrictAPIRouter(
     prefix="/me/self-management/agent",
     tags=["self-management-agent"],
 )
+logger = get_logger(__name__)
 
 
 def _to_run_response(
@@ -103,11 +105,25 @@ async def run_self_management_built_in_agent(
             allow_write_tools=payload.allow_write_tools,
         )
     except SelfManagementBuiltInAgentConfigError as exc:
+        logger.exception(
+            "Built-in self-management agent run misconfigured",
+            extra={
+                "user_id": str(current_user.id),
+                "conversation_id": payload.conversation_id,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
     except SelfManagementBuiltInAgentUnavailableError as exc:
+        logger.exception(
+            "Built-in self-management agent run failed",
+            extra={
+                "user_id": str(current_user.id),
+                "conversation_id": payload.conversation_id,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
@@ -117,6 +133,15 @@ async def run_self_management_built_in_agent(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    except Exception:
+        logger.exception(
+            "Built-in self-management agent run raised an unexpected error",
+            extra={
+                "user_id": str(current_user.id),
+                "conversation_id": payload.conversation_id,
+            },
+        )
+        raise
 
     await commit_safely(db)
     return _to_run_response(result)
@@ -182,15 +207,41 @@ async def reply_self_management_built_in_agent_permission_interrupt(
             )
         )
     except SelfManagementBuiltInAgentConfigError as exc:
+        logger.exception(
+            "Built-in self-management agent permission reply misconfigured",
+            extra={
+                "user_id": str(current_user.id),
+                "request_id": payload.request_id,
+                "reply": payload.reply,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
     except SelfManagementBuiltInAgentUnavailableError as exc:
+        logger.exception(
+            "Built-in self-management agent permission reply failed",
+            extra={
+                "user_id": str(current_user.id),
+                "request_id": payload.request_id,
+                "reply": payload.reply,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    except Exception:
+        logger.exception(
+            "Built-in self-management agent permission reply raised an unexpected error",
+            extra={
+                "user_id": str(current_user.id),
+                "request_id": payload.request_id,
+                "reply": payload.reply,
+            },
+        )
+        raise
 
     await commit_safely(db)
     return _to_run_response(result)
