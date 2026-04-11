@@ -1210,6 +1210,48 @@ async def test_hub_card_validate_closes_read_only_transaction_before_remote_fetc
 
 
 @pytest.mark.asyncio
+async def test_hub_card_validate_logs_traceback_for_upstream_failure(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_validate_log@example.com",
+        user_email="alice_validate_log@example.com",
+        token="secret-token-validate-log",
+    )
+    logged: list[Dict[str, Any]] = []
+
+    async def _raise_unavailable(**_kwargs: Any) -> Any:
+        raise hub_router.A2AAgentUnavailableError("hub upstream failed")
+
+    def _capture(message: str, *args: Any, **kwargs: Any) -> None:
+        logged.append({"message": message, **kwargs})
+
+    monkeypatch.setattr(hub_router, "fetch_and_validate_agent_card", _raise_unavailable)
+    monkeypatch.setattr(hub_router.logger, "exception", _capture)
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/card:validate"
+        )
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "hub upstream failed"
+    assert len(logged) == 1
+    assert logged[0]["message"] == "Hub A2A agent card validation failed"
+    assert logged[0]["extra"]["user_id"] == str(user.id)
+    assert logged[0]["extra"]["agent_id"] == str(agent_id)
+
+
+@pytest.mark.asyncio
 async def test_hub_card_validate_returns_warning_for_empty_skills(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -202,6 +202,53 @@ async def test_personal_agent_card_validate_closes_read_only_transaction_before_
 
 
 @pytest.mark.asyncio
+async def test_personal_agent_card_validate_logs_traceback_for_upstream_failure(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(async_db_session, email="personal-card-log@example.com")
+    record = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="Personal Card Agent",
+        card_url="https://example.com/.well-known/agent-card.json",
+        auth_type="none",
+        enabled=True,
+        tags=[],
+        extra_headers={},
+    )
+    logged: list[dict[str, Any]] = []
+
+    async def _raise_unavailable(**_kwargs: Any) -> Any:
+        raise personal_router.A2AAgentUnavailableError("upstream failed")
+
+    def _capture(message: str, *args: Any, **kwargs: Any) -> None:
+        logged.append({"message": message, **kwargs})
+
+    monkeypatch.setattr(
+        personal_router, "fetch_and_validate_agent_card", _raise_unavailable
+    )
+    monkeypatch.setattr(personal_router.logger, "exception", _capture)
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/card:validate"
+        )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "upstream failed"
+    assert len(logged) == 1
+    assert logged[0]["message"] == "Personal A2A agent card validation failed"
+    assert logged[0]["extra"]["user_id"] == str(user.id)
+    assert logged[0]["extra"]["agent_id"] == str(record.id)
+
+
+@pytest.mark.asyncio
 async def test_personal_agent_http_invoke_injects_session_bound_invoke_metadata(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
