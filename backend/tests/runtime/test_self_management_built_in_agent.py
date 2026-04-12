@@ -133,6 +133,7 @@ async def test_built_in_agent_profile_exposes_full_available_tool_surface(
 ) -> None:
     _reset_built_in_agent_runtime()
     _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
 
     profile = self_management_built_in_agent_service.get_profile()
 
