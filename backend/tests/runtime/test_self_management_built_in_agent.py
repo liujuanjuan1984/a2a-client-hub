@@ -140,14 +140,27 @@ async def test_built_in_agent_profile_exposes_full_available_tool_surface(
     assert profile.configured is True
     assert profile.resources == ("agents", "jobs", "sessions")
     assert [item.operation_id for item in profile.tool_definitions] == [
+        "self.agents.check_health",
+        "self.agents.check_health_all",
+        "self.agents.create",
+        "self.agents.delete",
         "self.agents.get",
         "self.agents.list",
         "self.agents.update_config",
+        "self.jobs.create",
+        "self.jobs.delete",
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
+        "self.jobs.resume",
+        "self.jobs.update",
+        "self.jobs.update_prompt",
+        "self.jobs.update_schedule",
+        "self.sessions.archive",
         "self.sessions.get",
         "self.sessions.list",
+        "self.sessions.unarchive",
+        "self.sessions.update",
     ]
 
 
@@ -361,14 +374,27 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
     )
 
     assert result.tool_names == (
+        "self.agents.check_health",
+        "self.agents.check_health_all",
+        "self.agents.create",
+        "self.agents.delete",
         "self.agents.get",
         "self.agents.list",
         "self.agents.update_config",
+        "self.jobs.create",
+        "self.jobs.delete",
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
+        "self.jobs.resume",
+        "self.jobs.update",
+        "self.jobs.update_prompt",
+        "self.jobs.update_schedule",
+        "self.sessions.archive",
         "self.sessions.get",
         "self.sessions.list",
+        "self.sessions.unarchive",
+        "self.sessions.update",
     )
     assert result.status == "completed"
     assert result.write_tools_enabled is True
@@ -424,14 +450,27 @@ async def test_built_in_agent_run_route_returns_swival_result(
     assert profile_response.status_code == 200
     assert profile_response.json()["resources"] == ["agents", "jobs", "sessions"]
     assert [item["operation_id"] for item in profile_response.json()["tools"]] == [
+        "self.agents.check_health",
+        "self.agents.check_health_all",
+        "self.agents.create",
+        "self.agents.delete",
         "self.agents.get",
         "self.agents.list",
         "self.agents.update_config",
+        "self.jobs.create",
+        "self.jobs.delete",
         "self.jobs.get",
         "self.jobs.list",
         "self.jobs.pause",
+        "self.jobs.resume",
+        "self.jobs.update",
+        "self.jobs.update_prompt",
+        "self.jobs.update_schedule",
+        "self.sessions.archive",
         "self.sessions.get",
         "self.sessions.list",
+        "self.sessions.unarchive",
+        "self.sessions.update",
     ]
     assert run_response.status_code == 200
     assert run_response.json() == {
@@ -749,8 +788,21 @@ async def test_built_in_agent_can_recover_unresolved_permission_interrupts(
     assert recovered[0].type == "permission"
     assert recovered[0].details["permission"] == "self-management-write"
     assert recovered[0].details["patterns"] == [
+        "self.agents.check_health",
+        "self.agents.check_health_all",
+        "self.agents.create",
+        "self.agents.delete",
         "self.agents.update_config",
+        "self.jobs.create",
+        "self.jobs.delete",
         "self.jobs.pause",
+        "self.jobs.resume",
+        "self.jobs.update",
+        "self.jobs.update_prompt",
+        "self.jobs.update_schedule",
+        "self.sessions.archive",
+        "self.sessions.unarchive",
+        "self.sessions.update",
     ]
 
 
@@ -855,8 +907,21 @@ async def test_built_in_agent_read_only_run_can_raise_permission_interrupt(
     assert result.interrupt is not None
     assert result.interrupt.permission == "self-management-write"
     assert result.interrupt.patterns == (
+        "self.agents.check_health",
+        "self.agents.check_health_all",
+        "self.agents.create",
+        "self.agents.delete",
         "self.agents.update_config",
+        "self.jobs.create",
+        "self.jobs.delete",
         "self.jobs.pause",
+        "self.jobs.resume",
+        "self.jobs.update",
+        "self.jobs.update_prompt",
+        "self.jobs.update_schedule",
+        "self.sessions.archive",
+        "self.sessions.unarchive",
+        "self.sessions.update",
     )
     claims = verify_jwt_token_claims(
         result.interrupt.request_id,
@@ -866,8 +931,21 @@ async def test_built_in_agent_read_only_run_can_raise_permission_interrupt(
     assert claims.subject == str(user.id)
     assert get_self_management_interrupt_message(claims) == "Pause my job"
     assert get_self_management_interrupt_tool_names(claims) == (
+        "self.agents.check_health",
+        "self.agents.check_health_all",
+        "self.agents.create",
+        "self.agents.delete",
         "self.agents.update_config",
+        "self.jobs.create",
+        "self.jobs.delete",
         "self.jobs.pause",
+        "self.jobs.resume",
+        "self.jobs.update",
+        "self.jobs.update_prompt",
+        "self.jobs.update_schedule",
+        "self.sessions.archive",
+        "self.sessions.unarchive",
+        "self.sessions.update",
     )
 
 
@@ -1023,8 +1101,21 @@ async def test_built_in_agent_interrupt_recovery_route_returns_unresolved_interr
             "details": {
                 "permission": "self-management-write",
                 "patterns": [
+                    "self.agents.check_health",
+                    "self.agents.check_health_all",
+                    "self.agents.create",
+                    "self.agents.delete",
                     "self.agents.update_config",
+                    "self.jobs.create",
+                    "self.jobs.delete",
                     "self.jobs.pause",
+                    "self.jobs.resume",
+                    "self.jobs.update",
+                    "self.jobs.update_prompt",
+                    "self.jobs.update_schedule",
+                    "self.sessions.archive",
+                    "self.sessions.unarchive",
+                    "self.sessions.update",
                 ],
                 "displayMessage": "I can pause the requested job after you approve write access.",
             },

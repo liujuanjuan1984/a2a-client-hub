@@ -18,17 +18,27 @@ from app.features.schedules.self_management_jobs_service import (
     self_management_jobs_service,
 )
 from app.features.self_management_shared.capability_catalog import (
+    SELF_AGENTS_CHECK_HEALTH,
+    SELF_AGENTS_CHECK_HEALTH_ALL,
+    SELF_AGENTS_CREATE,
+    SELF_AGENTS_DELETE,
     SELF_AGENTS_GET,
     SELF_AGENTS_LIST,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_JOBS_CREATE,
+    SELF_JOBS_DELETE,
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_PAUSE,
     SELF_JOBS_RESUME,
+    SELF_JOBS_UPDATE,
     SELF_JOBS_UPDATE_PROMPT,
     SELF_JOBS_UPDATE_SCHEDULE,
+    SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_GET,
     SELF_SESSIONS_LIST,
+    SELF_SESSIONS_UNARCHIVE,
+    SELF_SESSIONS_UPDATE,
     get_self_management_operation,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
@@ -76,24 +86,44 @@ class SelfManagementToolkit:
             payload = await self._list_jobs(args)
         elif operation.operation_id == SELF_JOBS_GET.operation_id:
             payload = await self._get_job(args)
+        elif operation.operation_id == SELF_JOBS_CREATE.operation_id:
+            payload = await self._create_job(args)
         elif operation.operation_id == SELF_JOBS_PAUSE.operation_id:
             payload = await self._pause_job(args)
         elif operation.operation_id == SELF_JOBS_RESUME.operation_id:
             payload = await self._resume_job(args)
+        elif operation.operation_id == SELF_JOBS_UPDATE.operation_id:
+            payload = await self._update_job(args)
         elif operation.operation_id == SELF_JOBS_UPDATE_PROMPT.operation_id:
             payload = await self._update_job_prompt(args)
         elif operation.operation_id == SELF_JOBS_UPDATE_SCHEDULE.operation_id:
             payload = await self._update_job_schedule(args)
+        elif operation.operation_id == SELF_JOBS_DELETE.operation_id:
+            payload = await self._delete_job(args)
         elif operation.operation_id == SELF_SESSIONS_LIST.operation_id:
             payload = await self._list_sessions(args)
         elif operation.operation_id == SELF_SESSIONS_GET.operation_id:
             payload = await self._get_session(args)
+        elif operation.operation_id == SELF_SESSIONS_UPDATE.operation_id:
+            payload = await self._update_session(args)
+        elif operation.operation_id == SELF_SESSIONS_ARCHIVE.operation_id:
+            payload = await self._archive_session(args)
+        elif operation.operation_id == SELF_SESSIONS_UNARCHIVE.operation_id:
+            payload = await self._unarchive_session(args)
         elif operation.operation_id == SELF_AGENTS_LIST.operation_id:
             payload = await self._list_agents(args)
         elif operation.operation_id == SELF_AGENTS_GET.operation_id:
             payload = await self._get_agent(args)
+        elif operation.operation_id == SELF_AGENTS_CHECK_HEALTH.operation_id:
+            payload = await self._check_agent_health(args)
+        elif operation.operation_id == SELF_AGENTS_CHECK_HEALTH_ALL.operation_id:
+            payload = await self._check_all_agents_health(args)
+        elif operation.operation_id == SELF_AGENTS_CREATE.operation_id:
+            payload = await self._create_agent(args)
         elif operation.operation_id == SELF_AGENTS_UPDATE_CONFIG.operation_id:
             payload = await self._update_agent_config(args)
+        elif operation.operation_id == SELF_AGENTS_DELETE.operation_id:
+            payload = await self._delete_agent(args)
         else:  # pragma: no cover - defensive guard
             raise SelfManagementToolInputError(
                 f"Operation `{operation_id}` is not implemented by the toolkit."
@@ -132,6 +162,38 @@ class SelfManagementToolkit:
         )
         return {"job": self._serialize_job(task, timezone_str=self._timezone_str())}
 
+    async def _create_job(self, args: dict[str, Any]) -> dict[str, Any]:
+        schedule_timezone = (
+            self._as_optional_str(args.get("schedule_timezone")) or self._timezone_str()
+        )
+        enabled = (
+            cast(
+                bool,
+                self._as_optional_bool(args.get("enabled"), field_name="enabled"),
+            )
+            if args.get("enabled") is not None
+            else True
+        )
+        task = await self_management_jobs_service.create_job(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            name=self._as_str(args.get("name"), field_name="name"),
+            agent_id=self._as_uuid(args.get("agent_id"), field_name="agent_id"),
+            prompt=self._as_str(args.get("prompt"), field_name="prompt"),
+            cycle_type=self._as_str(args.get("cycle_type"), field_name="cycle_type"),
+            time_point=(
+                self._as_optional_dict(args.get("time_point"), field_name="time_point")
+                or {}
+            ),
+            enabled=enabled,
+            conversation_policy=(
+                self._as_optional_str(args.get("conversation_policy")) or "new_each_run"
+            ),
+            timezone_str=schedule_timezone,
+        )
+        return {"job": self._serialize_job(task, timezone_str=schedule_timezone)}
+
     async def _pause_job(self, args: dict[str, Any]) -> dict[str, Any]:
         task = await self_management_jobs_service.pause_job(
             db=self.db,
@@ -151,6 +213,31 @@ class SelfManagementToolkit:
             timezone_str=self._timezone_str(),
         )
         return {"job": self._serialize_job(task, timezone_str=self._timezone_str())}
+
+    async def _update_job(self, args: dict[str, Any]) -> dict[str, Any]:
+        schedule_timezone = (
+            self._as_optional_str(args.get("schedule_timezone")) or self._timezone_str()
+        )
+        task = await self_management_jobs_service.update_job(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            task_id=self._as_uuid(args.get("task_id"), field_name="task_id"),
+            timezone_str=schedule_timezone,
+            name=self._as_optional_str(args.get("name")),
+            agent_id=self._as_optional_uuid(
+                args.get("agent_id"), field_name="agent_id"
+            ),
+            prompt=self._as_optional_str(args.get("prompt")),
+            cycle_type=self._as_optional_str(args.get("cycle_type")),
+            time_point=self._as_optional_dict(
+                args.get("time_point"),
+                field_name="time_point",
+            ),
+            enabled=self._as_optional_bool(args.get("enabled"), field_name="enabled"),
+            conversation_policy=self._as_optional_str(args.get("conversation_policy")),
+        )
+        return {"job": self._serialize_job(task, timezone_str=schedule_timezone)}
 
     async def _update_job_prompt(self, args: dict[str, Any]) -> dict[str, Any]:
         prompt = self._as_str(args.get("prompt"), field_name="prompt")
@@ -183,11 +270,24 @@ class SelfManagementToolkit:
         )
         return {"job": self._serialize_job(task, timezone_str=schedule_timezone)}
 
+    async def _delete_job(self, args: dict[str, Any]) -> dict[str, Any]:
+        task_id = self._as_uuid(args.get("task_id"), field_name="task_id")
+        await self_management_jobs_service.delete_job(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            task_id=task_id,
+        )
+        return {"task_id": str(task_id), "deleted": True}
+
     async def _list_sessions(self, args: dict[str, Any]) -> dict[str, Any]:
         page = self._as_int(args.get("page", 1), field_name="page", minimum=1)
         size = self._as_int(args.get("size", 20), field_name="size", minimum=1)
         raw_source = self._as_optional_str(args.get("source"))
         source = self._as_session_source(raw_source)
+        status = self._as_session_status(
+            self._as_optional_str(args.get("status")) or "active"
+        )
         agent_id = self._as_optional_uuid(args.get("agent_id"), field_name="agent_id")
         items, extra, _db_mutated = (
             await self_management_sessions_service.list_sessions(
@@ -197,6 +297,7 @@ class SelfManagementToolkit:
                 page=page,
                 size=size,
                 source=source,
+                status=status,
                 agent_id=agent_id,
             )
         )
@@ -215,6 +316,43 @@ class SelfManagementToolkit:
             gateway=self.gateway,
             current_user=self.current_user,
             conversation_id=conversation_id,
+        )
+        return {"session": self._serialize_session(session_item)}
+
+    async def _update_session(self, args: dict[str, Any]) -> dict[str, Any]:
+        session_item = await self_management_sessions_service.update_session(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            conversation_id=self._as_str(
+                args.get("conversation_id"),
+                field_name="conversation_id",
+            ),
+            title=self._as_str(args.get("title"), field_name="title"),
+        )
+        return {"session": self._serialize_session(session_item)}
+
+    async def _archive_session(self, args: dict[str, Any]) -> dict[str, Any]:
+        session_item = await self_management_sessions_service.archive_session(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            conversation_id=self._as_str(
+                args.get("conversation_id"),
+                field_name="conversation_id",
+            ),
+        )
+        return {"session": self._serialize_session(session_item)}
+
+    async def _unarchive_session(self, args: dict[str, Any]) -> dict[str, Any]:
+        session_item = await self_management_sessions_service.unarchive_session(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            conversation_id=self._as_str(
+                args.get("conversation_id"),
+                field_name="conversation_id",
+            ),
         )
         return {"session": self._serialize_session(session_item)}
 
@@ -258,6 +396,69 @@ class SelfManagementToolkit:
         )
         return {"agent": self._serialize_agent(record)}
 
+    async def _check_agent_health(self, args: dict[str, Any]) -> dict[str, Any]:
+        force = (
+            cast(bool, self._as_optional_bool(args.get("force"), field_name="force"))
+            if args.get("force") is not None
+            else True
+        )
+        summary, items = await self_management_agents_service.check_agent_health(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            agent_id=self._as_uuid(args.get("agent_id"), field_name="agent_id"),
+            force=force,
+        )
+        return self._serialize_agent_health_check(summary=summary, items=items)
+
+    async def _check_all_agents_health(self, args: dict[str, Any]) -> dict[str, Any]:
+        force = (
+            cast(bool, self._as_optional_bool(args.get("force"), field_name="force"))
+            if args.get("force") is not None
+            else False
+        )
+        summary, items = await self_management_agents_service.check_all_agents_health(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            force=force,
+        )
+        return self._serialize_agent_health_check(summary=summary, items=items)
+
+    async def _create_agent(self, args: dict[str, Any]) -> dict[str, Any]:
+        enabled = (
+            cast(
+                bool,
+                self._as_optional_bool(args.get("enabled"), field_name="enabled"),
+            )
+            if args.get("enabled") is not None
+            else True
+        )
+        record = await self_management_agents_service.create_agent(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            name=self._as_str(args.get("name"), field_name="name"),
+            card_url=self._as_str(args.get("card_url"), field_name="card_url"),
+            auth_type=self._as_str(args.get("auth_type"), field_name="auth_type"),
+            auth_header=self._as_optional_str(args.get("auth_header")),
+            auth_scheme=self._as_optional_str(args.get("auth_scheme")),
+            enabled=enabled,
+            tags=self._as_optional_str_list(args.get("tags"), field_name="tags"),
+            extra_headers=self._as_optional_str_dict(
+                args.get("extra_headers"),
+                field_name="extra_headers",
+            ),
+            invoke_metadata_defaults=self._as_optional_str_dict(
+                args.get("invoke_metadata_defaults"),
+                field_name="invoke_metadata_defaults",
+            ),
+            token=self._as_optional_str(args.get("token")),
+            basic_username=self._as_optional_str(args.get("basic_username")),
+            basic_password=self._as_optional_str(args.get("basic_password")),
+        )
+        return {"agent": self._serialize_agent(record)}
+
     async def _update_agent_config(self, args: dict[str, Any]) -> dict[str, Any]:
         record = await self_management_agents_service.update_config(
             db=self.db,
@@ -265,6 +466,10 @@ class SelfManagementToolkit:
             current_user=self.current_user,
             agent_id=self._as_uuid(args.get("agent_id"), field_name="agent_id"),
             name=self._as_optional_str(args.get("name")),
+            card_url=self._as_optional_str(args.get("card_url")),
+            auth_type=self._as_optional_str(args.get("auth_type")),
+            auth_header=self._as_optional_str(args.get("auth_header")),
+            auth_scheme=self._as_optional_str(args.get("auth_scheme")),
             enabled=self._as_optional_bool(args.get("enabled"), field_name="enabled"),
             tags=self._as_optional_str_list(args.get("tags"), field_name="tags"),
             extra_headers=self._as_optional_str_dict(
@@ -275,8 +480,21 @@ class SelfManagementToolkit:
                 args.get("invoke_metadata_defaults"),
                 field_name="invoke_metadata_defaults",
             ),
+            token=self._as_optional_str(args.get("token")),
+            basic_username=self._as_optional_str(args.get("basic_username")),
+            basic_password=self._as_optional_str(args.get("basic_password")),
         )
         return {"agent": self._serialize_agent(record)}
+
+    async def _delete_agent(self, args: dict[str, Any]) -> dict[str, Any]:
+        agent_id = self._as_uuid(args.get("agent_id"), field_name="agent_id")
+        await self_management_agents_service.delete_agent(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            agent_id=agent_id,
+        )
+        return {"agent_id": str(agent_id), "deleted": True}
 
     def _timezone_str(self) -> str:
         return cast(str, self.current_user.timezone or "UTC")
@@ -398,6 +616,14 @@ class SelfManagementToolkit:
         )
 
     @staticmethod
+    def _as_session_status(value: str) -> str:
+        if value in {"active", "archived", "all"}:
+            return value
+        raise SelfManagementToolInputError(
+            "`status` must be one of: active, archived, all."
+        )
+
+    @staticmethod
     def _serialize_job(task: A2AScheduleTask, *, timezone_str: str) -> dict[str, Any]:
         return {
             "id": str(cast(UUID | None, task.id)),
@@ -437,6 +663,7 @@ class SelfManagementToolkit:
             ),
             "agent_source": item.get("agent_source"),
             "title": item.get("title"),
+            "status": item.get("status"),
             "last_active_at": (
                 item["last_active_at"].isoformat()
                 if item.get("last_active_at") is not None
@@ -479,6 +706,32 @@ class SelfManagementToolkit:
             "username_hint": record.username_hint,
             "created_at": str(record.created_at),
             "updated_at": str(record.updated_at),
+        }
+
+    @staticmethod
+    def _serialize_agent_health_check(
+        *, summary: Any, items: list[Any]
+    ) -> dict[str, Any]:
+        return {
+            "summary": {
+                "requested": int(summary.requested),
+                "checked": int(summary.checked),
+                "skipped_cooldown": int(summary.skipped_cooldown),
+                "healthy": int(summary.healthy),
+                "degraded": int(summary.degraded),
+                "unavailable": int(summary.unavailable),
+                "unknown": int(summary.unknown),
+            },
+            "items": [
+                {
+                    "agent_id": str(item.agent_id),
+                    "health_status": item.health_status,
+                    "checked_at": item.checked_at.isoformat(),
+                    "skipped_cooldown": bool(item.skipped_cooldown),
+                    "error": item.error,
+                }
+                for item in items
+            ],
         }
 
 

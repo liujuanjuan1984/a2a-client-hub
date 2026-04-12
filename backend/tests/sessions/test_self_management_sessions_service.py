@@ -97,3 +97,63 @@ async def test_self_management_sessions_service_list_respects_filters(
     assert len(items) == 1
     assert items[0]["conversationId"] == str(kept_thread.id)
     assert items[0]["source"] == "scheduled"
+
+
+async def test_self_management_sessions_service_update_archive_and_unarchive(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Rename Me",
+    )
+    gateway = _build_gateway(user)
+
+    updated = await self_management_sessions_service.update_session(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        conversation_id=str(thread.id),
+        title="Renamed Session",
+    )
+    archived = await self_management_sessions_service.archive_session(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        conversation_id=str(thread.id),
+    )
+    active_items, active_extra, _ = (
+        await self_management_sessions_service.list_sessions(
+            db=async_db_session,
+            gateway=gateway,
+            current_user=user,
+            page=1,
+            size=20,
+        )
+    )
+    archived_items, archived_extra, _ = (
+        await self_management_sessions_service.list_sessions(
+            db=async_db_session,
+            gateway=gateway,
+            current_user=user,
+            page=1,
+            size=20,
+            status="archived",
+        )
+    )
+    restored = await self_management_sessions_service.unarchive_session(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        conversation_id=str(thread.id),
+    )
+
+    assert updated["title"] == "Renamed Session"
+    assert updated["status"] == "active"
+    assert archived["status"] == "archived"
+    assert active_extra["pagination"]["total"] == 0
+    assert active_items == []
+    assert archived_extra["pagination"]["total"] == 1
+    assert archived_items[0]["conversationId"] == str(thread.id)
+    assert restored["status"] == "active"

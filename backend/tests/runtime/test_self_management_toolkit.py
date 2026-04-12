@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from app.features.personal_agents import service as personal_agent_service_module
 from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
 from app.features.self_management_shared.capability_catalog import (
+    SELF_AGENTS_CHECK_HEALTH,
+    SELF_AGENTS_CHECK_HEALTH_ALL,
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
@@ -113,6 +116,64 @@ async def test_self_management_toolkit_updates_agent_config(
     assert result.payload["agent"]["name"] == "Toolkit Updated Agent"
     assert result.payload["agent"]["enabled"] is False
     assert result.payload["agent"]["tags"] == ["cli", "toolkit"]
+
+
+async def test_self_management_toolkit_checks_agent_health(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    record = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="toolkit-health",
+    )
+    toolkit = _build_toolkit(async_db_session, user)
+
+    async def _fake_check_agents_health(*, user_id, force=False, agent_id=None):
+        assert user_id == user.id
+        return (
+            personal_agent_service_module.A2AAgentHealthCheckSummaryRecord(
+                requested=1 if agent_id is not None else 2,
+                checked=1,
+                skipped_cooldown=0,
+                healthy=1,
+                degraded=0,
+                unavailable=0,
+                unknown=0,
+            ),
+            [
+                personal_agent_service_module.A2AAgentHealthCheckItemRecord(
+                    agent_id=record.id,
+                    health_status="healthy",
+                    checked_at=record.updated_at,
+                    skipped_cooldown=not force,
+                    error=None,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(
+        personal_agent_service_module.a2a_agent_service,
+        "check_agents_health",
+        _fake_check_agents_health,
+    )
+
+    single_result = await toolkit.execute(
+        operation_id=SELF_AGENTS_CHECK_HEALTH.operation_id,
+        arguments={"agent_id": str(record.id), "force": True},
+    )
+    all_result = await toolkit.execute(
+        operation_id=SELF_AGENTS_CHECK_HEALTH_ALL.operation_id,
+        arguments={"force": True},
+    )
+
+    assert single_result.payload["summary"]["requested"] == 1
+    assert single_result.payload["items"][0]["agent_id"] == str(record.id)
+    assert all_result.payload["summary"]["requested"] >= 1
+    assert any(
+        item["agent_id"] == str(record.id) for item in all_result.payload["items"]
+    )
 
 
 async def test_self_management_toolkit_rejects_invalid_schedule_inputs(
