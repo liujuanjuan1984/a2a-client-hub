@@ -126,6 +126,9 @@ class SDKA2AAdapter(A2AAdapter):
                 raise _map_protocol_error(exc) from exc
 
     async def stream_message(self, request: A2AMessageRequest) -> AsyncIterator[Any]:
+        if not bool(getattr(self.descriptor, "supports_streaming", True)):
+            yield await self.send_message(request)
+            return
         async with self._operation_usage(), self._transport_usage():
             client = await self._get_client(streaming=True)
             try:

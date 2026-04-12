@@ -972,6 +972,46 @@ async def test_stream_agent_maps_connect_timeout_to_timeout() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_with_fallback_downgrades_to_blocking_when_streaming_is_not_supported() -> (
+    None
+):
+    request = client_module.A2AMessageRequest(query="hello", context_id="ctx-1")
+    descriptor = SimpleNamespace(
+        agent_url="http://example-agent.internal:24020",
+        card_fingerprint="fp-1",
+        selected_transport="JSONRPC",
+    )
+
+    class _UnsupportedStreamAdapter:
+        async def stream_message(self, _request):
+            raise A2APeerProtocolError(
+                "Unknown method: SendStreamingMessage",
+                error_code="method_not_supported",
+                rpc_code=-32601,
+            )
+            yield  # pragma: no cover
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_peer_descriptor = AsyncMock(return_value=descriptor)
+    a2a_client._get_preferred_dialects = AsyncMock(
+        return_value=[
+            client_module.JSONRPC_SLASH_DIALECT,
+            client_module.JSONRPC_PASCAL_DIALECT,
+        ]
+    )
+    a2a_client._get_adapter = AsyncMock(return_value=_UnsupportedStreamAdapter())
+    a2a_client._discard_adapter = AsyncMock()
+    a2a_client._send_with_fallback = AsyncMock(
+        return_value={"parts": [{"text": "fallback-result"}]}
+    )
+
+    events = [payload async for payload in a2a_client._stream_with_fallback(request)]
+
+    assert events == [{"parts": [{"text": "fallback-result"}]}]
+    a2a_client._send_with_fallback.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
 async def test_cancel_task_returns_success_for_valid_request() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._cancel_with_fallback = AsyncMock(return_value={"id": "task-1"})
