@@ -1663,6 +1663,38 @@ async def test_consume_stream_finalized_callback_failure_is_isolated(caplog):
 
 
 @pytest.mark.asyncio
+async def test_consume_stream_accepts_single_blocking_message_payload() -> None:
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "message",
+                    "message_id": "msg-blocking-1",
+                    "task_id": "task-blocking-1",
+                    "parts": [{"type": "text", "text": "blocking-result"}],
+                    "metadata": {
+                        "event_id": "evt-blocking-1",
+                        "block_type": "text",
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    assert result.success is True
+    assert result.finish_reason == StreamFinishReason.SUCCESS
+    assert result.final_text == "blocking-result"
+    assert result.terminal_event_seen is False
+
+
+@pytest.mark.asyncio
 async def test_send_ws_error_ignores_closed_socket_runtime_error() -> None:
     websocket = _ClosedWebSocket()
     await a2a_invoke_service.send_ws_error(
