@@ -221,6 +221,13 @@ async def validate_hub_agent_card(
     except HubA2AUserCredentialRequiredError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except HubA2ARuntimeValidationError as exc:
+        logger.exception(
+            "Hub A2A agent runtime validation failed during card validation",
+            extra={
+                "user_id": str(current_user_id),
+                "agent_id": str(agent_id),
+            },
+        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     logger.info(
@@ -237,6 +244,14 @@ async def validate_hub_agent_card(
             resolved=runtime.resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
+        logger.exception(
+            "Hub A2A agent card validation failed",
+            extra={
+                "user_id": str(current_user_id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+            },
+        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

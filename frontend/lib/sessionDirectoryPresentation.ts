@@ -25,6 +25,10 @@ export const resolveSessionAgentPresentation = (
     return { name: matched.name, tone: matched.source };
   }
 
+  if (item.agent_source === "builtin") {
+    return { name: "A2A Client Hub Assistant", tone: "shared" };
+  }
+
   if (item.agent_source === "personal" || item.agent_source === "shared") {
     return { name: agentId, tone: item.agent_source };
   }

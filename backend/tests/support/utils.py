@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_password_hash
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_task import A2AScheduleTask
+from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
+from app.utils.timezone_util import utc_now
 
 DEFAULT_TEST_PASSWORD = "Password123!"
 
@@ -51,6 +53,9 @@ async def create_a2a_agent(
     card_url: str | None = None,
     auth_type: str = "none",
     enabled: bool = True,
+    tags: list[str] | None = None,
+    extra_headers: dict[str, str] | None = None,
+    invoke_metadata_defaults: dict[str, str] | None = None,
 ) -> A2AAgent:
     agent = A2AAgent(
         user_id=user_id,
@@ -58,6 +63,9 @@ async def create_a2a_agent(
         card_url=card_url or f"https://example.com/{suffix}",
         auth_type=auth_type,
         enabled=enabled,
+        tags=tags,
+        extra_headers=extra_headers,
+        invoke_metadata_defaults=invoke_metadata_defaults,
     )
     session.add(agent)
     await session.commit()
@@ -97,3 +105,35 @@ async def create_schedule_task(
     await session.commit()
     await session.refresh(task)
     return task
+
+
+async def create_conversation_thread(
+    session: AsyncSession,
+    *,
+    user_id,
+    source: str = ConversationThread.SOURCE_MANUAL,
+    agent_id=None,
+    agent_source: str | None = None,
+    title: str = "Session",
+    status: str = ConversationThread.STATUS_ACTIVE,
+    external_provider: str | None = None,
+    external_session_id: str | None = None,
+    context_id: str | None = None,
+    last_active_at: datetime | None = None,
+) -> ConversationThread:
+    thread = ConversationThread(
+        user_id=user_id,
+        source=source,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        title=title,
+        status=status,
+        external_provider=external_provider,
+        external_session_id=external_session_id,
+        context_id=context_id,
+        last_active_at=last_active_at or utc_now(),
+    )
+    session.add(thread)
+    await session.commit()
+    await session.refresh(thread)
+    return thread

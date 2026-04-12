@@ -3,6 +3,7 @@
 import logging
 import sys
 from contextvars import ContextVar, Token
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -11,6 +12,20 @@ from app.utils.json_encoder import json_dumps
 
 _request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 _user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+_principal_user_id_var: ContextVar[str | None] = ContextVar(
+    "principal_user_id", default=None
+)
+_actor_type_var: ContextVar[str | None] = ContextVar("actor_type", default=None)
+_admin_mode_var: ContextVar[bool | None] = ContextVar("admin_mode", default=None)
+
+
+@dataclass(frozen=True)
+class ActorContextTokens:
+    """Token bundle for restoring actor logging context."""
+
+    principal_user_id: Token[str | None]
+    actor_type: Token[str | None]
+    admin_mode: Token[bool | None]
 
 
 class RequestIdFilter(logging.Filter):
@@ -19,6 +34,9 @@ class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
         record.request_id = _request_id_var.get() or "-"
         record.user_id = _user_id_var.get() or "-"
+        record.principal_user_id = _principal_user_id_var.get() or "-"
+        record.actor_type = _actor_type_var.get() or "-"
+        record.admin_mode = _admin_mode_var.get()
         return True
 
 
@@ -49,6 +67,9 @@ class JsonFormatter(logging.Formatter):
         "message",
         "request_id",
         "user_id",
+        "principal_user_id",
+        "actor_type",
+        "admin_mode",
     }
 
     def format(self, record: logging.LogRecord) -> str:  # noqa: D401
@@ -61,6 +82,9 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", "-"),
             "user_id": getattr(record, "user_id", "-"),
+            "principal_user_id": getattr(record, "principal_user_id", "-"),
+            "actor_type": getattr(record, "actor_type", "-"),
+            "admin_mode": getattr(record, "admin_mode", None),
         }
 
         extra = {
@@ -97,6 +121,13 @@ class TextFormatter(logging.Formatter):
         context_parts = [
             f"request_id={getattr(record, 'request_id', '-')}",
             f"user_id={getattr(record, 'user_id', '-')}",
+            f"principal_user_id={getattr(record, 'principal_user_id', '-')}",
+            f"actor_type={getattr(record, 'actor_type', '-')}",
+            (
+                f"admin_mode={getattr(record, 'admin_mode', '-')}"
+                if getattr(record, "admin_mode", None) is not None
+                else "admin_mode=-"
+            ),
         ]
         for key in sorted(extra):
             context_parts.append(f"{key}={extra[key]}")
@@ -142,6 +173,39 @@ def reset_user_context(token: Token[str | None]) -> None:
     """Reset the user id context."""
 
     _user_id_var.reset(token)
+
+
+def clear_actor_context() -> ActorContextTokens:
+    """Clear the current actor logging context."""
+
+    return ActorContextTokens(
+        principal_user_id=_principal_user_id_var.set(None),
+        actor_type=_actor_type_var.set(None),
+        admin_mode=_admin_mode_var.set(None),
+    )
+
+
+def set_actor_context(
+    *,
+    principal_user_id: str | None,
+    actor_type: str | None,
+    admin_mode: bool | None,
+) -> ActorContextTokens:
+    """Bind actor metadata to the current logging context."""
+
+    return ActorContextTokens(
+        principal_user_id=_principal_user_id_var.set(principal_user_id),
+        actor_type=_actor_type_var.set(actor_type),
+        admin_mode=_admin_mode_var.set(admin_mode),
+    )
+
+
+def reset_actor_context(tokens: ActorContextTokens) -> None:
+    """Reset the actor logging context."""
+
+    _principal_user_id_var.reset(tokens.principal_user_id)
+    _actor_type_var.reset(tokens.actor_type)
+    _admin_mode_var.reset(tokens.admin_mode)
 
 
 def setup_logging() -> None:

@@ -63,6 +63,152 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
+## Run the CLI
+
+The backend also ships a minimal authenticated CLI for first-wave self-management.
+
+```bash
+cd backend
+uv run a2a-client-hub login --email alice@example.com --password 'Pass123!'
+uv run a2a-client-hub whoami
+uv run a2a-client-hub jobs list
+uv run a2a-client-hub jobs pause <job_id> --confirm
+uv run a2a-client-hub sessions list
+uv run a2a-client-hub sessions get <conversation_id>
+uv run a2a-client-hub agents list
+uv run a2a-client-hub agents get <agent_id>
+uv run a2a-client-hub agents update-config <agent_id> --name 'Updated Agent' --confirm
+```
+
+Notes:
+
+- The CLI stores its session token under `~/.config/a2a-client-hub/cli-session.json` by default.
+- Set `A2A_CLIENT_HUB_CLI_SESSION_FILE` to override that location.
+- First-wave CLI support currently targets current-user jobs, sessions, and personal agents.
+
+## Run the MCP Surface
+
+The backend also mounts an authenticated FastMCP surface for self-management.
+This is intended for agent runtimes such as `swival`, not for direct browser use.
+
+- Mounted paths:
+  - `/mcp` for the default read-only tool surface
+  - `/mcp-write` for the explicitly write-enabled tool surface
+- Transport: HTTP SSE
+- Auth: delegated bearer token in `Authorization: Bearer <token>`
+- Read-only MCP tools:
+  `self.agents.list`, `self.agents.get`,
+  `self.jobs.list`, `self.jobs.get`,
+  `self.sessions.list`, `self.sessions.get`
+- Write-enabled MCP tools add:
+  `self.agents.update_config`, `self.jobs.pause`
+
+Once the API server is running, an MCP client can connect to:
+
+```text
+http://localhost:8000/mcp/
+```
+
+Write-enabled runs use:
+
+```text
+http://localhost:8000/mcp-write/
+```
+
+## Run the Swival-Backed Built-In Agent
+
+The backend also exposes a first-wave built-in self-management agent surface
+that uses `swival` as the runtime and the authenticated MCP surface as its tool
+backend.
+
+- Profile: `GET /api/v1/me/self-management/agent`
+- Run once: `POST /api/v1/me/self-management/agent:run`
+- Recover pending interrupts: `POST /api/v1/me/self-management/agent/interrupts:recover`
+- Default run mode: read-only
+- Built-in runs are conversation-backed and must include `conversationId`
+- To explicitly enable write tools for one run, send:
+  `{"conversationId": "...", "message": "...", "allow_write_tools": true}`
+- Current built-in tool set:
+  - default read-only:
+    `self.agents.list`, `self.agents.get`,
+    `self.jobs.list`, `self.jobs.get`,
+    `self.sessions.list`, `self.sessions.get`
+  - write-enabled only:
+    `self.agents.update_config`, `self.jobs.pause`
+
+Required environment variables:
+
+- `SELF_MANAGEMENT_SWIVAL_PROVIDER`
+- `SELF_MANAGEMENT_SWIVAL_MODEL`
+- `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL`
+
+Optional environment variables:
+
+- `SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS`
+- `SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE`
+- `SELF_MANAGEMENT_SWIVAL_BASE_URL`
+- `SELF_MANAGEMENT_SWIVAL_API_KEY`
+- `SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT`
+- `SELF_MANAGEMENT_SWIVAL_MAX_TURNS`
+- `SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS`
+- `SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS`
+- `SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT`
+
+Recommended Gemini configuration (aligned with upstream `swival`):
+
+```bash
+export GEMINI_API_KEY=...
+export SELF_MANAGEMENT_SWIVAL_PROVIDER=google
+export SELF_MANAGEMENT_SWIVAL_MODEL=gemini-3.1-pro-preview
+export SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL=http://127.0.0.1:8000
+```
+
+Notes:
+
+- Preferred production deployment: install the exact `swival` build that you
+  intend to run into the backend Python environment so `uv run python -c "import swival"`
+  succeeds directly.
+- If you currently ship a locally patched `swival` through `uv tool install`,
+  set `SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE` to that tool binary (prefer an
+  absolute path). The backend will resolve the tool-managed virtualenv's
+  `site-packages` and import `swival` from there as a compatibility fallback.
+- `SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS` remains available as a last-resort
+  development escape hatch, but it is less stable than installing an exact
+  wheel into the backend environment or resolving from an explicitly managed
+  tool executable.
+- For Gemini, prefer `SELF_MANAGEMENT_SWIVAL_PROVIDER=google` instead of `generic`.
+- Let `swival` resolve the API key from `GEMINI_API_KEY` or `OPENAI_API_KEY`.
+- `SELF_MANAGEMENT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
+  overriding the default Google OpenAI-compatible endpoint.
+- `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
+  built-in agent no longer derives its MCP target from request headers.
+- `SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT` controls where the built-in runtime keeps
+  swival's per-user working state. Each authenticated user gets a dedicated
+  subdirectory under this root, and the runtime no longer uses the shared
+  backend repository directory as its `base_dir`.
+- The built-in profile now reports `configured=true` only when the required
+  runtime settings are present and `swival` is actually importable from the
+  backend process.
+- Built-in agent write tools are disabled by default and only become available
+  for runs that explicitly set `allow_write_tools=true`.
+- Built-in runs now bind their `conversationId` to the normal sessions domain:
+  the thread, user/agent messages, and permission interrupt lifecycle events are
+  persisted under `/me/conversations`, rather than existing only in process
+  memory.
+- When the built-in agent returns a permission interrupt, `reply=once` enables
+  write tools only for the resumed turn, while `reply=always` enables
+  auto-approved write tools for the current built-in conversation until the
+  server-side swival session expires.
+- The swival runtime object itself is still process-local and TTL-managed; this
+  PR persists the durable session history and interrupt lifecycle, not full
+  cross-process swival runtime restoration.
+- If the in-memory swival runtime expires, the backend now best-effort
+  rehydrates the next built-in session from persisted user/agent turns in the
+  same durable conversation before resuming.
+- The built-in runtime applies a compatibility shim for older `swival` MCP
+  adapters that still emit private `_mcp_*` tool metadata rejected by Gemini's
+  OpenAI-compatible endpoint.
+
 ## Backend Structure
 
 The backend now uses a practical feature-based structure for business-facing entrypoints and orchestration code.

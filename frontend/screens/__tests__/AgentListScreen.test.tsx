@@ -24,6 +24,28 @@ let mockPersonalHasMore = true;
 let mockPersonalLoadingMore = false;
 let mockSharedHasMore = true;
 let mockSharedLoadingMore = false;
+let mockBuiltInAgentProfile: {
+  id: string;
+  name: string;
+  description: string;
+  runtime: string;
+  configured: boolean;
+  resources: string[];
+  tools: {
+    operation_id: string;
+    tool_name: string;
+    description: string;
+    confirmation_policy: string;
+  }[];
+} | null = {
+  id: "self-management-assistant",
+  name: "A2A Client Hub Assistant",
+  description: "Built-in self-management assistant",
+  runtime: "swival",
+  configured: true,
+  resources: ["agents", "jobs", "sessions"],
+  tools: [],
+};
 
 let mockPersonalCounts = {
   healthy: 1,
@@ -55,6 +77,12 @@ const buildPersonalAgent = (
 });
 
 jest.mock("@tanstack/react-query", () => ({
+  useQuery: ({ enabled }: { enabled?: boolean }) => ({
+    data: enabled === false ? undefined : mockBuiltInAgentProfile,
+    isLoading: false,
+    isFetched: true,
+    error: null,
+  }),
   useMutation: () => ({
     isPending: false,
     mutate: mockBatchMutate,
@@ -256,6 +284,15 @@ describe("AgentListScreen", () => {
     mockPersonalLoadingMore = false;
     mockSharedHasMore = true;
     mockSharedLoadingMore = false;
+    mockBuiltInAgentProfile = {
+      id: "self-management-assistant",
+      name: "A2A Client Hub Assistant",
+      description: "Built-in self-management assistant",
+      runtime: "swival",
+      configured: true,
+      resources: ["agents", "jobs", "sessions"],
+      tools: [],
+    };
     mockPersonalCounts = {
       healthy: 1,
       degraded: 1,
@@ -355,6 +392,13 @@ describe("AgentListScreen", () => {
     });
 
     expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
+    expect(mockButtons.some((button) => button.label === "Chat")).toBe(true);
+    expect(
+      tree!.root
+        .findAllByType(Text)
+        .flatMap((node) => node.props.children)
+        .join(" "),
+    ).toContain("BUILT-IN");
     expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
     expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
     expect(mockButtons.some((button) => button.label === "Load more")).toBe(
@@ -372,6 +416,37 @@ describe("AgentListScreen", () => {
     });
 
     expect(mockSharedLoadMore).toHaveBeenCalled();
+  });
+
+  it("opens chat for the built-in assistant from the shared tab", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const sourceToggleButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Switch to shared agents",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    await act(async () => {
+      sourceToggleButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    const builtInChatButton = mockButtons.find(
+      (button) => button.accessibilityLabel === "Open built-in assistant",
+    ) as { onPress: () => void };
+
+    await act(async () => {
+      builtInChatButton.onPress();
+    });
+
+    expect(mockSetActiveAgent).toHaveBeenCalledWith(
+      "self-management-assistant",
+    );
+    expect(mockPush).toHaveBeenCalled();
   });
 
   it("loads more from onEndReached only when the active list can paginate", async () => {

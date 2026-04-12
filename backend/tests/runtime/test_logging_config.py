@@ -1,7 +1,7 @@
 import logging
 
 from app.core.config import settings
-from app.core.logging import JsonFormatter, TextFormatter
+from app.core.logging import JsonFormatter, RequestIdFilter, TextFormatter
 
 
 def test_text_formatter_renders_human_readable_context() -> None:
@@ -17,12 +17,18 @@ def test_text_formatter_renders_human_readable_context() -> None:
     )
     record.request_id = "-"
     record.user_id = "-"
+    record.principal_user_id = "-"
+    record.actor_type = "-"
+    record.admin_mode = None
     record.taskName = "Task-2"
 
     rendered = formatter.format(record)
 
     assert "INFO app.runtime.scheduler" in rendered
-    assert "[request_id=- user_id=- taskName=Task-2]" in rendered
+    assert (
+        "[request_id=- user_id=- principal_user_id=- actor_type=- "
+        "admin_mode=- taskName=Task-2]" in rendered
+    )
     assert rendered.endswith("APScheduler started.")
 
 
@@ -39,6 +45,9 @@ def test_json_formatter_preserves_structured_fields() -> None:
     )
     record.request_id = "-"
     record.user_id = "-"
+    record.principal_user_id = "-"
+    record.actor_type = "-"
+    record.admin_mode = None
     record.taskName = "Task-2"
 
     rendered = formatter.format(record)
@@ -46,6 +55,26 @@ def test_json_formatter_preserves_structured_fields() -> None:
     assert '"logger": "app.runtime.scheduler"' in rendered
     assert '"message": "APScheduler started."' in rendered
     assert '"taskName": "Task-2"' in rendered
+
+
+def test_request_id_filter_injects_actor_context_defaults() -> None:
+    record = logging.LogRecord(
+        name="app.runtime.scheduler",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=44,
+        msg="tick",
+        args=(),
+        exc_info=None,
+    )
+
+    RequestIdFilter().filter(record)
+
+    assert record.request_id == "-"
+    assert record.user_id == "-"
+    assert record.principal_user_id == "-"
+    assert record.actor_type == "-"
+    assert record.admin_mode is None
 
 
 def test_log_format_setting_defaults_to_text() -> None:

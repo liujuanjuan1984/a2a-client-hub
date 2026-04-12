@@ -8,11 +8,13 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_admin_user
+from app.api.deps import (
+    get_async_db,
+    get_current_self_management_admin_tool_gateway,
+)
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
-from app.db.models.user import User
 from app.features.hub_agents.schemas import (
     HubA2AAgentAdminCreate,
     HubA2AAgentAdminListResponse,
@@ -33,11 +35,40 @@ from app.features.hub_agents.service import (
     HubA2AUserNotFoundError,
     hub_a2a_agent_service,
 )
+from app.features.self_management_shared.capability_catalog import (
+    ADMIN_HUB_AGENT_ALLOWLIST_ADD,
+    ADMIN_HUB_AGENT_ALLOWLIST_LIST,
+    ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
+    ADMIN_HUB_AGENT_ALLOWLIST_REPLACE,
+    ADMIN_HUB_AGENTS_CREATE,
+    ADMIN_HUB_AGENTS_DELETE,
+    ADMIN_HUB_AGENTS_GET,
+    ADMIN_HUB_AGENTS_LIST,
+    ADMIN_HUB_AGENTS_UPDATE,
+)
+from app.features.self_management_shared.tool_gateway import (
+    SelfManagementOperation,
+    SelfManagementToolGateway,
+)
 from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/admin/a2a/agents", tags=["admin-a2a"])
 logger = get_logger(__name__)
+
+
+def _build_admin_audit_extra(
+    gateway: SelfManagementToolGateway,
+    *,
+    operation: SelfManagementOperation,
+    resource_id: str | None = None,
+    target_user_id: UUID | None = None,
+) -> dict[str, Any]:
+    return gateway.authorize(
+        operation=operation,
+        resource_id=resource_id,
+        target_user_id=target_user_id,
+    ).as_log_extra()
 
 
 def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse:
@@ -69,10 +100,13 @@ def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse
 async def list_hub_agents_admin(
     *,
     db: AsyncSession = Depends(get_async_db),
-    _: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=200, description="Page size"),
 ) -> HubA2AAgentAdminListResponse:
+    gateway.authorize(operation=ADMIN_HUB_AGENTS_LIST)
     items, total = await hub_a2a_agent_service.list_agents_admin(
         db, page=page, size=size
     )
@@ -99,9 +133,11 @@ async def create_hub_agent_admin(
     payload: HubA2AAgentAdminCreate,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    current_admin: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> HubA2AAgentAdminResponse:
-    current_admin_id = cast(UUID, current_admin.id)
+    current_admin_id = gateway.actor.acting_user_id
     response.headers["Cache-Control"] = "no-store"
     normalized_card_url = normalize_card_url(
         payload.card_url,
@@ -110,7 +146,10 @@ async def create_hub_agent_admin(
     logger.info(
         "Hub A2A agent create requested (admin)",
         extra={
-            "admin_user_id": str(current_admin_id),
+            **_build_admin_audit_extra(
+                gateway,
+                operation=ADMIN_HUB_AGENTS_CREATE,
+            ),
             "agent_name": payload.name,
             "card_url": redact_url_for_logging(normalized_card_url),
             "availability_policy": payload.availability_policy,
@@ -152,8 +191,11 @@ async def get_hub_agent_admin(
     *,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    _: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> HubA2AAgentAdminResponse:
+    gateway.authorize(operation=ADMIN_HUB_AGENTS_GET, resource_id=str(agent_id))
     try:
         record = await hub_a2a_agent_service.get_agent_admin(db, agent_id=agent_id)
     except HubA2AAgentNotFoundError as exc:
@@ -168,9 +210,11 @@ async def update_hub_agent_admin(
     payload: HubA2AAgentAdminUpdate,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    current_admin: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> HubA2AAgentAdminResponse:
-    current_admin_id = cast(UUID, current_admin.id)
+    current_admin_id = gateway.actor.acting_user_id
     response.headers["Cache-Control"] = "no-store"
     normalized_card_url = (
         normalize_card_url(
@@ -183,8 +227,11 @@ async def update_hub_agent_admin(
     logger.info(
         "Hub A2A agent update requested (admin)",
         extra={
-            "admin_user_id": str(current_admin_id),
-            "agent_id": str(agent_id),
+            **_build_admin_audit_extra(
+                gateway,
+                operation=ADMIN_HUB_AGENTS_UPDATE,
+                resource_id=str(agent_id),
+            ),
             "agent_name": payload.name,
             "card_url": redact_url_for_logging(normalized_card_url),
             "availability_policy": payload.availability_policy,
@@ -240,9 +287,12 @@ async def delete_hub_agent_admin(
     *,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    current_admin: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> Response:
-    current_admin_id = cast(UUID, current_admin.id)
+    gateway.authorize(operation=ADMIN_HUB_AGENTS_DELETE, resource_id=str(agent_id))
+    current_admin_id = gateway.actor.acting_user_id
     try:
         await hub_a2a_agent_service.delete_agent_admin(
             db, admin_user_id=current_admin_id, agent_id=agent_id
@@ -261,8 +311,14 @@ async def list_hub_agent_allowlist_admin(
     *,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    _: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> HubA2AAllowlistListResponse:
+    gateway.authorize(
+        operation=ADMIN_HUB_AGENT_ALLOWLIST_LIST,
+        resource_id=str(agent_id),
+    )
     try:
         records = await hub_a2a_agent_service.list_allowlist_entries_admin(
             db, agent_id=agent_id
@@ -296,16 +352,21 @@ async def add_hub_agent_allowlist_admin(
     payload: HubA2AAllowlistAddRequest,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    current_admin: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> HubA2AAllowlistEntryResponse:
-    current_admin_id = cast(UUID, current_admin.id)
+    current_admin_id = gateway.actor.acting_user_id
     response.headers["Cache-Control"] = "no-store"
     logger.info(
         "Hub A2A agent allowlist add requested (admin)",
         extra={
-            "admin_user_id": str(current_admin_id),
-            "agent_id": str(agent_id),
-            "user_id": str(payload.user_id) if payload.user_id else None,
+            **_build_admin_audit_extra(
+                gateway,
+                operation=ADMIN_HUB_AGENT_ALLOWLIST_ADD,
+                resource_id=str(agent_id),
+                target_user_id=payload.user_id,
+            ),
             "email": (payload.email or "").strip().lower() if payload.email else None,
         },
     )
@@ -347,15 +408,20 @@ async def replace_hub_agent_allowlist_admin(
     payload: HubA2AAllowlistReplaceRequest,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    current_admin: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> HubA2AAllowlistListResponse:
-    current_admin_id = cast(UUID, current_admin.id)
+    current_admin_id = gateway.actor.acting_user_id
     response.headers["Cache-Control"] = "no-store"
     logger.info(
         "Hub A2A agent allowlist replace requested (admin)",
         extra={
-            "admin_user_id": str(current_admin_id),
-            "agent_id": str(agent_id),
+            **_build_admin_audit_extra(
+                gateway,
+                operation=ADMIN_HUB_AGENT_ALLOWLIST_REPLACE,
+                resource_id=str(agent_id),
+            ),
             "entries_count": len(payload.entries),
         },
     )
@@ -405,8 +471,15 @@ async def remove_hub_agent_allowlist_admin(
     agent_id: UUID,
     user_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    _: User = Depends(get_current_admin_user),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_admin_tool_gateway
+    ),
 ) -> Response:
+    gateway.authorize(
+        operation=ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
+        resource_id=str(agent_id),
+        target_user_id=user_id,
+    )
     try:
         await hub_a2a_agent_service.remove_allowlist_entry_admin(
             db, agent_id=agent_id, user_id=user_id

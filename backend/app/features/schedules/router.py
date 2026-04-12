@@ -8,7 +8,11 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_user
+from app.api.deps import (
+    get_async_db,
+    get_current_self_management_tool_gateway,
+    get_current_user,
+)
 from app.api.retry_after import db_busy_retry_after_headers
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
@@ -25,6 +29,9 @@ from app.features.schedules.schemas import (
     A2AScheduleTaskUpdate,
     A2AScheduleToggleResponse,
 )
+from app.features.schedules.self_management_jobs_service import (
+    self_management_jobs_service,
+)
 from app.features.schedules.service import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,
@@ -33,6 +40,7 @@ from app.features.schedules.service import (
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
+from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.utils.pagination import build_pagination_meta
 from app.utils.timezone_util import TimezoneNotFoundError, validate_user_timezone
 
@@ -123,18 +131,24 @@ async def _set_schedule_task_enabled(
     enabled: bool,
     db: AsyncSession,
     current_user: User,
+    gateway: SelfManagementToolGateway,
 ) -> A2AScheduleToggleResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
-    current_user_id = cast(UUID, current_user.id)
-    current_user_is_superuser = cast(bool, current_user.is_superuser)
     schedule_timezone = _validate_timezone(user_timezone=current_user_timezone)
     task = await _call_schedule(
-        a2a_schedule_service.set_enabled(
-            db,
-            user_id=current_user_id,
+        self_management_jobs_service.resume_job(
+            db=db,
+            gateway=gateway,
+            current_user=current_user,
             task_id=task_id,
-            enabled=enabled,
-            is_superuser=current_user_is_superuser,
+            timezone_str=schedule_timezone,
+        )
+        if enabled
+        else self_management_jobs_service.pause_job(
+            db=db,
+            gateway=gateway,
+            current_user=current_user,
+            task_id=task_id,
             timezone_str=schedule_timezone,
         )
     )
@@ -190,15 +204,18 @@ async def list_schedule_tasks(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_tool_gateway
+    ),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskListResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
-    current_user_id = cast(UUID, current_user.id)
     schedule_timezone = _validate_timezone(user_timezone=current_user_timezone)
     items, total = await _call_schedule(
-        a2a_schedule_service.list_tasks(
-            db,
-            user_id=current_user_id,
+        self_management_jobs_service.list_jobs(
+            db=db,
+            gateway=gateway,
+            current_user=current_user,
             page=page,
             size=size,
         )
@@ -217,15 +234,18 @@ async def list_schedule_tasks(
 async def get_schedule_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_async_db),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_tool_gateway
+    ),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
-    current_user_id = cast(UUID, current_user.id)
     schedule_timezone = _validate_timezone(user_timezone=current_user_timezone)
     task = await _call_schedule(
-        a2a_schedule_service.get_task(
-            db,
-            user_id=current_user_id,
+        self_management_jobs_service.get_job(
+            db=db,
+            gateway=gateway,
+            current_user=current_user,
             task_id=task_id,
         )
     )
@@ -237,6 +257,9 @@ async def patch_schedule_task(
     task_id: UUID,
     payload: A2AScheduleTaskUpdate,
     db: AsyncSession = Depends(get_async_db),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_tool_gateway
+    ),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
@@ -246,22 +269,46 @@ async def patch_schedule_task(
         user_timezone=current_user_timezone,
         requested_timezone=payload.schedule_timezone,
     )
-    task = await _call_schedule(
-        a2a_schedule_service.update_task(
-            db,
-            user_id=current_user_id,
-            task_id=task_id,
-            is_superuser=current_user_is_superuser,
-            timezone_str=schedule_timezone,
-            name=payload.name,
-            agent_id=payload.agent_id,
-            prompt=payload.prompt,
-            cycle_type=payload.cycle_type,
-            time_point=payload.time_point,
-            enabled=payload.enabled,
-            conversation_policy=payload.conversation_policy,
+    if self_management_jobs_service.supports_prompt_update(payload):
+        task = await _call_schedule(
+            self_management_jobs_service.update_prompt(
+                db=db,
+                gateway=gateway,
+                current_user=current_user,
+                task_id=task_id,
+                prompt=cast(str, payload.prompt),
+                timezone_str=schedule_timezone,
+            )
         )
-    )
+    elif self_management_jobs_service.supports_schedule_update(payload):
+        task = await _call_schedule(
+            self_management_jobs_service.update_schedule(
+                db=db,
+                gateway=gateway,
+                current_user=current_user,
+                task_id=task_id,
+                cycle_type=payload.cycle_type,
+                time_point=cast(dict[str, object] | None, payload.time_point),
+                timezone_str=schedule_timezone,
+            )
+        )
+    else:
+        task = await _call_schedule(
+            a2a_schedule_service.update_task(
+                db,
+                user_id=current_user_id,
+                task_id=task_id,
+                is_superuser=current_user_is_superuser,
+                timezone_str=schedule_timezone,
+                name=payload.name,
+                agent_id=payload.agent_id,
+                prompt=payload.prompt,
+                cycle_type=payload.cycle_type,
+                time_point=payload.time_point,
+                enabled=payload.enabled,
+                conversation_policy=payload.conversation_policy,
+            )
+        )
 
     return _build_task_response(task, schedule_timezone=schedule_timezone)
 
@@ -289,12 +336,16 @@ async def delete_schedule_task(
 async def enable_schedule_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_async_db),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_tool_gateway
+    ),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleToggleResponse:
     return await _set_schedule_task_enabled(
         task_id=task_id,
         enabled=True,
         db=db,
+        gateway=gateway,
         current_user=current_user,
     )
 
@@ -303,12 +354,16 @@ async def enable_schedule_task(
 async def disable_schedule_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_async_db),
+    gateway: SelfManagementToolGateway = Depends(
+        get_current_self_management_tool_gateway
+    ),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleToggleResponse:
     return await _set_schedule_task_enabled(
         task_id=task_id,
         enabled=False,
         db=db,
+        gateway=gateway,
         current_user=current_user,
     )
 

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.schemas.pagination import Pagination
 
 SessionSource = Literal["manual", "scheduled"]
-AgentSource = Literal["personal", "shared"]
+AgentSource = Literal["personal", "shared", "builtin"]
 
 
 class SessionQueryRequest(BaseModel):
@@ -35,7 +35,7 @@ class SessionViewItem(BaseModel):
     source: SessionSource
     external_provider: Optional[str] = None
     external_session_id: Optional[str] = None
-    agent_id: Optional[UUID] = None
+    agent_id: Optional[str] = None
     agent_source: Optional[AgentSource] = None
     title: str
     last_active_at: Optional[datetime] = None

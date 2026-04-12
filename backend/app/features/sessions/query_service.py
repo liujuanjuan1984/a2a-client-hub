@@ -12,6 +12,9 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.features.invoke.shared_metadata import merge_preferred_session_binding_metadata
+from app.features.self_management_shared.constants import (
+    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+)
 from app.features.sessions import block_store
 from app.features.sessions.common import (
     MessagesBeforeCursor,
@@ -39,6 +42,42 @@ class SessionQueryService:
 
     def __init__(self, *, support: SessionHubSupport) -> None:
         self._support = support
+
+    def _serialize_thread_summary(self, thread: ConversationThread) -> dict[str, Any]:
+        thread_source = cast(str | None, thread.source)
+        thread_title_raw = cast(str, thread.title)
+        thread_external_provider = cast(str | None, thread.external_provider)
+        thread_external_session_id = cast(str | None, thread.external_session_id)
+        thread_agent_id = cast(UUID | None, thread.agent_id)
+        thread_agent_source = cast(str | None, thread.agent_source)
+        resolved_source = resolve_session_source(
+            thread_source=thread_source,
+            fallback_source=None,
+        )
+        title_fallback = (
+            "Scheduled Session" if resolved_source == "scheduled" else "Manual Session"
+        )
+        thread_title = thread_title_raw if thread_title_raw else title_fallback
+        if ConversationThread.is_placeholder_title(thread_title):
+            thread_title = "Session" if resolved_source == "manual" else title_fallback
+        serialized_agent_id: str | None = (
+            str(thread_agent_id) if thread_agent_id is not None else None
+        )
+        serialized_agent_source = thread_agent_source or "personal"
+        if thread_agent_source == "builtin":
+            serialized_agent_id = SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID
+            serialized_agent_source = "builtin"
+        return {
+            "conversationId": str(thread.id),
+            "source": resolved_source,
+            "external_provider": normalize_provider(thread_external_provider),
+            "external_session_id": normalize_non_empty_text(thread_external_session_id),
+            "agent_id": serialized_agent_id,
+            "agent_source": serialized_agent_source,
+            "title": thread_title,
+            "last_active_at": thread.last_active_at,
+            "created_at": thread.created_at,
+        }
 
     async def list_sessions(
         self,
@@ -115,46 +154,26 @@ class SessionQueryService:
             stmt = stmt.offset(offset)
 
         threads = list((await db.execute(stmt)).scalars().all())
-        items: list[dict[str, Any]] = []
-
-        for thread in threads:
-            thread_source = cast(str | None, thread.source)
-            thread_title_raw = cast(str, thread.title)
-            thread_external_provider = cast(str | None, thread.external_provider)
-            thread_external_session_id = cast(str | None, thread.external_session_id)
-            thread_agent_id = cast(UUID | None, thread.agent_id)
-            thread_agent_source = cast(str | None, thread.agent_source)
-            resolved_source = resolve_session_source(
-                thread_source=thread_source,
-                fallback_source=None,
-            )
-            title_fallback = (
-                "Scheduled Session"
-                if resolved_source == "scheduled"
-                else "Manual Session"
-            )
-            thread_title = thread_title_raw if thread_title_raw else title_fallback
-            if ConversationThread.is_placeholder_title(thread_title):
-                thread_title = (
-                    "Session" if resolved_source == "manual" else title_fallback
-                )
-            items.append(
-                {
-                    "conversationId": str(thread.id),
-                    "source": resolved_source,
-                    "external_provider": normalize_provider(thread_external_provider),
-                    "external_session_id": normalize_non_empty_text(
-                        thread_external_session_id
-                    ),
-                    "agent_id": thread_agent_id,
-                    "agent_source": thread_agent_source or "personal",
-                    "title": thread_title,
-                    "last_active_at": thread.last_active_at,
-                    "created_at": thread.created_at,
-                }
-            )
+        items = [self._serialize_thread_summary(thread) for thread in threads]
 
         return items, total
+
+    async def get_session(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+    ) -> tuple[dict[str, Any], bool]:
+        resolved_conversation_id = parse_conversation_id(conversation_id)
+        thread = await self._support.get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=resolved_conversation_id,
+        )
+        if thread is None:
+            raise ValueError("session_not_found")
+        return self._serialize_thread_summary(thread), False
 
     async def list_messages(
         self,

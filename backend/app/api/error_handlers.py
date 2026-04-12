@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.logging import get_logger
 
 _ALLOWED_DETAIL_KEYS = {
     "message",
@@ -23,6 +24,7 @@ _ALLOWED_DETAIL_KEYS = {
     "meta",
 }
 _LEGACY_DETAIL_KEYS = {"code"}
+logger = get_logger(__name__)
 
 
 def _ensure_message(value: Any, default: str) -> str:
@@ -154,6 +156,13 @@ async def unhandled_exception_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
+    logger.exception(
+        "Unhandled application exception",
+        extra={
+            "path": str(request.url.path),
+            "method": request.method,
+        },
+    )
     if settings.debug:
         detail = {
             "message": str(exc),

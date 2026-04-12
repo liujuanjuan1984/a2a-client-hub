@@ -11,6 +11,9 @@ from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.features.schedules import router as a2a_schedules
+from app.features.schedules.self_management_jobs_service import (
+    self_management_jobs_service,
+)
 from app.features.schedules.service import (
     A2AScheduleConflictError,
     A2AScheduleServiceBusyError,
@@ -163,6 +166,110 @@ async def test_schedule_routes_crud_and_toggle(
 
         after_delete_resp = await client.get(f"/me/a2a/schedules/{task_id}")
         assert after_delete_resp.status_code == 404
+
+
+async def test_schedule_patch_prompt_uses_self_management_jobs_service(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="prompt-gateway"
+    )
+
+    original = self_management_jobs_service.update_prompt
+    called = {"value": False}
+
+    async def _wrapped_update_prompt(**kwargs):
+        called["value"] = True
+        return await original(**kwargs)
+
+    monkeypatch.setattr(
+        self_management_jobs_service,
+        "update_prompt",
+        _wrapped_update_prompt,
+    )
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        create_resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Prompt route",
+                "agent_id": str(agent.id),
+                "prompt": "original prompt",
+                "cycle_type": "daily",
+                "time_point": {"time": "09:15"},
+                "enabled": True,
+                "schedule_timezone": user.timezone or "UTC",
+            },
+        )
+        task_id = create_resp.json()["id"]
+
+        update_resp = await client.patch(
+            f"/me/a2a/schedules/{task_id}",
+            json={"prompt": "updated via gateway"},
+        )
+
+    assert update_resp.status_code == 200
+    assert update_resp.json()["prompt"] == "updated via gateway"
+    assert called["value"] is True
+
+
+async def test_schedule_patch_schedule_uses_self_management_jobs_service(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="schedule-gateway"
+    )
+
+    original = self_management_jobs_service.update_schedule
+    called = {"value": False}
+
+    async def _wrapped_update_schedule(**kwargs):
+        called["value"] = True
+        return await original(**kwargs)
+
+    monkeypatch.setattr(
+        self_management_jobs_service,
+        "update_schedule",
+        _wrapped_update_schedule,
+    )
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        create_resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Schedule route",
+                "agent_id": str(agent.id),
+                "prompt": "original prompt",
+                "cycle_type": "daily",
+                "time_point": {"time": "09:15"},
+                "enabled": True,
+                "schedule_timezone": user.timezone or "UTC",
+            },
+        )
+        task_id = create_resp.json()["id"]
+
+        update_resp = await client.patch(
+            f"/me/a2a/schedules/{task_id}",
+            json={"time_point": {"time": "10:45"}},
+        )
+
+    assert update_resp.status_code == 200
+    assert update_resp.json()["time_point"]["time"] == "10:45"
+    assert called["value"] is True
 
 
 async def test_schedule_list_prioritizes_attention_then_running_then_recent_activity(
