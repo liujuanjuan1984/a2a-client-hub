@@ -6,8 +6,11 @@ from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.features.self_management_shared.constants import (
+    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+)
 from app.schemas.pagination import Pagination
 
 SessionSource = Literal["manual", "scheduled"]
@@ -21,10 +24,29 @@ class SessionQueryRequest(BaseModel):
         None,
         description="Filter by source (manual/scheduled)",
     )
-    agent_id: Optional[UUID] = Field(
+    agent_id: Optional[str] = Field(
         None,
-        description="Filter by agent id.",
+        description=(
+            "Filter by agent id. Accepts a UUID or the built-in self-management "
+            "assistant public id."
+        ),
     )
+
+    @field_validator("agent_id")
+    @classmethod
+    def validate_agent_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value == SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID:
+            return value
+        try:
+            UUID(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Input should be a valid UUID or the built-in self-management "
+                "assistant id."
+            ) from exc
+        return value
 
 
 class SessionViewItem(BaseModel):

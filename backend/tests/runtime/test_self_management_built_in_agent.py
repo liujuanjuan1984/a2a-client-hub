@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -18,8 +19,12 @@ from app.core.security import (
 )
 from app.db.models.agent_message import AgentMessage
 from app.features.self_management_agent import router as self_management_agent_router
+from app.features.self_management_agent import (
+    service as self_management_agent_service_module,
+)
 from app.features.self_management_agent.service import (
     _WRITE_APPROVAL_SENTINEL,
+    SelfManagementBuiltInAgentUnavailableError,
     self_management_built_in_agent_service,
 )
 from app.features.sessions.service import session_hub_service
@@ -33,6 +38,8 @@ class _FakeSwivalSession:
     last_init_kwargs: dict[str, object] | None = None
     last_message: str | None = None
     next_answer: str = "Built-in agent reply"
+    next_messages: list[dict[str, object]] | None = None
+    next_error: Exception | None = None
     ask_call_count: int = 0
     instance_count: int = 0
     instances: list["_FakeSwivalSession"] = []
@@ -45,6 +52,10 @@ class _FakeSwivalSession:
         self.closed = False
 
     def ask(self, message: str) -> object:
+        if type(self).next_error is not None:
+            exc = type(self).next_error
+            type(self).next_error = None
+            raise exc
         type(self).last_message = message
         type(self).ask_call_count += 1
         if self._conv_state is None:
@@ -52,7 +63,17 @@ class _FakeSwivalSession:
         messages = cast(list[dict[str, str]], self._conv_state["messages"])
         messages.append({"role": "user", "content": message})
         messages.append({"role": "assistant", "content": type(self).next_answer})
-        return SimpleNamespace(answer=type(self).next_answer, exhausted=False)
+        result_messages = (
+            copy.deepcopy(type(self).next_messages)
+            if type(self).next_messages is not None
+            else copy.deepcopy(messages)
+        )
+        type(self).next_messages = None
+        return SimpleNamespace(
+            answer=type(self).next_answer,
+            exhausted=False,
+            messages=result_messages,
+        )
 
     def close(self) -> None:
         self.closed = True
@@ -62,6 +83,8 @@ def _install_fake_swival(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeSwivalSession.last_init_kwargs = None
     _FakeSwivalSession.last_message = None
     _FakeSwivalSession.next_answer = "Built-in agent reply"
+    _FakeSwivalSession.next_messages = None
+    _FakeSwivalSession.next_error = None
     _FakeSwivalSession.ask_call_count = 0
     _FakeSwivalSession.instance_count = 0
     _FakeSwivalSession.instances = []
@@ -286,6 +309,93 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert get_self_management_allowed_operations(claims) == frozenset(
         result.tool_names
     )
+
+
+async def test_built_in_agent_rebuilds_session_when_delegated_token_expires(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    monkeypatch.setattr(settings, "jwt_access_token_ttl_seconds", 5)
+    monkeypatch.setattr(
+        settings, "self_management_swival_delegated_token_ttl_seconds", 5
+    )
+    monotonic_time = {"value": 100.0}
+    monkeypatch.setattr(
+        self_management_agent_service_module.time,
+        "monotonic",
+        lambda: monotonic_time["value"],
+    )
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+
+    first = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="List my jobs",
+        allow_write_tools=False,
+    )
+    assert first.answer == "Built-in agent reply"
+    assert _FakeSwivalSession.instance_count == 1
+
+    monotonic_time["value"] += 10.0
+    _FakeSwivalSession.next_answer = "Second built-in agent reply"
+    second = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="List my agents",
+        allow_write_tools=False,
+    )
+
+    assert second.answer == "Second built-in agent reply"
+    assert _FakeSwivalSession.instance_count == 2
+    assert _FakeSwivalSession.instances[0].closed is True
+    assert _FakeSwivalSession.instances[1]._conv_state is not None
+    assert cast(
+        list[dict[str, str]], _FakeSwivalSession.instances[1]._conv_state["messages"]
+    )[:2] == [
+        {"role": "user", "content": "List my jobs"},
+        {"role": "assistant", "content": "Built-in agent reply"},
+    ]
+
+
+async def test_built_in_agent_raises_when_mcp_runtime_returns_transport_error(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+
+    _FakeSwivalSession.next_answer = "Backend appears unavailable."
+    _FakeSwivalSession.next_messages = [
+        {"role": "user", "content": "List my agents"},
+        {
+            "role": "tool",
+            "content": (
+                "error: MCP server 'a2a-client-hub' failed: "
+                "Client error '401 Unauthorized'"
+            ),
+        },
+        {"role": "assistant", "content": "Backend appears unavailable."},
+    ]
+
+    with pytest.raises(SelfManagementBuiltInAgentUnavailableError) as excinfo:
+        await self_management_built_in_agent_service.run(
+            db=async_db_session,
+            current_user=user,
+            conversation_id=_new_conversation_id(),
+            message="List my agents",
+            allow_write_tools=False,
+        )
+
+    assert "MCP call failed" in str(excinfo.value)
+    assert "401 Unauthorized" in str(excinfo.value)
 
 
 async def test_built_in_agent_reuses_same_swival_base_dir_for_same_user(
@@ -904,6 +1014,66 @@ async def test_built_in_agent_permission_reply_once_resumes_with_write_tools(
         "url"
     ] == ("http://internal-mcp/mcp-write/")
     assert _FakeSwivalSession.instance_count == 1
+
+
+async def test_built_in_agent_permission_reply_rejects_repeated_write_approval(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    interrupt_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+    assert interrupt_result.interrupt is not None
+
+    _FakeSwivalSession.next_answer = (
+        "I still need write approval before I can pause that job.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    with pytest.raises(SelfManagementBuiltInAgentUnavailableError) as excinfo:
+        await self_management_built_in_agent_service.reply_permission_interrupt(
+            db=async_db_session,
+            current_user=user,
+            request_id=interrupt_result.interrupt.request_id,
+            reply="once",
+        )
+
+    assert "requested write approval after write tools were enabled" in str(
+        excinfo.value
+    )
+
+    messages, _extra, _db_mutated = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=cast(Any, user.id),
+        conversation_id=conversation_id,
+        before=None,
+        limit=20,
+    )
+    assert [item["role"] for item in messages] == ["user", "agent"]
+    assert messages[1]["status"] == "interrupted"
+
+    recovered = await self_management_built_in_agent_service.recover_pending_interrupts(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+    )
+    assert [item.request_id for item in recovered] == [
+        interrupt_result.interrupt.request_id
+    ]
 
 
 async def test_built_in_agent_permission_reply_reject_returns_no_change_result(
