@@ -47,6 +47,48 @@ SELF_AGENTS_GET = SelfManagementOperation(
     description="Read one current-user agent in detail.",
 )
 
+SELF_AGENTS_CHECK_HEALTH = SelfManagementOperation(
+    operation_id="self.agents.check_health",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.AGENTS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_agent.check_health.requested",
+    command_name="agents.check-health",
+    tool_name="self.agents.check_health",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Run a health check for one current-user agent.",
+)
+
+SELF_AGENTS_CHECK_HEALTH_ALL = SelfManagementOperation(
+    operation_id="self.agents.check_health_all",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.AGENTS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_agent.check_health_all.requested",
+    command_name="agents.check-health-all",
+    tool_name="self.agents.check_health_all",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Run a health check sweep for all current-user agents.",
+)
+
+SELF_AGENTS_CREATE = SelfManagementOperation(
+    operation_id="self.agents.create",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.AGENTS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_agent.create.requested",
+    command_name="agents.create",
+    tool_name="self.agents.create",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Create one current-user agent.",
+)
+
 SELF_AGENTS_UPDATE_CONFIG = SelfManagementOperation(
     operation_id="self.agents.update_config",
     scope=SelfManagementScope.SELF,
@@ -58,7 +100,21 @@ SELF_AGENTS_UPDATE_CONFIG = SelfManagementOperation(
     confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
     first_wave_exposed=True,
     surfaces=_SELF_ENTRY_SURFACES,
-    description="Update a constrained subset of the current user's agent config.",
+    description="Update one current-user agent.",
+)
+
+SELF_AGENTS_DELETE = SelfManagementOperation(
+    operation_id="self.agents.delete",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.AGENTS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_agent.delete.requested",
+    command_name="agents.delete",
+    tool_name="self.agents.delete",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Soft-delete one current-user agent.",
 )
 
 SELF_SESSIONS_LIST = SelfManagementOperation(
@@ -87,6 +143,48 @@ SELF_SESSIONS_GET = SelfManagementOperation(
     description="Read one current-user session in detail.",
 )
 
+SELF_SESSIONS_UPDATE = SelfManagementOperation(
+    operation_id="self.sessions.update",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.SESSIONS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_session.update.requested",
+    command_name="sessions.update",
+    tool_name="self.sessions.update",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Update one current-user session.",
+)
+
+SELF_SESSIONS_ARCHIVE = SelfManagementOperation(
+    operation_id="self.sessions.archive",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.SESSIONS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_session.archive.requested",
+    command_name="sessions.archive",
+    tool_name="self.sessions.archive",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Archive one current-user session as a soft delete.",
+)
+
+SELF_SESSIONS_UNARCHIVE = SelfManagementOperation(
+    operation_id="self.sessions.unarchive",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.SESSIONS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_session.unarchive.requested",
+    command_name="sessions.unarchive",
+    tool_name="self.sessions.unarchive",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Restore one archived current-user session.",
+)
+
 SELF_JOBS_LIST = SelfManagementOperation(
     operation_id="self.jobs.list",
     scope=SelfManagementScope.SELF,
@@ -111,6 +209,23 @@ SELF_JOBS_GET = SelfManagementOperation(
     first_wave_exposed=True,
     surfaces=_SELF_ENTRY_SURFACES,
     description="Read one current-user job in detail.",
+)
+
+SELF_JOBS_CREATE = SelfManagementOperation(
+    operation_id="self.jobs.create",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.JOBS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_job.create.requested",
+    command_name="jobs.create",
+    tool_name="self.jobs.create",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Create one current-user job. For `conversation_policy`, use the exact "
+        "enum `new_each_run` or `reuse_single`."
+    ),
 )
 
 SELF_JOBS_PAUSE = SelfManagementOperation(
@@ -155,6 +270,23 @@ SELF_JOBS_UPDATE_PROMPT = SelfManagementOperation(
     description="Update the prompt of one current-user job.",
 )
 
+SELF_JOBS_UPDATE = SelfManagementOperation(
+    operation_id="self.jobs.update",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.JOBS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_job.update.requested",
+    command_name="jobs.update",
+    tool_name="self.jobs.update",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Update one current-user job. For `conversation_policy`, use the exact "
+        "enum `new_each_run` or `reuse_single`."
+    ),
+)
+
 SELF_JOBS_UPDATE_SCHEDULE = SelfManagementOperation(
     operation_id="self.jobs.update_schedule",
     scope=SelfManagementScope.SELF,
@@ -167,6 +299,20 @@ SELF_JOBS_UPDATE_SCHEDULE = SelfManagementOperation(
     first_wave_exposed=True,
     surfaces=_SELF_ENTRY_SURFACES,
     description="Update the schedule of one current-user job.",
+)
+
+SELF_JOBS_DELETE = SelfManagementOperation(
+    operation_id="self.jobs.delete",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.JOBS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_job.delete.requested",
+    command_name="jobs.delete",
+    tool_name="self.jobs.delete",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description="Soft-delete one current-user job.",
 )
 
 ADMIN_HUB_AGENTS_LIST = SelfManagementOperation(
@@ -253,15 +399,25 @@ ADMIN_HUB_AGENT_ALLOWLIST_REMOVE = SelfManagementOperation(
 FIRST_WAVE_EXPOSED_OPERATIONS = (
     SELF_AGENTS_LIST,
     SELF_AGENTS_GET,
+    SELF_AGENTS_CHECK_HEALTH,
+    SELF_AGENTS_CHECK_HEALTH_ALL,
+    SELF_AGENTS_CREATE,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_AGENTS_DELETE,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_UPDATE,
+    SELF_SESSIONS_ARCHIVE,
+    SELF_SESSIONS_UNARCHIVE,
     SELF_JOBS_LIST,
     SELF_JOBS_GET,
+    SELF_JOBS_CREATE,
     SELF_JOBS_PAUSE,
     SELF_JOBS_RESUME,
+    SELF_JOBS_UPDATE,
     SELF_JOBS_UPDATE_PROMPT,
     SELF_JOBS_UPDATE_SCHEDULE,
+    SELF_JOBS_DELETE,
 )
 
 INTERNAL_ADMIN_OPERATIONS = (
@@ -278,9 +434,7 @@ INTERNAL_ADMIN_OPERATIONS = (
 
 UNSUPPORTED_FIRST_WAVE_OPERATION_IDS = frozenset(
     {
-        "self.jobs.delete",
         "self.sessions.delete",
-        "self.agents.delete",
         "admin.agents.delete",
     }
 )
@@ -315,15 +469,25 @@ __all__ = [
     "INTERNAL_ADMIN_OPERATIONS",
     "SELF_AGENTS_GET",
     "SELF_AGENTS_LIST",
+    "SELF_AGENTS_CREATE",
+    "SELF_AGENTS_CHECK_HEALTH",
+    "SELF_AGENTS_CHECK_HEALTH_ALL",
+    "SELF_AGENTS_DELETE",
     "SELF_AGENTS_UPDATE_CONFIG",
+    "SELF_JOBS_CREATE",
+    "SELF_JOBS_DELETE",
     "SELF_JOBS_GET",
     "SELF_JOBS_LIST",
     "SELF_JOBS_PAUSE",
     "SELF_JOBS_RESUME",
+    "SELF_JOBS_UPDATE",
     "SELF_JOBS_UPDATE_PROMPT",
     "SELF_JOBS_UPDATE_SCHEDULE",
+    "SELF_SESSIONS_ARCHIVE",
     "SELF_SESSIONS_GET",
     "SELF_SESSIONS_LIST",
+    "SELF_SESSIONS_UNARCHIVE",
+    "SELF_SESSIONS_UPDATE",
     "UNSUPPORTED_FIRST_WAVE_OPERATION_IDS",
     "get_self_management_operation",
 ]

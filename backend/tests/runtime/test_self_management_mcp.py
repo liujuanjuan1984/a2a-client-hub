@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 
 from app.core.security import create_self_management_access_token
+from app.features.personal_agents import service as personal_agent_service_module
 from app.features.self_management_shared.self_management_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
     _MCP_USER_ID_STATE_KEY,
@@ -51,8 +52,19 @@ async def test_self_management_write_mcp_server_lists_write_tools() -> None:
     tools = await self_management_write_mcp_server.list_tools()
     tool_names = {tool.name for tool in tools}
 
+    assert "self.agents.check_health" in tool_names
+    assert "self.agents.check_health_all" in tool_names
+    assert "self.agents.create" in tool_names
     assert "self.agents.update_config" in tool_names
+    assert "self.agents.delete" in tool_names
+    assert "self.jobs.create" in tool_names
     assert "self.jobs.pause" in tool_names
+    assert "self.jobs.resume" in tool_names
+    assert "self.jobs.update" in tool_names
+    assert "self.jobs.delete" in tool_names
+    assert "self.sessions.update" in tool_names
+    assert "self.sessions.archive" in tool_names
+    assert "self.sessions.unarchive" in tool_names
 
 
 async def test_execute_self_management_mcp_operation_returns_swival_envelope(
@@ -121,6 +133,7 @@ async def test_execute_self_management_mcp_operation_supports_sessions(
     assert get_result["ok"] is True
     assert get_result["result"]["session"]["conversation_id"] == str(thread.id)
     assert get_result["result"]["session"]["title"] == "MCP Session"
+    assert get_result["result"]["session"]["status"] == "active"
 
 
 async def test_execute_self_management_mcp_operation_supports_agents(
@@ -169,6 +182,227 @@ async def test_execute_self_management_mcp_operation_supports_agents(
     assert update_result["result"]["agent"]["name"] == "MCP Updated Agent"
     assert update_result["result"]["agent"]["enabled"] is False
     assert update_result["result"]["agent"]["tags"] == ["after"]
+
+
+async def test_execute_self_management_mcp_operation_supports_agent_health_checks(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-agent-health",
+    )
+
+    async def _fake_check_agents_health(*, user_id, force=False, agent_id=None):
+        assert user_id == user.id
+        return (
+            personal_agent_service_module.A2AAgentHealthCheckSummaryRecord(
+                requested=1 if agent_id is not None else 2,
+                checked=1,
+                skipped_cooldown=0,
+                healthy=1,
+                degraded=0,
+                unavailable=0,
+                unknown=0,
+            ),
+            [
+                personal_agent_service_module.A2AAgentHealthCheckItemRecord(
+                    agent_id=agent.id,
+                    health_status="healthy",
+                    checked_at=agent.updated_at,
+                    skipped_cooldown=not force,
+                    error=None,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(
+        personal_agent_service_module.a2a_agent_service,
+        "check_agents_health",
+        _fake_check_agents_health,
+    )
+
+    single_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.check_health",
+        arguments={"agent_id": str(agent.id), "force": True},
+        db=async_db_session,
+    )
+    all_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.check_health_all",
+        arguments={"force": True},
+        db=async_db_session,
+    )
+
+    assert single_result["ok"] is True
+    assert single_result["result"]["summary"]["requested"] == 1
+    assert single_result["result"]["items"][0]["agent_id"] == str(agent.id)
+    assert all_result["ok"] is True
+    assert all_result["result"]["summary"]["requested"] >= 1
+    assert any(
+        item["agent_id"] == str(agent.id) for item in all_result["result"]["items"]
+    )
+
+
+async def test_execute_self_management_mcp_operation_supports_agent_create_delete(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+
+    create_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.create",
+        arguments={
+            "name": "Created via MCP",
+            "card_url": "https://example.com/mcp-created/.well-known/agent-card.json",
+            "auth_type": "bearer",
+            "token": "secret-token",
+        },
+        db=async_db_session,
+    )
+
+    assert create_result["ok"] is True
+    created_agent_id = create_result["result"]["agent"]["id"]
+
+    delete_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.delete",
+        arguments={"agent_id": created_agent_id},
+        db=async_db_session,
+    )
+
+    assert delete_result == {
+        "ok": True,
+        "result": {"agent_id": created_agent_id, "deleted": True},
+    }
+
+
+async def test_execute_self_management_mcp_operation_supports_job_create_update_delete(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-job-create",
+    )
+
+    create_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.jobs.create",
+        arguments={
+            "name": "Created job",
+            "agent_id": str(agent.id),
+            "prompt": "run it",
+            "cycle_type": "daily",
+            "time_point": {"time": "10:15"},
+            "enabled": True,
+        },
+        db=async_db_session,
+    )
+
+    assert create_result["ok"] is True
+    task_id = create_result["result"]["job"]["id"]
+
+    update_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.jobs.update",
+        arguments={
+            "task_id": task_id,
+            "name": "Updated job",
+            "enabled": False,
+            "conversation_policy": "reuse_single",
+        },
+        db=async_db_session,
+    )
+    delete_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.jobs.delete",
+        arguments={"task_id": task_id},
+        db=async_db_session,
+    )
+
+    assert update_result["ok"] is True
+    assert update_result["result"]["job"]["name"] == "Updated job"
+    assert update_result["result"]["job"]["enabled"] is False
+    assert update_result["result"]["job"]["conversation_policy"] == "reuse_single"
+    assert delete_result == {
+        "ok": True,
+        "result": {"task_id": task_id, "deleted": True},
+    }
+
+
+async def test_execute_self_management_mcp_operation_rejects_noncanonical_job_conversation_policy(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-job-policy-invalid",
+    )
+
+    create_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.jobs.create",
+        arguments={
+            "name": "Aliased policy job",
+            "agent_id": str(agent.id),
+            "prompt": "run it",
+            "cycle_type": "daily",
+            "time_point": {"time": "10:15"},
+            "conversation_policy": "reuse",
+        },
+        db=async_db_session,
+    )
+
+    assert create_result == {
+        "ok": False,
+        "error": "conversation_policy must be one of new_each_run, reuse_single",
+    }
+
+
+async def test_execute_self_management_mcp_operation_supports_session_writes(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Before",
+    )
+
+    update_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.update",
+        arguments={
+            "conversation_id": str(thread.id),
+            "title": "After",
+        },
+        db=async_db_session,
+    )
+    archive_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.archive",
+        arguments={"conversation_id": str(thread.id)},
+        db=async_db_session,
+    )
+    unarchive_result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.unarchive",
+        arguments={"conversation_id": str(thread.id)},
+        db=async_db_session,
+    )
+
+    assert update_result["ok"] is True
+    assert update_result["result"]["session"]["title"] == "After"
+    assert archive_result["ok"] is True
+    assert archive_result["result"]["session"]["status"] == "archived"
+    assert unarchive_result["ok"] is True
+    assert unarchive_result["result"]["session"]["status"] == "active"
 
 
 async def test_self_management_mcp_http_app_requires_bearer_auth(

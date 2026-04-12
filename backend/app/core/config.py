@@ -900,7 +900,7 @@ class Settings(BaseSettings):
         description="Maximum output tokens allowed for one built-in self-management agent run.",
     )
     self_management_swival_delegated_token_ttl_seconds: int = Field(
-        default=300,
+        default=30 * 60,
         alias="SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS",
         description="Maximum lifetime in seconds for delegated built-in agent access tokens used against the internal MCP adapter.",
     )

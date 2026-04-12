@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from app.features.self_management_shared.capability_catalog import (
     ADMIN_HUB_AGENTS_LIST,
+    SELF_AGENTS_CHECK_HEALTH,
+    SELF_AGENTS_CREATE,
+    SELF_JOBS_CREATE,
     SELF_JOBS_UPDATE_SCHEDULE,
 )
 from app.features.self_management_shared.self_management_tool_contract import (
@@ -34,9 +37,48 @@ def test_list_self_management_tool_definitions_filters_by_surface() -> None:
     operation_ids = {item.operation_id for item in definitions}
 
     assert "self.jobs.list" in operation_ids
+    assert "self.agents.create" in operation_ids
+    assert "self.jobs.delete" in operation_ids
+    assert "self.sessions.archive" in operation_ids
     assert "self.sessions.get" in operation_ids
     assert "self.agents.update_config" in operation_ids
     assert "admin.agents.list" not in operation_ids
+
+
+def test_build_self_management_tool_definition_supports_agent_create() -> None:
+    definition = build_self_management_tool_definition(SELF_AGENTS_CREATE)
+
+    assert definition.operation_id == "self.agents.create"
+    assert definition.tool_name == "self.agents.create"
+    assert definition.confirmation_policy.value == "required"
+    assert definition.input_json_schema["properties"]["card_url"]["type"] == "string"
+
+
+def test_build_self_management_tool_definition_supports_agent_health_check() -> None:
+    definition = build_self_management_tool_definition(SELF_AGENTS_CHECK_HEALTH)
+
+    assert definition.operation_id == "self.agents.check_health"
+    assert definition.tool_name == "self.agents.check_health"
+    assert definition.confirmation_policy.value == "required"
+    assert definition.input_json_schema["properties"]["force"]["type"] == "boolean"
+
+
+def test_build_self_management_tool_definition_documents_job_conversation_policy() -> (
+    None
+):
+    definition = build_self_management_tool_definition(SELF_JOBS_CREATE)
+
+    conversation_policy = definition.input_json_schema["properties"][
+        "conversation_policy"
+    ]
+
+    assert definition.operation_id == "self.jobs.create"
+    assert "exact enum `new_each_run` or `reuse_single`" in definition.description
+    assert conversation_policy["enum"] == ["new_each_run", "reuse_single"]
+    assert conversation_policy["description"] == (
+        "Use the exact enum `new_each_run` to create a fresh conversation for "
+        "every run, or `reuse_single` to keep reusing one conversation across runs."
+    )
 
 
 def test_build_self_management_tool_definition_rejects_missing_tool_name() -> None:

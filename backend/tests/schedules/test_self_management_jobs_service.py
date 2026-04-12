@@ -143,3 +143,71 @@ async def test_self_management_jobs_service_updates_prompt_and_schedule(
 
     assert updated_prompt.prompt == "new prompt"
     assert updated_schedule.time_point["time"] == "10:30"
+
+
+async def test_self_management_jobs_service_create_update_and_delete_job(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    first_agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="jobs-create-a",
+    )
+    second_agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="jobs-create-b",
+    )
+    gateway = _build_gateway(user)
+    timezone_str = user.timezone or "UTC"
+
+    created = await self_management_jobs_service.create_job(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        name="Created job",
+        agent_id=first_agent.id,
+        prompt="Run this",
+        cycle_type="daily",
+        time_point={"time": "09:45"},
+        enabled=True,
+        conversation_policy="reuse_single",
+        timezone_str=timezone_str,
+    )
+
+    assert created.name == "Created job"
+    assert created.conversation_policy == "reuse_single"
+
+    updated = await self_management_jobs_service.update_job(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        task_id=created.id,
+        timezone_str=timezone_str,
+        name="Updated job",
+        agent_id=second_agent.id,
+        enabled=False,
+        conversation_policy="new_each_run",
+    )
+
+    assert updated.name == "Updated job"
+    assert updated.agent_id == second_agent.id
+    assert updated.enabled is False
+    assert updated.conversation_policy == "new_each_run"
+
+    await self_management_jobs_service.delete_job(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        task_id=created.id,
+    )
+
+    items, _total = await self_management_jobs_service.list_jobs(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        page=1,
+        size=20,
+    )
+    assert all(item.id != created.id for item in items)

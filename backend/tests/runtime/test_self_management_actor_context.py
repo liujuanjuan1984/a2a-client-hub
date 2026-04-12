@@ -306,7 +306,11 @@ def test_first_wave_capability_catalog_contains_expected_surfaces() -> None:
     exposed_ids = {item.operation_id for item in FIRST_WAVE_EXPOSED_OPERATIONS}
 
     assert "self.jobs.list" in exposed_ids
+    assert "self.agents.check_health" in exposed_ids
+    assert "self.jobs.create" in exposed_ids
     assert "self.sessions.get" in exposed_ids
+    assert "self.sessions.archive" in exposed_ids
+    assert "self.agents.create" in exposed_ids
     assert "self.agents.update_config" in exposed_ids
     assert all(item.first_wave_exposed for item in FIRST_WAVE_EXPOSED_OPERATIONS)
     assert all(item.surfaces for item in FIRST_WAVE_EXPOSED_OPERATIONS)
@@ -322,7 +326,7 @@ def test_internal_admin_capability_is_not_first_wave_exposed() -> None:
 
 
 def test_unsupported_first_wave_operation_ids_are_explicit() -> None:
-    assert "self.jobs.delete" in UNSUPPORTED_FIRST_WAVE_OPERATION_IDS
+    assert "self.sessions.delete" in UNSUPPORTED_FIRST_WAVE_OPERATION_IDS
     assert "admin.agents.delete" in UNSUPPORTED_FIRST_WAVE_OPERATION_IDS
 
 

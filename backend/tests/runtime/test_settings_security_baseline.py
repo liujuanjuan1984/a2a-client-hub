@@ -58,6 +58,7 @@ def _set_base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTH_REFRESH_COOKIE_SECURE", "true")
     monkeypatch.setenv("AUTH_REFRESH_COOKIE_SAMESITE", "lax")
     monkeypatch.setenv("BACKEND_CORS_ORIGINS", '["https://app.example.com"]')
+    monkeypatch.setenv("AUTH_COOKIE_TRUSTED_ORIGINS", '["https://app.example.com"]')
     monkeypatch.setenv("WS_ALLOWED_ORIGINS", '["https://app.example.com"]')
     monkeypatch.setenv("WS_REQUIRE_ORIGIN", "true")
     monkeypatch.setenv("A2A_PROXY_ALLOWED_HOSTS", '["agent.example.com"]')

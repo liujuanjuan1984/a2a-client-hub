@@ -13,10 +13,13 @@ from app.db.models.user import User
 from app.features.schedules.schemas import A2AScheduleTaskUpdate
 from app.features.schedules.service import a2a_schedule_service
 from app.features.self_management_shared.capability_catalog import (
+    SELF_JOBS_CREATE,
+    SELF_JOBS_DELETE,
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_PAUSE,
     SELF_JOBS_RESUME,
+    SELF_JOBS_UPDATE,
     SELF_JOBS_UPDATE_PROMPT,
     SELF_JOBS_UPDATE_SCHEDULE,
 )
@@ -107,6 +110,43 @@ class SelfManagementJobsService:
         )
         return result.result
 
+    async def create_job(
+        self,
+        *,
+        db: AsyncSession,
+        gateway: SelfManagementToolGateway,
+        current_user: User,
+        name: str,
+        agent_id: UUID,
+        prompt: str,
+        cycle_type: str,
+        time_point: dict[str, object],
+        enabled: bool,
+        conversation_policy: str,
+        timezone_str: str,
+    ) -> A2AScheduleTask:
+        result = await gateway.execute(
+            operation=SELF_JOBS_CREATE,
+            handler=lambda: a2a_schedule_service.create_task(
+                db,
+                user_id=self._user_id(current_user),
+                is_superuser=bool(current_user.is_superuser),
+                timezone_str=timezone_str,
+                name=name,
+                agent_id=agent_id,
+                prompt=prompt,
+                cycle_type=cycle_type,
+                time_point=time_point,
+                enabled=enabled,
+                conversation_policy=conversation_policy,
+            ),
+        )
+        logger.info(
+            "Self-management job create requested",
+            extra=result.audit_fields.as_log_extra(),
+        )
+        return result.result
+
     async def pause_job(
         self,
         *,
@@ -157,6 +197,46 @@ class SelfManagementJobsService:
         )
         logger.info(
             "Self-management job resume requested",
+            extra=result.audit_fields.as_log_extra(),
+        )
+        return result.result
+
+    async def update_job(
+        self,
+        *,
+        db: AsyncSession,
+        gateway: SelfManagementToolGateway,
+        current_user: User,
+        task_id: UUID,
+        timezone_str: str,
+        name: str | None = None,
+        agent_id: UUID | None = None,
+        prompt: str | None = None,
+        cycle_type: str | None = None,
+        time_point: dict[str, object] | None = None,
+        enabled: bool | None = None,
+        conversation_policy: str | None = None,
+    ) -> A2AScheduleTask:
+        result = await gateway.execute(
+            operation=SELF_JOBS_UPDATE,
+            resource_id=str(task_id),
+            handler=lambda: a2a_schedule_service.update_task(
+                db,
+                user_id=self._user_id(current_user),
+                task_id=task_id,
+                is_superuser=bool(current_user.is_superuser),
+                timezone_str=timezone_str,
+                name=name,
+                agent_id=agent_id,
+                prompt=prompt,
+                cycle_type=cycle_type,
+                time_point=time_point,
+                enabled=enabled,
+                conversation_policy=conversation_policy,
+            ),
+        )
+        logger.info(
+            "Self-management job update requested",
             extra=result.audit_fields.as_log_extra(),
         )
         return result.result
@@ -218,6 +298,28 @@ class SelfManagementJobsService:
             extra=result.audit_fields.as_log_extra(),
         )
         return result.result
+
+    async def delete_job(
+        self,
+        *,
+        db: AsyncSession,
+        gateway: SelfManagementToolGateway,
+        current_user: User,
+        task_id: UUID,
+    ) -> None:
+        result = await gateway.execute(
+            operation=SELF_JOBS_DELETE,
+            resource_id=str(task_id),
+            handler=lambda: a2a_schedule_service.delete_task(
+                db,
+                user_id=self._user_id(current_user),
+                task_id=task_id,
+            ),
+        )
+        logger.info(
+            "Self-management job delete requested",
+            extra=result.audit_fields.as_log_extra(),
+        )
 
 
 self_management_jobs_service = SelfManagementJobsService()
