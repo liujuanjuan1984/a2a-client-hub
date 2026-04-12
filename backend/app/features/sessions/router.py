@@ -12,6 +12,10 @@ from app.api.deps import get_async_db, get_current_user
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
 from app.db.transaction import commit_safely
+from app.features.self_management_shared.constants import (
+    SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
+    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+)
 from app.features.sessions.schemas import (
     SessionCancelResponse,
     SessionContinueResponse,
@@ -65,6 +69,14 @@ def _status_code_for_session_error(detail: str) -> int:
     return 400
 
 
+def _resolve_session_query_agent_id(agent_id: str | None) -> UUID | None:
+    if agent_id is None:
+        return None
+    if agent_id == SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID:
+        return SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID
+    return UUID(agent_id)
+
+
 @router.post(":query", response_model=SessionListResponse)
 async def list_unified_sessions(
     *,
@@ -79,7 +91,7 @@ async def list_unified_sessions(
         page=payload.page,
         size=payload.size,
         source=payload.source,
-        agent_id=payload.agent_id,
+        agent_id=_resolve_session_query_agent_id(payload.agent_id),
     )
     if db_mutated:
         await commit_safely(db)

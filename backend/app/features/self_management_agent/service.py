@@ -166,6 +166,7 @@ class _ConversationRuntimeState:
     session: Any | None = None
     write_tools_enabled: bool = False
     auto_approve_writes: bool = False
+    delegated_token_expires_at_monotonic: float = 0.0
     last_accessed_monotonic: float = 0.0
     lock: asyncio.Lock | None = None
 
@@ -184,6 +185,61 @@ class SelfManagementBuiltInAgentService:
         ] = {}
         self._registry_lock = threading.Lock()
         self._session_support = SessionHubSupport()
+
+    def _delegated_token_ttl_seconds(self) -> int:
+        return min(
+            settings.jwt_access_token_ttl_seconds,
+            settings.self_management_swival_delegated_token_ttl_seconds,
+        )
+
+    def _delegated_token_refresh_skew_seconds(self) -> int:
+        ttl_seconds = self._delegated_token_ttl_seconds()
+        return max(5, min(30, ttl_seconds // 10 or 1))
+
+    def _runtime_session_needs_refresh(
+        self,
+        *,
+        runtime_state: _ConversationRuntimeState,
+        write_tools_enabled: bool,
+    ) -> bool:
+        if runtime_state.session is None:
+            return True
+        if runtime_state.write_tools_enabled != write_tools_enabled:
+            return True
+        expires_at = runtime_state.delegated_token_expires_at_monotonic
+        if expires_at <= 0:
+            return False
+        refresh_cutoff = expires_at - self._delegated_token_refresh_skew_seconds()
+        return time.monotonic() >= refresh_cutoff
+
+    async def _invalidate_runtime_session(
+        self,
+        runtime_state: _ConversationRuntimeState,
+    ) -> None:
+        session = runtime_state.session
+        runtime_state.session = None
+        runtime_state.delegated_token_expires_at_monotonic = 0.0
+        runtime_state.write_tools_enabled = False
+        runtime_state.last_accessed_monotonic = time.monotonic()
+        if session is not None:
+            await asyncio.to_thread(self._close_swival_session, session)
+
+    def _extract_mcp_runtime_error(self, result: Any) -> str | None:
+        raw_messages = getattr(result, "messages", None)
+        if not isinstance(raw_messages, list):
+            return None
+        for raw_message in reversed(raw_messages):
+            if not isinstance(raw_message, dict):
+                continue
+            if raw_message.get("role") != "tool":
+                continue
+            content = raw_message.get("content")
+            if not isinstance(content, str):
+                continue
+            normalized = content.strip()
+            if normalized.startswith("error: MCP server "):
+                return normalized
+        return None
 
     def get_profile(self) -> SelfManagementBuiltInAgentProfile:
         tool_definitions = list_self_management_mcp_tool_definitions()
@@ -357,9 +413,16 @@ class SelfManagementBuiltInAgentService:
             try:
                 result = await asyncio.to_thread(session.ask, message)
             except Exception as exc:  # pragma: no cover - exercised with integration
+                await self._invalidate_runtime_session(runtime_state)
                 raise SelfManagementBuiltInAgentUnavailableError(
                     f"swival built-in agent run failed: {exc}"
                 ) from exc
+            mcp_runtime_error = self._extract_mcp_runtime_error(result)
+            if mcp_runtime_error is not None:
+                await self._invalidate_runtime_session(runtime_state)
+                raise SelfManagementBuiltInAgentUnavailableError(
+                    f"swival built-in agent MCP call failed: {mcp_runtime_error}"
+                )
             runtime_state.last_accessed_monotonic = time.monotonic()
         answer = cast(str | None, getattr(result, "answer", None))
         exhausted = bool(getattr(result, "exhausted", False))
@@ -387,6 +450,12 @@ class SelfManagementBuiltInAgentService:
                 local_session=local_session,
                 local_session_id=local_session_id,
                 local_source=local_source,
+            )
+        if effective_write_tools and self._answer_requests_write_approval(answer):
+            await self._invalidate_runtime_session(runtime_state)
+            raise SelfManagementBuiltInAgentUnavailableError(
+                "swival built-in agent requested write approval after write "
+                "tools were enabled"
             )
         return _ExecutedBuiltInRun(
             result=SelfManagementBuiltInAgentRunResult(
@@ -805,9 +874,9 @@ class SelfManagementBuiltInAgentService:
         conversation_id: str,
         write_tools_enabled: bool,
     ) -> Any:
-        if (
-            runtime_state.session is not None
-            and runtime_state.write_tools_enabled == write_tools_enabled
+        if not self._runtime_session_needs_refresh(
+            runtime_state=runtime_state,
+            write_tools_enabled=write_tools_enabled,
         ):
             runtime_state.last_accessed_monotonic = time.monotonic()
             return runtime_state.session
@@ -831,6 +900,13 @@ class SelfManagementBuiltInAgentService:
 
         runtime_state.session = new_session
         runtime_state.write_tools_enabled = write_tools_enabled
+        runtime_state.delegated_token_expires_at_monotonic = float(
+            getattr(
+                new_session,
+                "_self_management_delegated_token_expires_at_monotonic",
+                0.0,
+            )
+        )
         runtime_state.last_accessed_monotonic = time.monotonic()
         return new_session
 
@@ -968,6 +1044,7 @@ class SelfManagementBuiltInAgentService:
         tool_definitions = self._select_run_tool_definitions(
             allow_write_tools=write_tools_enabled
         )
+        delegated_token_ttl_seconds = self._delegated_token_ttl_seconds()
         token = create_self_management_access_token(
             cast(Any, current_user.id),
             allowed_operations=[
@@ -1000,6 +1077,11 @@ class SelfManagementBuiltInAgentService:
                     "headers": {"Authorization": f"Bearer {token}"},
                 }
             },
+        )
+        setattr(
+            session,
+            "_self_management_delegated_token_expires_at_monotonic",
+            time.monotonic() + delegated_token_ttl_seconds,
         )
         return session
 
