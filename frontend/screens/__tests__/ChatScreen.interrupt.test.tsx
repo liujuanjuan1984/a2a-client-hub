@@ -757,7 +757,7 @@ describe("ChatScreen interrupt handling", () => {
           },
         },
       ],
-      { sessionId: conversationId },
+      { sessionId: conversationId, replaceAllForConversation: true },
     );
   });
 

@@ -998,6 +998,7 @@ export function useChatScreenController({
         });
         replaceRecoveredInterrupts(nextConversationId, result.items, {
           sessionId: resolvedSessionId,
+          replaceAllForConversation: true,
         });
       } catch (error) {
         console.warn("[Chat] built-in interrupt recovery failed", {
