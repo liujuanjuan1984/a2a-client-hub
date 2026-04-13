@@ -17,9 +17,9 @@ const LazyModelPickerModal = lazy(async () => {
   return { default: module.ModelPickerModal };
 });
 
-const LazyOpencodeDirectoryModal = lazy(async () => {
-  const module = await import("@/components/chat/OpencodeDirectoryModal");
-  return { default: module.OpencodeDirectoryModal };
+const LazyWorkingDirectoryModal = lazy(async () => {
+  const module = await import("@/components/chat/WorkingDirectoryModal");
+  return { default: module.WorkingDirectoryModal };
 });
 
 const LazySessionPickerModal = lazy(async () => {
@@ -158,12 +158,12 @@ export function ChatScreen({
 
       {controller.showDirectoryPicker ? (
         <Suspense fallback={null}>
-          <LazyOpencodeDirectoryModal
+          <LazyWorkingDirectoryModal
             visible
             onClose={controller.closeDirectoryPicker}
-            currentDirectory={controller.opencodeDirectory}
-            onSave={controller.handleSaveOpencodeDirectory}
-            onClear={controller.handleClearOpencodeDirectory}
+            currentDirectory={controller.workingDirectory}
+            onSave={controller.handleSaveWorkingDirectory}
+            onClear={controller.handleClearWorkingDirectory}
           />
         </Suspense>
       ) : null}
@@ -183,7 +183,7 @@ export function ChatScreen({
 
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}
-        currentDirectory={controller.opencodeDirectory}
+        currentDirectory={controller.workingDirectory}
         hasInvokeMetadata={controller.hasInvokeMetadataBindings}
         showInvokeMetadataControl={controller.showInvokeMetadataControl}
         invokeMetadataRequiredCount={controller.invokeMetadataRequiredCount}

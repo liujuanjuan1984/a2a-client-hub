@@ -144,6 +144,7 @@ describe("assertExtensionSuccess", () => {
         parts: [{ type: "text", text: "Focus on tests" }],
       },
       metadata: { provider: "opencode", externalSessionId: "ses-1" },
+      workingDirectory: "/workspace/project",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
@@ -157,6 +158,7 @@ describe("assertExtensionSuccess", () => {
             parts: [{ type: "text", text: "Focus on tests" }],
           },
           metadata: { provider: "opencode", externalSessionId: "ses-1" },
+          workingDirectory: "/workspace/project",
         },
       },
     );
@@ -178,6 +180,7 @@ describe("assertExtensionSuccess", () => {
       requestId: "perm-1",
       reply: "once",
       metadata: { provider: "opencode", requestScope: "shared" },
+      workingDirectory: "/workspace/project",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
@@ -188,6 +191,7 @@ describe("assertExtensionSuccess", () => {
           request_id: "perm-1",
           reply: "once",
           metadata: { provider: "opencode", requestScope: "shared" },
+          workingDirectory: "/workspace/project",
         },
       },
     );
@@ -207,6 +211,7 @@ describe("assertExtensionSuccess", () => {
       permissions: { fileSystem: { write: ["/workspace/project"] } },
       scope: "session",
       metadata: { provider: "opencode" },
+      workingDirectory: "/workspace/project",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
@@ -220,6 +225,7 @@ describe("assertExtensionSuccess", () => {
           },
           scope: "session",
           metadata: { provider: "opencode" },
+          workingDirectory: "/workspace/project",
         },
       },
     );
@@ -239,6 +245,7 @@ describe("assertExtensionSuccess", () => {
       action: "accept",
       content: { folder: "docs" },
       metadata: { provider: "opencode" },
+      workingDirectory: "/workspace/project",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
@@ -250,6 +257,7 @@ describe("assertExtensionSuccess", () => {
           action: "accept",
           content: { folder: "docs" },
           metadata: { provider: "opencode" },
+          workingDirectory: "/workspace/project",
         },
       },
     );

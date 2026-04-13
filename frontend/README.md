@@ -139,5 +139,9 @@ Continue binding is unified via `POST /me/conversations/{conversation_id}:contin
 The continue payload also includes canonical binding fields:
 
 - `conversationId`
+- `workingDirectory`
 - `metadata.provider`
 - `metadata.externalSessionId`
+
+Chat writes `workingDirectory` as a stable Hub field. The backend adapts it to
+legacy provider-private metadata when required.

@@ -5,7 +5,6 @@ import { Pressable, Text, View } from "react-native";
 import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
 import { type AgentSession } from "@/lib/chat-utils";
-import { getOpencodeDirectory } from "@/lib/opencodeMetadata";
 import { type AgentConfig } from "@/store/agents";
 
 type CapabilityStatus = "unknown" | "supported" | "unsupported";
@@ -107,7 +106,7 @@ export function ChatHeaderPanel({
   sessionShellStatus: CapabilityStatus;
   invokeMetadataStatus: CapabilityStatus;
 }) {
-  const workingDirectory = getOpencodeDirectory(session?.metadata);
+  const workingDirectory = session?.workingDirectory?.trim() || null;
   const modesValue = resolveModesValue(session);
   const capabilityItems = [
     { label: "Model Selection", status: modelSelectionStatus },

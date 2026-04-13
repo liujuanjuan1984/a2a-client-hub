@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.features.working_directory import merge_working_directory_metadata
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
 )
@@ -134,6 +135,22 @@ class A2AExtensionPermissionReplyRequest(BaseModel):
         default=None,
         description="Optional extension metadata object forwarded to upstream",
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "A2AExtensionPermissionReplyRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
 
 
 class A2AExtensionQuestionReplyRequest(BaseModel):
@@ -146,6 +163,22 @@ class A2AExtensionQuestionReplyRequest(BaseModel):
         default=None,
         description="Optional extension metadata object forwarded to upstream",
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "A2AExtensionQuestionReplyRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
 
 
 class A2AExtensionQuestionRejectRequest(BaseModel):
@@ -154,6 +187,22 @@ class A2AExtensionQuestionRejectRequest(BaseModel):
         default=None,
         description="Optional extension metadata object forwarded to upstream",
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "A2AExtensionQuestionRejectRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
 
 
 class A2AExtensionPermissionsReplyRequest(BaseModel):
@@ -170,6 +219,22 @@ class A2AExtensionPermissionsReplyRequest(BaseModel):
         default=None,
         description="Optional extension metadata object forwarded to upstream",
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "A2AExtensionPermissionsReplyRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
 
 
 class A2AExtensionElicitationReplyRequest(BaseModel):
@@ -186,11 +251,22 @@ class A2AExtensionElicitationReplyRequest(BaseModel):
         default=None,
         description="Optional extension metadata object forwarded to upstream",
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
 
     @model_validator(mode="after")
     def validate_content_for_action(self) -> "A2AExtensionElicitationReplyRequest":
         if self.action in {"decline", "cancel"} and self.content is not None:
             raise ValueError("content must be null when action is decline or cancel")
+        if self.working_directory is not None:
+            self.metadata = merge_working_directory_metadata(
+                self.metadata,
+                self.working_directory,
+            )
+            self.working_directory = None
         return self
 
 
@@ -203,6 +279,22 @@ class A2AExtensionPromptAsyncRequest(BaseModel):
         default=None,
         description="Optional extension metadata object forwarded to upstream",
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "A2AExtensionPromptAsyncRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
 
 
 class A2AExtensionInterruptRecoveryRequest(BaseModel):
@@ -228,6 +320,22 @@ class A2AExtensionSessionCommandRequest(BaseModel):
         default=None,
         description="Optional extension metadata object forwarded to upstream",
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "A2AExtensionSessionCommandRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
 
 
 class A2AExtensionSessionMutationRequest(BaseModel):

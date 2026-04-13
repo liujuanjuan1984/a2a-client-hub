@@ -38,6 +38,7 @@ from app.features.sessions.common import (
 )
 from app.features.sessions.identity import conversation_identity_service
 from app.features.sessions.support import SessionHubSupport
+from app.features.working_directory import extract_working_directory
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
@@ -324,12 +325,15 @@ class SessionHistoryProjectionService:
             provider_from_invoke,
             external_session_id,
         ) = extract_provider_and_external_session_id(invoke_metadata or {})
+        working_directory = extract_working_directory(invoke_metadata or {})
         if context_id and isinstance(context_id, str):
             metadata["context_id"] = context_id
         if provider_from_invoke:
             metadata["provider"] = provider_from_invoke
         if external_session_id:
             metadata["externalSessionId"] = external_session_id
+        if working_directory:
+            metadata["working_directory"] = working_directory
         if extra_metadata:
             metadata.update(extra_metadata)
         normalized_idempotency_key = normalize_idempotency_key(idempotency_key)

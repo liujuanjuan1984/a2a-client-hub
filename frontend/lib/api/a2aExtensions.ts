@@ -429,6 +429,7 @@ export const replyPermissionInterrupt = async (input: {
   requestId: string;
   reply: "once" | "always" | "reject";
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
@@ -436,6 +437,7 @@ export const replyPermissionInterrupt = async (input: {
       request_id: string;
       reply: "once" | "always" | "reject";
       metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
     }
   >(buildInterruptPath(input.source, input.agentId, "permission:reply"), {
     method: "POST",
@@ -443,6 +445,9 @@ export const replyPermissionInterrupt = async (input: {
       request_id: input.requestId,
       reply: input.reply,
       ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(input.workingDirectory
+        ? { workingDirectory: input.workingDirectory }
+        : {}),
     },
   });
   return assertInterruptAckResult(response, input.requestId);
@@ -454,6 +459,7 @@ export const replyQuestionInterrupt = async (input: {
   requestId: string;
   answers: string[][];
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
@@ -461,6 +467,7 @@ export const replyQuestionInterrupt = async (input: {
       request_id: string;
       answers: string[][];
       metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
     }
   >(buildInterruptPath(input.source, input.agentId, "question:reply"), {
     method: "POST",
@@ -468,6 +475,9 @@ export const replyQuestionInterrupt = async (input: {
       request_id: input.requestId,
       answers: input.answers,
       ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(input.workingDirectory
+        ? { workingDirectory: input.workingDirectory }
+        : {}),
     },
   });
   return assertInterruptAckResult(response, input.requestId);
@@ -478,15 +488,23 @@ export const rejectQuestionInterrupt = async (input: {
   agentId: string;
   requestId: string;
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
-    { request_id: string; metadata?: Record<string, unknown> }
+    {
+      request_id: string;
+      metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
+    }
   >(buildInterruptPath(input.source, input.agentId, "question:reject"), {
     method: "POST",
     body: {
       request_id: input.requestId,
       ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(input.workingDirectory
+        ? { workingDirectory: input.workingDirectory }
+        : {}),
     },
   });
   return assertInterruptAckResult(response, input.requestId);
@@ -499,6 +517,7 @@ export const replyPermissionsInterrupt = async (input: {
   permissions: Record<string, unknown>;
   scope?: "turn" | "session";
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
@@ -507,6 +526,7 @@ export const replyPermissionsInterrupt = async (input: {
       permissions: Record<string, unknown>;
       scope?: "turn" | "session";
       metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
     }
   >(buildInterruptPath(input.source, input.agentId, "permissions:reply"), {
     method: "POST",
@@ -515,6 +535,9 @@ export const replyPermissionsInterrupt = async (input: {
       permissions: input.permissions,
       ...(input.scope ? { scope: input.scope } : {}),
       ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(input.workingDirectory
+        ? { workingDirectory: input.workingDirectory }
+        : {}),
     },
   });
   return assertInterruptAckResult(response, input.requestId);
@@ -527,6 +550,7 @@ export const replyElicitationInterrupt = async (input: {
   action: "accept" | "decline" | "cancel";
   content?: unknown;
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
@@ -535,6 +559,7 @@ export const replyElicitationInterrupt = async (input: {
       action: "accept" | "decline" | "cancel";
       content?: unknown;
       metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
     }
   >(buildInterruptPath(input.source, input.agentId, "elicitation:reply"), {
     method: "POST",
@@ -543,6 +568,9 @@ export const replyElicitationInterrupt = async (input: {
       action: input.action,
       ...(input.content !== undefined ? { content: input.content } : {}),
       ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(input.workingDirectory
+        ? { workingDirectory: input.workingDirectory }
+        : {}),
     },
   });
   return assertInterruptAckResult(response, input.requestId);
@@ -618,12 +646,14 @@ export const promptSessionAsync = async (input: {
   sessionId: string;
   request: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }): Promise<PromptAsyncAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
     {
       request: Record<string, unknown>;
       metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
     }
   >(
     buildSessionPath(
@@ -636,6 +666,9 @@ export const promptSessionAsync = async (input: {
       body: {
         request: input.request,
         ...(input.metadata ? { metadata: input.metadata } : {}),
+        ...(input.workingDirectory
+          ? { workingDirectory: input.workingDirectory }
+          : {}),
       },
     },
   );
@@ -652,6 +685,7 @@ export const commandSession = async (input: {
     parts?: Record<string, unknown>[];
   };
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }): Promise<SessionCommandResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
@@ -662,6 +696,7 @@ export const commandSession = async (input: {
         parts?: Record<string, unknown>[];
       };
       metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
     }
   >(
     buildSessionPath(
@@ -674,6 +709,9 @@ export const commandSession = async (input: {
       body: {
         request: input.request,
         ...(input.metadata ? { metadata: input.metadata } : {}),
+        ...(input.workingDirectory
+          ? { workingDirectory: input.workingDirectory }
+          : {}),
       },
     },
   );

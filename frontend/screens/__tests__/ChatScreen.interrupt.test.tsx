@@ -106,8 +106,8 @@ jest.mock("@/components/chat/SessionPickerModal", () => ({
   SessionPickerModal: () => null,
 }));
 
-jest.mock("@/components/chat/OpencodeDirectoryModal", () => ({
-  OpencodeDirectoryModal: () => null,
+jest.mock("@/components/chat/WorkingDirectoryModal", () => ({
+  WorkingDirectoryModal: () => null,
 }));
 
 jest.mock("@/components/chat/InvokeMetadataModal", () => ({
@@ -232,6 +232,7 @@ type MockAgentSession = {
   inputModes: string[];
   outputModes: string[];
   metadata: Record<string, unknown>;
+  workingDirectory?: string | null;
   externalSessionRef: {
     provider: string | null;
     externalSessionId: string | null;
@@ -252,6 +253,7 @@ const baseSession = (): MockAgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
+  workingDirectory: null,
   externalSessionRef: null,
   lastActiveAt: "2026-02-16T00:00:00.000Z",
 });
@@ -265,7 +267,7 @@ const mockChatState: {
   clearPendingInterrupt: jest.Mock;
   replaceRecoveredInterrupts: jest.Mock;
   bindExternalSession: jest.Mock;
-  setOpencodeDirectory: jest.Mock;
+  setWorkingDirectory: jest.Mock;
   setInvokeMetadataBindings: jest.Mock;
   getSessionsByAgentId: jest.Mock;
   setState?: (
@@ -282,7 +284,7 @@ const mockChatState: {
   clearPendingInterrupt: jest.fn(),
   replaceRecoveredInterrupts: jest.fn(),
   bindExternalSession: jest.fn(),
-  setOpencodeDirectory: jest.fn(),
+  setWorkingDirectory: jest.fn(),
   setInvokeMetadataBindings: jest.fn(),
   getSessionsByAgentId: jest.fn(() => []),
 };
@@ -538,7 +540,7 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.clearPendingInterrupt.mockReset();
     mockChatState.replaceRecoveredInterrupts.mockReset();
     mockChatState.bindExternalSession.mockReset();
-    mockChatState.setOpencodeDirectory.mockReset();
+    mockChatState.setWorkingDirectory.mockReset();
     mockChatState.setInvokeMetadataBindings.mockReset();
     mockInvokeAgent.mockReset().mockResolvedValue({
       success: true,
@@ -1052,11 +1054,7 @@ describe("ChatScreen interrupt handling", () => {
   it("uses append as the default send action during streaming", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       streamState: "streaming",
       externalSessionRef: {
         provider: "OpenCode",
@@ -1080,11 +1078,7 @@ describe("ChatScreen interrupt handling", () => {
       query: "append this",
       conversationId,
       userMessageId: expect.any(String),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       sessionBinding: {
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
@@ -1307,11 +1301,7 @@ describe("ChatScreen interrupt handling", () => {
   it("shows append failure without silently degrading to interrupt", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       streamState: "streaming",
       externalSessionRef: {
         provider: "OpenCode",
@@ -1345,11 +1335,7 @@ describe("ChatScreen interrupt handling", () => {
   it("routes slash command input through session command when a bound upstream session exists", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       externalSessionRef: {
         provider: "OpenCode",
         externalSessionId: "ses-upstream-4",
@@ -1380,10 +1366,8 @@ describe("ChatScreen interrupt handling", () => {
       metadata: {
         provider: "OpenCode",
         externalSessionId: "ses-upstream-4",
-        opencode: {
-          directory: "/workspace/app",
-        },
       },
+      workingDirectory: "/workspace/app",
     });
     expect(mockAddConversationOverlayMessage).toHaveBeenCalledTimes(2);
     expect(mockToastSuccess).toHaveBeenCalledWith(

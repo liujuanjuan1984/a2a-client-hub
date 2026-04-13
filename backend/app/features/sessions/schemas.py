@@ -224,6 +224,10 @@ class SessionContinueResponse(BaseModel):
     conversation_id: str = Field(alias="conversationId")
     source: SessionSource
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    working_directory: Optional[str] = Field(
+        alias="workingDirectory",
+        default=None,
+    )
 
     model_config = {"populate_by_name": True}
 

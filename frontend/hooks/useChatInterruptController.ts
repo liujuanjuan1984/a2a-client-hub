@@ -11,8 +11,8 @@ import {
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { type ResolvedRuntimeInterruptRecord } from "@/lib/chat-utils";
-import { pickOpencodeDirectoryMetadata } from "@/lib/opencodeMetadata";
 import { toast } from "@/lib/toast";
+import { normalizeWorkingDirectory } from "@/lib/workingDirectory";
 import type { AgentSource } from "@/store/agents";
 
 const TERMINAL_INTERRUPT_ERROR_CODES = new Set([
@@ -33,7 +33,7 @@ type UseChatInterruptControllerParams = {
   pendingInterrupt: PendingRuntimeInterrupt | null;
   lastResolvedInterrupt: ResolvedRuntimeInterruptRecord | null;
   pendingQuestionCount: number;
-  sessionMetadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
   clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
   onPermissionReplyOverride?:
     | ((input: {
@@ -51,7 +51,7 @@ export function useChatInterruptController({
   pendingInterrupt,
   lastResolvedInterrupt,
   pendingQuestionCount,
-  sessionMetadata,
+  workingDirectory,
   clearPendingInterrupt,
   onPermissionReplyOverride,
   permissionReplySuccessMessage,
@@ -60,6 +60,8 @@ export function useChatInterruptController({
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
   const [structuredResponseInput, setStructuredResponseInput] =
     useState<string>("");
+  const normalizedWorkingDirectory =
+    normalizeWorkingDirectory(workingDirectory);
   const handledResolvedInterruptKeysRef = useRef<Set<string>>(new Set());
   const locallyAcknowledgedResolvedInterruptKeysRef = useRef<Set<string>>(
     new Set(),
@@ -363,7 +365,9 @@ export function useChatInterruptController({
               agentId: activeAgentId,
               requestId,
               reply,
-              metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+              ...(normalizedWorkingDirectory
+                ? { workingDirectory: normalizedWorkingDirectory }
+                : {}),
             });
           }
           acknowledgeLocalInterruptResolution(
@@ -389,7 +393,7 @@ export function useChatInterruptController({
       conversationId,
       pendingInterrupt,
       runInterruptAction,
-      sessionMetadata,
+      normalizedWorkingDirectory,
       onPermissionReplyOverride,
       permissionReplySuccessMessage,
     ],
@@ -445,7 +449,9 @@ export function useChatInterruptController({
           agentId: activeAgentId,
           requestId,
           answers: normalizedAnswers,
-          metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+          ...(normalizedWorkingDirectory
+            ? { workingDirectory: normalizedWorkingDirectory }
+            : {}),
         });
         acknowledgeLocalInterruptResolution(requestId, "question", "replied");
         clearPendingInterrupt(conversationId, requestId);
@@ -465,7 +471,7 @@ export function useChatInterruptController({
     pendingInterrupt,
     questionAnswers,
     runInterruptAction,
-    sessionMetadata,
+    normalizedWorkingDirectory,
   ]);
 
   const handleQuestionReject = useCallback(() => {
@@ -486,7 +492,9 @@ export function useChatInterruptController({
           source: agentSource,
           agentId: activeAgentId,
           requestId,
-          metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+          ...(normalizedWorkingDirectory
+            ? { workingDirectory: normalizedWorkingDirectory }
+            : {}),
         });
         acknowledgeLocalInterruptResolution(requestId, "question", "rejected");
         clearPendingInterrupt(conversationId, requestId);
@@ -505,7 +513,7 @@ export function useChatInterruptController({
     conversationId,
     pendingInterrupt,
     runInterruptAction,
-    sessionMetadata,
+    normalizedWorkingDirectory,
   ]);
 
   const handleStructuredResponseChange = useCallback((value: string) => {
@@ -549,7 +557,9 @@ export function useChatInterruptController({
             requestId,
             permissions,
             scope,
-            metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+            ...(normalizedWorkingDirectory
+              ? { workingDirectory: normalizedWorkingDirectory }
+              : {}),
           });
           acknowledgeLocalInterruptResolution(
             requestId,
@@ -574,7 +584,7 @@ export function useChatInterruptController({
       parseStructuredResponseInput,
       pendingInterrupt,
       runInterruptAction,
-      sessionMetadata,
+      normalizedWorkingDirectory,
       structuredResponseInput,
     ],
   );
@@ -611,7 +621,9 @@ export function useChatInterruptController({
             requestId,
             action,
             ...(action === "accept" ? { content } : {}),
-            metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+            ...(normalizedWorkingDirectory
+              ? { workingDirectory: normalizedWorkingDirectory }
+              : {}),
           });
           acknowledgeLocalInterruptResolution(
             requestId,
@@ -638,7 +650,7 @@ export function useChatInterruptController({
       parseStructuredResponseInput,
       pendingInterrupt,
       runInterruptAction,
-      sessionMetadata,
+      normalizedWorkingDirectory,
       structuredResponseInput,
     ],
   );

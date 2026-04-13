@@ -34,6 +34,7 @@ type HubA2AAgentInvokeRequest = {
   agentMessageId?: string;
   resumeFromSequence?: number;
   metadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
   sessionBinding?: {
     provider?: string | null;
     externalSessionId?: string | null;

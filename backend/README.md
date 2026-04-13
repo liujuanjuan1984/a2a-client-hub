@@ -491,11 +491,16 @@ The backend now exposes a unified conversation read model for manual, scheduled,
 
 - `conversationId` (canonical conversation id)
 - `source` (canonical source)
+- `workingDirectory` (hub-stable working directory field)
 - `metadata`:
   - `provider` (external provider key)
   - `externalSessionId` (external session identifier)
   - `contextId` (A2A context id)
   - `<metadata_key>` (strict upstream session-binding key from `urn:opencode-a2a:opencode-session-binding/v1`, e.g. `opencode_session_id`)
+
+Hub-facing request contracts now accept `workingDirectory` directly. The backend
+adapts that field to legacy provider-private metadata such as
+`metadata.opencode.directory` when upstream extensions still require it.
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example `550e8400-e29b-41d4-a716-446655440000`.
 

@@ -62,6 +62,7 @@ describe("chat store utils", () => {
   it("builds invoke payload with optional fields", () => {
     const session = createAgentSession("agent-2");
     session.metadata = { locale: "zh-CN" };
+    session.workingDirectory = "/workspace/demo";
 
     expect(
       buildInvokePayload("hello", session, "session-1", {
@@ -74,6 +75,7 @@ describe("chat store utils", () => {
       userMessageId: "user-msg-1",
       agentMessageId: "agent-msg-1",
       metadata: { locale: "zh-CN" },
+      workingDirectory: "/workspace/demo",
     });
   });
 
@@ -212,6 +214,7 @@ describe("chat store utils", () => {
 
   it("preserves invoke metadata bindings in persisted sessions", () => {
     const session = createAgentSession("agent-4");
+    session.workingDirectory = "/workspace";
     session.metadata = {
       shared: {
         invoke: {
@@ -221,11 +224,11 @@ describe("chat store utils", () => {
           },
         },
       },
-      opencode: { directory: "/workspace" },
     };
 
     const persisted = buildPersistedSessions({ "conv-1": session });
 
+    expect(persisted["conv-1"]?.workingDirectory).toBe("/workspace");
     expect(persisted["conv-1"]?.metadata).toEqual({
       shared: {
         invoke: {
@@ -235,7 +238,6 @@ describe("chat store utils", () => {
           },
         },
       },
-      opencode: { directory: "/workspace" },
     });
   });
 
@@ -373,11 +375,9 @@ describe("chat store utils", () => {
     const newest = createAgentSession("agent-1");
     newest.lastActiveAt = "2026-02-14T12:00:00.000Z";
     newest.source = "manual";
+    newest.workingDirectory = "/workspace/app";
     newest.metadata = {
       locale: "zh-CN",
-      opencode: {
-        directory: "/workspace/app",
-      },
       shared: {
         model: {
           providerID: "openai",
@@ -428,10 +428,8 @@ describe("chat store utils", () => {
     expect(persisted.newest.lastResolvedInterrupt).toBeNull();
     expect(persisted.newest.transport).toBe("http_json");
     expect(persisted.newest.source).toBeNull();
+    expect(persisted.newest.workingDirectory).toBe("/workspace/app");
     expect(persisted.newest.metadata).toEqual({
-      opencode: {
-        directory: "/workspace/app",
-      },
       shared: {
         model: {
           providerID: "openai",

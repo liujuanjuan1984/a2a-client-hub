@@ -2054,3 +2054,84 @@ async def test_append_agent_message_block_update_block_id_conflict_uses_block_lo
     assert block_id_lookup_calls == 2
     assert dummy_db.begin_nested_called == 1
     assert dummy_db.rollback_called is False
+
+
+async def test_record_local_invoke_messages_persists_working_directory_metadata(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="ok",
+        success=True,
+        context_id=None,
+        invoke_metadata={
+            "workingDirectory": "  /workspace/demo  ",
+        },
+    )
+    await async_db_session.flush()
+
+    result = await async_db_session.execute(
+        select(AgentMessage).where(AgentMessage.conversation_id == thread.id)
+    )
+    messages = list(result.scalars().all())
+    assert len(messages) == 2
+    for msg in messages:
+        metadata = msg.message_metadata or {}
+        assert metadata.get("working_directory") == "/workspace/demo"
+
+
+async def test_continue_session_returns_latest_working_directory(async_db_session):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="ok",
+        success=True,
+        context_id=None,
+        invoke_metadata={
+            "workingDirectory": "/workspace/demo",
+        },
+    )
+    await async_db_session.flush()
+
+    payload, db_mutated = await session_hub_service.continue_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+
+    assert db_mutated is False
+    assert payload["conversationId"] == str(thread.id)
+    assert payload["workingDirectory"] == "/workspace/demo"

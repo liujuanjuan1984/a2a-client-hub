@@ -64,10 +64,6 @@ import {
 import { blurActiveElement } from "@/lib/focus";
 import { generateUuid } from "@/lib/id";
 import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
-import {
-  getOpencodeDirectory,
-  pickOpencodeDirectoryMetadata,
-} from "@/lib/opencodeMetadata";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { parseComposerInput } from "@/lib/sessionCommand";
@@ -115,8 +111,8 @@ export function useChatScreenController({
   const replaceRecoveredInterrupts = useChatStore(
     (state) => state.replaceRecoveredInterrupts,
   );
-  const setOpencodeDirectory = useChatStore(
-    (state) => state.setOpencodeDirectory,
+  const setWorkingDirectory = useChatStore(
+    (state) => state.setWorkingDirectory,
   );
   const setInvokeMetadataBindings = useChatStore(
     (state) => state.setInvokeMetadataBindings,
@@ -182,7 +178,7 @@ export function useChatScreenController({
   const boundExternalSessionId =
     session?.externalSessionRef?.externalSessionId?.trim() ?? "";
   const selectedModel = getSharedModelSelection(session?.metadata);
-  const opencodeDirectory = getOpencodeDirectory(session?.metadata);
+  const workingDirectory = session?.workingDirectory ?? null;
   const invokeMetadataBindings = getInvokeMetadataBindings(session?.metadata);
   const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
     agentId: activeAgentId,
@@ -782,7 +778,6 @@ export function useChatScreenController({
           currentSession?.externalSessionRef?.provider?.trim() ||
           sessionBinding.provider;
         const metadata = {
-          ...(pickOpencodeDirectoryMetadata(currentSession?.metadata) ?? {}),
           ...(provider ? { provider } : {}),
           externalSessionId,
         };
@@ -806,6 +801,9 @@ export function useChatScreenController({
               : {}),
           },
           metadata,
+          ...(currentSession?.workingDirectory
+            ? { workingDirectory: currentSession.workingDirectory }
+            : {}),
         });
         addConversationOverlayMessage(nextConversationId, {
           id: generateUuid(),
@@ -1019,7 +1017,7 @@ export function useChatScreenController({
     pendingInterrupt,
     lastResolvedInterrupt,
     pendingQuestionCount,
-    sessionMetadata: session?.metadata,
+    workingDirectory,
     clearPendingInterrupt,
     onPermissionReplyOverride: isBuiltInSelfManagementAgent
       ? handleBuiltInPermissionReply
@@ -1435,26 +1433,26 @@ export function useChatScreenController({
     setShowSessionPicker(false);
   }, []);
 
-  const handleSaveOpencodeDirectory = useCallback(
+  const handleSaveWorkingDirectory = useCallback(
     (directory: string) => {
       if (!conversationId || !activeAgentId) {
         return;
       }
       ensureSession(conversationId, activeAgentId);
-      setOpencodeDirectory(conversationId, activeAgentId, directory);
+      setWorkingDirectory(conversationId, activeAgentId, directory);
       toast.success("Working directory updated", directory);
     },
-    [activeAgentId, conversationId, ensureSession, setOpencodeDirectory],
+    [activeAgentId, conversationId, ensureSession, setWorkingDirectory],
   );
 
-  const handleClearOpencodeDirectory = useCallback(() => {
+  const handleClearWorkingDirectory = useCallback(() => {
     if (!conversationId || !activeAgentId) {
       return;
     }
     ensureSession(conversationId, activeAgentId);
-    setOpencodeDirectory(conversationId, activeAgentId, null);
+    setWorkingDirectory(conversationId, activeAgentId, null);
     toast.success("Working directory cleared", "Using upstream default.");
-  }, [activeAgentId, conversationId, ensureSession, setOpencodeDirectory]);
+  }, [activeAgentId, conversationId, ensureSession, setWorkingDirectory]);
 
   const openInvokeMetadataModal = useCallback(() => {
     setShowInvokeMetadataModal(true);
@@ -1582,7 +1580,7 @@ export function useChatScreenController({
     sessionPromptAsyncStatus,
     invokeMetadataStatus,
     selectedModel,
-    opencodeDirectory,
+    workingDirectory,
     invokeMetadataBindings,
     invokeMetadataFields,
     hasInvokeMetadataBindings,
@@ -1621,8 +1619,8 @@ export function useChatScreenController({
     closeModelPicker,
     handleModelSelect,
     clearModelSelection,
-    handleSaveOpencodeDirectory,
-    handleClearOpencodeDirectory,
+    handleSaveWorkingDirectory,
+    handleClearWorkingDirectory,
     handleSaveInvokeMetadata,
     handleClearInvokeMetadata,
     handleUseShortcut,
