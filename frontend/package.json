@@ -32,7 +32,8 @@
     "lint": "eslint app components hooks lib screens services store --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
     "test": "jest",
-    "check-types": "export NODE_OPTIONS=\"--max-old-space-size=1024\" && tsc --noEmit"
+    "check-types": "export NODE_OPTIONS=\"--max-old-space-size=1024\" && tsc --noEmit",
+    "check-unused-exports": "bash scripts/check-unused-exports.sh"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -77,6 +78,7 @@
     "prettier": "^3.3.3",
     "react-test-renderer": "19.1.2",
     "tailwindcss": "^3.4.14",
+    "ts-prune": "^0.10.3",
     "typescript": "~5.9.2"
   },
   "overrides": {

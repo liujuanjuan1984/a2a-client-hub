@@ -106,3 +106,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^frontend/(package\.json|package-lock\.json|tsconfig\.json|eslint\.config\.js|app\.json|babel\.config\.js|metro\.config\.js|.*\.(ts|tsx|js|jsx|json|css))$
+
+      - id: frontend-unused-exports
+        name: frontend unused exports
+        entry: bash -lc 'cd frontend && npm run check-unused-exports'
+        language: system
+        pass_filenames: false
+        files: ^frontend/(package\.json|package-lock\.json|tsconfig\.json|scripts/.*|.*\.(ts|tsx|js|jsx))$
