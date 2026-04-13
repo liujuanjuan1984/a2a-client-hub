@@ -21,7 +21,7 @@ let mockAgents = [
     cardUrl: "https://example.com/personal.json",
     authType: "none" as const,
     bearerToken: "",
-    apiKeyHeader: "X-API-Key",
+    apiKeyHeader: "X-API-Key", // pragma: allowlist secret
     apiKeyValue: "",
     basicUsername: "",
     basicPassword: "",
@@ -39,7 +39,7 @@ let mockAgents = [
     cardUrl: "builtin://self-management-assistant",
     authType: "none" as const,
     bearerToken: "",
-    apiKeyHeader: "X-API-Key",
+    apiKeyHeader: "X-API-Key", // pragma: allowlist secret
     apiKeyValue: "",
     basicUsername: "",
     basicPassword: "",
@@ -58,7 +58,7 @@ let mockAgents = [
     cardUrl: "https://example.com/shared.json",
     authType: "bearer" as const,
     bearerToken: "",
-    apiKeyHeader: "X-API-Key",
+    apiKeyHeader: "X-API-Key", // pragma: allowlist secret
     apiKeyValue: "",
     basicUsername: "",
     basicPassword: "",
