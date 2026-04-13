@@ -2,8 +2,6 @@ import type { PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { apiRequest } from "@/lib/api/client";
 
 export const SELF_MANAGEMENT_BUILT_IN_AGENT_ID = "self-management-assistant";
-export const SELF_MANAGEMENT_BUILT_IN_AGENT_CARD_URL =
-  "builtin://self-management-assistant";
 
 export const isSelfManagementBuiltInAgent = (agentId?: string | null) =>
   (agentId ?? "").trim() === SELF_MANAGEMENT_BUILT_IN_AGENT_ID;

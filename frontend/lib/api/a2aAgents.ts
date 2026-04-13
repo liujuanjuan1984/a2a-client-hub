@@ -208,12 +208,6 @@ export const validateAgentCard = (agentId: string) =>
     },
   );
 
-export const checkAgentsHealth = (force = false) =>
-  apiRequest<A2AAgentHealthCheckResponse>("/me/a2a/agents/check-health", {
-    method: "POST",
-    query: { force: force ? "true" : "false" },
-  });
-
 export const checkAgentHealth = (agentId: string, force = true) =>
   apiRequest<A2AAgentHealthCheckResponse>(
     `/me/a2a/agents/${agentId}/check-health`,
