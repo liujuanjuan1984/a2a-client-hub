@@ -362,6 +362,22 @@ class A2AModelDiscoveryRequest(BaseModel):
             "provider-private discovery context"
         ),
     )
+    working_directory: Optional[str] = Field(
+        default=None,
+        alias="workingDirectory",
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "A2AModelDiscoveryRequest":
+        if self.working_directory is None:
+            return self
+        self.session_metadata = merge_working_directory_metadata(
+            self.session_metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
 
 
 class A2ACodexDiscoveryPluginReadRequest(BaseModel):

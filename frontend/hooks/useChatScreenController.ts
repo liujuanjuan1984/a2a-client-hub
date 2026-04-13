@@ -1117,26 +1117,24 @@ export function useChatScreenController({
           router.replace(buildChatRoute(boundAgentId, resolvedConversationId));
           return;
         }
+        const normalizedBinding = buildContinueBindingPayload(
+          boundAgentId,
+          binding,
+        );
         const current = useChatStore.getState().sessions[conversationId];
         const hasLocalBinding =
           (typeof current?.externalSessionRef?.externalSessionId === "string" &&
             current.externalSessionRef.externalSessionId.trim()) ||
           Object.keys(current?.metadata ?? {}).length > 0;
         const hasBindingMetadata =
-          (typeof binding.metadata?.externalSessionId === "string" &&
-            binding.metadata.externalSessionId.trim()) ||
-          (typeof binding.metadata?.provider === "string" &&
-            binding.metadata.provider.trim());
+          normalizedBinding.externalSessionId || normalizedBinding.provider;
         if (hasLocalBinding && !hasBindingMetadata) {
           return;
         }
         ensureSession(conversationId, boundAgentId);
         useChatStore
           .getState()
-          .bindExternalSession(
-            conversationId,
-            buildContinueBindingPayload(boundAgentId, binding),
-          );
+          .bindExternalSession(conversationId, normalizedBinding);
       })
       .catch((error) => {
         if (cancelled) return;

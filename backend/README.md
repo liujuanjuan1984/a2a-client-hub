@@ -365,10 +365,12 @@ Endpoints:
   - Codex discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
-    - body: `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
+    - body: `{ "workingDirectory": "/workspace/app" }`
+    - legacy compatibility: `{ "session_metadata": { "opencode": { "directory": "/workspace/app" } } }`
 - Discover generic models:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models:list`
-    - body: `{ "provider_id": "openai", "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
+    - body: `{ "provider_id": "openai", "workingDirectory": "/workspace/app" }`
+    - legacy compatibility: `{ "provider_id": "openai", "session_metadata": { "opencode": { "directory": "/workspace/app" } } }`
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20&directory=services/api&roots=true&start=40&search=planner`

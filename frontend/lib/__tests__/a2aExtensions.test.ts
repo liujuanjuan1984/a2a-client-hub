@@ -283,10 +283,7 @@ describe("assertExtensionSuccess", () => {
     const result = await listModelProviders({
       source: "shared",
       agentId: "agent-1",
-      sessionMetadata: {
-        shared: { model: { providerID: "openai", modelID: "gpt-5" } },
-        opencode: { directory: "/workspace" },
-      },
+      workingDirectory: "/workspace",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
@@ -294,10 +291,7 @@ describe("assertExtensionSuccess", () => {
       {
         method: "POST",
         body: {
-          session_metadata: {
-            shared: { model: { providerID: "openai", modelID: "gpt-5" } },
-            opencode: { directory: "/workspace" },
-          },
+          workingDirectory: "/workspace",
         },
       },
     );
@@ -603,10 +597,7 @@ describe("assertExtensionSuccess", () => {
       source: "personal",
       agentId: "agent-1",
       providerId: "openai",
-      sessionMetadata: {
-        shared: { model: { providerID: "openai", modelID: "gpt-5" } },
-        opencode: { directory: "/workspace" },
-      },
+      workingDirectory: "/workspace",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
@@ -615,10 +606,7 @@ describe("assertExtensionSuccess", () => {
         method: "POST",
         body: {
           provider_id: "openai",
-          session_metadata: {
-            shared: { model: { providerID: "openai", modelID: "gpt-5" } },
-            opencode: { directory: "/workspace" },
-          },
+          workingDirectory: "/workspace",
         },
       },
     );

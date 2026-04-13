@@ -92,7 +92,7 @@ export function ModelPickerModal({
   agentId,
   source,
   providerDiscoveryStatus,
-  sessionMetadata,
+  workingDirectory,
   selectedModel,
   onSelectModel,
   onClearModelSelection,
@@ -102,7 +102,7 @@ export function ModelPickerModal({
   agentId?: string | null;
   source: AgentSource;
   providerDiscoveryStatus: GenericCapabilityStatus;
-  sessionMetadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
   selectedModel: SharedModelSelection | null;
   onSelectModel: (selection: SharedModelSelection) => void;
   onClearModelSelection: () => void;
@@ -143,7 +143,7 @@ export function ModelPickerModal({
     listModelProviders({
       source,
       agentId,
-      sessionMetadata,
+      workingDirectory,
     })
       .then((result) => {
         if (cancelled) {
@@ -180,7 +180,7 @@ export function ModelPickerModal({
     agentId,
     discoveryUnavailable,
     selectedModel?.providerID,
-    sessionMetadata,
+    workingDirectory,
     source,
     visible,
   ]);
@@ -197,7 +197,7 @@ export function ModelPickerModal({
       source,
       agentId,
       providerId: selectedProviderId,
-      sessionMetadata,
+      workingDirectory,
     })
       .then((result) => {
         if (cancelled) {
@@ -224,7 +224,7 @@ export function ModelPickerModal({
     agentId,
     discoveryUnavailable,
     selectedProviderId,
-    sessionMetadata,
+    workingDirectory,
     source,
     visible,
   ]);

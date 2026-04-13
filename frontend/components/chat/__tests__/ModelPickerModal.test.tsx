@@ -64,10 +64,7 @@ const baseProps: ModelPickerModalProps = {
   agentId: "agent-1",
   source: "shared" as const,
   providerDiscoveryStatus: "supported",
-  sessionMetadata: {
-    shared: { model: { providerID: "openai", modelID: "gpt-5" } },
-    opencode: { directory: "/workspace" },
-  },
+  workingDirectory: "/workspace",
   selectedModel: { providerID: "openai", modelID: "gpt-5" },
   onSelectModel: jest.fn(),
   onClearModelSelection: jest.fn(),
@@ -105,7 +102,7 @@ describe("ModelPickerModal", () => {
     jest.useRealTimers();
   });
 
-  it("forwards generic session metadata to model discovery APIs", async () => {
+  it("forwards canonical working directory to model discovery APIs", async () => {
     mockedListModelProviders.mockResolvedValue({
       items: [
         {
@@ -134,13 +131,13 @@ describe("ModelPickerModal", () => {
     expect(mockedListModelProviders).toHaveBeenCalledWith({
       source: "shared",
       agentId: "agent-1",
-      sessionMetadata: baseProps.sessionMetadata,
+      workingDirectory: baseProps.workingDirectory,
     });
     expect(mockedListModels).toHaveBeenCalledWith({
       source: "shared",
       agentId: "agent-1",
       providerId: "openai",
-      sessionMetadata: baseProps.sessionMetadata,
+      workingDirectory: baseProps.workingDirectory,
     });
 
     act(() => {

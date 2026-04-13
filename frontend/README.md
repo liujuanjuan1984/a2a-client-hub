@@ -145,3 +145,6 @@ The continue payload also includes canonical binding fields:
 
 Chat writes `workingDirectory` as a stable Hub field. The backend adapts it to
 legacy provider-private metadata when required.
+
+Model discovery uses the same `workingDirectory` field when the upstream agent
+needs provider-specific context for provider/model listing.

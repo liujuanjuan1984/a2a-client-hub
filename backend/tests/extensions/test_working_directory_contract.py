@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
     A2AExtensionSessionCommandRequest,
+    A2AModelDiscoveryRequest,
 )
 
 
@@ -42,4 +43,18 @@ def test_session_command_request_removes_empty_working_directory() -> None:
         "opencode": {
             "project": "alpha",
         }
+    }
+
+
+def test_model_discovery_request_maps_working_directory_to_legacy_metadata() -> None:
+    payload = A2AModelDiscoveryRequest.model_validate(
+        {
+            "provider_id": "openai",
+            "workingDirectory": "  /workspace/demo  ",
+        }
+    )
+
+    assert payload.working_directory is None
+    assert payload.session_metadata == {
+        "opencode": {"directory": "/workspace/demo"},
     }

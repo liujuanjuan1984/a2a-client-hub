@@ -1246,15 +1246,15 @@ export const recoverInterrupts = async (input: {
 export const listModelProviders = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
-  sessionMetadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }) => {
   const response = await apiRequest<
     A2AExtensionResponse,
-    { session_metadata?: Record<string, unknown> }
+    { workingDirectory?: string }
   >(buildModelDiscoveryPath(input.source, input.agentId, "providers:list"), {
     method: "POST",
-    body: input.sessionMetadata
-      ? { session_metadata: input.sessionMetadata }
+    body: input.workingDirectory?.trim()
+      ? { workingDirectory: input.workingDirectory.trim() }
       : {},
   });
   assertExtensionSuccess(response);
@@ -1275,21 +1275,21 @@ export const listModels = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
   providerId?: string;
-  sessionMetadata?: Record<string, unknown>;
+  workingDirectory?: string | null;
 }) => {
   const body: {
     provider_id?: string;
-    session_metadata?: Record<string, unknown>;
+    workingDirectory?: string;
   } = {};
   if (input.providerId?.trim()) {
     body.provider_id = input.providerId.trim();
   }
-  if (input.sessionMetadata) {
-    body.session_metadata = input.sessionMetadata;
+  if (input.workingDirectory?.trim()) {
+    body.workingDirectory = input.workingDirectory.trim();
   }
   const response = await apiRequest<
     A2AExtensionResponse,
-    { provider_id?: string; session_metadata?: Record<string, unknown> }
+    { provider_id?: string; workingDirectory?: string }
   >(buildModelDiscoveryPath(input.source, input.agentId, ":list"), {
     method: "POST",
     body,
