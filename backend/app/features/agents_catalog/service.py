@@ -17,6 +17,10 @@ from app.db.models.user_agent_availability_snapshot import (
 )
 from app.db.transaction import commit_safely
 from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
+from app.features.health_check_helpers import (
+    build_health_check_item_fields,
+    build_health_snapshot_update,
+)
 from app.features.hub_agents.runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
@@ -402,6 +406,31 @@ class UnifiedAgentCatalogService:
         gateway = cast(Any, get_a2a_service()).gateway
         pending_updates: list[tuple[str, str, dict[str, Any]]] = []
 
+        def _append_item(
+            *,
+            agent_id: str,
+            agent_source: str,
+            health_status: str,
+            checked_at: datetime,
+            skipped: bool,
+            error: str | None,
+            reason_code: str | None,
+        ) -> None:
+            status_counts[health_status] += 1
+            items.append(
+                UnifiedAgentHealthCheckItemRecord(
+                    agent_id=agent_id,
+                    agent_source=agent_source,
+                    **build_health_check_item_fields(
+                        health_status=health_status,
+                        checked_at=checked_at,
+                        skipped_cooldown=skipped,
+                        error=error,
+                        reason_code=reason_code,
+                    ),
+                )
+            )
+
         for record in shared_records:
             snapshot = snapshots.get(("shared", str(record.id)))
             now = utc_now()
@@ -413,17 +442,14 @@ class UnifiedAgentCatalogService:
                 and snapshot.last_health_check_at + cooldown_window > now
             ):
                 skipped_cooldown += 1
-                status_counts[snapshot.health_status] += 1
-                items.append(
-                    UnifiedAgentHealthCheckItemRecord(
-                        agent_id=str(record.id),
-                        agent_source="shared",
-                        health_status=snapshot.health_status,
-                        checked_at=snapshot.last_health_check_at,
-                        skipped_cooldown=True,
-                        error=snapshot.last_health_check_error,
-                        reason_code=snapshot.last_health_check_reason_code,
-                    )
+                _append_item(
+                    agent_id=str(record.id),
+                    agent_source="shared",
+                    health_status=snapshot.health_status,
+                    checked_at=snapshot.last_health_check_at,
+                    skipped=True,
+                    error=snapshot.last_health_check_error,
+                    reason_code=snapshot.last_health_check_reason_code,
                 )
                 continue
 
@@ -501,35 +527,29 @@ class UnifiedAgentCatalogService:
                 (
                     "shared",
                     str(record.id),
-                    {
-                        "health_status": health_status,
-                        "consecutive_health_check_failures": consecutive_failures,
-                        "last_health_check_at": now,
-                        "last_successful_health_check_at": (
-                            now
-                            if health_status == A2AAgent.HEALTH_HEALTHY
-                            else (
-                                snapshot.last_successful_health_check_at
-                                if snapshot is not None
-                                else None
-                            )
+                    build_health_snapshot_update(
+                        health_status=health_status,
+                        healthy_status=A2AAgent.HEALTH_HEALTHY,
+                        checked_at=now,
+                        consecutive_failures=consecutive_failures,
+                        previous_last_successful_at=(
+                            snapshot.last_successful_health_check_at
+                            if snapshot is not None
+                            else None
                         ),
-                        "last_health_check_error": error_message,
-                        "last_health_check_reason_code": reason_code,
-                    },
+                        error_message=error_message,
+                        reason_code=reason_code,
+                    ),
                 )
             )
-            status_counts[health_status] += 1
-            items.append(
-                UnifiedAgentHealthCheckItemRecord(
-                    agent_id=str(record.id),
-                    agent_source="shared",
-                    health_status=health_status,
-                    checked_at=now,
-                    skipped_cooldown=False,
-                    error=error_message,
-                    reason_code=reason_code,
-                )
+            _append_item(
+                agent_id=str(record.id),
+                agent_source="shared",
+                health_status=health_status,
+                checked_at=now,
+                skipped=False,
+                error=error_message,
+                reason_code=reason_code,
             )
 
         if built_in_profile.configured:
@@ -543,17 +563,14 @@ class UnifiedAgentCatalogService:
                 and snapshot.last_health_check_at + cooldown_window > now
             ):
                 skipped_cooldown += 1
-                status_counts[snapshot.health_status] += 1
-                items.append(
-                    UnifiedAgentHealthCheckItemRecord(
-                        agent_id=built_in_profile.agent_id,
-                        agent_source="builtin",
-                        health_status=snapshot.health_status,
-                        checked_at=snapshot.last_health_check_at,
-                        skipped_cooldown=True,
-                        error=snapshot.last_health_check_error,
-                        reason_code=snapshot.last_health_check_reason_code,
-                    )
+                _append_item(
+                    agent_id=built_in_profile.agent_id,
+                    agent_source="builtin",
+                    health_status=snapshot.health_status,
+                    checked_at=snapshot.last_health_check_at,
+                    skipped=True,
+                    error=snapshot.last_health_check_error,
+                    reason_code=snapshot.last_health_check_reason_code,
                 )
             else:
                 checked += 1
@@ -571,9 +588,11 @@ class UnifiedAgentCatalogService:
                     (
                         "builtin",
                         built_in_profile.agent_id,
-                        {
-                            "health_status": health_status,
-                            "consecutive_health_check_failures": (
+                        build_health_snapshot_update(
+                            health_status=health_status,
+                            healthy_status=A2AAgent.HEALTH_HEALTHY,
+                            checked_at=now,
+                            consecutive_failures=(
                                 0
                                 if health_status == A2AAgent.HEALTH_HEALTHY
                                 else (
@@ -582,32 +601,24 @@ class UnifiedAgentCatalogService:
                                     else 1
                                 )
                             ),
-                            "last_health_check_at": now,
-                            "last_successful_health_check_at": (
-                                now
-                                if health_status == A2AAgent.HEALTH_HEALTHY
-                                else (
-                                    snapshot.last_successful_health_check_at
-                                    if snapshot is not None
-                                    else None
-                                )
+                            previous_last_successful_at=(
+                                snapshot.last_successful_health_check_at
+                                if snapshot is not None
+                                else None
                             ),
-                            "last_health_check_error": error_message,
-                            "last_health_check_reason_code": None,
-                        },
+                            error_message=error_message,
+                            reason_code=None,
+                        ),
                     )
                 )
-                status_counts[health_status] += 1
-                items.append(
-                    UnifiedAgentHealthCheckItemRecord(
-                        agent_id=built_in_profile.agent_id,
-                        agent_source="builtin",
-                        health_status=health_status,
-                        checked_at=now,
-                        skipped_cooldown=False,
-                        error=error_message,
-                        reason_code=None,
-                    )
+                _append_item(
+                    agent_id=built_in_profile.agent_id,
+                    agent_source="builtin",
+                    health_status=health_status,
+                    checked_at=now,
+                    skipped=False,
+                    error=error_message,
+                    reason_code=None,
                 )
 
         if pending_updates:
