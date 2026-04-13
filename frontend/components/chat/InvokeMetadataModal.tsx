@@ -74,7 +74,7 @@ export function InvokeMetadataModal({
                 Invoke Metadata
               </Text>
               <Text className="mt-1 text-xs text-slate-400">
-                Stored in session metadata as metadata.shared.invoke.bindings.
+                Saved for this conversation as invoke bindings.
               </Text>
             </View>
             <Pressable

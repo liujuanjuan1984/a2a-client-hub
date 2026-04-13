@@ -41,11 +41,13 @@ describe("sessions api", () => {
       conversationId: "  conv-2  ",
       source: "manual",
       metadata: { provider: "opencode" },
+      workingDirectory: "  /workspace/app  ",
     });
 
     const result = await continueSession("conv-2");
 
     expect(result.conversationId).toBe("conv-2");
     expect(result.metadata).toEqual({ provider: "opencode" });
+    expect(result.workingDirectory).toBe("/workspace/app");
   });
 });

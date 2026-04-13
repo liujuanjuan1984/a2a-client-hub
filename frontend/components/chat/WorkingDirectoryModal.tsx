@@ -5,7 +5,7 @@ import { Modal, Pressable, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
-export function OpencodeDirectoryModal({
+export function WorkingDirectoryModal({
   visible,
   onClose,
   currentDirectory,
@@ -50,7 +50,7 @@ export function OpencodeDirectoryModal({
                 Working Directory
               </Text>
               <Text className="mt-1 text-xs text-slate-400">
-                Stored in session metadata as metadata.opencode.directory.
+                Saved for this conversation and forwarded by the Hub.
               </Text>
             </View>
             <Pressable

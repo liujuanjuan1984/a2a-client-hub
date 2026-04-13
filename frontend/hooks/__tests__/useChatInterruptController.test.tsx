@@ -95,7 +95,7 @@ describe("useChatInterruptController", () => {
     });
   });
 
-  it("forwards opencode directory metadata with permission replies", async () => {
+  it("forwards working directory with permission replies", async () => {
     const { result } = renderHook(() =>
       useChatInterruptController({
         activeAgentId: "agent-1",
@@ -109,11 +109,7 @@ describe("useChatInterruptController", () => {
         },
         lastResolvedInterrupt: null,
         pendingQuestionCount: 0,
-        sessionMetadata: {
-          opencode: {
-            directory: "/workspace/app",
-          },
-        },
+        workingDirectory: "/workspace/app",
         clearPendingInterrupt,
       }),
     );
@@ -128,11 +124,7 @@ describe("useChatInterruptController", () => {
       agentId: "agent-1",
       requestId: "perm-1",
       reply: "once",
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
     });
     expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "perm-1");
     expect(mockedToast.success).toHaveBeenCalledWith(
@@ -141,7 +133,7 @@ describe("useChatInterruptController", () => {
     );
   });
 
-  it("forwards opencode directory metadata with question answers", async () => {
+  it("forwards working directory with question answers", async () => {
     const { result } = renderHook(() =>
       useChatInterruptController({
         activeAgentId: "agent-1",
@@ -163,11 +155,7 @@ describe("useChatInterruptController", () => {
         },
         lastResolvedInterrupt: null,
         pendingQuestionCount: 1,
-        sessionMetadata: {
-          opencode: {
-            directory: "/workspace/app",
-          },
-        },
+        workingDirectory: "/workspace/app",
         clearPendingInterrupt,
       }),
     );
@@ -186,11 +174,7 @@ describe("useChatInterruptController", () => {
       agentId: "agent-1",
       requestId: "question-1",
       answers: [["yes"]],
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
     });
     expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "question-1");
     expect(mockedToast.success).toHaveBeenCalledWith(
@@ -217,11 +201,7 @@ describe("useChatInterruptController", () => {
         },
         lastResolvedInterrupt: null,
         pendingQuestionCount: 0,
-        sessionMetadata: {
-          opencode: {
-            directory: "/workspace/app",
-          },
-        },
+        workingDirectory: "/workspace/app",
         clearPendingInterrupt,
       }),
     );
@@ -239,11 +219,7 @@ describe("useChatInterruptController", () => {
         fileSystem: { write: ["/workspace/project"] },
       },
       scope: "session",
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
     });
     expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "perm-v2-1");
   });
@@ -265,11 +241,7 @@ describe("useChatInterruptController", () => {
         },
         lastResolvedInterrupt: null,
         pendingQuestionCount: 0,
-        sessionMetadata: {
-          opencode: {
-            directory: "/workspace/app",
-          },
-        },
+        workingDirectory: "/workspace/app",
         clearPendingInterrupt,
       }),
     );
@@ -289,11 +261,7 @@ describe("useChatInterruptController", () => {
       requestId: "eli-1",
       action: "accept",
       content: { folder: "docs" },
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
     });
     expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "eli-1");
   });

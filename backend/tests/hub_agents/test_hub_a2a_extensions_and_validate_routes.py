@@ -2394,6 +2394,13 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         },
         "sessionPromptAsync": True,
         "sessionControl": {
+            "append": {
+                "declared": True,
+                "consumedByHub": True,
+                "status": "supported",
+                "routeMode": "hybrid",
+                "requiresStreamIdentity": False,
+            },
             "promptAsync": {
                 "declared": True,
                 "consumedByHub": True,
@@ -2852,6 +2859,13 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         },
         "sessionPromptAsync": False,
         "sessionControl": {
+            "append": {
+                "declared": False,
+                "consumedByHub": True,
+                "status": "unsupported",
+                "routeMode": "unsupported",
+                "requiresStreamIdentity": False,
+            },
             "promptAsync": {
                 "declared": False,
                 "consumedByHub": True,
@@ -3140,6 +3154,13 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         },
         "sessionPromptAsync": True,
         "sessionControl": {
+            "append": {
+                "declared": True,
+                "consumedByHub": True,
+                "status": "supported",
+                "routeMode": "prompt_async",
+                "requiresStreamIdentity": False,
+            },
             "promptAsync": {
                 "declared": True,
                 "consumedByHub": True,
@@ -3281,7 +3302,7 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
 
 
 @pytest.mark.asyncio
-async def test_hub_generic_model_discovery_routes_forward_session_metadata(
+async def test_hub_generic_model_discovery_routes_forward_working_directory(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
@@ -3301,10 +3322,7 @@ async def test_hub_generic_model_discovery_routes_forward_session_metadata(
         lambda: fake_extensions,
     )
 
-    session_metadata = {
-        "shared": {"model": {"providerID": "openai", "modelID": "gpt-5"}},
-        "opencode": {"directory": "/workspace"},
-    }
+    session_metadata = {"opencode": {"directory": "/workspace"}}
 
     async with create_test_client(
         hub_extension_router.router,
@@ -3314,7 +3332,7 @@ async def test_hub_generic_model_discovery_routes_forward_session_metadata(
     ) as user_client:
         providers_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/models/providers:list",
-            json={"session_metadata": session_metadata},
+            json={"workingDirectory": "/workspace"},
         )
         assert providers_resp.status_code == 200
         providers_payload = providers_resp.json()
@@ -3325,7 +3343,7 @@ async def test_hub_generic_model_discovery_routes_forward_session_metadata(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/models:list",
             json={
                 "provider_id": "openai",
-                "session_metadata": session_metadata,
+                "workingDirectory": "/workspace",
             },
         )
         assert models_resp.status_code == 200

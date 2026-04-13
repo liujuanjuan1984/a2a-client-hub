@@ -349,7 +349,8 @@ Endpoints:
   - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
   - `compatibilityProfile.extensionRetention` and `compatibilityProfile.methodRetention` now preserve optional machine-readable governance fields such as `implementationScope`, `identityScope`, and `upstreamStability` when upstream declares them.
   - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
-  - The capability response also surfaces `codexThreads`, `codexTurns`, and `codexReview` collection diagnostics so newer upstream lifecycle/control families remain visible. `codexTurns` is now consumed by Hub append session-control routing when the downstream exposes `codex.turns.steer`, while `codexThreads` and `codexReview` remain diagnostics-only.
+  - `sessionControl.append` now exposes a Hub-stable running-session append contract, including whether append is supported, which normalized route mode the Hub will use (`prompt_async`, `turn_steer`, or `hybrid`), and whether shared stream identity is required.
+  - The capability response also surfaces `codexThreads`, `codexTurns`, and `codexReview` collection diagnostics so newer upstream lifecycle/control families remain visible. `codexTurns` remains backend diagnostics and compatibility input when the downstream exposes `codex.turns.steer`, while `codexThreads` and `codexReview` remain diagnostics-only.
   - Each declared Codex method now also reports method-level `availability`, `configKey`, `reason`, and `retention`, allowing deployment-conditional upstream surfaces to remain visible as `enabled`/`disabled` diagnostics instead of being flattened into plain unsupported responses.
   - `codexDiscovery` also reports `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints can be surfaced without incorrectly promoting them to Hub-consumable support.
   - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions without yet promoting them to a Hub-consumed feature surface.
@@ -365,10 +366,12 @@ Endpoints:
   - Codex discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
-    - body: `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
+    - body: `{ "workingDirectory": "/workspace/app" }`
+    - legacy compatibility: `{ "session_metadata": { "opencode": { "directory": "/workspace/app" } } }`
 - Discover generic models:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models:list`
-    - body: `{ "provider_id": "openai", "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
+    - body: `{ "provider_id": "openai", "workingDirectory": "/workspace/app" }`
+    - legacy compatibility: `{ "provider_id": "openai", "session_metadata": { "opencode": { "directory": "/workspace/app" } } }`
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20&directory=services/api&roots=true&start=40&search=planner`
@@ -491,11 +494,16 @@ The backend now exposes a unified conversation read model for manual, scheduled,
 
 - `conversationId` (canonical conversation id)
 - `source` (canonical source)
+- `workingDirectory` (hub-stable working directory field)
 - `metadata`:
   - `provider` (external provider key)
   - `externalSessionId` (external session identifier)
   - `contextId` (A2A context id)
   - `<metadata_key>` (strict upstream session-binding key from `urn:opencode-a2a:opencode-session-binding/v1`, e.g. `opencode_session_id`)
+
+Hub-facing request contracts now accept `workingDirectory` directly. The backend
+adapts that field to legacy provider-private metadata such as
+`metadata.opencode.directory` when upstream extensions still require it.
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example `550e8400-e29b-41d4-a716-446655440000`.
 

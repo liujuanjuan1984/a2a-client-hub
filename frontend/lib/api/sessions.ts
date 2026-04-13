@@ -9,6 +9,7 @@ import {
   resolveNextPageWithFallback,
 } from "@/lib/api/pagination";
 import { type UnifiedSessionSource } from "@/lib/sessionIds";
+import { normalizeWorkingDirectory } from "@/lib/workingDirectory";
 
 export type SessionListItem = {
   conversationId: string;
@@ -66,6 +67,7 @@ export type SessionContinueBinding = {
   conversationId: string;
   source: UnifiedSessionSource;
   metadata?: Record<string, unknown> | null;
+  workingDirectory?: string | null;
 };
 
 export type SessionCancelResult = {
@@ -210,6 +212,7 @@ export const continueSession = async (
       typeof response.metadata === "object" && response.metadata !== null
         ? (response.metadata as Record<string, unknown>)
         : null,
+    workingDirectory: normalizeWorkingDirectory(response.workingDirectory),
   };
 };
 

@@ -4,12 +4,12 @@ import type {
   ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
 import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
-import { pickOpencodeDirectoryMetadata } from "@/lib/opencodeMetadata";
 import {
   pickSharedMetadataSections,
   readSharedStreamIdentity,
   withoutSharedSessionBinding,
 } from "@/lib/sharedMetadata";
+import { normalizeWorkingDirectory } from "@/lib/workingDirectory";
 
 type ExternalSessionRef = {
   provider?: string | null;
@@ -42,6 +42,7 @@ export type AgentSession = {
   inputModes: string[];
   outputModes: string[];
   metadata: Record<string, unknown>;
+  workingDirectory?: string | null;
   externalSessionRef?: ExternalSessionRef | null;
   lastActiveAt: string;
 };
@@ -65,6 +66,7 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
+  workingDirectory: null,
   externalSessionRef: null,
   lastActiveAt: new Date().toISOString(),
 });
@@ -221,6 +223,9 @@ export const buildInvokePayload = (
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;
   }
+  if (session.workingDirectory) {
+    payload.workingDirectory = session.workingDirectory;
+  }
   if (options?.sessionControlIntent) {
     payload.sessionControl = {
       intent: options.sessionControlIntent,
@@ -280,7 +285,6 @@ const normalizeSessionForPersistence = (
     ...(Object.keys(persistedShared).length > 0
       ? { shared: persistedShared }
       : {}),
-    ...(pickOpencodeDirectoryMetadata(session.metadata) ?? {}),
   };
 
   return {
@@ -297,6 +301,7 @@ const normalizeSessionForPersistence = (
     inputModes: ["text/plain"],
     outputModes: ["text/plain"],
     metadata: persistedMetadata,
+    workingDirectory: normalizeWorkingDirectory(session.workingDirectory),
     externalSessionRef: null,
     lastActiveAt: getSessionLastActiveAt(session),
   };

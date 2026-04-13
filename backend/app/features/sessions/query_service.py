@@ -33,6 +33,7 @@ from app.features.sessions.common import (
 )
 from app.features.sessions.identity import conversation_identity_service
 from app.features.sessions.support import SessionHubSupport
+from app.features.working_directory import extract_working_directory
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import ensure_utc
 
@@ -78,6 +79,31 @@ class SessionQueryService:
             "last_active_at": thread.last_active_at,
             "created_at": thread.created_at,
         }
+
+    async def _resolve_working_directory(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> str | None:
+        stmt = (
+            select(AgentMessage.message_metadata)
+            .where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == conversation_id,
+                )
+            )
+            .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+            .limit(20)
+        )
+        for raw_metadata in (await db.execute(stmt)).scalars().all():
+            if isinstance(raw_metadata, dict):
+                resolved = extract_working_directory(raw_metadata)
+                if resolved:
+                    return resolved
+        return None
 
     async def list_sessions(
         self,
@@ -363,6 +389,11 @@ class SessionQueryService:
             session.external_session_id if session else None
         )
         context_id = normalize_non_empty_text(session.context_id if session else None)
+        working_directory = await self._resolve_working_directory(
+            db,
+            user_id=user_id,
+            conversation_id=resolved_conversation_id,
+        )
 
         if target is None:
             return (
@@ -375,6 +406,7 @@ class SessionQueryService:
                         external_session_id=external_session_id,
                         include_legacy_root=True,
                     ),
+                    working_directory=working_directory,
                 ),
                 False,
             )
@@ -433,6 +465,7 @@ class SessionQueryService:
                     external_session_id=resolved_external_session_id,
                     include_legacy_root=True,
                 ),
+                working_directory=working_directory,
             ),
             db_mutated,
         )

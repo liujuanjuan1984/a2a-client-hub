@@ -34,13 +34,10 @@ import {
   withInvokeMetadataBindings,
 } from "@/lib/invokeMetadata";
 import {
-  getOpencodeDirectory,
-  withOpencodeDirectory,
-} from "@/lib/opencodeMetadata";
-import {
   buildPersistStorageName,
   createPersistStorage,
 } from "@/lib/storage/mmkv";
+import { normalizeWorkingDirectory } from "@/lib/workingDirectory";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
@@ -136,9 +133,10 @@ type ChatState = {
       provider?: string | null;
       externalSessionId?: string | null;
       metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
     },
   ) => void;
-  setOpencodeDirectory: (
+  setWorkingDirectory: (
     conversationId: string,
     agentId: string,
     directory: string | null,
@@ -236,6 +234,10 @@ export const useChatStore = create<ChatState>()(
                     ...payload.metadata,
                   }
                 : (state.sessions[conversationId]?.metadata ?? {}),
+              workingDirectory:
+                payload.workingDirectory === undefined
+                  ? (state.sessions[conversationId]?.workingDirectory ?? null)
+                  : normalizeWorkingDirectory(payload.workingDirectory),
               externalSessionRef: mergeExternalSessionRef(
                 state.sessions[conversationId]?.externalSessionRef,
                 payload,
@@ -245,11 +247,15 @@ export const useChatStore = create<ChatState>()(
           },
         }));
       },
-      setOpencodeDirectory: (conversationId, agentId, directory) => {
+      setWorkingDirectory: (conversationId, agentId, directory) => {
         set((state) => {
           const current =
             state.sessions[conversationId] ?? createAgentSession(agentId);
-          if (getOpencodeDirectory(current.metadata) === directory?.trim()) {
+          const normalizedDirectory = normalizeWorkingDirectory(directory);
+          if (
+            normalizeWorkingDirectory(current.workingDirectory) ===
+            normalizedDirectory
+          ) {
             return state;
           }
           return {
@@ -258,7 +264,7 @@ export const useChatStore = create<ChatState>()(
               [conversationId]: {
                 ...current,
                 agentId,
-                metadata: withOpencodeDirectory(current.metadata, directory),
+                workingDirectory: normalizedDirectory,
                 lastActiveAt: new Date().toISOString(),
               },
             },
@@ -746,6 +752,39 @@ export const useChatStore = create<ChatState>()(
     {
       name: buildPersistStorageName("a2a-client-hub.chat", "web_tab"),
       storage: createPersistStorage(),
+      merge: (persistedState, currentState) => {
+        const typedPersisted =
+          persistedState && typeof persistedState === "object"
+            ? (persistedState as Partial<ChatState>)
+            : {};
+        const sessions = typedPersisted.sessions || {};
+        const normalizedSessions = Object.fromEntries(
+          Object.entries(sessions).map(([conversationId, session]) => {
+            const currentSession = session as AgentSession;
+            const metadata =
+              currentSession.metadata &&
+              typeof currentSession.metadata === "object"
+                ? (currentSession.metadata as Record<string, unknown>)
+                : {};
+            const nextWorkingDirectory = normalizeWorkingDirectory(
+              currentSession.workingDirectory,
+            );
+            return [
+              conversationId,
+              {
+                ...currentSession,
+                metadata,
+                workingDirectory: nextWorkingDirectory,
+              },
+            ];
+          }),
+        );
+        return {
+          ...currentState,
+          ...typedPersisted,
+          sessions: normalizedSessions,
+        };
+      },
       partialize: (state) => ({
         sessions: buildPersistedSessions(state.sessions),
       }),

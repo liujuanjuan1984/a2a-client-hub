@@ -64,10 +64,6 @@ import {
 import { blurActiveElement } from "@/lib/focus";
 import { generateUuid } from "@/lib/id";
 import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
-import {
-  getOpencodeDirectory,
-  pickOpencodeDirectoryMetadata,
-} from "@/lib/opencodeMetadata";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { parseComposerInput } from "@/lib/sessionCommand";
@@ -115,8 +111,8 @@ export function useChatScreenController({
   const replaceRecoveredInterrupts = useChatStore(
     (state) => state.replaceRecoveredInterrupts,
   );
-  const setOpencodeDirectory = useChatStore(
-    (state) => state.setOpencodeDirectory,
+  const setWorkingDirectory = useChatStore(
+    (state) => state.setWorkingDirectory,
   );
   const setInvokeMetadataBindings = useChatStore(
     (state) => state.setInvokeMetadataBindings,
@@ -132,7 +128,6 @@ export function useChatScreenController({
   const [showDetails, setShowDetails] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [showInvokeMetadataModal, setShowInvokeMetadataModal] = useState(false);
-  const [showCodexDiscovery, setShowCodexDiscovery] = useState(false);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
@@ -183,7 +178,7 @@ export function useChatScreenController({
   const boundExternalSessionId =
     session?.externalSessionRef?.externalSessionId?.trim() ?? "";
   const selectedModel = getSharedModelSelection(session?.metadata);
-  const opencodeDirectory = getOpencodeDirectory(session?.metadata);
+  const workingDirectory = session?.workingDirectory ?? null;
   const invokeMetadataBindings = getInvokeMetadataBindings(session?.metadata);
   const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
     agentId: activeAgentId,
@@ -217,42 +212,37 @@ export function useChatScreenController({
       : !activeAgentId || !agent?.source
         ? "unsupported"
         : extensionCapabilitiesQuery.sessionCommandStatus;
+  const sessionShellStatus: GenericCapabilityStatus =
+    isBuiltInSelfManagementAgent
+      ? "unsupported"
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.sessionShellStatus;
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
     isBuiltInSelfManagementAgent
       ? "unsupported"
       : !activeAgentId || !agent?.source
         ? "unsupported"
         : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
-  const codexTurnSteerStatus: GenericCapabilityStatus =
+  const sessionAppendStatus: GenericCapabilityStatus =
     isBuiltInSelfManagementAgent
       ? "unsupported"
       : !activeAgentId || !agent?.source
         ? "unsupported"
-        : extensionCapabilitiesQuery.codexTurnSteerStatus;
+        : extensionCapabilitiesQuery.sessionAppendStatus;
+  const sessionAppendRequiresStreamIdentity =
+    !isBuiltInSelfManagementAgent &&
+    Boolean(
+      activeAgentId &&
+      agent?.source &&
+      extensionCapabilitiesQuery.sessionAppend?.requiresStreamIdentity,
+    );
   const invokeMetadataStatus: GenericCapabilityStatus =
     isBuiltInSelfManagementAgent
       ? "unsupported"
       : !activeAgentId || !agent?.source
         ? "unsupported"
         : extensionCapabilitiesQuery.invokeMetadataStatus;
-  const codexDiscoveryStatus = isBuiltInSelfManagementAgent
-    ? "unsupported"
-    : !activeAgentId || !agent?.source
-      ? "unsupported"
-      : extensionCapabilitiesQuery.codexDiscoveryStatus;
-  const codexDiscovery = isBuiltInSelfManagementAgent
-    ? null
-    : extensionCapabilitiesQuery.codexDiscovery;
-  const codexDiscoveryAvailableTabs = isBuiltInSelfManagementAgent
-    ? []
-    : extensionCapabilitiesQuery.codexDiscoveryAvailableTabs;
-  const canReadCodexPlugins = isBuiltInSelfManagementAgent
-    ? false
-    : extensionCapabilitiesQuery.canReadCodexPlugins;
-  const canBrowseCodexDiscovery =
-    !isBuiltInSelfManagementAgent &&
-    Boolean(activeAgentId && agent?.source) &&
-    extensionCapabilitiesQuery.canShowCodexDiscovery;
   const latestMissingParams = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const item = messages[index];
@@ -645,17 +635,18 @@ export function useChatScreenController({
       const externalSessionId =
         currentSession.externalSessionRef?.externalSessionId?.trim() ?? "";
       const streamIdentity = readSharedStreamIdentity(currentSession?.metadata);
-      const canSteerRunningTurn = Boolean(
-        codexTurnSteerStatus === "supported" &&
-        streamIdentity.threadId &&
-        streamIdentity.turnId,
+      const canAppendToRunningTurn = Boolean(
+        sessionAppendStatus === "supported" &&
+        (!sessionAppendRequiresStreamIdentity ||
+          (streamIdentity.threadId && streamIdentity.turnId)),
       );
-      return (
-        Boolean(externalSessionId) &&
-        (sessionPromptAsyncStatus === "supported" || canSteerRunningTurn)
-      );
+      return Boolean(externalSessionId) && canAppendToRunningTurn;
     },
-    [codexTurnSteerStatus, pendingInterrupt, sessionPromptAsyncStatus],
+    [
+      pendingInterrupt,
+      sessionAppendRequiresStreamIdentity,
+      sessionAppendStatus,
+    ],
   );
 
   const appendMessageToRunningSession = useCallback(
@@ -795,7 +786,6 @@ export function useChatScreenController({
           currentSession?.externalSessionRef?.provider?.trim() ||
           sessionBinding.provider;
         const metadata = {
-          ...(pickOpencodeDirectoryMetadata(currentSession?.metadata) ?? {}),
           ...(provider ? { provider } : {}),
           externalSessionId,
         };
@@ -819,6 +809,9 @@ export function useChatScreenController({
               : {}),
           },
           metadata,
+          ...(currentSession?.workingDirectory
+            ? { workingDirectory: currentSession.workingDirectory }
+            : {}),
         });
         addConversationOverlayMessage(nextConversationId, {
           id: generateUuid(),
@@ -1032,7 +1025,7 @@ export function useChatScreenController({
     pendingInterrupt,
     lastResolvedInterrupt,
     pendingQuestionCount,
-    sessionMetadata: session?.metadata,
+    workingDirectory,
     clearPendingInterrupt,
     onPermissionReplyOverride: isBuiltInSelfManagementAgent
       ? handleBuiltInPermissionReply
@@ -1132,26 +1125,24 @@ export function useChatScreenController({
           router.replace(buildChatRoute(boundAgentId, resolvedConversationId));
           return;
         }
+        const normalizedBinding = buildContinueBindingPayload(
+          boundAgentId,
+          binding,
+        );
         const current = useChatStore.getState().sessions[conversationId];
         const hasLocalBinding =
           (typeof current?.externalSessionRef?.externalSessionId === "string" &&
             current.externalSessionRef.externalSessionId.trim()) ||
           Object.keys(current?.metadata ?? {}).length > 0;
         const hasBindingMetadata =
-          (typeof binding.metadata?.externalSessionId === "string" &&
-            binding.metadata.externalSessionId.trim()) ||
-          (typeof binding.metadata?.provider === "string" &&
-            binding.metadata.provider.trim());
+          normalizedBinding.externalSessionId || normalizedBinding.provider;
         if (hasLocalBinding && !hasBindingMetadata) {
           return;
         }
         ensureSession(conversationId, boundAgentId);
         useChatStore
           .getState()
-          .bindExternalSession(
-            conversationId,
-            buildContinueBindingPayload(boundAgentId, binding),
-          );
+          .bindExternalSession(conversationId, normalizedBinding);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -1448,26 +1439,26 @@ export function useChatScreenController({
     setShowSessionPicker(false);
   }, []);
 
-  const handleSaveOpencodeDirectory = useCallback(
+  const handleSaveWorkingDirectory = useCallback(
     (directory: string) => {
       if (!conversationId || !activeAgentId) {
         return;
       }
       ensureSession(conversationId, activeAgentId);
-      setOpencodeDirectory(conversationId, activeAgentId, directory);
+      setWorkingDirectory(conversationId, activeAgentId, directory);
       toast.success("Working directory updated", directory);
     },
-    [activeAgentId, conversationId, ensureSession, setOpencodeDirectory],
+    [activeAgentId, conversationId, ensureSession, setWorkingDirectory],
   );
 
-  const handleClearOpencodeDirectory = useCallback(() => {
+  const handleClearWorkingDirectory = useCallback(() => {
     if (!conversationId || !activeAgentId) {
       return;
     }
     ensureSession(conversationId, activeAgentId);
-    setOpencodeDirectory(conversationId, activeAgentId, null);
+    setWorkingDirectory(conversationId, activeAgentId, null);
     toast.success("Working directory cleared", "Using upstream default.");
-  }, [activeAgentId, conversationId, ensureSession, setOpencodeDirectory]);
+  }, [activeAgentId, conversationId, ensureSession, setWorkingDirectory]);
 
   const openInvokeMetadataModal = useCallback(() => {
     setShowInvokeMetadataModal(true);
@@ -1475,17 +1466,6 @@ export function useChatScreenController({
 
   const closeInvokeMetadataModal = useCallback(() => {
     setShowInvokeMetadataModal(false);
-  }, []);
-
-  const openCodexDiscovery = useCallback(() => {
-    if (!canBrowseCodexDiscovery) {
-      return;
-    }
-    setShowCodexDiscovery(true);
-  }, [canBrowseCodexDiscovery]);
-
-  const closeCodexDiscovery = useCallback(() => {
-    setShowCodexDiscovery(false);
   }, []);
 
   const handleSaveInvokeMetadata = useCallback(
@@ -1600,15 +1580,14 @@ export function useChatScreenController({
     sessionSource,
     modelSelectionStatus,
     providerDiscoveryStatus,
+    interruptRecoveryStatus,
     sessionCommandStatus,
+    sessionShellStatus,
+    sessionPromptAsyncStatus,
+    sessionAppendStatus,
     invokeMetadataStatus,
-    codexDiscoveryStatus,
-    codexDiscovery,
-    codexDiscoveryAvailableTabs,
-    canReadCodexPlugins,
-    canBrowseCodexDiscovery,
     selectedModel,
-    opencodeDirectory,
+    workingDirectory,
     invokeMetadataBindings,
     invokeMetadataFields,
     hasInvokeMetadataBindings,
@@ -1633,7 +1612,6 @@ export function useChatScreenController({
     showShortcutManager,
     showSessionPicker,
     showInvokeMetadataModal,
-    showCodexDiscovery,
     showDirectoryPicker,
     showModelPicker,
     openShortcutManager,
@@ -1642,16 +1620,14 @@ export function useChatScreenController({
     closeSessionPicker,
     openInvokeMetadataModal,
     closeInvokeMetadataModal,
-    openCodexDiscovery,
-    closeCodexDiscovery,
     openDirectoryPicker,
     closeDirectoryPicker,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,
     clearModelSelection,
-    handleSaveOpencodeDirectory,
-    handleClearOpencodeDirectory,
+    handleSaveWorkingDirectory,
+    handleClearWorkingDirectory,
     handleSaveInvokeMetadata,
     handleClearInvokeMetadata,
     handleUseShortcut,

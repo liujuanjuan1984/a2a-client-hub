@@ -7,11 +7,6 @@ import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useChatScreenController } from "@/hooks/useChatScreenController";
 
-const LazyCodexDiscoveryModal = lazy(async () => {
-  const module = await import("@/components/chat/CodexDiscoveryModal");
-  return { default: module.CodexDiscoveryModal };
-});
-
 const LazyInvokeMetadataModal = lazy(async () => {
   const module = await import("@/components/chat/InvokeMetadataModal");
   return { default: module.InvokeMetadataModal };
@@ -22,9 +17,9 @@ const LazyModelPickerModal = lazy(async () => {
   return { default: module.ModelPickerModal };
 });
 
-const LazyOpencodeDirectoryModal = lazy(async () => {
-  const module = await import("@/components/chat/OpencodeDirectoryModal");
-  return { default: module.OpencodeDirectoryModal };
+const LazyWorkingDirectoryModal = lazy(async () => {
+  const module = await import("@/components/chat/WorkingDirectoryModal");
+  return { default: module.WorkingDirectoryModal };
 });
 
 const LazySessionPickerModal = lazy(async () => {
@@ -81,9 +76,14 @@ export function ChatScreen({
         onOpenSessionPicker={controller.openSessionPicker}
         onTestConnection={controller.handleTest}
         testingConnection={controller.testingConnection}
-        codexDiscoveryStatus={controller.codexDiscoveryStatus}
-        canBrowseCodexDiscovery={controller.canBrowseCodexDiscovery}
-        onOpenCodexDiscovery={controller.openCodexDiscovery}
+        modelSelectionStatus={controller.modelSelectionStatus}
+        providerDiscoveryStatus={controller.providerDiscoveryStatus}
+        interruptRecoveryStatus={controller.interruptRecoveryStatus}
+        sessionPromptAsyncStatus={controller.sessionPromptAsyncStatus}
+        sessionAppendStatus={controller.sessionAppendStatus}
+        sessionCommandStatus={controller.sessionCommandStatus}
+        sessionShellStatus={controller.sessionShellStatus}
+        invokeMetadataStatus={controller.invokeMetadataStatus}
       />
 
       <ChatTimelinePanel
@@ -149,7 +149,7 @@ export function ChatScreen({
             agentId={controller.activeAgentId}
             source={controller.agent.source}
             providerDiscoveryStatus={controller.providerDiscoveryStatus}
-            sessionMetadata={controller.session?.metadata}
+            workingDirectory={controller.workingDirectory}
             selectedModel={controller.selectedModel}
             onSelectModel={controller.handleModelSelect}
             onClearModelSelection={controller.clearModelSelection}
@@ -157,29 +157,14 @@ export function ChatScreen({
         </Suspense>
       ) : null}
 
-      {controller.showCodexDiscovery ? (
-        <Suspense fallback={null}>
-          <LazyCodexDiscoveryModal
-            visible
-            onClose={controller.closeCodexDiscovery}
-            agentId={controller.activeAgentId}
-            source={controller.agent.source}
-            codexDiscoveryStatus={controller.codexDiscoveryStatus}
-            codexDiscovery={controller.codexDiscovery}
-            availableTabs={controller.codexDiscoveryAvailableTabs}
-            canReadPlugins={controller.canReadCodexPlugins}
-          />
-        </Suspense>
-      ) : null}
-
       {controller.showDirectoryPicker ? (
         <Suspense fallback={null}>
-          <LazyOpencodeDirectoryModal
+          <LazyWorkingDirectoryModal
             visible
             onClose={controller.closeDirectoryPicker}
-            currentDirectory={controller.opencodeDirectory}
-            onSave={controller.handleSaveOpencodeDirectory}
-            onClear={controller.handleClearOpencodeDirectory}
+            currentDirectory={controller.workingDirectory}
+            onSave={controller.handleSaveWorkingDirectory}
+            onClear={controller.handleClearWorkingDirectory}
           />
         </Suspense>
       ) : null}
@@ -199,7 +184,7 @@ export function ChatScreen({
 
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}
-        currentDirectory={controller.opencodeDirectory}
+        currentDirectory={controller.workingDirectory}
         hasInvokeMetadata={controller.hasInvokeMetadataBindings}
         showInvokeMetadataControl={controller.showInvokeMetadataControl}
         invokeMetadataRequiredCount={controller.invokeMetadataRequiredCount}

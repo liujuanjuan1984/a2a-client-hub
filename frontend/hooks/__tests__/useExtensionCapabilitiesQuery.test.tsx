@@ -54,6 +54,13 @@ const createRuntimeStatus = (): RuntimeStatusContract => ({
 });
 
 const createSessionControl = (overrides?: {
+  append?: Partial<{
+    declared: boolean;
+    consumedByHub: boolean;
+    status: "supported" | "unsupported";
+    routeMode: "unsupported" | "prompt_async" | "turn_steer" | "hybrid";
+    requiresStreamIdentity: boolean;
+  }>;
   promptAsync?: Partial<{
     declared: boolean;
     consumedByHub: boolean;
@@ -70,6 +77,14 @@ const createSessionControl = (overrides?: {
     availability: "always" | "conditional" | "unsupported";
   }>;
 }) => ({
+  append: {
+    declared: true,
+    consumedByHub: true,
+    status: "supported" as const,
+    routeMode: "prompt_async" as const,
+    requiresStreamIdentity: false,
+    ...overrides?.append,
+  },
   promptAsync: {
     declared: true,
     consumedByHub: true,
@@ -111,52 +126,6 @@ const createInvokeMetadata = (overrides?: {
   ...overrides,
 });
 
-const createCodexDiscovery = (overrides?: {
-  declared?: boolean;
-  consumedByHub?: boolean;
-  status?:
-    | "unsupported"
-    | "declared_not_consumed"
-    | "partially_consumed"
-    | "supported";
-  methods?: Record<
-    string,
-    { declared: boolean; consumedByHub: boolean; method?: string | null }
-  >;
-}) => ({
-  declared: false,
-  consumedByHub: false,
-  status: "unsupported" as const,
-  methods: {},
-  ...overrides,
-});
-
-const createCodexTurns = (overrides?: {
-  declared?: boolean;
-  consumedByHub?: boolean;
-  status?:
-    | "unsupported"
-    | "declared_not_consumed"
-    | "partially_consumed"
-    | "supported"
-    | "unsupported_by_design";
-  methods?: Record<
-    string,
-    {
-      declared: boolean;
-      consumedByHub: boolean;
-      method?: string | null;
-      availability?: "always" | "enabled" | "disabled" | "unsupported";
-    }
-  >;
-}) => ({
-  declared: false,
-  consumedByHub: false,
-  status: "unsupported" as const,
-  methods: {},
-  ...overrides,
-});
-
 describe("useExtensionCapabilitiesQuery", () => {
   let queryClient: QueryClient;
 
@@ -175,38 +144,12 @@ describe("useExtensionCapabilitiesQuery", () => {
       providerDiscovery: true,
       interruptRecovery: true,
       sessionPromptAsync: true,
-      sessionControl: createSessionControl(),
+      sessionControl: createSessionControl({
+        append: {
+          routeMode: "hybrid",
+        },
+      }),
       invokeMetadata: createInvokeMetadata(),
-      codexDiscovery: createCodexDiscovery({
-        declared: true,
-        consumedByHub: true,
-        status: "supported",
-        methods: {
-          skillsList: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.skills.list",
-          },
-          pluginsRead: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.plugins.read",
-          },
-        },
-      }),
-      codexTurns: createCodexTurns({
-        declared: true,
-        consumedByHub: true,
-        status: "supported",
-        methods: {
-          steer: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.turns.steer",
-            availability: "always",
-          },
-        },
-      }),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -226,14 +169,11 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.interruptRecoveryStatus).toBe("supported");
     expect(result.current.runtimeStatusContract?.version).toBe("v1");
     expect(result.current.sessionPromptAsyncStatus).toBe("supported");
+    expect(result.current.sessionAppendStatus).toBe("supported");
     expect(result.current.sessionCommandStatus).toBe("supported");
     expect(result.current.sessionShellStatus).toBe("unsupported");
     expect(result.current.invokeMetadataStatus).toBe("unsupported");
-    expect(result.current.codexDiscoveryStatus).toBe("supported");
-    expect(result.current.codexTurnSteerStatus).toBe("supported");
-    expect(result.current.canShowCodexDiscovery).toBe(true);
-    expect(result.current.canReadCodexPlugins).toBe(true);
-    expect(result.current.codexDiscoveryAvailableTabs).toEqual(["skills"]);
+    expect(result.current.sessionAppend?.routeMode).toBe("hybrid");
   });
 
   it("returns unsupported when model selection is unavailable", async () => {
@@ -243,6 +183,13 @@ describe("useExtensionCapabilitiesQuery", () => {
       interruptRecovery: false,
       sessionPromptAsync: false,
       sessionControl: createSessionControl({
+        append: {
+          declared: true,
+          consumedByHub: true,
+          status: "unsupported",
+          routeMode: "unsupported",
+          requiresStreamIdentity: false,
+        },
         promptAsync: { declared: false, availability: "unsupported" },
         command: {
           declared: false,
@@ -256,20 +203,6 @@ describe("useExtensionCapabilitiesQuery", () => {
         },
       }),
       invokeMetadata: createInvokeMetadata(),
-      codexDiscovery: createCodexDiscovery(),
-      codexTurns: createCodexTurns({
-        declared: true,
-        consumedByHub: true,
-        status: "declared_not_consumed",
-        methods: {
-          steer: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.turns.steer",
-            availability: "disabled",
-          },
-        },
-      }),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -288,9 +221,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.providerDiscoveryStatus).toBe("unsupported");
     expect(result.current.interruptRecoveryStatus).toBe("unsupported");
     expect(result.current.sessionPromptAsyncStatus).toBe("unsupported");
-    expect(result.current.codexTurnSteerStatus).toBe("unsupported");
-    expect(result.current.codexDiscoveryStatus).toBe("unsupported");
-    expect(result.current.canShowCodexDiscovery).toBe(false);
+    expect(result.current.sessionAppendStatus).toBe("unsupported");
   });
 
   it("distinguishes model selection from provider discovery", async () => {
@@ -306,23 +237,6 @@ describe("useExtensionCapabilitiesQuery", () => {
         declared: true,
         status: "supported",
         fields: [{ name: "project_id", required: true }],
-      }),
-      codexDiscovery: createCodexDiscovery({
-        declared: true,
-        consumedByHub: true,
-        status: "partially_consumed",
-        methods: {
-          appsList: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.apps.list",
-          },
-          watch: {
-            declared: true,
-            consumedByHub: false,
-            method: "codex.discovery.watch",
-          },
-        },
       }),
       runtimeStatus: createRuntimeStatus(),
     });
@@ -342,8 +256,6 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.providerDiscoveryStatus).toBe("unsupported");
     expect(result.current.interruptRecoveryStatus).toBe("unsupported");
     expect(result.current.invokeMetadataStatus).toBe("supported");
-    expect(result.current.codexDiscoveryStatus).toBe("partially_consumed");
-    expect(result.current.codexDiscoveryAvailableTabs).toEqual(["apps"]);
   });
 
   it("returns unknown when capability lookup fails", async () => {
@@ -366,10 +278,9 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.providerDiscoveryStatus).toBe("unknown");
     expect(result.current.interruptRecoveryStatus).toBe("unknown");
     expect(result.current.sessionPromptAsyncStatus).toBe("unknown");
+    expect(result.current.sessionAppendStatus).toBe("unknown");
     expect(result.current.sessionCommandStatus).toBe("unknown");
     expect(result.current.sessionShellStatus).toBe("unknown");
     expect(result.current.invokeMetadataStatus).toBe("unknown");
-    expect(result.current.codexDiscoveryStatus).toBe("unknown");
-    expect(result.current.codexTurnSteerStatus).toBe("unknown");
   });
 });

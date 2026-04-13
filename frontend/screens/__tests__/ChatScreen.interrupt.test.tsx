@@ -39,15 +39,19 @@ const mockExtensionCapabilitiesState = {
   interruptRecoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
   sessionCommandStatus: "supported" as MockCapabilityStatus,
-  codexTurnSteerStatus: "unknown" as MockCapabilityStatus,
-  codexTurns: null as {
-    methods: {
-      steer?: {
-        declared: boolean;
-        consumedByHub: boolean;
-        availability?: "always" | "enabled" | "disabled" | "unsupported";
-      };
-    };
+  sessionAppendStatus: "supported" as MockCapabilityStatus,
+  sessionAppend: {
+    declared: true,
+    consumedByHub: true,
+    status: "supported" as const,
+    routeMode: "prompt_async" as const,
+    requiresStreamIdentity: false,
+  } as {
+    declared: boolean;
+    consumedByHub: boolean;
+    status: "supported" | "unsupported";
+    routeMode: "unsupported" | "prompt_async" | "turn_steer" | "hybrid";
+    requiresStreamIdentity: boolean;
   } | null,
   invokeMetadataStatus: "unsupported" as MockCapabilityStatus,
   invokeMetadata: null as {
@@ -106,8 +110,8 @@ jest.mock("@/components/chat/SessionPickerModal", () => ({
   SessionPickerModal: () => null,
 }));
 
-jest.mock("@/components/chat/OpencodeDirectoryModal", () => ({
-  OpencodeDirectoryModal: () => null,
+jest.mock("@/components/chat/WorkingDirectoryModal", () => ({
+  WorkingDirectoryModal: () => null,
 }));
 
 jest.mock("@/components/chat/InvokeMetadataModal", () => ({
@@ -116,10 +120,6 @@ jest.mock("@/components/chat/InvokeMetadataModal", () => ({
 
 jest.mock("@/components/chat/ShortcutManagerModal", () => ({
   ShortcutManagerModal: () => null,
-}));
-
-jest.mock("@/components/chat/CodexDiscoveryModal", () => ({
-  CodexDiscoveryModal: () => null,
 }));
 
 jest.mock("@/components/chat/ChatTimelinePanel", () => ({
@@ -232,6 +232,7 @@ type MockAgentSession = {
   inputModes: string[];
   outputModes: string[];
   metadata: Record<string, unknown>;
+  workingDirectory?: string | null;
   externalSessionRef: {
     provider: string | null;
     externalSessionId: string | null;
@@ -252,6 +253,7 @@ const baseSession = (): MockAgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
+  workingDirectory: null,
   externalSessionRef: null,
   lastActiveAt: "2026-02-16T00:00:00.000Z",
 });
@@ -265,7 +267,7 @@ const mockChatState: {
   clearPendingInterrupt: jest.Mock;
   replaceRecoveredInterrupts: jest.Mock;
   bindExternalSession: jest.Mock;
-  setOpencodeDirectory: jest.Mock;
+  setWorkingDirectory: jest.Mock;
   setInvokeMetadataBindings: jest.Mock;
   getSessionsByAgentId: jest.Mock;
   setState?: (
@@ -282,7 +284,7 @@ const mockChatState: {
   clearPendingInterrupt: jest.fn(),
   replaceRecoveredInterrupts: jest.fn(),
   bindExternalSession: jest.fn(),
-  setOpencodeDirectory: jest.fn(),
+  setWorkingDirectory: jest.fn(),
   setInvokeMetadataBindings: jest.fn(),
   getSessionsByAgentId: jest.fn(() => []),
 };
@@ -538,7 +540,7 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.clearPendingInterrupt.mockReset();
     mockChatState.replaceRecoveredInterrupts.mockReset();
     mockChatState.bindExternalSession.mockReset();
-    mockChatState.setOpencodeDirectory.mockReset();
+    mockChatState.setWorkingDirectory.mockReset();
     mockChatState.setInvokeMetadataBindings.mockReset();
     mockInvokeAgent.mockReset().mockResolvedValue({
       success: true,
@@ -598,8 +600,14 @@ describe("ChatScreen interrupt handling", () => {
     mockExtensionCapabilitiesState.interruptRecoveryStatus = "supported";
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
     mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
-    mockExtensionCapabilitiesState.codexTurnSteerStatus = "unknown";
-    mockExtensionCapabilitiesState.codexTurns = null;
+    mockExtensionCapabilitiesState.sessionAppendStatus = "supported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: true,
+      consumedByHub: true,
+      status: "supported",
+      routeMode: "prompt_async",
+      requiresStreamIdentity: false,
+    };
     mockExtensionCapabilitiesState.invokeMetadataStatus = "unsupported";
     mockExtensionCapabilitiesState.invokeMetadata = null;
     mockExtensionCapabilitiesState.canShowModelPicker = true;
@@ -1052,11 +1060,7 @@ describe("ChatScreen interrupt handling", () => {
   it("uses append as the default send action during streaming", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       streamState: "streaming",
       externalSessionRef: {
         provider: "OpenCode",
@@ -1080,11 +1084,7 @@ describe("ChatScreen interrupt handling", () => {
       query: "append this",
       conversationId,
       userMessageId: expect.any(String),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       sessionBinding: {
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
@@ -1150,6 +1150,14 @@ describe("ChatScreen interrupt handling", () => {
 
   it("requires an explicit interrupt before sending when append capability is unsupported", async () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
+    mockExtensionCapabilitiesState.sessionAppendStatus = "unsupported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: false,
+      consumedByHub: false,
+      status: "unsupported",
+      routeMode: "unsupported",
+      requiresStreamIdentity: false,
+    };
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       streamState: "streaming",
@@ -1182,17 +1190,15 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("uses append when codex turn steering is consumed by Hub", async () => {
+  it("uses append when the Hub append contract is supported via turn steering", async () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
-    mockExtensionCapabilitiesState.codexTurnSteerStatus = "supported";
-    mockExtensionCapabilitiesState.codexTurns = {
-      methods: {
-        steer: {
-          declared: true,
-          consumedByHub: true,
-          availability: "always",
-        },
-      },
+    mockExtensionCapabilitiesState.sessionAppendStatus = "supported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: true,
+      consumedByHub: true,
+      status: "supported",
+      routeMode: "turn_steer",
+      requiresStreamIdentity: true,
     };
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
@@ -1252,17 +1258,15 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("requires interrupt when codex turn steering is disabled", async () => {
+  it("requires interrupt when the Hub append contract is unsupported", async () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
-    mockExtensionCapabilitiesState.codexTurnSteerStatus = "unsupported";
-    mockExtensionCapabilitiesState.codexTurns = {
-      methods: {
-        steer: {
-          declared: true,
-          consumedByHub: true,
-          availability: "disabled",
-        },
-      },
+    mockExtensionCapabilitiesState.sessionAppendStatus = "unsupported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: true,
+      consumedByHub: true,
+      status: "unsupported",
+      routeMode: "unsupported",
+      requiresStreamIdentity: false,
     };
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
@@ -1307,11 +1311,7 @@ describe("ChatScreen interrupt handling", () => {
   it("shows append failure without silently degrading to interrupt", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       streamState: "streaming",
       externalSessionRef: {
         provider: "OpenCode",
@@ -1345,11 +1345,7 @@ describe("ChatScreen interrupt handling", () => {
   it("routes slash command input through session command when a bound upstream session exists", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      metadata: {
-        opencode: {
-          directory: "/workspace/app",
-        },
-      },
+      workingDirectory: "/workspace/app",
       externalSessionRef: {
         provider: "OpenCode",
         externalSessionId: "ses-upstream-4",
@@ -1380,10 +1376,8 @@ describe("ChatScreen interrupt handling", () => {
       metadata: {
         provider: "OpenCode",
         externalSessionId: "ses-upstream-4",
-        opencode: {
-          directory: "/workspace/app",
-        },
       },
+      workingDirectory: "/workspace/app",
     });
     expect(mockAddConversationOverlayMessage).toHaveBeenCalledTimes(2);
     expect(mockToastSuccess).toHaveBeenCalledWith(

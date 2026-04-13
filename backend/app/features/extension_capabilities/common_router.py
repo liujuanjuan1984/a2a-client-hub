@@ -65,6 +65,7 @@ from app.schemas.a2a_extension import (
     A2AModelDiscoveryRequest,
     A2ARequestExecutionOptionsCapabilitiesResponse,
     A2ARuntimeStatusContractResponse,
+    A2ASessionAppendCapabilitiesResponse,
     A2ASessionControlCapabilitiesResponse,
     A2ASessionControlMethodResponse,
     A2AStreamHintsCapabilitiesResponse,
@@ -155,6 +156,74 @@ _SESSION_CONTROL_HUB_CONSUMPTION = {
 }
 
 
+def _is_session_control_method_supported(
+    method: A2ASessionControlMethodResponse,
+) -> bool:
+    return (
+        method.declared
+        and method.consumed_by_hub
+        and method.availability != "unsupported"
+    )
+
+
+def _build_session_append_response(
+    snapshot: Any,
+    prompt_async: A2ASessionControlMethodResponse,
+) -> A2ASessionAppendCapabilitiesResponse:
+    codex_turns = getattr(snapshot, "codex_turns", None)
+    turn_methods = dict(getattr(codex_turns, "methods", {}) or {})
+    steer = turn_methods.get("steer")
+    steer_declared = bool(getattr(steer, "declared", False))
+    steer_consumed = bool(getattr(steer, "consumed_by_hub", False))
+    raw_steer_availability = getattr(steer, "availability", None)
+    steer_availability = cast(
+        Literal["always", "enabled", "disabled", "unsupported"],
+        (
+            raw_steer_availability
+            if raw_steer_availability is not None
+            else ("always" if steer_declared else "unsupported")
+        ),
+    )
+    turn_steer_supported = (
+        steer_declared
+        and steer_consumed
+        and steer_availability not in {"disabled", "unsupported"}
+    )
+    prompt_async_supported = _is_session_control_method_supported(prompt_async)
+
+    if prompt_async_supported and turn_steer_supported:
+        return A2ASessionAppendCapabilitiesResponse(
+            declared=True,
+            consumedByHub=True,
+            status="supported",
+            routeMode="hybrid",
+            requiresStreamIdentity=False,
+        )
+    if prompt_async_supported:
+        return A2ASessionAppendCapabilitiesResponse(
+            declared=True,
+            consumedByHub=True,
+            status="supported",
+            routeMode="prompt_async",
+            requiresStreamIdentity=False,
+        )
+    if turn_steer_supported:
+        return A2ASessionAppendCapabilitiesResponse(
+            declared=True,
+            consumedByHub=True,
+            status="supported",
+            routeMode="turn_steer",
+            requiresStreamIdentity=True,
+        )
+    return A2ASessionAppendCapabilitiesResponse(
+        declared=bool(prompt_async.declared or steer_declared),
+        consumedByHub=bool(prompt_async.consumed_by_hub or steer_consumed),
+        status="unsupported",
+        routeMode="unsupported",
+        requiresStreamIdentity=False,
+    )
+
+
 def _build_session_control_response(
     snapshot: Any,
 ) -> A2ASessionControlCapabilitiesResponse:
@@ -178,10 +247,14 @@ def _build_session_control_response(
             configKey=getattr(resolved, "config_key", None),
         )
 
+    prompt_async = _build_method("prompt_async")
+    command = _build_method("command")
+    shell = _build_method("shell")
     return A2ASessionControlCapabilitiesResponse(
-        promptAsync=_build_method("prompt_async"),
-        command=_build_method("command"),
-        shell=_build_method("shell"),
+        promptAsync=prompt_async,
+        command=command,
+        shell=shell,
+        append=_build_session_append_response(snapshot, prompt_async),
     )
 
 

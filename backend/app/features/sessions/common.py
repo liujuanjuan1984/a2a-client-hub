@@ -157,11 +157,13 @@ def build_continue_response(
     conversation_id: UUID,
     source: ResolvedSource,
     metadata: dict[str, Any],
+    working_directory: str | None = None,
 ) -> dict[str, Any]:
     return {
         "conversationId": str(conversation_id),
         "source": source,
         "metadata": metadata,
+        "workingDirectory": working_directory,
     }
 
 
