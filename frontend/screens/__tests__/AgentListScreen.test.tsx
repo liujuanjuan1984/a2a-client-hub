@@ -3,7 +3,7 @@ import { Text } from "react-native";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 
 import { AgentListScreen } from "@/screens/AgentListScreen";
-import { createMockAgentConfig } from "@/test-utils/agentFixtures";
+import { createMockAgentCatalog } from "@/test-utils/agentFixtures";
 
 const mockPush = jest.fn();
 const mockSetActiveAgent = jest.fn();
@@ -14,41 +14,43 @@ const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 
 let mockButtons: Record<string, unknown>[] = [];
 let mockFlatLists: Record<string, unknown>[] = [];
-let mockAgents = [
-  createMockAgentConfig({
-    id: "personal-1",
-    source: "personal" as const,
-    name: "Personal Agent",
-    cardUrl: "https://example.com/personal.json",
-    status: "idle" as const,
-    enabled: true,
-    healthStatus: "healthy" as const,
-    lastHealthCheckAt: "2026-04-13T12:00:00.000Z",
-  }),
-  createMockAgentConfig({
-    id: "self-management-assistant",
-    source: "builtin" as const,
-    name: "A2A Client Hub Assistant",
-    cardUrl: "builtin://self-management-assistant",
-    status: "idle" as const,
-    enabled: true,
-    healthStatus: "healthy" as const,
-    description: "Built-in self-management assistant",
-    resources: ["agents", "sessions"],
-  }),
-  createMockAgentConfig({
-    id: "shared-1",
-    source: "shared" as const,
-    name: "Shared Agent",
-    cardUrl: "https://example.com/shared.json",
-    authType: "bearer" as const,
-    status: "idle" as const,
-    enabled: true,
-    healthStatus: "unknown" as const,
-    credentialMode: "user" as const,
-    credentialConfigured: false,
-  }),
-];
+const buildMockAgents = () =>
+  createMockAgentCatalog(
+    {
+      id: "personal-1",
+      source: "personal" as const,
+      name: "Personal Agent",
+      cardUrl: "https://example.com/personal.json",
+      status: "idle" as const,
+      enabled: true,
+      healthStatus: "healthy" as const,
+      lastHealthCheckAt: "2026-04-13T12:00:00.000Z",
+    },
+    {
+      id: "self-management-assistant",
+      source: "builtin" as const,
+      name: "A2A Client Hub Assistant",
+      cardUrl: "builtin://self-management-assistant",
+      status: "idle" as const,
+      enabled: true,
+      healthStatus: "healthy" as const,
+      description: "Built-in self-management assistant",
+      resources: ["agents", "sessions"],
+    },
+    {
+      id: "shared-1",
+      source: "shared" as const,
+      name: "Shared Agent",
+      cardUrl: "https://example.com/shared.json",
+      authType: "bearer" as const,
+      status: "idle" as const,
+      enabled: true,
+      healthStatus: "unknown" as const,
+      credentialMode: "user" as const,
+      credentialConfigured: false,
+    },
+  );
+let mockAgents = buildMockAgents();
 
 jest.mock("@tanstack/react-query", () => ({
   useMutation: () => ({
@@ -170,7 +172,7 @@ describe("AgentListScreen", () => {
   beforeEach(() => {
     mockButtons = [];
     mockFlatLists = [];
-    mockAgents = [...mockAgents];
+    mockAgents = buildMockAgents();
     jest.clearAllMocks();
   });
 

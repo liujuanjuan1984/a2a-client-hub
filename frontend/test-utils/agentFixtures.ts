@@ -19,3 +19,7 @@ export const createMockAgentConfig = (
   status: "idle",
   ...overrides,
 });
+
+export const createMockAgentCatalog = (
+  ...entries: Partial<AgentConfig>[]
+): AgentConfig[] => entries.map((entry) => createMockAgentConfig(entry));

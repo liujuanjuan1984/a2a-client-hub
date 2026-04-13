@@ -7,22 +7,24 @@ import {
   toValidationErrorMessage,
   upsertAgentInCatalog,
 } from "@/lib/agentCatalogCache";
-import { createMockAgentConfig } from "@/test-utils/agentFixtures";
+import {
+  createMockAgentCatalog,
+  createMockAgentConfig,
+} from "@/test-utils/agentFixtures";
 
 describe("agentCatalogCache", () => {
   it("merges transient status fields from previous catalog", () => {
-    const previous = [
-      createMockAgentConfig({
-        id: "agent-1",
-        status: "error",
-        lastCheckedAt: "2026-02-12T01:02:03.000Z",
-        lastError: "timeout",
-      }),
-    ];
+    const previous = createMockAgentCatalog({
+      id: "agent-1",
+      status: "error",
+      lastCheckedAt: "2026-02-12T01:02:03.000Z",
+      lastError: "timeout",
+    });
 
-    const next = [
-      createMockAgentConfig({ id: "agent-1", name: "Agent One Updated" }),
-    ];
+    const next = createMockAgentCatalog({
+      id: "agent-1",
+      name: "Agent One Updated",
+    });
 
     expect(mergeTransientAgentState(next, previous)).toEqual([
       createMockAgentConfig({
@@ -36,29 +38,25 @@ describe("agentCatalogCache", () => {
   });
 
   it("drops validation state when the agent card identity changes", () => {
-    const previous = [
-      createMockAgentConfig({
-        id: "agent-1",
-        status: "success",
-        lastCheckedAt: "2026-02-12T01:02:03.000Z",
-      }),
-    ];
+    const previous = createMockAgentCatalog({
+      id: "agent-1",
+      status: "success",
+      lastCheckedAt: "2026-02-12T01:02:03.000Z",
+    });
 
-    const next = [
-      createMockAgentConfig({
-        id: "agent-1",
-        cardUrl: "https://example.com/agent-1-updated.json",
-      }),
-    ];
+    const next = createMockAgentCatalog({
+      id: "agent-1",
+      cardUrl: "https://example.com/agent-1-updated.json",
+    });
 
     expect(mergeTransientAgentState(next, previous)).toEqual(next);
   });
 
   it("updates a specific agent in catalog", () => {
-    const catalog = [
-      createMockAgentConfig({ id: "agent-1" }),
-      createMockAgentConfig({ id: "agent-2" }),
-    ];
+    const catalog = createMockAgentCatalog(
+      { id: "agent-1" },
+      { id: "agent-2" },
+    );
 
     const updated = patchAgentInCatalog(catalog, "agent-2", (agent) => ({
       ...agent,
@@ -71,14 +69,14 @@ describe("agentCatalogCache", () => {
   });
 
   it("upserts agent and preserves transient status from previous record", () => {
-    const catalog = [
-      createMockAgentConfig({
+    const catalog = createMockAgentCatalog(
+      {
         id: "agent-1",
         status: "success",
         lastError: "old",
-      }),
-      createMockAgentConfig({ id: "agent-2" }),
-    ];
+      },
+      { id: "agent-2" },
+    );
 
     const updated = upsertAgentInCatalog(
       catalog,
@@ -96,13 +94,11 @@ describe("agentCatalogCache", () => {
   });
 
   it("drops transient validation state on upsert when card identity changes", () => {
-    const catalog = [
-      createMockAgentConfig({
-        id: "agent-1",
-        status: "success",
-        lastCheckedAt: "2026-02-12T01:02:03.000Z",
-      }),
-    ];
+    const catalog = createMockAgentCatalog({
+      id: "agent-1",
+      status: "success",
+      lastCheckedAt: "2026-02-12T01:02:03.000Z",
+    });
 
     const updated = upsertAgentInCatalog(
       catalog,
@@ -122,10 +118,10 @@ describe("agentCatalogCache", () => {
   });
 
   it("removes agent from catalog", () => {
-    const catalog = [
-      createMockAgentConfig({ id: "agent-1" }),
-      createMockAgentConfig({ id: "agent-2" }),
-    ];
+    const catalog = createMockAgentCatalog(
+      { id: "agent-1" },
+      { id: "agent-2" },
+    );
 
     expect(removeAgentFromCatalog(catalog, "agent-1")).toEqual([
       createMockAgentConfig({ id: "agent-2" }),
@@ -133,7 +129,7 @@ describe("agentCatalogCache", () => {
   });
 
   it("decides whether active agent should be cleared", () => {
-    const catalog = [createMockAgentConfig({ id: "agent-1" })];
+    const catalog = createMockAgentCatalog({ id: "agent-1" });
 
     expect(shouldClearActiveAgent("agent-1", catalog)).toBe(false);
     expect(shouldClearActiveAgent("missing", catalog)).toBe(true);
