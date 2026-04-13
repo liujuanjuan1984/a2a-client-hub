@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "r202604131730"  # pragma: allowlist secret
-down_revision = "r202604131500"  # pragma: allowlist secret
+revision = "r202604131730"
+down_revision = "r202604131500"
 branch_labels = None
 depends_on = None
 
