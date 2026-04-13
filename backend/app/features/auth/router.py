@@ -14,11 +14,12 @@ from app.api.routing import StrictAPIRouter
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import (
+    REFRESH_TOKEN_TYPE,
     build_jwks_document,
     create_user_access_token,
     create_user_refresh_token,
     validate_password_strength,
-    verify_refresh_token_claims,
+    verify_jwt_token_claims,
 )
 from app.db.locking import set_postgres_local_timeouts
 from app.db.models.user import User
@@ -450,7 +451,7 @@ async def refresh_access_token(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token"
         )
 
-    claims = verify_refresh_token_claims(cookie)
+    claims = verify_jwt_token_claims(cookie, expected_type=REFRESH_TOKEN_TYPE)
     phase_timings_ms["jwt_verify"] = (time.perf_counter() - phase_started) * 1000.0
     phase_started = time.perf_counter()
     if not claims:
@@ -694,7 +695,11 @@ async def logout_user(
         await commit_safely(db)
         raise
     cookie = request.cookies.get(settings.auth_refresh_cookie_name)
-    claims = verify_refresh_token_claims(cookie) if cookie else None
+    claims = (
+        verify_jwt_token_claims(cookie, expected_type=REFRESH_TOKEN_TYPE)
+        if cookie
+        else None
+    )
     user_id: UUID | None = None
     session_id: UUID | None = None
     if claims is not None:
