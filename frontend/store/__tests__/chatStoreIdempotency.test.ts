@@ -5,14 +5,9 @@ import {
 import { useChatStore } from "@/store/chat";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
-jest.mock("@/lib/storage/mmkv", () => ({
-  buildPersistStorageName: (key: string) => key,
-  createPersistStorage: () => ({
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-  }),
-}));
+jest.mock("@/lib/storage/mmkv", () =>
+  require("@/test-utils/mockMmkv").createMockMmkvModule(),
+);
 
 jest.mock("@/services/chatConnectionService", () => ({
   chatConnectionService: {

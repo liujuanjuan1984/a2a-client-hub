@@ -16,14 +16,9 @@ jest.mock("@/lib/toast", () => ({
   },
 }));
 
-jest.mock("@/lib/storage/mmkv", () => ({
-  buildPersistStorageName: (key: string) => key,
-  createPersistStorage: () => ({
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-  }),
-}));
+jest.mock("@/lib/storage/mmkv", () =>
+  require("@/test-utils/mockMmkv").createMockMmkvModule(),
+);
 
 type Item = { id: string };
 

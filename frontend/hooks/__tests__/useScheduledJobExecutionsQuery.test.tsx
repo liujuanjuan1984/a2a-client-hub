@@ -12,14 +12,9 @@ jest.mock("@/lib/api/scheduledJobs", () => ({
   listScheduledJobExecutionsPage: jest.fn(),
 }));
 
-jest.mock("@/lib/storage/mmkv", () => ({
-  buildPersistStorageName: (key: string) => key,
-  createPersistStorage: () => ({
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-  }),
-}));
+jest.mock("@/lib/storage/mmkv", () =>
+  require("@/test-utils/mockMmkv").createMockMmkvModule(),
+);
 
 const mockedUsePaginatedList = jest.mocked(usePaginatedList);
 const mockedListScheduledJobExecutionsPage = jest.mocked(
