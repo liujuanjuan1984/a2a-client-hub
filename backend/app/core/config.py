@@ -742,11 +742,6 @@ class Settings(BaseSettings):
         alias="A2A_USE_CLIENT_PREFERENCE",
         description="Respect downstream agent preferred transports when negotiating sessions.",
     )
-    a2a_max_context_bytes: int = Field(
-        default=4096,
-        alias="A2A_MAX_CONTEXT_BYTES",
-        description="Maximum allowed size (bytes) for the context payload forwarded to downstream A2A agents.",
-    )
     a2a_client_idle_timeout: float = Field(
         default=600.0,
         alias="A2A_CLIENT_IDLE_TIMEOUT",
@@ -806,11 +801,6 @@ class Settings(BaseSettings):
         default=3,
         alias="A2A_AGENT_HEALTH_UNAVAILABLE_THRESHOLD",
         description="Consecutive failed health checks before a personal agent is marked unavailable.",
-    )
-    a2a_schedule_min_interval_minutes: int = Field(
-        default=60,
-        alias="A2A_SCHEDULE_MIN_INTERVAL_MINUTES",
-        description="Minimum allowed scheduling interval in minutes (to prevent rapid invocations).",
     )
     a2a_schedule_max_active_tasks_per_user: int = Field(
         default=3,
