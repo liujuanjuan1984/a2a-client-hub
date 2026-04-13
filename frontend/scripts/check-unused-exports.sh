@@ -8,8 +8,9 @@ FRONTEND_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${FRONTEND_DIR}"
 
 OUTPUT="$(
-  ./node_modules/.bin/ts-prune | rg -v \
-    'used in module| - default$| - ErrorBoundary$|lib/storage/mmkv.web.ts:10 - buildPersistStorageName|lib/storage/mmkv.web.ts:33 - createPersistStorage|test-utils/mockMmkv.ts:1 - createMockMmkvModule' \
+  ./node_modules/.bin/ts-prune \
+    -i '^(app/|lib/storage/mmkv.web.ts|test-utils/mockMmkv.ts)' \
+    | rg -v 'used in module' \
     || true
 )"
 
