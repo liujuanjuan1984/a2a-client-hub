@@ -30,7 +30,6 @@ class SelfManagementSurface(str, Enum):
     """Entry surfaces that may expose one self-management operation."""
 
     REST = "rest"
-    CLI = "cli"
     WEB_AGENT = "web_agent"
 
 
@@ -49,7 +48,6 @@ class SelfManagementOperation:
     surfaces: frozenset[SelfManagementSurface] = field(default_factory=frozenset)
     first_wave_exposed: bool = False
     description: str | None = None
-    command_name: str | None = None
     tool_name: str | None = None
     delegated_by: str | None = None
 
@@ -63,7 +61,7 @@ class AuthorizedExecution(Generic[_ResultT]):
 
 
 class SelfManagementToolGateway:
-    """Authorization gateway shared by API, built-in agent, and CLI layers."""
+    """Authorization gateway shared by API and built-in agent layers."""
 
     def __init__(
         self,
@@ -109,7 +107,6 @@ class SelfManagementToolGateway:
             action=operation.action,
             resource_id=resource_id,
             target_user_id=target_user_id,
-            command_name=operation.command_name,
             tool_name=operation.tool_name,
             delegated_by=operation.delegated_by,
             operation_id=operation.operation_id,

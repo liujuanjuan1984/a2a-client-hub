@@ -87,14 +87,14 @@ async def test_self_management_agents_service_update_config(
         agent_id=record.id,
         name="Updated Agent",
         enabled=False,
-        tags=["cli", "self"],
+        tags=["self-management", "self"],
         extra_headers={"X-Test": "1"},
         invoke_metadata_defaults={"model": "gpt-5"},
     )
 
     assert updated.name == "Updated Agent"
     assert updated.enabled is False
-    assert updated.tags == ["cli", "self"]
+    assert updated.tags == ["self-management", "self"]
     assert updated.extra_headers == {"X-Test": "1"}
     assert updated.invoke_metadata_defaults == {"model": "gpt-5"}
 

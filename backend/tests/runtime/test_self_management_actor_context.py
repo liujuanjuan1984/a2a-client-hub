@@ -106,7 +106,7 @@ def test_direct_human_actor_cannot_impersonate_another_principal() -> None:
     with pytest.raises(SelfManagementAuthorizationError) as exc_info:
         build_self_management_actor_context(
             user=user,
-            actor_type=SelfManagementActorType.HUMAN_CLI,
+            actor_type=SelfManagementActorType.HUMAN_API,
             principal_user_id=uuid4(),
         )
 
@@ -228,9 +228,9 @@ def test_tool_gateway_rejects_surface_not_exposed_by_operation() -> None:
     user = _build_user(is_superuser=False)
     actor = build_self_management_actor_context(
         user=user,
-        actor_type=SelfManagementActorType.HUMAN_CLI,
+        actor_type=SelfManagementActorType.HUMAN_API,
     )
-    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.CLI)
+    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
 
     with pytest.raises(SelfManagementAuthorizationError) as exc_info:
         gateway.authorize(
@@ -240,13 +240,13 @@ def test_tool_gateway_rejects_surface_not_exposed_by_operation() -> None:
                 resource=SelfManagementResource.JOBS,
                 action=SelfManagementAction.READ,
                 event_name="self_job.list.requested",
-                surfaces=frozenset({SelfManagementSurface.REST}),
+                surfaces=frozenset({SelfManagementSurface.WEB_AGENT}),
             )
         )
 
     assert (
         str(exc_info.value)
-        == "Operation `self.jobs.rest_only` is not exposed on `cli`."
+        == "Operation `self.jobs.rest_only` is not exposed on `rest`."
     )
 
 

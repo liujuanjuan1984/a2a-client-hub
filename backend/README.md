@@ -63,29 +63,6 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
-## Run the CLI
-
-The backend also ships a minimal authenticated CLI for first-wave self-management.
-
-```bash
-cd backend
-uv run a2a-client-hub login --email alice@example.com --password 'Pass123!'
-uv run a2a-client-hub whoami
-uv run a2a-client-hub jobs list
-uv run a2a-client-hub jobs pause <job_id> --confirm
-uv run a2a-client-hub sessions list
-uv run a2a-client-hub sessions get <conversation_id>
-uv run a2a-client-hub agents list
-uv run a2a-client-hub agents get <agent_id>
-uv run a2a-client-hub agents update-config <agent_id> --name 'Updated Agent' --confirm
-```
-
-Notes:
-
-- The CLI stores its session token under `~/.config/a2a-client-hub/cli-session.json` by default.
-- Set `A2A_CLIENT_HUB_CLI_SESSION_FILE` to override that location.
-- First-wave CLI support currently targets current-user jobs, sessions, and personal agents.
-
 ## Run the MCP Surface
 
 The backend also mounts an authenticated FastMCP surface for self-management.
