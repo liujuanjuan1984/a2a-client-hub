@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { ScheduledJobFormScreen } from "@/screens/ScheduledJobFormScreen";
 import { useSessionStore } from "@/store/session";
+import { createMockAgentConfig } from "@/test-utils/agentFixtures";
 
 const mockCreateScheduledJob = jest.fn();
 const mockGetScheduledJob = jest.fn();
@@ -13,13 +14,13 @@ const mockToastError = jest.fn();
 const mockBackOrHome = jest.fn();
 const mockBlurActiveElement = jest.fn();
 const mockAgents = [
-  {
+  createMockAgentConfig({
     id: "agent-1",
     source: "personal",
     name: "Agent One",
     cardUrl: "https://example.com/card",
     status: "success",
-  },
+  }),
 ];
 
 let capturedSubmit: (() => void) | null = null;
@@ -179,13 +180,17 @@ describe("ScheduledJobFormScreen", () => {
     capturedAgentOptions = [];
     capturedTimeZone = undefined;
     renderedScreen = null;
-    mockAgents.splice(0, mockAgents.length, {
-      id: "agent-1",
-      source: "personal",
-      name: "Agent One",
-      cardUrl: "https://example.com/card",
-      status: "success",
-    });
+    mockAgents.splice(
+      0,
+      mockAgents.length,
+      createMockAgentConfig({
+        id: "agent-1",
+        source: "personal",
+        name: "Agent One",
+        cardUrl: "https://example.com/card",
+        status: "success",
+      }),
+    );
     act(() => {
       useSessionStore.setState({ user: null });
     });
@@ -518,20 +523,20 @@ describe("ScheduledJobFormScreen", () => {
     mockAgents.splice(
       0,
       mockAgents.length,
-      {
+      createMockAgentConfig({
         id: "agent-personal",
         source: "personal",
         name: "Personal Agent",
         cardUrl: "https://example.com/card-personal",
         status: "success",
-      },
-      {
+      }),
+      createMockAgentConfig({
         id: "agent-shared",
         source: "shared",
         name: "Shared Agent",
         cardUrl: "https://example.com/card-shared",
         status: "success",
-      },
+      }),
     );
 
     await act(async () => {

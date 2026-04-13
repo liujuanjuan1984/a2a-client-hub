@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { Text } from "react-native";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 
-import { DEFAULT_API_KEY_HEADER } from "@/lib/agentHeaders";
 import { AgentListScreen } from "@/screens/AgentListScreen";
+import { createMockAgentConfig } from "@/test-utils/agentFixtures";
 
 const mockPush = jest.fn();
 const mockSetActiveAgent = jest.fn();
@@ -15,62 +15,39 @@ const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 let mockButtons: Record<string, unknown>[] = [];
 let mockFlatLists: Record<string, unknown>[] = [];
 let mockAgents = [
-  {
+  createMockAgentConfig({
     id: "personal-1",
     source: "personal" as const,
     name: "Personal Agent",
     cardUrl: "https://example.com/personal.json",
-    authType: "none" as const,
-    bearerToken: "",
-    apiKeyHeader: DEFAULT_API_KEY_HEADER,
-    apiKeyValue: "",
-    basicUsername: "",
-    basicPassword: "",
-    extraHeaders: [],
-    invokeMetadataDefaults: [],
     status: "idle" as const,
     enabled: true,
     healthStatus: "healthy" as const,
     lastHealthCheckAt: "2026-04-13T12:00:00.000Z",
-  },
-  {
+  }),
+  createMockAgentConfig({
     id: "self-management-assistant",
     source: "builtin" as const,
     name: "A2A Client Hub Assistant",
     cardUrl: "builtin://self-management-assistant",
-    authType: "none" as const,
-    bearerToken: "",
-    apiKeyHeader: DEFAULT_API_KEY_HEADER,
-    apiKeyValue: "",
-    basicUsername: "",
-    basicPassword: "",
-    extraHeaders: [],
-    invokeMetadataDefaults: [],
     status: "idle" as const,
     enabled: true,
     healthStatus: "healthy" as const,
     description: "Built-in self-management assistant",
     resources: ["agents", "sessions"],
-  },
-  {
+  }),
+  createMockAgentConfig({
     id: "shared-1",
     source: "shared" as const,
     name: "Shared Agent",
     cardUrl: "https://example.com/shared.json",
     authType: "bearer" as const,
-    bearerToken: "",
-    apiKeyHeader: DEFAULT_API_KEY_HEADER,
-    apiKeyValue: "",
-    basicUsername: "",
-    basicPassword: "",
-    extraHeaders: [],
-    invokeMetadataDefaults: [],
     status: "idle" as const,
     enabled: true,
     healthStatus: "unknown" as const,
     credentialMode: "user" as const,
     credentialConfigured: false,
-  },
+  }),
 ];
 
 jest.mock("@tanstack/react-query", () => ({
