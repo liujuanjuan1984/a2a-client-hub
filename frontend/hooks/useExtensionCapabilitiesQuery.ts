@@ -5,6 +5,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { type AgentSource } from "@/store/agents";
 
 export type GenericCapabilityStatus = "unknown" | "supported" | "unsupported";
+type ExtensionQuerySource = Extract<AgentSource, "personal" | "shared">;
 type SessionControlMethodCapability = {
   declared: boolean;
   consumedByHub: boolean;
@@ -43,19 +44,23 @@ export const useExtensionCapabilitiesQuery = ({
 }) => {
   const resolvedAgentId = agentId?.trim() || null;
   const resolvedSource = source ?? null;
+  const extensionSource =
+    resolvedSource === "personal" || resolvedSource === "shared"
+      ? resolvedSource
+      : null;
 
   const query = useQuery({
-    enabled: enabled && Boolean(resolvedAgentId && resolvedSource),
+    enabled: enabled && Boolean(resolvedAgentId && extensionSource),
     queryKey:
-      resolvedAgentId && resolvedSource
+      resolvedAgentId && extensionSource
         ? queryKeys.agents.extensionCapabilities({
             agentId: resolvedAgentId,
-            source: resolvedSource,
+            source: extensionSource,
           })
         : (["agents", "extension-capabilities", "idle"] as const),
     queryFn: async () =>
       await getExtensionCapabilities({
-        source: resolvedSource as AgentSource,
+        source: extensionSource as ExtensionQuerySource,
         agentId: resolvedAgentId as string,
       }),
     staleTime: 5 * 60_000,

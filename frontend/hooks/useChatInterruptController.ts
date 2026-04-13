@@ -4,6 +4,7 @@ import {
   A2AExtensionCallError,
   rejectQuestionInterrupt,
   replyElicitationInterrupt,
+  type ExtensionAgentSource,
   replyPermissionInterrupt,
   replyPermissionsInterrupt,
   replyQuestionInterrupt,
@@ -13,7 +14,6 @@ import { ApiRequestError } from "@/lib/api/client";
 import { type ResolvedRuntimeInterruptRecord } from "@/lib/chat-utils";
 import { toast } from "@/lib/toast";
 import { normalizeWorkingDirectory } from "@/lib/workingDirectory";
-import type { AgentSource } from "@/store/agents";
 
 const TERMINAL_INTERRUPT_ERROR_CODES = new Set([
   "interrupt_request_expired",
@@ -28,7 +28,7 @@ type ResolvedInterruptKeyInput = {
 
 type UseChatInterruptControllerParams = {
   activeAgentId?: string | null;
-  agentSource?: AgentSource | null;
+  agentSource?: ExtensionAgentSource | null;
   conversationId?: string;
   pendingInterrupt: PendingRuntimeInterrupt | null;
   lastResolvedInterrupt: ResolvedRuntimeInterruptRecord | null;

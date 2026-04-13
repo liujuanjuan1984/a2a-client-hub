@@ -144,7 +144,7 @@ export const assertExtensionSuccess = (response: A2AExtensionResponse) => {
   });
 };
 
-type ExtensionAgentSource = "personal" | "shared";
+export type ExtensionAgentSource = "personal" | "shared";
 
 export type ModelProviderSummary = {
   provider_id: string;

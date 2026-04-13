@@ -8,11 +8,11 @@ import {
   A2AExtensionCallError,
   listModelProviders,
   listModels,
+  type ExtensionAgentSource,
   type ModelSummary,
   type ModelProviderSummary,
 } from "@/lib/api/a2aExtensions";
 import { type SharedModelSelection } from "@/lib/chat-utils";
-import { type AgentSource } from "@/store/agents";
 
 const PROVIDER_LIST_CONTENT_CONTAINER_STYLE = {
   paddingRight: 8,
@@ -100,7 +100,7 @@ export function ModelPickerModal({
   visible: boolean;
   onClose: () => void;
   agentId?: string | null;
-  source: AgentSource;
+  source: ExtensionAgentSource;
   providerDiscoveryStatus: GenericCapabilityStatus;
   workingDirectory?: string | null;
   selectedModel: SharedModelSelection | null;

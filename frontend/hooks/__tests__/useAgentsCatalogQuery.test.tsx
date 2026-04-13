@@ -21,10 +21,9 @@ const mocks = {
   checkAgentHealth: jest.fn(),
   createAgent: jest.fn(),
   deleteAgent: jest.fn(),
-  listAgents: jest.fn(),
+  listAgentsCatalog: jest.fn(),
   updateAgent: jest.fn(),
   validateAgentCard: jest.fn(),
-  listHubAgents: jest.fn(),
   validateHubAgentCard: jest.fn(),
 };
 
@@ -41,13 +40,15 @@ jest.mock("@/lib/api/a2aAgents", () => ({
   checkAgentHealth: (...args: unknown[]) => mocks.checkAgentHealth(...args),
   createAgent: (...args: unknown[]) => mocks.createAgent(...args),
   deleteAgent: (...args: unknown[]) => mocks.deleteAgent(...args),
-  listAgents: (...args: unknown[]) => mocks.listAgents(...args),
   updateAgent: (...args: unknown[]) => mocks.updateAgent(...args),
   validateAgentCard: (...args: unknown[]) => mocks.validateAgentCard(...args),
 }));
 
+jest.mock("@/lib/api/agentsCatalog", () => ({
+  listAgentsCatalog: (...args: unknown[]) => mocks.listAgentsCatalog(...args),
+}));
+
 jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
-  listHubAgents: (...args: unknown[]) => mocks.listHubAgents(...args),
   validateHubAgentCard: (...args: unknown[]) =>
     mocks.validateHubAgentCard(...args),
 }));
@@ -105,24 +106,19 @@ describe("useAgentsCatalogQuery mutations", () => {
   });
 
   it("does not hydrate editable basic username from server hint", async () => {
-    mocks.listAgents.mockResolvedValue({
+    mocks.listAgentsCatalog.mockResolvedValue({
       items: [
         {
           id: "agent-basic",
+          source: "personal",
           name: "Basic Agent",
           card_url: "https://example.com/basic.json",
           auth_type: "basic",
-          username_hint: "alice",
           enabled: true,
-          tags: [],
-          extra_headers: {},
-          invoke_metadata_defaults: {},
-          created_at: "2026-02-12T00:00:00.000Z",
-          updated_at: "2026-02-12T00:01:00.000Z",
+          health_status: "unknown",
         },
       ],
     });
-    mocks.listHubAgents.mockResolvedValue({ items: [] });
 
     const { result } = renderHook(() => useAgentsCatalogQuery(), {
       wrapper: createWrapper(queryClient),

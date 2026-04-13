@@ -146,6 +146,9 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
 
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
   const isSharedAgent = Boolean(agentId && agent && agent.source === "shared");
+  const isBuiltInAgent = Boolean(
+    agentId && agent && agent.source === "builtin",
+  );
   const sharedCredentialQuery = useQuery({
     queryKey: ["agents", "shared-credential", agentId ?? "none"],
     queryFn: () => getHubAgentCredentialStatus(agentId!),
@@ -651,6 +654,36 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
               This shared agent does not require credentials.
             </Text>
           )}
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  if (isBuiltInAgent) {
+    return (
+      <ScreenContainer>
+        <PageHeader
+          title="Agent"
+          subtitle="This built-in agent is provided by the local runtime and cannot be edited here."
+          rightElement={<BackButton variant="outline" onPress={handleCancel} />}
+        />
+        <View className="mt-8 rounded-2xl bg-surface p-6 shadow-sm">
+          <Text className="text-base font-bold text-white">Built-in agent</Text>
+          <Text className="mt-2 text-[11px] font-medium text-slate-400">
+            This entry is read-only. Its behavior is managed by the local
+            self-management runtime.
+          </Text>
+          <View className="mt-5 gap-2">
+            <Text className="text-xs text-slate-300">Name: {agent?.name}</Text>
+            <Text className="text-xs text-slate-400">
+              URL: {agent?.cardUrl}
+            </Text>
+            {agent?.runtime ? (
+              <Text className="text-xs text-slate-400">
+                Runtime: {agent.runtime}
+              </Text>
+            ) : null}
+          </View>
         </View>
       </ScreenContainer>
     );

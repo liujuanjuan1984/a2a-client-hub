@@ -12,7 +12,7 @@ type AgentStatus = "idle" | "checking" | "success" | "error";
 
 export type AgentHeader = HeaderEntryWithId;
 
-export type AgentSource = "personal" | "shared";
+export type AgentSource = "personal" | "shared" | "builtin";
 
 export type AgentConfig = {
   id: string;
@@ -30,6 +30,16 @@ export type AgentConfig = {
   status: AgentStatus;
   lastCheckedAt?: string;
   lastError?: string;
+  enabled?: boolean;
+  healthStatus?: "unknown" | "healthy" | "degraded" | "unavailable";
+  lastHealthCheckAt?: string;
+  lastHealthCheckError?: string;
+  credentialMode?: "none" | "shared" | "user";
+  credentialConfigured?: boolean;
+  credentialDisplayHint?: string;
+  description?: string;
+  runtime?: string;
+  resources?: string[];
 };
 
 type AgentState = {
