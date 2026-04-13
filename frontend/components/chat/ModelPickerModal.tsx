@@ -305,7 +305,7 @@ export function ModelPickerModal({
             <View>
               <Text className="text-lg font-bold text-white">Select Model</Text>
               <Text className="mt-1 text-xs text-slate-400">
-                Selection is written to metadata.shared.model.
+                Selection is saved for this conversation.
               </Text>
             </View>
             <Pressable

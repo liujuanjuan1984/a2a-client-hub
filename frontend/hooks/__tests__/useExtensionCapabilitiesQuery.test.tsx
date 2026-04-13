@@ -111,26 +111,6 @@ const createInvokeMetadata = (overrides?: {
   ...overrides,
 });
 
-const createCodexDiscovery = (overrides?: {
-  declared?: boolean;
-  consumedByHub?: boolean;
-  status?:
-    | "unsupported"
-    | "declared_not_consumed"
-    | "partially_consumed"
-    | "supported";
-  methods?: Record<
-    string,
-    { declared: boolean; consumedByHub: boolean; method?: string | null }
-  >;
-}) => ({
-  declared: false,
-  consumedByHub: false,
-  status: "unsupported" as const,
-  methods: {},
-  ...overrides,
-});
-
 const createCodexTurns = (overrides?: {
   declared?: boolean;
   consumedByHub?: boolean;
@@ -177,23 +157,6 @@ describe("useExtensionCapabilitiesQuery", () => {
       sessionPromptAsync: true,
       sessionControl: createSessionControl(),
       invokeMetadata: createInvokeMetadata(),
-      codexDiscovery: createCodexDiscovery({
-        declared: true,
-        consumedByHub: true,
-        status: "supported",
-        methods: {
-          skillsList: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.skills.list",
-          },
-          pluginsRead: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.plugins.read",
-          },
-        },
-      }),
       codexTurns: createCodexTurns({
         declared: true,
         consumedByHub: true,
@@ -229,11 +192,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.sessionCommandStatus).toBe("supported");
     expect(result.current.sessionShellStatus).toBe("unsupported");
     expect(result.current.invokeMetadataStatus).toBe("unsupported");
-    expect(result.current.codexDiscoveryStatus).toBe("supported");
     expect(result.current.codexTurnSteerStatus).toBe("supported");
-    expect(result.current.canShowCodexDiscovery).toBe(true);
-    expect(result.current.canReadCodexPlugins).toBe(true);
-    expect(result.current.codexDiscoveryAvailableTabs).toEqual(["skills"]);
   });
 
   it("returns unsupported when model selection is unavailable", async () => {
@@ -256,7 +215,6 @@ describe("useExtensionCapabilitiesQuery", () => {
         },
       }),
       invokeMetadata: createInvokeMetadata(),
-      codexDiscovery: createCodexDiscovery(),
       codexTurns: createCodexTurns({
         declared: true,
         consumedByHub: true,
@@ -289,8 +247,6 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.interruptRecoveryStatus).toBe("unsupported");
     expect(result.current.sessionPromptAsyncStatus).toBe("unsupported");
     expect(result.current.codexTurnSteerStatus).toBe("unsupported");
-    expect(result.current.codexDiscoveryStatus).toBe("unsupported");
-    expect(result.current.canShowCodexDiscovery).toBe(false);
   });
 
   it("distinguishes model selection from provider discovery", async () => {
@@ -306,23 +262,6 @@ describe("useExtensionCapabilitiesQuery", () => {
         declared: true,
         status: "supported",
         fields: [{ name: "project_id", required: true }],
-      }),
-      codexDiscovery: createCodexDiscovery({
-        declared: true,
-        consumedByHub: true,
-        status: "partially_consumed",
-        methods: {
-          appsList: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.apps.list",
-          },
-          watch: {
-            declared: true,
-            consumedByHub: false,
-            method: "codex.discovery.watch",
-          },
-        },
       }),
       runtimeStatus: createRuntimeStatus(),
     });
@@ -342,8 +281,6 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.providerDiscoveryStatus).toBe("unsupported");
     expect(result.current.interruptRecoveryStatus).toBe("unsupported");
     expect(result.current.invokeMetadataStatus).toBe("supported");
-    expect(result.current.codexDiscoveryStatus).toBe("partially_consumed");
-    expect(result.current.codexDiscoveryAvailableTabs).toEqual(["apps"]);
   });
 
   it("returns unknown when capability lookup fails", async () => {
@@ -369,7 +306,6 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.sessionCommandStatus).toBe("unknown");
     expect(result.current.sessionShellStatus).toBe("unknown");
     expect(result.current.invokeMetadataStatus).toBe("unknown");
-    expect(result.current.codexDiscoveryStatus).toBe("unknown");
     expect(result.current.codexTurnSteerStatus).toBe("unknown");
   });
 });

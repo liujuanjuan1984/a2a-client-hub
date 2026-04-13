@@ -118,10 +118,6 @@ jest.mock("@/components/chat/ShortcutManagerModal", () => ({
   ShortcutManagerModal: () => null,
 }));
 
-jest.mock("@/components/chat/CodexDiscoveryModal", () => ({
-  CodexDiscoveryModal: () => null,
-}));
-
 jest.mock("@/components/chat/ChatTimelinePanel", () => ({
   ChatTimelinePanel: (props: {
     messages?: { id: string; content: string }[];
