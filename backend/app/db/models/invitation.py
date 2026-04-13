@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import Any, ClassVar, Optional, cast
+from typing import Any, Optional, cast
 from uuid import UUID
 
 from sqlalchemy import (
@@ -44,11 +44,6 @@ class Invitation(Base, TimestampMixin, SoftDeleteMixin):
         ),
         {"schema": SCHEMA_NAME},
     )
-
-    STATUS_PENDING: ClassVar[str] = InvitationStatus.PENDING.value
-    STATUS_REGISTERED: ClassVar[str] = InvitationStatus.REGISTERED.value
-    STATUS_REVOKED: ClassVar[str] = InvitationStatus.REVOKED.value
-    STATUS_EXPIRED: ClassVar[str] = InvitationStatus.EXPIRED.value
 
     code = Column(
         String(64),

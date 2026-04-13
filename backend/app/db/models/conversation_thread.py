@@ -49,7 +49,6 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
     )
 
     STATUS_ACTIVE: ClassVar[str] = "active"
-    STATUS_MERGED: ClassVar[str] = "merged"
     STATUS_ARCHIVED: ClassVar[str] = "archived"
     SOURCE_MANUAL: ClassVar[str] = "manual"
     SOURCE_SCHEDULED: ClassVar[str] = "scheduled"

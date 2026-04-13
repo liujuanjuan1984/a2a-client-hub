@@ -37,9 +37,9 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 def _build_toolkit(async_db_session, user):
     actor = build_self_management_actor_context(
         user=user,
-        actor_type=SelfManagementActorType.HUMAN_CLI,
+        actor_type=SelfManagementActorType.HUMAN_API,
     )
-    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.CLI)
+    gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
     return SelfManagementToolkit(
         db=async_db_session,
         current_user=user,
@@ -108,14 +108,14 @@ async def test_self_management_toolkit_updates_agent_config(
             "agent_id": str(record.id),
             "name": "Toolkit Updated Agent",
             "enabled": False,
-            "tags": ["cli", "toolkit"],
+            "tags": ["self-management", "toolkit"],
         },
     )
 
     assert result.payload["agent"]["id"] == str(record.id)
     assert result.payload["agent"]["name"] == "Toolkit Updated Agent"
     assert result.payload["agent"]["enabled"] is False
-    assert result.payload["agent"]["tags"] == ["cli", "toolkit"]
+    assert result.payload["agent"]["tags"] == ["self-management", "toolkit"]
 
 
 async def test_self_management_toolkit_checks_agent_health(

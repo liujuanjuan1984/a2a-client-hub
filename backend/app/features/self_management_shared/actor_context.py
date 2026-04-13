@@ -18,7 +18,6 @@ class SelfManagementActorType(str, Enum):
     """Supported actor types for self-management entry points."""
 
     HUMAN_API = "human_api"
-    HUMAN_CLI = "human_cli"
     WEB_AGENT = "web_agent"
 
 
@@ -92,7 +91,6 @@ class SelfManagementAuditFields:
     action: SelfManagementAction | None = None
     resource_id: str | None = None
     target_user_id: UUID | None = None
-    command_name: str | None = None
     tool_name: str | None = None
     delegated_by: str | None = None
     operation_id: str | None = None
@@ -114,7 +112,6 @@ class SelfManagementAuditFields:
             "target_user_id": (
                 str(self.target_user_id) if self.target_user_id is not None else None
             ),
-            "command_name": self.command_name,
             "tool_name": self.tool_name,
             "delegated_by": self.delegated_by,
             "operation_id": self.operation_id,
@@ -124,7 +121,7 @@ class SelfManagementAuditFields:
 
 @dataclass(frozen=True)
 class SelfManagementActorContext:
-    """Resolved actor context for CLI and built-in agent entry points."""
+    """Resolved actor context for self-management entry points."""
 
     actor_type: SelfManagementActorType
     acting_user_id: UUID
@@ -157,7 +154,6 @@ class SelfManagementActorContext:
         action: SelfManagementAction | None = None,
         resource_id: str | None = None,
         target_user_id: UUID | None = None,
-        command_name: str | None = None,
         tool_name: str | None = None,
         delegated_by: str | None = None,
         operation_id: str | None = None,
@@ -185,7 +181,6 @@ class SelfManagementActorContext:
             action=action,
             resource_id=resource_id,
             target_user_id=target_user_id,
-            command_name=command_name,
             tool_name=tool_name,
             delegated_by=delegated_by,
             operation_id=operation_id,
@@ -216,7 +211,6 @@ def build_self_management_actor_context(
         actor_type
         in {
             SelfManagementActorType.HUMAN_API,
-            SelfManagementActorType.HUMAN_CLI,
         }
         and resolved_principal_user_id != actor_user_id
     ):
