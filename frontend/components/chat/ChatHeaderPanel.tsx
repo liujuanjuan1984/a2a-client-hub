@@ -13,6 +13,19 @@ type CapabilityStatus = "unknown" | "supported" | "unsupported";
 const INFO_CARD_CLASS =
   "min-w-[46%] flex-1 rounded-xl border border-white/5 bg-black/20 px-3 py-2.5";
 
+const resolveModesValue = (session?: AgentSession) => {
+  const inputModes =
+    session?.inputModes?.filter((mode) => Boolean(mode?.trim())) ?? [];
+  const outputModes =
+    session?.outputModes?.filter((mode) => Boolean(mode?.trim())) ?? [];
+  if (inputModes.length === 0 && outputModes.length === 0) {
+    return null;
+  }
+  const inputValue = inputModes.length > 0 ? inputModes.join(", ") : "N/A";
+  const outputValue = outputModes.length > 0 ? outputModes.join(", ") : "N/A";
+  return `${inputValue} -> ${outputValue}`;
+};
+
 const resolveCapabilityBadge = (status: CapabilityStatus) => {
   if (status === "supported") {
     return {
@@ -95,6 +108,7 @@ export function ChatHeaderPanel({
   invokeMetadataStatus: CapabilityStatus;
 }) {
   const workingDirectory = getOpencodeDirectory(session?.metadata);
+  const modesValue = resolveModesValue(session);
   const capabilityItems = [
     { label: "Model Selection", status: modelSelectionStatus },
     { label: "Provider Discovery", status: providerDiscoveryStatus },
@@ -172,6 +186,7 @@ export function ChatHeaderPanel({
               <InfoCard label="Runtime" value={session.runtimeStatus} />
             ) : null}
             <InfoCard label="Transport" value={session?.transport ?? "N/A"} />
+            {modesValue ? <InfoCard label="Modes" value={modesValue} /> : null}
             {workingDirectory ? (
               <InfoCard
                 label="Working Directory"
