@@ -406,6 +406,35 @@ async def test_append_route_persists_canonical_user_message(
         assert items[0]["content"] == "append this"
         assert items[0]["operationId"] == operation_id
 
+    session.external_session_id = None
+    await async_db_session.commit()
+
+    async def _replay_runtime_should_not_run(**kwargs):
+        raise AssertionError("replay should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _replay_runtime_should_not_run
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        replay_without_binding_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:append",
+            json={
+                "content": "append this",
+                "userMessageId": user_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_without_binding_resp.status_code == 200
+        assert (
+            replay_without_binding_resp.json()["userMessage"]["id"]
+            == append_payload["userMessage"]["id"]
+        )
+
 
 async def test_command_route_persists_canonical_command_messages(
     async_db_session,
@@ -547,6 +576,38 @@ async def test_command_route_persists_canonical_command_messages(
         assert items[1]["content"] == "Review complete."
         assert items[1]["operationId"] == operation_id
         assert [block["type"] for block in items[1]["blocks"]] == ["text", "data"]
+
+    session.external_session_id = None
+    await async_db_session.commit()
+
+    async def _replay_runtime_should_not_run(**kwargs):
+        raise AssertionError("replay should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _replay_runtime_should_not_run
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        replay_without_binding_resp = await client.post(
+            f"/me/conversations/{session.id}/commands:run",
+            json={
+                "command": "/review",
+                "arguments": "--quick",
+                "prompt": "Focus on tests",
+                "userMessageId": user_message_id,
+                "agentMessageId": agent_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_without_binding_resp.status_code == 200
+        assert (
+            replay_without_binding_resp.json()["agentMessage"]["id"]
+            == command_payload["agentMessage"]["id"]
+        )
 
 
 async def test_blocks_query_returns_404_when_block_not_found(

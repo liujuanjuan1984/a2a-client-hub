@@ -278,6 +278,25 @@ def _build_session_action_metadata(
     return next_metadata
 
 
+def _resolve_replay_external_session_id(
+    thread: ConversationThread,
+    message: AgentMessage | None,
+) -> str | None:
+    thread_session_id = normalize_non_empty_text(
+        cast(str | None, thread.external_session_id)
+    )
+    if thread_session_id:
+        return thread_session_id
+    if message is None:
+        return None
+    metadata = getattr(message, "message_metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    return normalize_non_empty_text(
+        metadata.get("externalSessionId") or metadata.get("external_session_id")
+    )
+
+
 async def _find_operation_messages(
     *,
     db: AsyncSession,
@@ -385,19 +404,8 @@ async def append_unified_session_message(
             user_id=current_user_id,
             conversation_id=conversation_id,
         )
-        runtime = await _load_runtime_for_thread(
-            db=db,
-            current_user=current_user,
-            thread=thread,
-        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid_conversation_id") from exc
-
-    external_session_id = normalize_non_empty_text(
-        cast(str | None, thread.external_session_id)
-    )
-    if not external_session_id:
-        raise HTTPException(status_code=409, detail="append_requires_bound_session")
 
     operation_id = str(payload.operation_id or payload.user_message_id or uuid4())
     existing_append_messages = await _find_operation_messages(
@@ -420,6 +428,10 @@ async def append_unified_session_message(
             conversation_id=conversation_id,
             message_ids=[cast(UUID, existing_append_message.id)],
         )
+        replay_session_id = _resolve_replay_external_session_id(
+            thread,
+            existing_append_message,
+        )
         return SessionAppendMessageResponse.model_validate(
             {
                 "conversationId": str(thread.id),
@@ -427,10 +439,21 @@ async def append_unified_session_message(
                 "sessionControl": {
                     "intent": "append",
                     "status": "accepted",
-                    "sessionId": external_session_id,
+                    "sessionId": replay_session_id,
                 },
             }
         )
+
+    runtime = await _load_runtime_for_thread(
+        db=db,
+        current_user=current_user,
+        thread=thread,
+    )
+    external_session_id = normalize_non_empty_text(
+        cast(str | None, thread.external_session_id)
+    )
+    if not external_session_id:
+        raise HTTPException(status_code=409, detail="append_requires_bound_session")
     request_message_id = str(payload.user_message_id or uuid4())
     extensions_service = cast(Any, get_a2a_extensions_service())
     result = await extensions_service.append_session_control(
@@ -513,22 +536,8 @@ async def run_unified_session_command(
             user_id=current_user_id,
             conversation_id=conversation_id,
         )
-        runtime = await _load_runtime_for_thread(
-            db=db,
-            current_user=current_user,
-            thread=thread,
-        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid_conversation_id") from exc
-
-    external_session_id = normalize_non_empty_text(
-        cast(str | None, thread.external_session_id)
-    )
-    if not external_session_id:
-        raise HTTPException(
-            status_code=409,
-            detail="session_command_requires_bound_session",
-        )
 
     request_payload: dict[str, Any] = {
         "command": payload.command.strip(),
@@ -581,6 +590,20 @@ async def run_unified_session_command(
         )
     if existing_user_message is not None or existing_agent_message is not None:
         raise HTTPException(status_code=409, detail="idempotency_conflict")
+
+    runtime = await _load_runtime_for_thread(
+        db=db,
+        current_user=current_user,
+        thread=thread,
+    )
+    external_session_id = normalize_non_empty_text(
+        cast(str | None, thread.external_session_id)
+    )
+    if not external_session_id:
+        raise HTTPException(
+            status_code=409,
+            detail="session_command_requires_bound_session",
+        )
     metadata = _build_session_action_metadata(
         thread=thread,
         metadata=payload.metadata,
