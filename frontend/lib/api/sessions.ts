@@ -52,9 +52,11 @@ type SessionMessageBlockDetailItem = {
 export type SessionMessageItem = {
   id: string;
   role: "user" | "agent" | "system";
+  kind?: string;
   content?: string;
   created_at: string;
   status?: string;
+  operationId?: string | null;
   blocks?: SessionMessageBlockItem[];
 };
 
@@ -249,6 +251,7 @@ export const appendSessionMessage = async (
   input: {
     content: string;
     userMessageId?: string;
+    operationId?: string;
     metadata?: Record<string, unknown>;
     workingDirectory?: string | null;
   },
@@ -258,6 +261,7 @@ export const appendSessionMessage = async (
     {
       content: string;
       userMessageId?: string;
+      operationId?: string;
       metadata?: Record<string, unknown>;
       workingDirectory?: string | null;
     }
@@ -266,6 +270,7 @@ export const appendSessionMessage = async (
     body: {
       content: input.content,
       ...(input.userMessageId ? { userMessageId: input.userMessageId } : {}),
+      ...(input.operationId ? { operationId: input.operationId } : {}),
       ...(input.metadata ? { metadata: input.metadata } : {}),
       ...(input.workingDirectory
         ? { workingDirectory: input.workingDirectory }
@@ -281,6 +286,7 @@ export const runSessionCommand = async (
     prompt: string;
     userMessageId?: string;
     agentMessageId?: string;
+    operationId?: string;
     metadata?: Record<string, unknown>;
     workingDirectory?: string | null;
   },
@@ -293,6 +299,7 @@ export const runSessionCommand = async (
       prompt: string;
       userMessageId?: string;
       agentMessageId?: string;
+      operationId?: string;
       metadata?: Record<string, unknown>;
       workingDirectory?: string | null;
     }
@@ -304,6 +311,7 @@ export const runSessionCommand = async (
       prompt: input.prompt,
       ...(input.userMessageId ? { userMessageId: input.userMessageId } : {}),
       ...(input.agentMessageId ? { agentMessageId: input.agentMessageId } : {}),
+      ...(input.operationId ? { operationId: input.operationId } : {}),
       ...(input.metadata ? { metadata: input.metadata } : {}),
       ...(input.workingDirectory
         ? { workingDirectory: input.workingDirectory }

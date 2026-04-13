@@ -326,9 +326,13 @@ async def test_append_route_persists_canonical_user_message(
     )
     async_db_session.add(session)
     await async_db_session.commit()
+    operation_id = str(uuid4())
+    user_message_id = str(uuid4())
+    extension_calls: list[dict[str, object]] = []
 
     class _FakeExtensions:
         async def append_session_control(self, **kwargs):
+            extension_calls.append(kwargs)
             assert kwargs["session_id"] == "ses-append-1"
             assert kwargs["request_payload"]["parts"][0]["text"] == "append this"
             return SimpleNamespace(
@@ -359,19 +363,36 @@ async def test_append_route_persists_canonical_user_message(
             f"/me/conversations/{session.id}/messages:append",
             json={
                 "content": "append this",
-                "userMessageId": str(uuid4()),
+                "userMessageId": user_message_id,
+                "operationId": operation_id,
             },
         )
         assert append_resp.status_code == 200
         append_payload = append_resp.json()
         assert append_payload["conversationId"] == str(session.id)
         assert append_payload["userMessage"]["role"] == "user"
+        assert append_payload["userMessage"]["kind"] == "session_append_user"
         assert append_payload["userMessage"]["content"] == "append this"
+        assert append_payload["userMessage"]["operationId"] == operation_id
         assert append_payload["sessionControl"] == {
             "intent": "append",
             "status": "accepted",
             "sessionId": "ses-append-1",
         }
+        replay_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:append",
+            json={
+                "content": "append this",
+                "userMessageId": user_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_resp.status_code == 200
+        replay_payload = replay_resp.json()
+        assert (
+            replay_payload["userMessage"]["id"] == append_payload["userMessage"]["id"]
+        )
+        assert len(extension_calls) == 1
 
         messages_resp = await client.post(
             f"/me/conversations/{session.id}/messages:query",
@@ -381,7 +402,9 @@ async def test_append_route_persists_canonical_user_message(
         items = messages_resp.json()["items"]
         assert len(items) == 1
         assert items[0]["id"] == append_payload["userMessage"]["id"]
+        assert items[0]["kind"] == "session_append_user"
         assert items[0]["content"] == "append this"
+        assert items[0]["operationId"] == operation_id
 
 
 async def test_command_route_persists_canonical_command_messages(
@@ -405,9 +428,14 @@ async def test_command_route_persists_canonical_command_messages(
     )
     async_db_session.add(session)
     await async_db_session.commit()
+    operation_id = str(uuid4())
+    user_message_id = str(uuid4())
+    agent_message_id = str(uuid4())
+    extension_calls: list[dict[str, object]] = []
 
     class _FakeExtensions:
         async def command_session(self, **kwargs):
+            extension_calls.append(kwargs)
             assert kwargs["session_id"] == "ses-command-1"
             assert kwargs["request_payload"]["command"] == "/review"
             assert kwargs["request_payload"]["arguments"] == "--quick"
@@ -417,7 +445,16 @@ async def test_command_route_persists_canonical_command_messages(
                     "item": {
                         "messageId": "upstream-msg-1",
                         "role": "agent",
-                        "parts": [{"type": "text", "text": "Review complete."}],
+                        "parts": [
+                            {"type": "text", "text": "Review complete."},
+                            {
+                                "type": "data",
+                                "data": {
+                                    "summary": "done",
+                                    "files": ["backend/app.py"],
+                                },
+                            },
+                        ],
                     }
                 },
                 error_code=None,
@@ -447,8 +484,9 @@ async def test_command_route_persists_canonical_command_messages(
                 "command": "/review",
                 "arguments": "--quick",
                 "prompt": "Focus on tests",
-                "userMessageId": str(uuid4()),
-                "agentMessageId": str(uuid4()),
+                "userMessageId": user_message_id,
+                "agentMessageId": agent_message_id,
+                "operationId": operation_id,
             },
         )
         assert command_resp.status_code == 200
@@ -458,7 +496,38 @@ async def test_command_route_persists_canonical_command_messages(
             command_payload["userMessage"]["content"]
             == "/review --quick\nFocus on tests"
         )
+        assert command_payload["userMessage"]["kind"] == "session_command_input"
+        assert command_payload["userMessage"]["operationId"] == operation_id
         assert command_payload["agentMessage"]["content"] == "Review complete."
+        assert command_payload["agentMessage"]["kind"] == "session_command_output"
+        assert command_payload["agentMessage"]["operationId"] == operation_id
+        assert [
+            block["type"] for block in command_payload["agentMessage"]["blocks"]
+        ] == [
+            "text",
+            "data",
+        ]
+        replay_resp = await client.post(
+            f"/me/conversations/{session.id}/commands:run",
+            json={
+                "command": "/review",
+                "arguments": "--quick",
+                "prompt": "Focus on tests",
+                "userMessageId": user_message_id,
+                "agentMessageId": agent_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_resp.status_code == 200
+        replay_payload = replay_resp.json()
+        assert (
+            replay_payload["userMessage"]["id"] == command_payload["userMessage"]["id"]
+        )
+        assert (
+            replay_payload["agentMessage"]["id"]
+            == command_payload["agentMessage"]["id"]
+        )
+        assert len(extension_calls) == 1
 
         messages_resp = await client.post(
             f"/me/conversations/{session.id}/messages:query",
@@ -470,8 +539,14 @@ async def test_command_route_persists_canonical_command_messages(
             command_payload["userMessage"]["id"],
             command_payload["agentMessage"]["id"],
         ]
+        assert [item["kind"] for item in items] == [
+            "session_command_input",
+            "session_command_output",
+        ]
         assert items[0]["content"] == "/review --quick\nFocus on tests"
         assert items[1]["content"] == "Review complete."
+        assert items[1]["operationId"] == operation_id
+        assert [block["type"] for block in items[1]["blocks"]] == ["text", "data"]
 
 
 async def test_blocks_query_returns_404_when_block_not_found(

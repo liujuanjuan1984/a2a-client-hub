@@ -120,7 +120,9 @@ describe("session history mapping", () => {
         {
           id: "5f4d5d35-9099-49a0-8ce2-2cf56d79314d",
           role: "user",
+          kind: "session_append_user",
           created_at: "2026-02-14T00:00:04.000Z",
+          operationId: "op-append-1",
         },
       ],
       { keepEmptyMessages: true },
@@ -130,7 +132,9 @@ describe("session history mapping", () => {
     expect(mapped[0]).toMatchObject({
       id: "5f4d5d35-9099-49a0-8ce2-2cf56d79314d",
       role: "user",
+      kind: "session_append_user",
       content: "",
+      operationId: "op-append-1",
       blocks: [],
     });
   });
@@ -200,6 +204,38 @@ describe("session history mapping", () => {
     expect(mapped[0]?.blocks).toHaveLength(1);
     expect(mapped[0]?.blocks?.[0]?.type).toBe("reasoning");
     expect(mapped[0]?.content).toBe("");
+  });
+
+  it("preserves structured data blocks for canonical command results", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "cmd-output-1",
+        role: "agent",
+        kind: "session_command_output",
+        operationId: "op-command-1",
+        created_at: "2026-03-29T00:00:00.000Z",
+        blocks: [
+          {
+            id: "data-block-1",
+            type: "data",
+            content: '{"summary":"done","files":["a.ts"]}',
+            isFinished: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({
+      id: "cmd-output-1",
+      kind: "session_command_output",
+      operationId: "op-command-1",
+      content: "",
+    });
+    expect(mapped[0]?.blocks?.[0]).toMatchObject({
+      type: "data",
+      content: '{"summary":"done","files":["a.ts"]}',
+    });
   });
 
   it("preserves normalized toolCall metadata from session payload", () => {

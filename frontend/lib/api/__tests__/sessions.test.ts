@@ -70,6 +70,7 @@ describe("sessions api", () => {
     await appendSessionMessage("conv-3", {
       content: "append this",
       userMessageId: "msg-user-1",
+      operationId: "op-append-1",
       metadata: { shared: { stream: { turn_id: "turn-1" } } },
       workingDirectory: "/workspace/app",
     });
@@ -81,6 +82,7 @@ describe("sessions api", () => {
         body: {
           content: "append this",
           userMessageId: "msg-user-1",
+          operationId: "op-append-1",
           metadata: { shared: { stream: { turn_id: "turn-1" } } },
           workingDirectory: "/workspace/app",
         },
@@ -101,6 +103,7 @@ describe("sessions api", () => {
       prompt: "Focus on tests",
       userMessageId: "msg-user-2",
       agentMessageId: "msg-agent-2",
+      operationId: "op-command-1",
       metadata: { provider: "opencode" },
       workingDirectory: "/workspace/app",
     });
@@ -115,6 +118,7 @@ describe("sessions api", () => {
           prompt: "Focus on tests",
           userMessageId: "msg-user-2",
           agentMessageId: "msg-agent-2",
+          operationId: "op-command-1",
           metadata: { provider: "opencode" },
           workingDirectory: "/workspace/app",
         },

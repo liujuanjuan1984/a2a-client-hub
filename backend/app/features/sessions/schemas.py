@@ -83,9 +83,11 @@ class SessionMessagesQueryRequest(BaseModel):
 class SessionMessageItem(BaseModel):
     id: str
     role: Literal["user", "agent", "system"]
+    kind: str = "message"
     content: str = ""
     created_at: datetime
     status: str
+    operation_id: Optional[str] = Field(alias="operationId", default=None)
     blocks: list[SessionMessageBlockItem] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -122,6 +124,7 @@ class SessionControlResultItem(BaseModel):
 class SessionAppendMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, description="Text to append.")
     user_message_id: UUID | None = Field(alias="userMessageId", default=None)
+    operation_id: UUID | None = Field(alias="operationId", default=None)
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Optional extension metadata object forwarded to upstream.",
@@ -160,6 +163,7 @@ class SessionCommandRunRequest(BaseModel):
     prompt: str = Field(default="", description="Optional command prompt body.")
     user_message_id: UUID | None = Field(alias="userMessageId", default=None)
     agent_message_id: UUID | None = Field(alias="agentMessageId", default=None)
+    operation_id: UUID | None = Field(alias="operationId", default=None)
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Optional extension metadata object forwarded to upstream.",

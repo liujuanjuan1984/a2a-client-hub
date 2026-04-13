@@ -8,6 +8,7 @@ import { type MessageBlock as MessageBlockType } from "@/lib/api/chat-utils";
 const mockReasoningBlock = jest.fn((_props: unknown) => null);
 const mockToolCallBlock = jest.fn((_props: unknown) => null);
 const mockInterruptEventBlock = jest.fn((_props: unknown) => null);
+const mockDataBlock = jest.fn((_props: unknown) => null);
 const mockTextBlock = jest.fn((_props: unknown) => null);
 const mockGenericBlock = jest.fn((_props: unknown) => null);
 
@@ -28,6 +29,13 @@ jest.mock("../blocks/ToolCallBlock", () => ({
 jest.mock("../blocks/InterruptEventBlock", () => ({
   InterruptEventBlock: (props: unknown) => {
     mockInterruptEventBlock(props);
+    return null;
+  },
+}));
+
+jest.mock("../blocks/DataBlock", () => ({
+  DataBlock: (props: unknown) => {
+    mockDataBlock(props);
     return null;
   },
 }));
@@ -174,6 +182,35 @@ describe("MessageBlock and MessageContentFallback", () => {
       expect.objectContaining({
         block,
         fallbackBlockId: "interrupt-1",
+        isFirst: false,
+      }),
+    );
+  });
+
+  it("routes data block to DataBlock", () => {
+    const block: MessageBlockType = {
+      id: "data-1",
+      type: "data",
+      content: '{"ok":true}',
+      isFinished: true,
+      createdAt: "2026-02-24T00:00:00.000Z",
+      updatedAt: "2026-02-24T00:00:00.000Z",
+    };
+
+    render(
+      <MessageBlock
+        block={block}
+        messageId="msg-data"
+        blockIndex={1}
+        role="agent"
+      />,
+    );
+
+    expect(mockDataBlock).toHaveBeenCalledTimes(1);
+    expect(mockDataBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        block,
+        fallbackBlockId: "data-1",
         isFirst: false,
       }),
     );

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_user
 from app.api.error_codes import status_code_for_extension_error_code
 from app.api.routing import StrictAPIRouter
+from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely, load_for_external_call
@@ -81,6 +83,8 @@ def _status_code_for_session_error(detail: str) -> int:
     if detail in {
         "append_requires_bound_session",
         "session_command_requires_bound_session",
+        "message_id_conflict",
+        "idempotency_conflict",
     }:
         return 409
     if detail in _FORBIDDEN_ERRORS:
@@ -123,14 +127,62 @@ def _build_command_display_content(
 
 def _extract_session_command_result_item(
     result_payload: dict[str, Any] | None,
-) -> tuple[str, str | None]:
+) -> tuple[str, list[dict[str, Any]], str | None]:
     result = result_payload if isinstance(result_payload, dict) else {}
     item = result.get("item")
     if not isinstance(item, dict):
         raise HTTPException(status_code=502, detail="upstream_payload_error")
 
-    response_text = extract_stream_text_from_parts(item.get("parts"))
-    if not response_text.strip():
+    parts = item.get("parts")
+    response_text = extract_stream_text_from_parts(parts)
+    structured_payloads: list[Any] = []
+    if isinstance(parts, list):
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            raw_kind = part.get("kind") or part.get("type")
+            normalized_kind = (
+                raw_kind.strip().lower() if isinstance(raw_kind, str) else None
+            )
+            if normalized_kind != "data" and "data" not in part:
+                continue
+            structured_payloads.append(part.get("data"))
+
+    response_blocks: list[dict[str, Any]] = []
+    if response_text.strip():
+        response_blocks.append(
+            {
+                "type": "text",
+                "content": response_text,
+                "source": "session_command",
+            }
+        )
+    if structured_payloads:
+        serialized_payload = (
+            structured_payloads[0]
+            if len(structured_payloads) == 1
+            else structured_payloads
+        )
+        try:
+            structured_content = json.dumps(
+                serialized_payload,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        except TypeError:
+            structured_content = json.dumps(
+                repr(serialized_payload),
+                ensure_ascii=False,
+            )
+        response_blocks.append(
+            {
+                "type": "data",
+                "content": structured_content,
+                "source": "session_command",
+            }
+        )
+    if not response_blocks:
         raise HTTPException(status_code=502, detail="upstream_payload_error")
 
     upstream_message_id = None
@@ -139,7 +191,7 @@ def _extract_session_command_result_item(
         if isinstance(raw_value, str) and raw_value.strip():
             upstream_message_id = raw_value.strip()
             break
-    return response_text, upstream_message_id
+    return response_text, response_blocks, upstream_message_id
 
 
 async def _get_conversation_thread_or_404(
@@ -224,6 +276,35 @@ def _build_session_action_metadata(
     if external_session_id and "externalSessionId" not in next_metadata:
         next_metadata["externalSessionId"] = external_session_id
     return next_metadata
+
+
+async def _find_operation_messages(
+    *,
+    db: AsyncSession,
+    user_id: UUID,
+    conversation_id: UUID,
+    idempotency_key: str,
+    senders: tuple[str, ...],
+) -> dict[str, AgentMessage]:
+    rows = list(
+        (
+            await db.scalars(
+                select(AgentMessage).where(
+                    and_(
+                        AgentMessage.user_id == user_id,
+                        AgentMessage.conversation_id == conversation_id,
+                        AgentMessage.invoke_idempotency_key == idempotency_key,
+                        AgentMessage.sender.in_(senders),
+                    )
+                )
+            )
+        ).all()
+    )
+    return {
+        cast(str, row.sender): row
+        for row in rows
+        if isinstance(getattr(row, "sender", None), str)
+    }
 
 
 @router.post(":query", response_model=SessionListResponse)
@@ -318,6 +399,38 @@ async def append_unified_session_message(
     if not external_session_id:
         raise HTTPException(status_code=409, detail="append_requires_bound_session")
 
+    operation_id = str(payload.operation_id or payload.user_message_id or uuid4())
+    existing_append_messages = await _find_operation_messages(
+        db=db,
+        user_id=current_user_id,
+        conversation_id=cast(UUID, thread.id),
+        idempotency_key=f"append:{operation_id}",
+        senders=("user",),
+    )
+    existing_append_message = existing_append_messages.get("user")
+    if existing_append_message is not None:
+        if (
+            payload.user_message_id is not None
+            and cast(UUID, existing_append_message.id) != payload.user_message_id
+        ):
+            raise HTTPException(status_code=409, detail="message_id_conflict")
+        items, _db_mutated = await session_hub_service.get_message_items(
+            db,
+            user_id=current_user_id,
+            conversation_id=conversation_id,
+            message_ids=[cast(UUID, existing_append_message.id)],
+        )
+        return SessionAppendMessageResponse.model_validate(
+            {
+                "conversationId": str(thread.id),
+                "userMessage": items[0],
+                "sessionControl": {
+                    "intent": "append",
+                    "status": "accepted",
+                    "sessionId": external_session_id,
+                },
+            }
+        )
     request_message_id = str(payload.user_message_id or uuid4())
     extensions_service = cast(Any, get_a2a_extensions_service())
     result = await extensions_service.append_session_control(
@@ -338,26 +451,36 @@ async def append_unified_session_message(
             detail=result.error_code or "upstream_error",
         )
 
-    refs = await session_hub_service.record_user_message_by_local_session_id(
-        db,
-        local_session_id=cast(UUID, thread.id),
-        user_id=current_user_id,
-        content=payload.content.strip(),
-        metadata={
-            **_build_session_action_metadata(thread=thread, metadata=payload.metadata),
-            "message_kind": "session_append_user",
-        },
-        idempotency_key=f"append:{request_message_id}",
-        user_message_id=payload.user_message_id,
-    )
-    if not refs:
-        raise HTTPException(status_code=404, detail="session_not_found")
-    items, _db_mutated = await session_hub_service.get_message_items(
-        db,
-        user_id=current_user_id,
-        conversation_id=conversation_id,
-        message_ids=[refs["user_message_id"]],
-    )
+    try:
+        refs = await session_hub_service.record_user_message_by_local_session_id(
+            db,
+            local_session_id=cast(UUID, thread.id),
+            user_id=current_user_id,
+            content=payload.content.strip(),
+            metadata={
+                **_build_session_action_metadata(
+                    thread=thread, metadata=payload.metadata
+                ),
+                "message_kind": "session_append_user",
+                "operation_id": operation_id,
+            },
+            idempotency_key=f"append:{operation_id}",
+            user_message_id=payload.user_message_id,
+        )
+        if not refs:
+            raise HTTPException(status_code=404, detail="session_not_found")
+        items, _db_mutated = await session_hub_service.get_message_items(
+            db,
+            user_id=current_user_id,
+            conversation_id=conversation_id,
+            message_ids=[refs["user_message_id"]],
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        ) from exc
     await commit_safely(db)
     return SessionAppendMessageResponse.model_validate(
         {
@@ -411,9 +534,53 @@ async def run_unified_session_command(
         "command": payload.command.strip(),
         "arguments": payload.arguments.strip(),
     }
+    if payload.user_message_id is not None:
+        request_payload["messageID"] = str(payload.user_message_id)
     if payload.prompt.strip():
         request_payload["parts"] = [{"type": "text", "text": payload.prompt.strip()}]
 
+    operation_id = str(
+        payload.operation_id
+        or payload.user_message_id
+        or payload.agent_message_id
+        or uuid4()
+    )
+    existing_command_messages = await _find_operation_messages(
+        db=db,
+        user_id=current_user_id,
+        conversation_id=cast(UUID, thread.id),
+        idempotency_key=f"command:{operation_id}",
+        senders=("user", "agent"),
+    )
+    existing_user_message = existing_command_messages.get("user")
+    existing_agent_message = existing_command_messages.get("agent")
+    if existing_user_message is not None and existing_agent_message is not None:
+        if (
+            payload.user_message_id is not None
+            and cast(UUID, existing_user_message.id) != payload.user_message_id
+        ) or (
+            payload.agent_message_id is not None
+            and cast(UUID, existing_agent_message.id) != payload.agent_message_id
+        ):
+            raise HTTPException(status_code=409, detail="message_id_conflict")
+        items, _db_mutated = await session_hub_service.get_message_items(
+            db,
+            user_id=current_user_id,
+            conversation_id=conversation_id,
+            message_ids=[
+                cast(UUID, existing_user_message.id),
+                cast(UUID, existing_agent_message.id),
+            ],
+        )
+        return SessionCommandRunResponse.model_validate(
+            {
+                "conversationId": str(thread.id),
+                "userMessage": items[0],
+                "agentMessage": items[1],
+            }
+        )
+    if existing_user_message is not None or existing_agent_message is not None:
+        raise HTTPException(status_code=409, detail="idempotency_conflict")
     metadata = _build_session_action_metadata(
         thread=thread,
         metadata=payload.metadata,
@@ -431,62 +598,72 @@ async def run_unified_session_command(
             detail=result.error_code or "upstream_error",
         )
 
-    response_text, upstream_message_id = _extract_session_command_result_item(
-        cast(dict[str, Any] | None, result.result),
+    response_text, response_blocks, upstream_message_id = (
+        _extract_session_command_result_item(
+            cast(dict[str, Any] | None, result.result),
+        )
     )
-    refs = await session_hub_service.record_local_invoke_messages_by_local_session_id(
-        db,
-        local_session_id=cast(UUID, thread.id),
-        source=cast(Any, thread.source),
-        user_id=current_user_id,
-        agent_id=cast(UUID, thread.agent_id),
-        agent_source=cast(Any, thread.agent_source),
-        query=_build_command_display_content(
-            command=payload.command,
-            arguments=payload.arguments,
-            prompt=payload.prompt,
-        ),
-        response_content=response_text,
-        success=True,
-        context_id=cast(str | None, thread.context_id),
-        invoke_metadata=metadata,
-        extra_metadata={
-            "message_kind": "session_command_input",
-            "session_command": {
-                "command": payload.command.strip(),
-                "arguments": payload.arguments.strip(),
-            },
-        },
-        response_metadata={
-            "message_kind": "session_command_output",
-            "session_command": {
-                "command": payload.command.strip(),
-                "arguments": payload.arguments.strip(),
-            },
-            **(
-                {"upstream_message_id": upstream_message_id}
-                if upstream_message_id
-                else {}
-            ),
-        },
-        idempotency_key=(
-            f"command:{payload.user_message_id}"
-            if payload.user_message_id is not None
-            else None
-        ),
-        user_message_id=payload.user_message_id,
-        agent_message_id=payload.agent_message_id,
-        agent_status="done",
-    )
-    if not refs:
-        raise HTTPException(status_code=404, detail="session_not_found")
+    try:
+        refs = (
+            await session_hub_service.record_local_invoke_messages_by_local_session_id(
+                db,
+                local_session_id=cast(UUID, thread.id),
+                source=cast(Any, thread.source),
+                user_id=current_user_id,
+                agent_id=cast(UUID, thread.agent_id),
+                agent_source=cast(Any, thread.agent_source),
+                query=_build_command_display_content(
+                    command=payload.command,
+                    arguments=payload.arguments,
+                    prompt=payload.prompt,
+                ),
+                response_content=response_text,
+                success=True,
+                context_id=cast(str | None, thread.context_id),
+                invoke_metadata=metadata,
+                extra_metadata={
+                    "message_kind": "session_command_input",
+                    "operation_id": operation_id,
+                    "session_command": {
+                        "command": payload.command.strip(),
+                        "arguments": payload.arguments.strip(),
+                    },
+                },
+                response_metadata={
+                    "message_kind": "session_command_output",
+                    "operation_id": operation_id,
+                    "session_command": {
+                        "command": payload.command.strip(),
+                        "arguments": payload.arguments.strip(),
+                    },
+                    **(
+                        {"upstream_message_id": upstream_message_id}
+                        if upstream_message_id
+                        else {}
+                    ),
+                },
+                response_blocks=response_blocks,
+                idempotency_key=f"command:{operation_id}",
+                user_message_id=payload.user_message_id,
+                agent_message_id=payload.agent_message_id,
+                agent_status="done",
+            )
+        )
+        if not refs:
+            raise HTTPException(status_code=404, detail="session_not_found")
 
-    items, _db_mutated = await session_hub_service.get_message_items(
-        db,
-        user_id=current_user_id,
-        conversation_id=conversation_id,
-        message_ids=[refs["user_message_id"], refs["agent_message_id"]],
-    )
+        items, _db_mutated = await session_hub_service.get_message_items(
+            db,
+            user_id=current_user_id,
+            conversation_id=conversation_id,
+            message_ids=[refs["user_message_id"], refs["agent_message_id"]],
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        ) from exc
     await commit_safely(db)
     return SessionCommandRunResponse.model_validate(
         {

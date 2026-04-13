@@ -1093,6 +1093,7 @@ describe("ChatScreen interrupt handling", () => {
     expect(mockAppendSessionMessage).toHaveBeenCalledWith(conversationId, {
       content: "append this",
       userMessageId: expect.any(String),
+      operationId: expect.any(String),
       metadata: {},
       workingDirectory: "/workspace/app",
     });
@@ -1252,6 +1253,7 @@ describe("ChatScreen interrupt handling", () => {
     expect(mockAppendSessionMessage).toHaveBeenCalledWith(conversationId, {
       content: "steer this",
       userMessageId: expect.any(String),
+      operationId: expect.any(String),
       metadata: {
         shared: {
           stream: {
@@ -1403,6 +1405,7 @@ describe("ChatScreen interrupt handling", () => {
       prompt: "Focus on tests",
       userMessageId: expect.any(String),
       agentMessageId: expect.any(String),
+      operationId: expect.any(String),
       metadata: {},
       workingDirectory: "/workspace/app",
     });

@@ -53,6 +53,92 @@ def _default_lane_id(block_type: str) -> str:
     return "primary_text" if block_type == "text" else block_type
 
 
+def _normalize_message_block_specs(
+    block_specs: list[dict[str, Any]] | None,
+) -> list[dict[str, str | None]]:
+    normalized_specs: list[dict[str, str | None]] = []
+    for index, raw_spec in enumerate(block_specs or []):
+        block_type = normalize_block_type(
+            normalize_non_empty_text(raw_spec.get("block_type"))
+            or normalize_non_empty_text(raw_spec.get("type"))
+            or "text"
+        )
+        content = raw_spec.get("content")
+        if not isinstance(content, str):
+            continue
+        source = normalize_non_empty_text(raw_spec.get("source"))
+        normalized_specs.append(
+            {
+                "block_type": block_type,
+                "content": content,
+                "source": source or "finalize_snapshot",
+                "block_id": (
+                    normalize_non_empty_text(raw_spec.get("block_id"))
+                    or f"persisted:{block_type}:{index + 1}"
+                ),
+                "lane_id": (
+                    normalize_non_empty_text(raw_spec.get("lane_id"))
+                    or _default_lane_id(block_type)
+                ),
+            }
+        )
+    return normalized_specs
+
+
+async def _apply_message_block_specs(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    message_id: UUID,
+    block_specs: list[dict[str, str | None]],
+    idempotency_key: str | None,
+) -> None:
+    if not block_specs:
+        return
+    existing_blocks = await block_store.list_blocks_by_message_id(
+        db,
+        user_id=user_id,
+        message_id=message_id,
+    )
+    if existing_blocks:
+        if len(existing_blocks) != len(block_specs):
+            raise ValueError("idempotency_conflict")
+        for existing_block, expected_spec in zip(
+            existing_blocks, block_specs, strict=True
+        ):
+            if (
+                normalize_block_type(cast(str | None, existing_block.block_type))
+                != expected_spec["block_type"]
+                or (cast(str | None, existing_block.content) or "")
+                != (expected_spec["content"] or "")
+                or normalize_non_empty_text(cast(str | None, existing_block.source))
+                != normalize_non_empty_text(expected_spec["source"])
+            ):
+                raise ValueError("idempotency_conflict")
+        return
+
+    for index, block_spec in enumerate(block_specs, start=1):
+        persisted_block = await create_block_with_conflict_recovery(
+            db,
+            user_id=user_id,
+            message_id=message_id,
+            block_seq=index,
+            block_id=cast(str, block_spec["block_id"]),
+            lane_id=cast(str, block_spec["lane_id"]),
+            block_type=cast(str, block_spec["block_type"]),
+            content=cast(str, block_spec["content"]),
+            is_finished=True,
+            source=block_spec["source"],
+            start_event_seq=None,
+            end_event_seq=None,
+            base_seq=None,
+            start_event_id=None,
+            end_event_id=None,
+        )
+        if persisted_block is None and idempotency_key:
+            raise ValueError("idempotency_conflict")
+
+
 def _should_preserve_existing_interrupt_content(
     *,
     block_type: str,
@@ -306,6 +392,7 @@ class SessionHistoryProjectionService:
         invoke_metadata: dict[str, Any] | None = None,
         extra_metadata: dict[str, Any] | None = None,
         response_metadata: dict[str, Any] | None = None,
+        response_blocks: list[dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
@@ -339,6 +426,7 @@ class SessionHistoryProjectionService:
         normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
         if normalized_idempotency_key:
             metadata["invoke_idempotency_key"] = normalized_idempotency_key
+        normalized_response_blocks = _normalize_message_block_specs(response_blocks)
         if (
             source == "manual"
             and (session_title := derive_session_title_from_query(query))
@@ -635,7 +723,15 @@ class SessionHistoryProjectionService:
             content=query,
             source="user_input",
         )
-        if isinstance(response_content, str) and response_content:
+        if normalized_response_blocks:
+            await _apply_message_block_specs(
+                db,
+                user_id=user_id,
+                message_id=cast(UUID, agent_message.id),
+                block_specs=normalized_response_blocks,
+                idempotency_key=normalized_idempotency_key,
+            )
+        elif isinstance(response_content, str) and response_content:
             existing_agent_blocks = await block_store.list_blocks_by_message_id(
                 db,
                 user_id=user_id,
@@ -693,6 +789,7 @@ class SessionHistoryProjectionService:
         invoke_metadata: dict[str, Any] | None = None,
         extra_metadata: dict[str, Any] | None = None,
         response_metadata: dict[str, Any] | None = None,
+        response_blocks: list[dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
@@ -722,6 +819,7 @@ class SessionHistoryProjectionService:
             invoke_metadata=invoke_metadata,
             extra_metadata=extra_metadata,
             response_metadata=response_metadata,
+            response_blocks=response_blocks,
             idempotency_key=idempotency_key,
             user_message_id=user_message_id,
             agent_message_id=agent_message_id,

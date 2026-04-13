@@ -88,18 +88,33 @@ class SessionQueryService:
     ) -> dict[str, Any]:
         message_id = cast(UUID, message.id)
         role = sender_to_role(getattr(message, "sender", ""))
+        raw_metadata = getattr(message, "message_metadata", None)
+        metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
         raw_blocks: list[AgentMessageBlock] = blocks_by_message_id.get(message_id, [])
         status = normalize_non_empty_text(getattr(message, "status", None)) or "done"
         rendered_blocks, content = project_message_blocks(
             raw_blocks,
             message_status=status,
         )
+        message_kind = normalize_non_empty_text(metadata.get("message_kind"))
+        if not message_kind:
+            if isinstance(metadata.get("interrupt"), dict):
+                message_kind = "interrupt_event"
+            elif isinstance(metadata.get("preempt"), dict):
+                message_kind = "preempt_event"
+            else:
+                message_kind = "message"
+        operation_id = normalize_non_empty_text(
+            metadata.get("operation_id") or metadata.get("operationId")
+        )
         return {
             "id": str(message_id),
             "role": role,
+            "kind": message_kind,
             "content": content,
             "created_at": message.created_at,
             "status": status,
+            "operationId": operation_id,
             "blocks": rendered_blocks,
         }
 

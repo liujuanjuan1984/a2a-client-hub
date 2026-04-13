@@ -693,10 +693,12 @@ export function useChatScreenController({
       }
 
       const trimmedContent = parsedInput.text.trim();
+      const operationId = generateUuid();
       const userMessageId = generateUuid();
       const response = await appendSessionMessage(nextConversationId, {
         content: trimmedContent,
         userMessageId,
+        operationId,
         metadata: currentSession?.metadata ?? {},
         ...(currentSession?.workingDirectory
           ? { workingDirectory: currentSession.workingDirectory }
@@ -789,12 +791,14 @@ export function useChatScreenController({
         if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
           throw new Error("Built-in agents do not support session commands.");
         }
+        const operationId = generateUuid();
         const result = await runSessionCommand(nextConversationId, {
           command: parsedInput.command,
           arguments: parsedInput.arguments,
           prompt: parsedInput.prompt,
           userMessageId: generateUuid(),
           agentMessageId: generateUuid(),
+          operationId,
           metadata: currentSession?.metadata ?? {},
           ...(currentSession?.workingDirectory
             ? { workingDirectory: currentSession.workingDirectory }

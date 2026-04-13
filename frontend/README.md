@@ -112,7 +112,10 @@ Message id contract:
 - Frontend store/cache keys must use `item.id` only.
 - Running-session `append` and upstream `session command` now write canonical conversation messages through conversation-scoped Hub APIs instead of overlay-only cache entries.
 - The chat timeline must not merge non-canonical overlay-only messages into `messages:query` results.
+- Canonical history items also carry `kind` and optional `operationId` so command/action messages do not have to be rediscovered from ad hoc metadata parsing.
+- `append` and `commands:run` requests should send an explicit `operationId` (UUID) for idempotent retries; message ids remain canonical message identity, not operation identity.
 - Non-text block details (`reasoning`/`tool_call`) are fetched on demand via `POST /me/conversations/{conversation_id}/blocks:query`.
+- Structured command results may be persisted as `data` blocks and should render as first-class canonical history blocks rather than overlay text fallbacks.
 - `blocks:query` detail items include `messageId` and must match the target message before cache patching.
 - `tool_call` blocks may include a normalized `toolCall` view from backend (`name`, `status`, `callId`, `arguments`, `result`, `error`); frontend should render that stable field instead of parsing provider-private raw payloads.
 - Stream events are consumed via normalized snake_case fields (`message_id`, `event_id`, `seq`); missing upstream ids are tolerated with fallback keys, and weak fallback identity disables strict duplicate suppression (with throttled warning logs).

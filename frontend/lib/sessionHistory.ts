@@ -10,9 +10,11 @@ import {
 type SessionMessageItem = {
   id: string;
   role: string;
+  kind?: string;
   content?: string;
   created_at: string;
   status?: string;
+  operationId?: string | null;
   blocks?: {
     id: string;
     type: string;
@@ -218,9 +220,15 @@ export const mapSessionMessagesToChatMessages = (
     mapped.push({
       id: messageId,
       role,
+      kind: typeof item.kind === "string" ? item.kind : "message",
       content: normalizedContent,
       createdAt: item.created_at,
       status: resolveMessageStatus(item.status),
+      operationId:
+        typeof item.operationId === "string" &&
+        item.operationId.trim().length > 0
+          ? item.operationId
+          : null,
       blocks,
     });
   });
