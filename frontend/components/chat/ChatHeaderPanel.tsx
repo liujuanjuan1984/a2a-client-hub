@@ -4,23 +4,9 @@ import { Pressable, Text, View } from "react-native";
 
 import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
-import { type CodexDiscoveryStatus } from "@/lib/api/a2aExtensions";
 import { type AgentSession } from "@/lib/chat-utils";
 import { getOpencodeDirectory } from "@/lib/opencodeMetadata";
 import { type AgentConfig } from "@/store/agents";
-
-const resolveCodexDiscoveryStatusCopy = (status: CodexDiscoveryStatus) => {
-  if (status === "supported" || status === "partially_consumed") {
-    return "Browse Codex skills, apps, and plugins through Hub-normalized APIs.";
-  }
-  if (status === "declared_not_consumed") {
-    return "Codex discovery is declared upstream, but Hub does not currently expose a frontend entry.";
-  }
-  if (status === "unsupported") {
-    return "This agent does not declare Codex discovery.";
-  }
-  return "Capability status is unavailable.";
-};
 
 export function ChatHeaderPanel({
   topInset,
@@ -33,9 +19,6 @@ export function ChatHeaderPanel({
   onOpenSessionPicker,
   onTestConnection,
   testingConnection,
-  codexDiscoveryStatus,
-  canBrowseCodexDiscovery,
-  onOpenCodexDiscovery,
 }: {
   topInset: number;
   agent: AgentConfig;
@@ -47,9 +30,6 @@ export function ChatHeaderPanel({
   onOpenSessionPicker: () => void;
   onTestConnection: () => void;
   testingConnection: boolean;
-  codexDiscoveryStatus: CodexDiscoveryStatus;
-  canBrowseCodexDiscovery: boolean;
-  onOpenCodexDiscovery: () => void;
 }) {
   const workingDirectory = getOpencodeDirectory(session?.metadata);
 
@@ -155,28 +135,6 @@ export function ChatHeaderPanel({
                 {session?.transport ?? "N/A"}
               </Text>
             </View>
-          </View>
-
-          <View className="h-[1px] bg-white/5" />
-
-          <View className="gap-3">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                Codex Discovery
-              </Text>
-              {canBrowseCodexDiscovery ? (
-                <Button
-                  label="Browse"
-                  size="xs"
-                  variant="secondary"
-                  iconLeft="compass-outline"
-                  onPress={onOpenCodexDiscovery}
-                />
-              ) : null}
-            </View>
-            <Text className="text-xs text-slate-400">
-              {resolveCodexDiscoveryStatusCopy(codexDiscoveryStatus)}
-            </Text>
           </View>
 
           <View className="h-[1px] bg-white/5" />

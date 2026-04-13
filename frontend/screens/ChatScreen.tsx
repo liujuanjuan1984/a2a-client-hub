@@ -7,11 +7,6 @@ import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useChatScreenController } from "@/hooks/useChatScreenController";
 
-const LazyCodexDiscoveryModal = lazy(async () => {
-  const module = await import("@/components/chat/CodexDiscoveryModal");
-  return { default: module.CodexDiscoveryModal };
-});
-
 const LazyInvokeMetadataModal = lazy(async () => {
   const module = await import("@/components/chat/InvokeMetadataModal");
   return { default: module.InvokeMetadataModal };
@@ -81,9 +76,6 @@ export function ChatScreen({
         onOpenSessionPicker={controller.openSessionPicker}
         onTestConnection={controller.handleTest}
         testingConnection={controller.testingConnection}
-        codexDiscoveryStatus={controller.codexDiscoveryStatus}
-        canBrowseCodexDiscovery={controller.canBrowseCodexDiscovery}
-        onOpenCodexDiscovery={controller.openCodexDiscovery}
       />
 
       <ChatTimelinePanel
@@ -153,21 +145,6 @@ export function ChatScreen({
             selectedModel={controller.selectedModel}
             onSelectModel={controller.handleModelSelect}
             onClearModelSelection={controller.clearModelSelection}
-          />
-        </Suspense>
-      ) : null}
-
-      {controller.showCodexDiscovery ? (
-        <Suspense fallback={null}>
-          <LazyCodexDiscoveryModal
-            visible
-            onClose={controller.closeCodexDiscovery}
-            agentId={controller.activeAgentId}
-            source={controller.agent.source}
-            codexDiscoveryStatus={controller.codexDiscoveryStatus}
-            codexDiscovery={controller.codexDiscovery}
-            availableTabs={controller.codexDiscoveryAvailableTabs}
-            canReadPlugins={controller.canReadCodexPlugins}
           />
         </Suspense>
       ) : null}

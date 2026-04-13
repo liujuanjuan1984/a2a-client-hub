@@ -132,7 +132,6 @@ export function useChatScreenController({
   const [showDetails, setShowDetails] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [showInvokeMetadataModal, setShowInvokeMetadataModal] = useState(false);
-  const [showCodexDiscovery, setShowCodexDiscovery] = useState(false);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
@@ -235,24 +234,6 @@ export function useChatScreenController({
       : !activeAgentId || !agent?.source
         ? "unsupported"
         : extensionCapabilitiesQuery.invokeMetadataStatus;
-  const codexDiscoveryStatus = isBuiltInSelfManagementAgent
-    ? "unsupported"
-    : !activeAgentId || !agent?.source
-      ? "unsupported"
-      : extensionCapabilitiesQuery.codexDiscoveryStatus;
-  const codexDiscovery = isBuiltInSelfManagementAgent
-    ? null
-    : extensionCapabilitiesQuery.codexDiscovery;
-  const codexDiscoveryAvailableTabs = isBuiltInSelfManagementAgent
-    ? []
-    : extensionCapabilitiesQuery.codexDiscoveryAvailableTabs;
-  const canReadCodexPlugins = isBuiltInSelfManagementAgent
-    ? false
-    : extensionCapabilitiesQuery.canReadCodexPlugins;
-  const canBrowseCodexDiscovery =
-    !isBuiltInSelfManagementAgent &&
-    Boolean(activeAgentId && agent?.source) &&
-    extensionCapabilitiesQuery.canShowCodexDiscovery;
   const latestMissingParams = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const item = messages[index];
@@ -1477,17 +1458,6 @@ export function useChatScreenController({
     setShowInvokeMetadataModal(false);
   }, []);
 
-  const openCodexDiscovery = useCallback(() => {
-    if (!canBrowseCodexDiscovery) {
-      return;
-    }
-    setShowCodexDiscovery(true);
-  }, [canBrowseCodexDiscovery]);
-
-  const closeCodexDiscovery = useCallback(() => {
-    setShowCodexDiscovery(false);
-  }, []);
-
   const handleSaveInvokeMetadata = useCallback(
     (bindings: Record<string, string>) => {
       if (!conversationId || !activeAgentId) {
@@ -1602,11 +1572,6 @@ export function useChatScreenController({
     providerDiscoveryStatus,
     sessionCommandStatus,
     invokeMetadataStatus,
-    codexDiscoveryStatus,
-    codexDiscovery,
-    codexDiscoveryAvailableTabs,
-    canReadCodexPlugins,
-    canBrowseCodexDiscovery,
     selectedModel,
     opencodeDirectory,
     invokeMetadataBindings,
@@ -1633,7 +1598,6 @@ export function useChatScreenController({
     showShortcutManager,
     showSessionPicker,
     showInvokeMetadataModal,
-    showCodexDiscovery,
     showDirectoryPicker,
     showModelPicker,
     openShortcutManager,
@@ -1642,8 +1606,6 @@ export function useChatScreenController({
     closeSessionPicker,
     openInvokeMetadataModal,
     closeInvokeMetadataModal,
-    openCodexDiscovery,
-    closeCodexDiscovery,
     openDirectoryPicker,
     closeDirectoryPicker,
     openModelPicker,
