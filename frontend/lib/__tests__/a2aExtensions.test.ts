@@ -303,6 +303,13 @@ describe("assertExtensionSuccess", () => {
       interruptRecovery: true,
       sessionPromptAsync: true,
       sessionControl: {
+        append: {
+          declared: true,
+          consumedByHub: true,
+          status: "supported",
+          routeMode: "hybrid",
+          requiresStreamIdentity: false,
+        },
         promptAsync: {
           declared: true,
           consumedByHub: true,
@@ -340,31 +347,6 @@ describe("assertExtensionSuccess", () => {
             description: "Channel scope.",
           },
         ],
-      },
-      codexDiscovery: {
-        declared: true,
-        consumedByHub: true,
-        status: "supported",
-        methods: {
-          skillsList: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.skills.list",
-            availability: "always",
-            configKey: null,
-            reason: null,
-            retention: null,
-          },
-          pluginsRead: {
-            declared: true,
-            consumedByHub: true,
-            method: "codex.discovery.plugins.read",
-            availability: "disabled",
-            configKey: "A2A_ENABLE_CODEX_DISCOVERY_PLUGIN_READ",
-            reason: "disabled_by_configuration",
-            retention: "deployment-conditional",
-          },
-        },
       },
       runtimeStatus: {
         version: "v1",
@@ -410,20 +392,12 @@ describe("assertExtensionSuccess", () => {
     expect(result.providerDiscovery).toBe(true);
     expect(result.interruptRecovery).toBe(true);
     expect(result.sessionPromptAsync).toBe(true);
+    expect(result.sessionControl.append.status).toBe("supported");
+    expect(result.sessionControl.append.routeMode).toBe("hybrid");
     expect(result.sessionControl.command.consumedByHub).toBe(true);
     expect(result.sessionControl.shell.availability).toBe("conditional");
     expect(result.invokeMetadata.metadataField).toBe("metadata.shared.invoke");
     expect(result.invokeMetadata.fields[0]?.name).toBe("project_id");
-    expect(result.codexDiscovery?.status).toBe("supported");
-    expect(result.codexDiscovery?.methods.skillsList?.method).toBe(
-      "codex.discovery.skills.list",
-    );
-    expect(result.codexDiscovery?.methods.pluginsRead?.availability).toBe(
-      "disabled",
-    );
-    expect(result.codexDiscovery?.methods.pluginsRead?.configKey).toBe(
-      "A2A_ENABLE_CODEX_DISCOVERY_PLUGIN_READ",
-    );
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
   });

@@ -16,49 +16,6 @@ type A2AExtensionResponse = {
   meta?: Record<string, unknown>;
 };
 
-type DeclaredMethodCapability = {
-  declared: boolean;
-  consumedByHub: boolean;
-  method?: string | null;
-  availability?: "always" | "enabled" | "disabled" | "unsupported";
-  configKey?: string | null;
-  reason?: string | null;
-  retention?: string | null;
-};
-
-type DeclaredMethodCollectionCapability<MethodKey extends string> = {
-  declared: boolean;
-  consumedByHub: boolean;
-  status:
-    | "unsupported"
-    | "declared_not_consumed"
-    | "partially_consumed"
-    | "supported"
-    | "unsupported_by_design";
-  declarationSource?:
-    | "none"
-    | "wire_contract"
-    | "wire_contract_fallback"
-    | "extension_method_hint"
-    | "extension_uri_hint"
-    | null;
-  declarationConfidence?: "none" | "fallback" | "authoritative" | null;
-  negotiationState?: "supported" | "missing" | "invalid" | "unsupported" | null;
-  diagnosticNote?: string | null;
-  methods: Partial<Record<MethodKey, DeclaredMethodCapability>>;
-};
-
-type DiscoveryMethodCollectionCapability<MethodKey extends string> = Omit<
-  DeclaredMethodCollectionCapability<MethodKey>,
-  "status"
-> & {
-  status:
-    | "unsupported"
-    | "declared_not_consumed"
-    | "partially_consumed"
-    | "supported";
-};
-
 type A2AExtensionCapabilities = {
   modelSelection: boolean;
   providerDiscovery: boolean;
@@ -122,20 +79,6 @@ type A2AExtensionCapabilities = {
     error?: string | null;
   } | null;
   runtimeStatus: RuntimeStatusContract;
-  codexDiscovery?: DiscoveryMethodCollectionCapability<
-    "skillsList" | "appsList" | "pluginsList" | "pluginsRead" | "watch"
-  > | null;
-  codexThreads?: DeclaredMethodCollectionCapability<
-    "fork" | "archive" | "unarchive" | "metadataUpdate" | "watch"
-  > | null;
-  codexTurns?: DeclaredMethodCollectionCapability<"steer"> | null;
-  codexReview?: DeclaredMethodCollectionCapability<"start" | "watch"> | null;
-  codexExec?: DeclaredMethodCollectionCapability<
-    "start" | "write" | "resize" | "terminate"
-  > | null;
-  codexThreadWatch?: DeclaredMethodCapability & {
-    status?: "unsupported" | "unsupported_by_design";
-  };
 };
 
 export class A2AExtensionCallError extends Error {
@@ -225,25 +168,6 @@ export type ModelSummary = {
   connected?: boolean;
 };
 
-export type CodexDiscoveryStatus =
-  | "unknown"
-  | "unsupported"
-  | "declared_not_consumed"
-  | "partially_consumed"
-  | "supported";
-
-export type CodexDiscoveryCapability = NonNullable<
-  A2AExtensionCapabilities["codexDiscovery"]
->;
-export type CodexThreadsCapability = NonNullable<
-  A2AExtensionCapabilities["codexThreads"]
->;
-export type CodexReviewCapability = NonNullable<
-  A2AExtensionCapabilities["codexReview"]
->;
-export type CodexExecCapability = NonNullable<
-  A2AExtensionCapabilities["codexExec"]
->;
 export type RequestExecutionOptionsCapability = NonNullable<
   A2AExtensionCapabilities["requestExecutionOptions"]
 >;
