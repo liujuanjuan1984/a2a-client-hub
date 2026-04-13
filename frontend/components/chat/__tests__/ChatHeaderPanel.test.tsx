@@ -47,6 +47,13 @@ describe("ChatHeaderPanel", () => {
         onOpenSessionPicker={() => {}}
         onTestConnection={() => {}}
         testingConnection={false}
+        modelSelectionStatus="supported"
+        providerDiscoveryStatus="unknown"
+        interruptRecoveryStatus="unsupported"
+        sessionPromptAsyncStatus="supported"
+        sessionCommandStatus="unsupported"
+        sessionShellStatus="unknown"
+        invokeMetadataStatus="supported"
       />,
     );
 
@@ -56,5 +63,14 @@ describe("ChatHeaderPanel", () => {
     expect(
       screen.queryByText("This agent does not declare Codex discovery."),
     ).toBeNull();
+    expect(screen.getByText("Capabilities")).toBeTruthy();
+    expect(screen.getByText("Model Selection")).toBeTruthy();
+    expect(screen.getByText("Provider Discovery")).toBeTruthy();
+    expect(screen.getByText("Interrupt Recovery")).toBeTruthy();
+    expect(screen.getAllByText("Available").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    expect(screen.queryByText("IN: text")).toBeNull();
+    expect(screen.queryByText("OUT: text")).toBeNull();
   });
 });

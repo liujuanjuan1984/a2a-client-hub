@@ -76,6 +76,13 @@ export function ChatScreen({
         onOpenSessionPicker={controller.openSessionPicker}
         onTestConnection={controller.handleTest}
         testingConnection={controller.testingConnection}
+        modelSelectionStatus={controller.modelSelectionStatus}
+        providerDiscoveryStatus={controller.providerDiscoveryStatus}
+        interruptRecoveryStatus={controller.interruptRecoveryStatus}
+        sessionPromptAsyncStatus={controller.sessionPromptAsyncStatus}
+        sessionCommandStatus={controller.sessionCommandStatus}
+        sessionShellStatus={controller.sessionShellStatus}
+        invokeMetadataStatus={controller.invokeMetadataStatus}
       />
 
       <ChatTimelinePanel

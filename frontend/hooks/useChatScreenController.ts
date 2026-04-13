@@ -216,6 +216,12 @@ export function useChatScreenController({
       : !activeAgentId || !agent?.source
         ? "unsupported"
         : extensionCapabilitiesQuery.sessionCommandStatus;
+  const sessionShellStatus: GenericCapabilityStatus =
+    isBuiltInSelfManagementAgent
+      ? "unsupported"
+      : !activeAgentId || !agent?.source
+        ? "unsupported"
+        : extensionCapabilitiesQuery.sessionShellStatus;
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
     isBuiltInSelfManagementAgent
       ? "unsupported"
@@ -1570,7 +1576,10 @@ export function useChatScreenController({
     sessionSource,
     modelSelectionStatus,
     providerDiscoveryStatus,
+    interruptRecoveryStatus,
     sessionCommandStatus,
+    sessionShellStatus,
+    sessionPromptAsyncStatus,
     invokeMetadataStatus,
     selectedModel,
     opencodeDirectory,
