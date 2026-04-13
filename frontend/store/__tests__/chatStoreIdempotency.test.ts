@@ -480,4 +480,45 @@ describe("chat store idempotency semantics", () => {
     ]);
     expect(session?.pendingInterrupt?.requestId).toBe("stream-1");
   });
+
+  it("replaceRecoveredInterrupts can replace all pending interrupts for a built-in conversation", () => {
+    useChatStore.getState().ensureSession("conv-builtin", "self-management");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-builtin": {
+          ...state.sessions["conv-builtin"],
+          pendingInterrupts: [
+            {
+              requestId: "builtin-local-stale-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "self-management-write",
+                patterns: ["self.jobs.pause"],
+              },
+            },
+          ],
+          pendingInterrupt: {
+            requestId: "builtin-local-stale-1",
+            type: "permission",
+            phase: "asked",
+            details: {
+              permission: "self-management-write",
+              patterns: ["self.jobs.pause"],
+            },
+          },
+        },
+      },
+    }));
+
+    useChatStore.getState().replaceRecoveredInterrupts("conv-builtin", [], {
+      sessionId: "conv-builtin",
+      replaceAllForConversation: true,
+    });
+
+    const session = useChatStore.getState().sessions["conv-builtin"];
+    expect(session?.pendingInterrupts).toEqual([]);
+    expect(session?.pendingInterrupt).toBeNull();
+  });
 });

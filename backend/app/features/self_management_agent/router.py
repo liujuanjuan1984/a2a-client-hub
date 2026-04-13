@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
+from app.api.error_handlers import build_error_detail
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
@@ -34,6 +35,22 @@ router = StrictAPIRouter(
     tags=["self-management-agent"],
 )
 logger = get_logger(__name__)
+
+_BUILT_IN_PERMISSION_REPLY_INVALID_OR_EXPIRED_DETAIL = (
+    "The write approval request is invalid or expired."
+)
+
+
+def _permission_reply_error_detail(
+    exc: SelfManagementBuiltInAgentUnavailableError,
+) -> tuple[int, str | dict[str, str]]:
+    message = str(exc)
+    if message == _BUILT_IN_PERMISSION_REPLY_INVALID_OR_EXPIRED_DETAIL:
+        return status.HTTP_409_CONFLICT, build_error_detail(
+            message=message,
+            error_code="interrupt_request_expired",
+        )
+    return status.HTTP_400_BAD_REQUEST, message
 
 
 def _to_run_response(
@@ -167,6 +184,7 @@ async def recover_self_management_built_in_agent_interrupts(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    await commit_safely(db)
 
     return SelfManagementBuiltInAgentInterruptRecoveryResponse(
         items=[
@@ -220,6 +238,7 @@ async def reply_self_management_built_in_agent_permission_interrupt(
             detail=str(exc),
         ) from exc
     except SelfManagementBuiltInAgentUnavailableError as exc:
+        status_code, detail = _permission_reply_error_detail(exc)
         logger.exception(
             "Built-in self-management agent permission reply failed",
             extra={
@@ -229,8 +248,8 @@ async def reply_self_management_built_in_agent_permission_interrupt(
             },
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            status_code=status_code,
+            detail=detail,
         ) from exc
     except Exception:
         logger.exception(

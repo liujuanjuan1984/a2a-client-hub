@@ -757,7 +757,7 @@ describe("ChatScreen interrupt handling", () => {
           },
         },
       ],
-      { sessionId: conversationId },
+      { sessionId: conversationId, replaceAllForConversation: true },
     );
   });
 
@@ -1671,6 +1671,75 @@ describe("ChatScreen interrupt handling", () => {
       "Action submitted",
       "Authorization request handled.",
     );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("clears stale built-in permission interrupts when the reply request expired", async () => {
+    mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(
+      new ApiRequestError("Bad Request", 400, {
+        errorCode: "interrupt_request_expired",
+        upstreamError: {
+          message: "The write approval request is invalid or expired.",
+        },
+      }),
+    );
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      agentId: SELF_MANAGEMENT_AGENT_ID,
+      pendingInterrupt: {
+        requestId: "builtin-perm-stale-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "self-management-write",
+          patterns: ["self.jobs.pause"],
+          displayMessage: "Approve write access to continue.",
+        },
+      },
+      pendingInterrupts: [
+        {
+          requestId: "builtin-perm-stale-1",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve write access to continue.",
+          },
+        },
+      ],
+    };
+
+    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const root = tree.root;
+    const permissionButton = root.findByProps({
+      testID: "interrupt-permission-once",
+    });
+
+    await act(async () => {
+      await permissionButton.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(
+      mockReplySelfManagementBuiltInAgentPermissionInterrupt,
+    ).toHaveBeenCalledWith({
+      requestId: "builtin-perm-stale-1",
+      reply: "once",
+      agentMessageId: expect.any(String),
+    });
+    expect(mockChatState.clearPendingInterrupt).toHaveBeenCalledWith(
+      conversationId,
+      "builtin-perm-stale-1",
+    );
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Interrupt closed",
+      "The interrupt request expired and was removed.",
+    );
+    expect(mockToastError).not.toHaveBeenCalled();
 
     act(() => {
       tree.unmount();

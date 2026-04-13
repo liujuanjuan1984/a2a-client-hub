@@ -157,7 +157,10 @@ type ChatState = {
   replaceRecoveredInterrupts: (
     conversationId: string,
     interrupts: PendingRuntimeInterrupt[],
-    options?: { sessionId?: string | null },
+    options?: {
+      sessionId?: string | null;
+      replaceAllForConversation?: boolean;
+    },
   ) => void;
   getLatestConversationIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
@@ -353,15 +356,17 @@ export const useChatStore = create<ChatState>()(
           }
           const targetSessionId = options?.sessionId?.trim() || null;
           const currentQueue = getPendingInterruptQueue(current);
-          const retainedQueue = currentQueue.filter((interrupt) => {
-            if (interrupt.source !== "recovery") {
-              return true;
-            }
-            if (!targetSessionId) {
-              return false;
-            }
-            return interrupt.sessionId !== targetSessionId;
-          });
+          const retainedQueue = options?.replaceAllForConversation
+            ? []
+            : currentQueue.filter((interrupt) => {
+                if (interrupt.source !== "recovery") {
+                  return true;
+                }
+                if (!targetSessionId) {
+                  return false;
+                }
+                return interrupt.sessionId !== targetSessionId;
+              });
 
           const seenRequestIds = new Set(
             retainedQueue.map((interrupt) => interrupt.requestId),

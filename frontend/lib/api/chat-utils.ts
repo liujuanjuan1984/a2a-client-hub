@@ -240,7 +240,7 @@ export type PendingRuntimeInterrupt = RuntimeInterruptBase & {
 
 export type ResolvedRuntimeInterrupt = RuntimeInterruptBase & {
   phase: "resolved";
-  resolution: "replied" | "rejected";
+  resolution: "replied" | "rejected" | "expired";
 };
 
 export type RuntimeInterrupt =
@@ -304,7 +304,9 @@ const isRuntimeInterrupt = (value: unknown): value is RuntimeInterrupt => {
   }
   if (candidate.phase === "resolved") {
     return (
-      candidate.resolution === "replied" || candidate.resolution === "rejected"
+      candidate.resolution === "replied" ||
+      candidate.resolution === "rejected" ||
+      candidate.resolution === "expired"
     );
   }
   if (candidate.phase !== "asked") {
@@ -918,7 +920,11 @@ const extractRuntimeInterrupt = (
     (isInputRequiredRuntimeState(runtimeState, contract) ? "asked" : null);
   if (phase === "resolved") {
     const resolution = pickString(interrupt, ["resolution"])?.toLowerCase();
-    if (resolution !== "replied" && resolution !== "rejected") {
+    if (
+      resolution !== "replied" &&
+      resolution !== "rejected" &&
+      resolution !== "expired"
+    ) {
       return null;
     }
     return {
@@ -1007,12 +1013,24 @@ const buildInterruptEventMessageCode = (
 ):
   | "permission_requested"
   | "permission_resolved"
+  | "permission_expired"
   | "permissions_requested"
   | "permissions_resolved"
+  | "permissions_expired"
   | "question_requested"
   | "question_answer_received"
-  | "question_rejected" => {
+  | "question_rejected"
+  | "question_expired" => {
   if (interrupt.phase === "resolved") {
+    if (interrupt.resolution === "expired") {
+      if (interrupt.type === "permission") {
+        return "permission_expired";
+      }
+      if (interrupt.type === "permissions") {
+        return "permissions_expired";
+      }
+      return "question_expired";
+    }
     if (interrupt.type === "permission") {
       return "permission_resolved";
     }
@@ -1051,11 +1069,23 @@ const stringifyInterruptObject = (value: unknown): string | null => {
 
 const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
   const messageCode = buildInterruptEventMessageCode(interrupt);
+  if (messageCode === "permission_expired") {
+    return "Authorization request expired. Interrupt closed.";
+  }
+  if (messageCode === "permissions_expired") {
+    return "Permissions request expired. Interrupt closed.";
+  }
   if (messageCode === "permission_resolved") {
     return "Authorization request was handled. Agent resumed.";
   }
   if (messageCode === "permissions_resolved") {
     return "Permissions request was handled. Agent resumed.";
+  }
+  if (messageCode === "question_expired") {
+    if (interrupt.type === "elicitation") {
+      return "Additional input request expired. Interrupt closed.";
+    }
+    return "Question request expired. Interrupt closed.";
   }
   if (messageCode === "question_rejected") {
     if (interrupt.type === "elicitation") {

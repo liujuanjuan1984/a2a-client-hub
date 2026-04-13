@@ -1293,6 +1293,203 @@ async def test_built_in_agent_interrupt_recovery_route_returns_unresolved_interr
     ]
 
 
+async def test_built_in_agent_interrupt_recovery_route_persists_expired_interrupts(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    persisted_user_id = cast(Any, user.id)
+    conversation_id = _new_conversation_id()
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    interrupt_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+    assert interrupt_result.interrupt is not None
+    await async_db_session.commit()
+
+    original_verify = (
+        self_management_agent_service_module.verify_self_management_interrupt_token_claims
+    )
+    invalid_request_id = interrupt_result.interrupt.request_id
+    monkeypatch.setattr(
+        self_management_agent_service_module,
+        "verify_self_management_interrupt_token_claims",
+        lambda token: None if token == invalid_request_id else original_verify(token),
+    )
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent/interrupts:recover",
+            json={"conversationId": conversation_id},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+
+    await async_db_session.rollback()
+    system_messages = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessage)
+                .where(
+                    AgentMessage.user_id == persisted_user_id,
+                    AgentMessage.conversation_id == UUID(conversation_id),
+                    AgentMessage.sender == "system",
+                )
+                .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+            )
+        ).all()
+    )
+    assert len(system_messages) == 2
+    resolved_interrupt = cast(dict[str, Any], system_messages[1].message_metadata)[
+        "interrupt"
+    ]
+    assert resolved_interrupt["phase"] == "resolved"
+    assert resolved_interrupt["resolution"] == "expired"
+
+
+async def test_built_in_agent_recovery_skips_invalid_interrupt_requests(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    interrupt_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+    assert interrupt_result.interrupt is not None
+
+    original_verify = (
+        self_management_agent_service_module.verify_self_management_interrupt_token_claims
+    )
+    invalid_request_id = interrupt_result.interrupt.request_id
+    monkeypatch.setattr(
+        self_management_agent_service_module,
+        "verify_self_management_interrupt_token_claims",
+        lambda token: None if token == invalid_request_id else original_verify(token),
+    )
+
+    recovered = await self_management_built_in_agent_service.recover_pending_interrupts(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+    )
+
+    assert recovered == []
+
+    system_messages = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessage)
+                .where(
+                    AgentMessage.user_id == cast(Any, user.id),
+                    AgentMessage.conversation_id == UUID(conversation_id),
+                    AgentMessage.sender == "system",
+                )
+                .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+            )
+        ).all()
+    )
+    assert len(system_messages) == 2
+    resolved_interrupt = cast(dict[str, Any], system_messages[1].message_metadata)[
+        "interrupt"
+    ]
+    assert resolved_interrupt["phase"] == "resolved"
+    assert resolved_interrupt["resolution"] == "expired"
+
+
+async def test_built_in_agent_recovery_skips_interrupts_for_other_conversations(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    _FakeSwivalSession.next_answer = (
+        "I can pause the requested job after you approve write access.\n"
+        f"{_WRITE_APPROVAL_SENTINEL}"
+    )
+
+    interrupt_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+    assert interrupt_result.interrupt is not None
+
+    monkeypatch.setattr(
+        self_management_agent_service_module,
+        "get_self_management_interrupt_conversation_id",
+        lambda _claims: str(uuid4()),
+    )
+
+    recovered = await self_management_built_in_agent_service.recover_pending_interrupts(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+    )
+
+    assert recovered == []
+
+
+async def test_built_in_agent_permission_reply_route_returns_terminal_error_code_for_expired_request(
+    async_session_maker,
+    async_db_session,
+) -> None:
+    _reset_built_in_agent_runtime()
+    user = await create_user(async_db_session)
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent/interrupts/permission:reply",
+            json={"requestId": "expired-request", "reply": "always"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "message": "The write approval request is invalid or expired.",
+        "error_code": "interrupt_request_expired",
+    }
+
+
 async def test_built_in_agent_permission_reply_route_logs_traceback_for_unavailable_error(
     async_session_maker,
     async_db_session,

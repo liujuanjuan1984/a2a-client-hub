@@ -329,6 +329,7 @@ class SelfManagementBuiltInAgentService:
 
         asked_interrupts: dict[str, dict[str, Any]] = {}
         ordered_request_ids: list[str] = []
+        expired_request_ids: list[str] = []
         for message in rows:
             metadata = cast(dict[str, Any], message.message_metadata or {})
             interrupt = normalize_interrupt_lifecycle_event(
@@ -353,6 +354,21 @@ class SelfManagementBuiltInAgentService:
             interrupt = asked_interrupts.get(request_id)
             if interrupt is None:
                 continue
+            claims = verify_self_management_interrupt_token_claims(request_id)
+            if claims is None:
+                expired_request_ids.append(request_id)
+                continue
+            if claims.subject != str(current_user.id):
+                expired_request_ids.append(request_id)
+                continue
+            if get_self_management_interrupt_conversation_id(claims) != str(
+                resolved_conversation_id
+            ):
+                expired_request_ids.append(request_id)
+                continue
+            if get_self_management_interrupt_message(claims) is None:
+                expired_request_ids.append(request_id)
+                continue
             recovered.append(
                 SelfManagementBuiltInAgentRecoveredInterrupt(
                     request_id=request_id,
@@ -360,6 +376,15 @@ class SelfManagementBuiltInAgentService:
                     type=cast(str, interrupt["type"]),
                     details=cast(dict[str, Any], interrupt.get("details") or {}),
                 )
+            )
+
+        for request_id in expired_request_ids:
+            await self._persist_interrupt_resolution(
+                db=db,
+                current_user=current_user,
+                conversation_id=str(resolved_conversation_id),
+                request_id=request_id,
+                resolution="expired",
             )
         return recovered
 

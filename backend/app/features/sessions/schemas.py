@@ -175,7 +175,7 @@ class InterruptViewItem(BaseModel):
     request_id: str = Field(alias="requestId")
     type: Literal["permission", "question", "permissions", "elicitation"]
     phase: Literal["asked", "resolved"]
-    resolution: Optional[Literal["replied", "rejected"]] = None
+    resolution: Optional[Literal["replied", "rejected", "expired"]] = None
     details: Optional[InterruptDetailsItem] = None
 
     model_config = {"populate_by_name": True}
