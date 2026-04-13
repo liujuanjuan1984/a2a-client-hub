@@ -524,7 +524,7 @@ def extract_interrupt_lifecycle_from_serialized_event(
     }
     if phase == "resolved":
         resolution = _pick_non_empty_str(interrupt, ("resolution",))
-        if resolution not in {"replied", "rejected"}:
+        if resolution not in {"replied", "rejected", "expired"}:
             return None
         payload_event["resolution"] = resolution
         return payload_event

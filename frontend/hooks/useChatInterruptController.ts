@@ -23,7 +23,7 @@ const TERMINAL_INTERRUPT_ERROR_CODES = new Set([
 type ResolvedInterruptKeyInput = {
   requestId: string;
   type: "permission" | "question" | "permissions" | "elicitation";
-  resolution: "replied" | "rejected";
+  resolution: "replied" | "rejected" | "expired";
 };
 
 type UseChatInterruptControllerParams = {
@@ -144,18 +144,37 @@ export function useChatInterruptController({
   const buildResolvedInterruptFeedback = useCallback(
     (interrupt: ResolvedRuntimeInterruptRecord) => {
       if (interrupt.type === "permission") {
+        if (interrupt.resolution === "expired") {
+          return {
+            title: "Interrupt resolved",
+            message: "Authorization request expired and was closed.",
+          };
+        }
         return {
           title: "Interrupt resolved",
           message: "Authorization request was handled.",
         };
       }
       if (interrupt.type === "permissions") {
+        if (interrupt.resolution === "expired") {
+          return {
+            title: "Interrupt resolved",
+            message: "Permissions request expired and was closed.",
+          };
+        }
         return {
           title: "Interrupt resolved",
           message: "Permissions request was handled.",
         };
       }
       if (interrupt.type === "elicitation") {
+        if (interrupt.resolution === "expired") {
+          return {
+            title: "Interrupt resolved",
+            message:
+              "Additional input request expired and the interrupt is closed.",
+          };
+        }
         if (interrupt.resolution === "rejected") {
           return {
             title: "Interrupt resolved",
@@ -166,6 +185,12 @@ export function useChatInterruptController({
         return {
           title: "Interrupt resolved",
           message: "Additional input submitted. Agent resumed.",
+        };
+      }
+      if (interrupt.resolution === "expired") {
+        return {
+          title: "Interrupt resolved",
+          message: "Question request expired and the interrupt is closed.",
         };
       }
       if (interrupt.resolution === "rejected") {

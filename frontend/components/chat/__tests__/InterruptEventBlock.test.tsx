@@ -73,6 +73,37 @@ describe("InterruptEventBlock", () => {
     ).toBeTruthy();
   });
 
+  it("renders expired interrupt with expired badge", () => {
+    const block: MessageBlock = {
+      id: "interrupt-expired-1",
+      type: "interrupt_event",
+      content: "Authorization request expired. Interrupt closed.",
+      isFinished: true,
+      interrupt: {
+        requestId: "perm-3",
+        type: "permission",
+        phase: "resolved",
+        resolution: "expired",
+      },
+      createdAt: "2026-03-23T00:00:00.000Z",
+      updatedAt: "2026-03-23T00:00:00.000Z",
+    };
+
+    const screen = render(
+      <InterruptEventBlock
+        block={block}
+        fallbackBlockId="interrupt-fallback-expired"
+        isFirst
+      />,
+    );
+
+    expect(screen.getByText("Authorization update")).toBeTruthy();
+    expect(screen.getByText("Expired")).toBeTruthy();
+    expect(
+      screen.getByText("Authorization request expired. Interrupt closed."),
+    ).toBeTruthy();
+  });
+
   it("renders asked permissions interrupt with structured payload details", () => {
     const block: MessageBlock = {
       id: "interrupt-asked-2",

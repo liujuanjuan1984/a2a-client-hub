@@ -25,12 +25,20 @@ const BADGE_STYLES = {
     text: "text-rose-200",
     label: "Rejected",
   },
+  expired: {
+    container: "border-slate-400/30 bg-slate-500/10",
+    text: "text-slate-200",
+    label: "Expired",
+  },
 } as const;
 
 const resolveBadgeTone = (block: MessageBlock): keyof typeof BADGE_STYLES => {
   const interrupt = block.interrupt;
   if (!interrupt) {
     return "actionRequired";
+  }
+  if (interrupt.phase === "resolved" && interrupt.resolution === "expired") {
+    return "expired";
   }
   if (interrupt.phase === "resolved" && interrupt.resolution === "rejected") {
     return "rejected";

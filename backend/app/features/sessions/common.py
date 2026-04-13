@@ -239,7 +239,7 @@ def normalize_interrupt_lifecycle_event(
     }
     if phase == "resolved":
         resolution = normalize_non_empty_text(event.get("resolution"))
-        if resolution not in {"replied", "rejected"}:
+        if resolution not in {"replied", "rejected", "expired"}:
             return None
         normalized["resolution"] = resolution
         return normalized
@@ -277,6 +277,12 @@ def build_interrupt_lifecycle_message_code(event: dict[str, Any]) -> str:
     interrupt_type = str(event.get("type") or "")
     phase = str(event.get("phase") or "")
     if phase == "resolved":
+        if event.get("resolution") == "expired":
+            if interrupt_type == "permission":
+                return "permission_expired"
+            if interrupt_type == "permissions":
+                return "permissions_expired"
+            return "question_expired"
         if interrupt_type == "permission":
             return "permission_resolved"
         if interrupt_type == "permissions":
@@ -299,6 +305,14 @@ def build_interrupt_lifecycle_message_code(event: dict[str, Any]) -> str:
 
 def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
     message_code = build_interrupt_lifecycle_message_code(event)
+    if message_code == "permission_expired":
+        return "Authorization request expired. Interrupt closed."
+    if message_code == "permissions_expired":
+        return "Permissions request expired. Interrupt closed."
+    if message_code == "question_expired":
+        if str(event.get("type") or "") == "elicitation":
+            return "Additional input request expired. Interrupt closed."
+        return "Question request expired. Interrupt closed."
     if message_code == "permission_resolved":
         return "Authorization request was handled. Agent resumed."
     if message_code == "permissions_resolved":

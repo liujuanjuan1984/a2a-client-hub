@@ -184,6 +184,7 @@ async def recover_self_management_built_in_agent_interrupts(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    await commit_safely(db)
 
     return SelfManagementBuiltInAgentInterruptRecoveryResponse(
         items=[
