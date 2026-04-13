@@ -325,10 +325,6 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     return True, ""
 
 
-def create_user_token(user_id: Union[str, UUID]) -> str:
-    return create_user_access_token(user_id)
-
-
 def create_user_access_token(user_id: Union[str, UUID]) -> str:
     return create_jwt_token(
         subject=str(user_id),
@@ -401,18 +397,6 @@ def create_user_refresh_token(
         expires_in_seconds=settings.jwt_refresh_token_ttl_seconds,
         jwt_id=jwt_id,
         session_id=str(session_id) if session_id is not None else None,
-    )
-
-
-def verify_access_token(token: str) -> Optional[str]:
-    return verify_jwt_token(token, expected_type=ACCESS_TOKEN_TYPE)
-
-
-def verify_self_management_interrupt_token_claims(
-    token: str,
-) -> Optional[VerifiedJwtClaims]:
-    return verify_jwt_token_claims(
-        token, expected_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE
     )
 
 

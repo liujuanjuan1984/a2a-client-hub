@@ -20,12 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import (
+    SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
     create_self_management_access_token,
     create_self_management_interrupt_token,
     get_self_management_interrupt_conversation_id,
     get_self_management_interrupt_message,
     get_self_management_interrupt_tool_names,
-    verify_self_management_interrupt_token_claims,
+    verify_jwt_token_claims,
 )
 from app.db.models.agent_message import AgentMessage
 from app.db.models.user import User
@@ -354,7 +355,10 @@ class SelfManagementBuiltInAgentService:
             interrupt = asked_interrupts.get(request_id)
             if interrupt is None:
                 continue
-            claims = verify_self_management_interrupt_token_claims(request_id)
+            claims = verify_jwt_token_claims(
+                request_id,
+                expected_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
+            )
             if claims is None:
                 expired_request_ids.append(request_id)
                 continue
@@ -509,7 +513,10 @@ class SelfManagementBuiltInAgentService:
         reply: str,
         agent_message_id: UUID | None = None,
     ) -> SelfManagementBuiltInAgentRunResult:
-        claims = verify_self_management_interrupt_token_claims(request_id)
+        claims = verify_jwt_token_claims(
+            request_id,
+            expected_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
+        )
         if claims is None:
             raise SelfManagementBuiltInAgentUnavailableError(
                 "The write approval request is invalid or expired."

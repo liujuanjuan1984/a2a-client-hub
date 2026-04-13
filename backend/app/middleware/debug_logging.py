@@ -25,7 +25,7 @@ from app.core.logging import (
     set_request_id,
     set_user_context,
 )
-from app.core.security import verify_access_token
+from app.core.security import ACCESS_TOKEN_TYPE, verify_jwt_token
 from app.utils.logging_redaction import (
     redact_headers_for_logging,
     redact_query_params_for_logging,
@@ -48,7 +48,10 @@ class DebugLoggingMiddleware(BaseHTTPMiddleware):
         if auth_header:
             scheme, _, credentials = auth_header.partition(" ")
             if scheme.lower() == "bearer" and credentials:
-                user_id = verify_access_token(credentials)
+                user_id = verify_jwt_token(
+                    credentials,
+                    expected_type=ACCESS_TOKEN_TYPE,
+                )
                 if user_id:
                     set_user_context(user_id)
                     set_actor_context(

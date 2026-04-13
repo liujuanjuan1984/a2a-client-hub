@@ -18,8 +18,8 @@ from app.core.security import (
     DUMMY_PASSWORD_HASH,
     REFRESH_TOKEN_TYPE,
     build_jwks_document,
+    create_user_access_token,
     create_user_refresh_token,
-    create_user_token,
     get_password_hash,
     verify_jwt_token_claims,
     verify_password,
@@ -661,7 +661,7 @@ async def test_logout_all_revokes_all_refresh_sessions(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    access_token = create_user_token(user.id)
+    access_token = create_user_access_token(user.id)
 
     logout_all_response = await client.post(
         f"{settings.api_v1_prefix}/auth/logout-all",
@@ -703,7 +703,7 @@ async def test_logout_all_blocks_legacy_refresh_tokens(
 
     user = await run_in_session(async_session_maker, fetch_user)
     legacy_refresh = create_user_refresh_token(user.id)
-    access_token = create_user_token(user.id)
+    access_token = create_user_access_token(user.id)
 
     logout_all_response = await client.post(
         f"{settings.api_v1_prefix}/auth/logout-all",
@@ -740,7 +740,7 @@ async def test_change_password_updates_credentials(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
     login_response = await client.post(
         f"{settings.api_v1_prefix}/auth/login",
         json={"email": payload["email"], "password": payload["password"]},
@@ -805,7 +805,7 @@ async def test_change_password_blocks_legacy_refresh_tokens(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    access_token = create_user_token(user.id)
+    access_token = create_user_access_token(user.id)
     legacy_refresh = create_user_refresh_token(user.id)
 
     change_response = await client.post(
@@ -844,7 +844,7 @@ async def test_change_password_rejects_wrong_current_password(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.post(
         f"{settings.api_v1_prefix}/auth/password/change",
@@ -877,7 +877,7 @@ async def test_change_password_enforces_strength_rules(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.post(
         f"{settings.api_v1_prefix}/auth/password/change",
@@ -1246,7 +1246,7 @@ async def test_change_password_accepts_new_password_longer_than_72_utf8_bytes(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.post(
         f"{settings.api_v1_prefix}/auth/password/change",
@@ -1317,7 +1317,7 @@ async def test_me_endpoint_returns_current_user(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.get(
         f"{settings.api_v1_prefix}/auth/me",
@@ -1357,7 +1357,7 @@ async def test_me_endpoint_rejects_disabled_user(
 
     user_id = await run_in_session(async_session_maker, disable)
 
-    token = create_user_token(user_id)
+    token = create_user_access_token(user_id)
     response = await client.get(
         f"{settings.api_v1_prefix}/auth/me",
         headers={"Authorization": f"Bearer {token}"},
