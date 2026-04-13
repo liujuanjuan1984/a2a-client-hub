@@ -23,7 +23,11 @@ from app.core.logging import (
     set_actor_context,
     set_user_context,
 )
-from app.core.security import create_user_access_token, verify_access_token
+from app.core.security import (
+    ACCESS_TOKEN_TYPE,
+    create_user_access_token,
+    verify_jwt_token,
+)
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.features.auth.service import (
@@ -260,7 +264,10 @@ async def _build_cli_gateway(
     db: AsyncSession,
 ) -> tuple[CliSessionState, User, SelfManagementToolGateway]:
     session_state = _load_session()
-    user_id = verify_access_token(session_state.access_token)
+    user_id = verify_jwt_token(
+        session_state.access_token,
+        expected_type=ACCESS_TOKEN_TYPE,
+    )
     if user_id is None:
         raise CliCommandError(
             "Saved CLI session is invalid or expired. "

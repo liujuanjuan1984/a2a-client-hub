@@ -9,9 +9,11 @@ import {
   useUpdateAgentMutation,
   useValidateAgentMutation,
 } from "@/hooks/useAgentsCatalogQuery";
+import { DEFAULT_API_KEY_HEADER } from "@/lib/agentHeaders";
 import { ApiRequestError } from "@/lib/api/client";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentConfig, useAgentStore } from "@/store/agents";
+import { createMockAgentConfig } from "@/test-utils/agentFixtures";
 import {
   cleanupTestQueryClient,
   createTestQueryClient,
@@ -21,53 +23,32 @@ const mocks = {
   checkAgentHealth: jest.fn(),
   createAgent: jest.fn(),
   deleteAgent: jest.fn(),
-  listAgents: jest.fn(),
+  listAgentsCatalog: jest.fn(),
   updateAgent: jest.fn(),
   validateAgentCard: jest.fn(),
-  listHubAgents: jest.fn(),
   validateHubAgentCard: jest.fn(),
 };
 
-jest.mock("@/lib/storage/mmkv", () => ({
-  buildPersistStorageName: (key: string) => key,
-  createPersistStorage: () => ({
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-  }),
-}));
+jest.mock("@/lib/storage/mmkv", () =>
+  require("@/test-utils/mockMmkv").createMockMmkvModule(),
+);
 
 jest.mock("@/lib/api/a2aAgents", () => ({
   checkAgentHealth: (...args: unknown[]) => mocks.checkAgentHealth(...args),
   createAgent: (...args: unknown[]) => mocks.createAgent(...args),
   deleteAgent: (...args: unknown[]) => mocks.deleteAgent(...args),
-  listAgents: (...args: unknown[]) => mocks.listAgents(...args),
   updateAgent: (...args: unknown[]) => mocks.updateAgent(...args),
   validateAgentCard: (...args: unknown[]) => mocks.validateAgentCard(...args),
 }));
 
+jest.mock("@/lib/api/agentsCatalog", () => ({
+  listAgentsCatalog: (...args: unknown[]) => mocks.listAgentsCatalog(...args),
+}));
+
 jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
-  listHubAgents: (...args: unknown[]) => mocks.listHubAgents(...args),
   validateHubAgentCard: (...args: unknown[]) =>
     mocks.validateHubAgentCard(...args),
 }));
-
-const buildAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
-  id: "agent-1",
-  source: "personal",
-  name: "Agent One",
-  cardUrl: "https://example.com/agent-1.json",
-  authType: "none",
-  bearerToken: "",
-  apiKeyHeader: "X-API-Key",
-  apiKeyValue: "",
-  basicUsername: "",
-  basicPassword: "",
-  extraHeaders: [],
-  invokeMetadataDefaults: [],
-  status: "idle",
-  ...overrides,
-});
 
 const createWrapper = (queryClient: QueryClient) => {
   return ({ children }: PropsWithChildren) => (
@@ -105,24 +86,19 @@ describe("useAgentsCatalogQuery mutations", () => {
   });
 
   it("does not hydrate editable basic username from server hint", async () => {
-    mocks.listAgents.mockResolvedValue({
+    mocks.listAgentsCatalog.mockResolvedValue({
       items: [
         {
           id: "agent-basic",
+          source: "personal",
           name: "Basic Agent",
           card_url: "https://example.com/basic.json",
           auth_type: "basic",
-          username_hint: "alice",
           enabled: true,
-          tags: [],
-          extra_headers: {},
-          invoke_metadata_defaults: {},
-          created_at: "2026-02-12T00:00:00.000Z",
-          updated_at: "2026-02-12T00:01:00.000Z",
+          health_status: "unknown",
         },
       ],
     });
-    mocks.listHubAgents.mockResolvedValue({ items: [] });
 
     const { result } = renderHook(() => useAgentsCatalogQuery(), {
       wrapper: createWrapper(queryClient),
@@ -145,8 +121,8 @@ describe("useAgentsCatalogQuery mutations", () => {
 
   it("updates cache and clears active agent on delete", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
-      buildAgent({ id: "agent-1" }),
-      buildAgent({ id: "agent-2", source: "shared" }),
+      createMockAgentConfig({ id: "agent-1" }),
+      createMockAgentConfig({ id: "agent-2", source: "shared" }),
     ]);
     useAgentStore.setState({ activeAgentId: "agent-1" });
     mocks.deleteAgent.mockResolvedValue({});
@@ -162,7 +138,7 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(mocks.deleteAgent).toHaveBeenCalledWith("agent-1");
     expect(
       queryClient.getQueryData<AgentConfig[]>(queryKeys.agents.catalog()),
-    ).toEqual([buildAgent({ id: "agent-2", source: "shared" })]);
+    ).toEqual([createMockAgentConfig({ id: "agent-2", source: "shared" })]);
     expect(useAgentStore.getState().activeAgentId).toBeNull();
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
@@ -171,7 +147,7 @@ describe("useAgentsCatalogQuery mutations", () => {
 
   it("clears transient validation state when an update changes the card identity", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
-      buildAgent({
+      createMockAgentConfig({
         id: "agent-1",
         status: "error",
         lastError: "network",
@@ -222,7 +198,7 @@ describe("useAgentsCatalogQuery mutations", () => {
 
   it("preserves transient validation state when an update keeps the same card identity", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
-      buildAgent({
+      createMockAgentConfig({
         id: "agent-1",
         status: "error",
         lastError: "network",
@@ -270,7 +246,7 @@ describe("useAgentsCatalogQuery mutations", () => {
 
   it("removes missing agent during validate and clears active selection", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
-      buildAgent({ id: "agent-1" }),
+      createMockAgentConfig({ id: "agent-1" }),
     ]);
     useAgentStore.setState({ activeAgentId: "agent-1" });
 
@@ -303,7 +279,7 @@ describe("useAgentsCatalogQuery mutations", () => {
 
   it("stores validation success metadata after successful validation", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
-      buildAgent({ id: "agent-1" }),
+      createMockAgentConfig({ id: "agent-1" }),
     ]);
 
     mocks.validateAgentCard.mockResolvedValue({
@@ -344,7 +320,7 @@ describe("useAgentsCatalogQuery mutations", () => {
 
   it("keeps warning-only validation responses in success state", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
-      buildAgent({ id: "agent-1" }),
+      createMockAgentConfig({ id: "agent-1" }),
     ]);
 
     mocks.validateAgentCard.mockResolvedValue({
@@ -374,7 +350,7 @@ describe("useAgentsCatalogQuery mutations", () => {
 
   it("appends newly created agent to cache without full refetch", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
-      buildAgent({ id: "shared-1", source: "shared" }),
+      createMockAgentConfig({ id: "shared-1", source: "shared" }),
     ]);
 
     mocks.createAgent.mockResolvedValue({
@@ -420,7 +396,7 @@ describe("useAgentsCatalogQuery mutations", () => {
         cardUrl: "https://example.com/new.json",
         authType: "none",
         bearerToken: "",
-        apiKeyHeader: "X-API-Key",
+        apiKeyHeader: DEFAULT_API_KEY_HEADER,
         apiKeyValue: "",
         basicUsername: "",
         basicPassword: "",
@@ -466,7 +442,7 @@ describe("useAgentsCatalogQuery mutations", () => {
           cardUrl: "https://example.com/new.json",
           authType: "none",
           bearerToken: "",
-          apiKeyHeader: "X-API-Key",
+          apiKeyHeader: DEFAULT_API_KEY_HEADER,
           apiKeyValue: "",
           basicUsername: "",
           basicPassword: "",

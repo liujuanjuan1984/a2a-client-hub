@@ -144,7 +144,7 @@ export const assertExtensionSuccess = (response: A2AExtensionResponse) => {
   });
 };
 
-type ExtensionAgentSource = "personal" | "shared";
+export type ExtensionAgentSource = "personal" | "shared";
 
 export type ModelProviderSummary = {
   provider_id: string;
@@ -167,12 +167,6 @@ export type ModelSummary = {
   default?: boolean;
   connected?: boolean;
 };
-
-export type RequestExecutionOptionsCapability = NonNullable<
-  A2AExtensionCapabilities["requestExecutionOptions"]
->;
-export type SessionAppendCapability =
-  A2AExtensionCapabilities["sessionControl"]["append"];
 
 type InterruptAckResult = {
   ok: true;

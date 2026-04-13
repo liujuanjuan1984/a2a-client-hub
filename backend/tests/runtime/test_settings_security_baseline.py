@@ -91,7 +91,7 @@ def test_rejects_invalid_jwt_private_key_pem(
     monkeypatch.setenv(
         "JWT_PRIVATE_KEY_PEM",
         (
-            "-----BEGIN PRIVATE KEY-----\n"  # pragma: allowlist secret
+            "-----BEGIN PRIVATE KEY-----\n"
             "not-valid-pem\n"
             "-----END PRIVATE KEY-----\n"
         ),

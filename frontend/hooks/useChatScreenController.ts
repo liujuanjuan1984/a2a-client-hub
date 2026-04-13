@@ -587,6 +587,11 @@ export function useChatScreenController({
       if (!currentSession) {
         throw new Error("Conversation session is unavailable.");
       }
+      if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
+        throw new Error(
+          "Built-in agents do not support upstream session control.",
+        );
+      }
       const response =
         nextAgentSource === "shared"
           ? await invokeHubAgent(
@@ -790,6 +795,9 @@ export function useChatScreenController({
           externalSessionId,
         };
         const createdAt = new Date().toISOString();
+        if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
+          throw new Error("Built-in agents do not support session commands.");
+        }
         const result = await commandSession({
           source: nextAgentSource,
           agentId: nextAgentId,
@@ -935,6 +943,9 @@ export function useChatScreenController({
       };
 
       try {
+        if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
+          return;
+        }
         const result = await recoverInterrupts({
           source: nextAgentSource,
           agentId: nextAgentId,
@@ -1020,7 +1031,10 @@ export function useChatScreenController({
     handleElicitationReply,
   } = useChatInterruptController({
     activeAgentId,
-    agentSource: agent?.source,
+    agentSource:
+      agent?.source === "personal" || agent?.source === "shared"
+        ? agent.source
+        : null,
     conversationId,
     pendingInterrupt,
     lastResolvedInterrupt,
@@ -1230,7 +1244,7 @@ export function useChatScreenController({
       return;
     }
     const nextAgentSource = agent?.source;
-    if (!nextAgentSource) {
+    if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
       return;
     }
     recoverPendingInterrupts({
@@ -1302,6 +1316,9 @@ export function useChatScreenController({
         boundExternalSessionId &&
         interruptRecoveryStatus === "supported"
       ) {
+        if (agent.source !== "personal" && agent.source !== "shared") {
+          return;
+        }
         recoverPendingInterrupts({
           nextConversationId: conversationId,
           nextAgentId: activeAgentId,
@@ -1538,7 +1555,11 @@ export function useChatScreenController({
   }, []);
 
   const handleInterruptStream = useCallback(() => {
-    if (!conversationId || !activeAgentId || !agent?.source) {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      (agent?.source !== "personal" && agent?.source !== "shared")
+    ) {
       return;
     }
     const runInterrupt = async () => {

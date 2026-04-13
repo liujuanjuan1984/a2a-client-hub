@@ -12,6 +12,13 @@ from app.schemas.pagination import ListResponse, Pagination
 
 A2AAuthType = Literal["none", "bearer", "basic"]
 A2AAgentHealthStatus = Literal["unknown", "healthy", "degraded", "unavailable"]
+A2AAgentHealthReasonCode = Literal[
+    "card_validation_failed",
+    "runtime_validation_failed",
+    "agent_unavailable",
+    "client_reset_required",
+    "unexpected_error",
+]
 A2AAgentHealthBucket = Literal[
     "all",
     "healthy",
@@ -72,6 +79,7 @@ class A2AAgentResponse(A2AAgentBase):
     last_health_check_at: Optional[datetime] = None
     last_successful_health_check_at: Optional[datetime] = None
     last_health_check_error: Optional[str] = None
+    last_health_check_reason_code: Optional[A2AAgentHealthReasonCode] = None
     token_last4: Optional[str] = Field(
         default=None, description="Last four characters of the stored token"
     )
@@ -114,6 +122,7 @@ class A2AAgentHealthCheckItem(BaseModel):
     checked_at: datetime
     skipped_cooldown: bool = False
     error: Optional[str] = None
+    reason_code: Optional[A2AAgentHealthReasonCode] = None
 
 
 class A2AAgentHealthCheckSummary(BaseModel):
@@ -135,6 +144,7 @@ __all__ = [
     "A2AAgentCreate",
     "A2AAgentHealthBucket",
     "A2AAgentHealthCheckItem",
+    "A2AAgentHealthReasonCode",
     "A2AAgentHealthCheckResponse",
     "A2AAgentHealthCheckSummary",
     "A2AAgentHealthStatus",

@@ -14,8 +14,8 @@ from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision = "r202603231230"  # pragma: allowlist secret
-down_revision = "r202603230430"  # pragma: allowlist secret
+revision = "r202603231230"
+down_revision = "r202603230430"
 branch_labels = None
 depends_on = None
 

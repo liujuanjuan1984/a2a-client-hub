@@ -147,7 +147,9 @@ export function ChatScreen({
             visible
             onClose={controller.closeModelPicker}
             agentId={controller.activeAgentId}
-            source={controller.agent.source}
+            source={
+              controller.agent.source === "shared" ? "shared" : "personal"
+            }
             providerDiscoveryStatus={controller.providerDiscoveryStatus}
             workingDirectory={controller.workingDirectory}
             selectedModel={controller.selectedModel}

@@ -141,6 +141,7 @@ async def test_check_agents_health_marks_agent_unavailable_after_threshold(
     assert len(items) == 1
     assert items[0].health_status == A2AAgent.HEALTH_UNAVAILABLE
     assert items[0].error == "Connection failed"
+    assert items[0].reason_code == "card_validation_failed"
 
     refreshed = await async_db_session.scalar(
         select(A2AAgent).where(A2AAgent.id == record.id)
@@ -150,6 +151,7 @@ async def test_check_agents_health_marks_agent_unavailable_after_threshold(
     assert refreshed.health_status == A2AAgent.HEALTH_UNAVAILABLE
     assert refreshed.consecutive_health_check_failures == 3
     assert refreshed.last_health_check_error == "Connection failed"
+    assert refreshed.last_health_check_reason_code == "card_validation_failed"
     assert refreshed.last_health_check_at is not None
 
 
@@ -211,6 +213,7 @@ async def test_check_agents_health_marks_agent_healthy_and_resets_failures(
     assert len(items) == 1
     assert items[0].health_status == A2AAgent.HEALTH_HEALTHY
     assert items[0].error is None
+    assert items[0].reason_code is None
 
     refreshed = await async_db_session.scalar(
         select(A2AAgent).where(A2AAgent.id == record.id)
@@ -220,5 +223,6 @@ async def test_check_agents_health_marks_agent_healthy_and_resets_failures(
     assert refreshed.health_status == A2AAgent.HEALTH_HEALTHY
     assert refreshed.consecutive_health_check_failures == 0
     assert refreshed.last_health_check_error is None
+    assert refreshed.last_health_check_reason_code is None
     assert refreshed.last_health_check_at is not None
     assert refreshed.last_successful_health_check_at is not None

@@ -284,10 +284,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert _FakeSwivalSession.last_init_kwargs["provider"] == "openai"
     assert _FakeSwivalSession.last_init_kwargs["model"] == "gpt-test"
     assert _FakeSwivalSession.last_init_kwargs["base_url"] == "https://example.com/v1"
-    assert (
-        _FakeSwivalSession.last_init_kwargs["api_key"]
-        == "test-api-key"  # pragma: allowlist secret
-    )
+    assert _FakeSwivalSession.last_init_kwargs["api_key"] == "test-api-key"
     assert _FakeSwivalSession.last_init_kwargs["reasoning_effort"] == "medium"
     assert _FakeSwivalSession.last_init_kwargs["max_turns"] == 6
     assert _FakeSwivalSession.last_init_kwargs["max_output_tokens"] == 2048
@@ -1319,14 +1316,16 @@ async def test_built_in_agent_interrupt_recovery_route_persists_expired_interrup
     assert interrupt_result.interrupt is not None
     await async_db_session.commit()
 
-    original_verify = (
-        self_management_agent_service_module.verify_self_management_interrupt_token_claims
-    )
+    original_verify = self_management_agent_service_module.verify_jwt_token_claims
     invalid_request_id = interrupt_result.interrupt.request_id
     monkeypatch.setattr(
         self_management_agent_service_module,
-        "verify_self_management_interrupt_token_claims",
-        lambda token: None if token == invalid_request_id else original_verify(token),
+        "verify_jwt_token_claims",
+        lambda token, *, expected_type: (
+            None
+            if token == invalid_request_id
+            else original_verify(token, expected_type=expected_type)
+        ),
     )
 
     async with create_test_client(
@@ -1388,14 +1387,16 @@ async def test_built_in_agent_recovery_skips_invalid_interrupt_requests(
     )
     assert interrupt_result.interrupt is not None
 
-    original_verify = (
-        self_management_agent_service_module.verify_self_management_interrupt_token_claims
-    )
+    original_verify = self_management_agent_service_module.verify_jwt_token_claims
     invalid_request_id = interrupt_result.interrupt.request_id
     monkeypatch.setattr(
         self_management_agent_service_module,
-        "verify_self_management_interrupt_token_claims",
-        lambda token: None if token == invalid_request_id else original_verify(token),
+        "verify_jwt_token_claims",
+        lambda token, *, expected_type: (
+            None
+            if token == invalid_request_id
+            else original_verify(token, expected_type=expected_type)
+        ),
     )
 
     recovered = await self_management_built_in_agent_service.recover_pending_interrupts(

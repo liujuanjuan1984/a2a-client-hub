@@ -186,18 +186,6 @@ def _resolve_message_cursor_pagination(
     )
 
 
-def _resolve_method_contract_optional_params(
-    params: Dict[str, Any],
-    *,
-    method_name: str,
-) -> set[str]:
-    return _resolve_method_contract_param_names(
-        params,
-        method_name=method_name,
-        field_name="optional",
-    )
-
-
 def _resolve_method_contract_param_names(
     params: Dict[str, Any],
     *,
@@ -337,9 +325,10 @@ def _resolve_session_list_filters(
     *,
     list_sessions_method: str,
 ) -> SessionListFiltersContract:
-    optional_params = _resolve_method_contract_optional_params(
+    optional_params = _resolve_method_contract_param_names(
         params,
         method_name=list_sessions_method,
+        field_name="optional",
     )
     if not optional_params:
         return SessionListFiltersContract()

@@ -3,12 +3,12 @@ import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 
 type SessionAgentLookup = {
   name: string;
-  source: "personal" | "shared";
+  source: "personal" | "shared" | "builtin";
 };
 
 type SessionAgentPresentation = {
   name: string;
-  tone: "personal" | "shared" | "unknown";
+  tone: "personal" | "shared" | "builtin" | "unknown";
 };
 
 export const resolveSessionAgentPresentation = (
@@ -26,7 +26,7 @@ export const resolveSessionAgentPresentation = (
   }
 
   if (item.agent_source === "builtin") {
-    return { name: "A2A Client Hub Assistant", tone: "shared" };
+    return { name: "A2A Client Hub Assistant", tone: "builtin" };
   }
 
   if (item.agent_source === "personal" || item.agent_source === "shared") {

@@ -19,22 +19,11 @@ from app.integrations.a2a_error_contract import (
     build_upstream_error_details,
 )
 from app.integrations.a2a_error_contract import (
-    coerce_jsonrpc_error_code as coerce_jsonrpc_numeric_code,
-)
-from app.integrations.a2a_error_contract import (
     map_upstream_error_code as map_upstream_error_code_token,
-)
-from app.integrations.a2a_error_contract import (
-    normalize_error_data_type as normalize_upstream_error_data_type,
 )
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
-from app.integrations.a2a_extensions.types import (
-    ResolvedExtension,
-    ResolvedInterruptCallbackExtension,
-    ResolvedProviderDiscoveryExtension,
-)
 from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
@@ -178,14 +167,6 @@ class A2AExtensionSupport:
             ) from exc
 
     @staticmethod
-    def coerce_jsonrpc_error_code(error: Dict[str, Any]) -> Optional[int]:
-        return coerce_jsonrpc_numeric_code(error)
-
-    @staticmethod
-    def normalize_error_data_type(error: Dict[str, Any]) -> Optional[str]:
-        return normalize_upstream_error_data_type(error)
-
-    @staticmethod
     def map_upstream_error_code(
         *,
         error: Dict[str, Any],
@@ -220,46 +201,6 @@ class A2AExtensionSupport:
             business_code_map=business_code_map,
             default_error_code="upstream_error",
             source="upstream_a2a",
-        )
-
-    @staticmethod
-    def build_business_error_details(
-        error: Dict[str, Any],
-        ext: ResolvedExtension | ResolvedProviderDiscoveryExtension,
-    ) -> A2AUpstreamErrorDetails:
-        return A2AExtensionSupport.build_upstream_error_details(
-            error=error,
-            business_code_map=ext.business_code_map,
-        )
-
-    @staticmethod
-    def map_business_error_code(
-        error: Dict[str, Any],
-        ext: ResolvedExtension | ResolvedProviderDiscoveryExtension,
-    ) -> str:
-        return A2AExtensionSupport.map_upstream_error_code(
-            error=error,
-            business_code_map=ext.business_code_map,
-        )
-
-    @staticmethod
-    def build_interrupt_business_error_details(
-        error: Dict[str, Any],
-        ext: ResolvedInterruptCallbackExtension,
-    ) -> A2AUpstreamErrorDetails:
-        return A2AExtensionSupport.build_upstream_error_details(
-            error=error,
-            business_code_map=ext.business_code_map,
-        )
-
-    @staticmethod
-    def map_interrupt_business_error_code(
-        error: Dict[str, Any],
-        ext: ResolvedInterruptCallbackExtension,
-    ) -> str:
-        return A2AExtensionSupport.map_upstream_error_code(
-            error=error,
-            business_code_map=ext.business_code_map,
         )
 
     @staticmethod

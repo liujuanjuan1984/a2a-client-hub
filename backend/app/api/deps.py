@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.retry_after import append_retry_after_hint
 from app.core.config import settings
 from app.core.logging import get_logger, set_actor_context, set_user_context
-from app.core.security import verify_access_token
+from app.core.security import ACCESS_TOKEN_TYPE, verify_jwt_token
 from app.db.locking import (
     RetryableDbLockError,
     RetryableDbQueryTimeoutError,
@@ -85,7 +85,7 @@ async def get_current_user(
     Raises:
         HTTPException: If authentication fails
     """
-    raw_user_id = verify_access_token(token.credentials)
+    raw_user_id = verify_jwt_token(token.credentials, expected_type=ACCESS_TOKEN_TYPE)
     if not raw_user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"

@@ -214,6 +214,7 @@ async def test_execute_self_management_mcp_operation_supports_agent_health_check
                     checked_at=agent.updated_at,
                     skipped_cooldown=not force,
                     error=None,
+                    reason_code=None,
                 )
             ],
         )

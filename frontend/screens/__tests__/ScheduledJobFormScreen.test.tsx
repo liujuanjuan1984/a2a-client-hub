@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { ScheduledJobFormScreen } from "@/screens/ScheduledJobFormScreen";
 import { useSessionStore } from "@/store/session";
+import { createMockAgentCatalog } from "@/test-utils/agentFixtures";
 
 const mockCreateScheduledJob = jest.fn();
 const mockGetScheduledJob = jest.fn();
@@ -12,15 +13,15 @@ const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
 const mockBackOrHome = jest.fn();
 const mockBlurActiveElement = jest.fn();
-const mockAgents = [
-  {
+const buildMockAgents = () =>
+  createMockAgentCatalog({
     id: "agent-1",
     source: "personal",
     name: "Agent One",
     cardUrl: "https://example.com/card",
     status: "success",
-  },
-];
+  });
+const mockAgents = buildMockAgents();
 
 let capturedSubmit: (() => void) | null = null;
 let capturedChange: ((patch: unknown) => void) | null = null;
@@ -179,13 +180,7 @@ describe("ScheduledJobFormScreen", () => {
     capturedAgentOptions = [];
     capturedTimeZone = undefined;
     renderedScreen = null;
-    mockAgents.splice(0, mockAgents.length, {
-      id: "agent-1",
-      source: "personal",
-      name: "Agent One",
-      cardUrl: "https://example.com/card",
-      status: "success",
-    });
+    mockAgents.splice(0, mockAgents.length, ...buildMockAgents());
     act(() => {
       useSessionStore.setState({ user: null });
     });
@@ -518,20 +513,22 @@ describe("ScheduledJobFormScreen", () => {
     mockAgents.splice(
       0,
       mockAgents.length,
-      {
-        id: "agent-personal",
-        source: "personal",
-        name: "Personal Agent",
-        cardUrl: "https://example.com/card-personal",
-        status: "success",
-      },
-      {
-        id: "agent-shared",
-        source: "shared",
-        name: "Shared Agent",
-        cardUrl: "https://example.com/card-shared",
-        status: "success",
-      },
+      ...createMockAgentCatalog(
+        {
+          id: "agent-personal",
+          source: "personal",
+          name: "Personal Agent",
+          cardUrl: "https://example.com/card-personal",
+          status: "success",
+        },
+        {
+          id: "agent-shared",
+          source: "shared",
+          name: "Shared Agent",
+          cardUrl: "https://example.com/card-shared",
+          status: "success",
+        },
+      ),
     );
 
     await act(async () => {

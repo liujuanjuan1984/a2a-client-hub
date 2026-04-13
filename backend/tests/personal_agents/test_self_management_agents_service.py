@@ -130,6 +130,7 @@ async def test_self_management_agents_service_checks_agent_health(
                     checked_at=record.updated_at,
                     skipped_cooldown=not force,
                     error=None,
+                    reason_code=None,
                 )
             ],
         )

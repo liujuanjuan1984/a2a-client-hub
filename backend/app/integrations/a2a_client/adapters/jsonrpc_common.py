@@ -9,9 +9,7 @@ from uuid import uuid4
 from a2a.client import ClientCallInterceptor
 
 from app.integrations.a2a_client.errors import A2APeerProtocolError
-from app.integrations.a2a_error_contract import (
-    build_protocol_error_from_jsonrpc_error as build_shared_protocol_error,
-)
+from app.integrations.a2a_error_contract import build_protocol_error_from_jsonrpc_error
 
 
 def build_jsonrpc_payload(
@@ -46,19 +44,6 @@ async def apply_jsonrpc_interceptors(
             None,
         )
     return final_payload, final_http_kwargs
-
-
-def build_protocol_error_from_jsonrpc_error(
-    error: dict[str, Any],
-    *,
-    fallback_message: str,
-    http_status: int | None,
-) -> A2APeerProtocolError:
-    return build_shared_protocol_error(
-        error,
-        fallback_message=fallback_message,
-        http_status=http_status,
-    )
 
 
 def parse_jsonrpc_error_payload(

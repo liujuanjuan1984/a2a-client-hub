@@ -10,29 +10,22 @@ import {
   toValidationErrorMessage,
   upsertAgentInCatalog,
 } from "@/lib/agentCatalogCache";
-import { headersToEntries } from "@/lib/agentHeaders";
+import { DEFAULT_API_KEY_HEADER, headersToEntries } from "@/lib/agentHeaders";
 import { buildAgentUpsertPayload } from "@/lib/agentUpsert";
 import {
   checkAgentHealth,
   createAgent,
   deleteAgent,
-  listAgents,
   updateAgent,
   validateAgentCard,
   type A2AAgentResponse,
 } from "@/lib/api/a2aAgents";
+import {
+  listAgentsCatalog,
+  type UnifiedAgentCatalogItemResponse,
+} from "@/lib/api/agentsCatalog";
 import { ApiRequestError } from "@/lib/api/client";
-import {
-  listHubAgents,
-  validateHubAgentCard,
-  type HubA2AAgentUserResponse,
-} from "@/lib/api/hubA2aAgentsUser";
-import {
-  getSelfManagementBuiltInAgentProfile,
-  SELF_MANAGEMENT_BUILT_IN_AGENT_CARD_URL,
-  SELF_MANAGEMENT_BUILT_IN_AGENT_ID,
-  type SelfManagementBuiltInAgentProfileResponse,
-} from "@/lib/api/selfManagementAgent";
+import { validateHubAgentCard } from "@/lib/api/hubA2aAgentsUser";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentConfig, useAgentStore } from "@/store/agents";
 
@@ -45,7 +38,43 @@ type UpdateAgentPayload = Partial<
   Omit<AgentConfig, "id" | "source" | "status" | "lastCheckedAt" | "lastError">
 >;
 
-const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
+const toAgentConfig = (
+  agent: UnifiedAgentCatalogItemResponse,
+): AgentConfig => ({
+  id: agent.id,
+  source: agent.source,
+  name: agent.name,
+  cardUrl: agent.card_url,
+  authType:
+    agent.auth_type === "bearer"
+      ? "bearer"
+      : agent.auth_type === "basic"
+        ? "basic"
+        : "none",
+  bearerToken: "",
+  apiKeyHeader: DEFAULT_API_KEY_HEADER,
+  apiKeyValue: "",
+  basicUsername: "",
+  basicPassword: "",
+  extraHeaders: headersToEntries(agent.extra_headers ?? {}),
+  invokeMetadataDefaults: headersToEntries(
+    agent.invoke_metadata_defaults ?? {},
+  ),
+  status: "idle",
+  enabled: agent.enabled,
+  healthStatus: agent.health_status,
+  lastHealthCheckAt: agent.last_health_check_at ?? undefined,
+  lastHealthCheckError: agent.last_health_check_error ?? undefined,
+  lastHealthCheckReasonCode: agent.last_health_check_reason_code ?? undefined,
+  credentialMode: agent.credential_mode ?? undefined,
+  credentialConfigured: agent.credential_configured ?? undefined,
+  credentialDisplayHint: agent.credential_display_hint ?? undefined,
+  description: agent.description ?? undefined,
+  runtime: agent.runtime ?? undefined,
+  resources: agent.resources ?? undefined,
+});
+
+const toPersonalAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
   id: agent.id,
   source: "personal",
   name: agent.name,
@@ -57,7 +86,7 @@ const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
         ? "basic"
         : "none",
   bearerToken: "",
-  apiKeyHeader: "X-API-Key",
+  apiKeyHeader: DEFAULT_API_KEY_HEADER,
   apiKeyValue: "",
   basicUsername: "",
   basicPassword: "",
@@ -66,40 +95,11 @@ const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
     agent.invoke_metadata_defaults ?? {},
   ),
   status: "idle",
-});
-
-const toSharedAgentConfig = (agent: HubA2AAgentUserResponse): AgentConfig => ({
-  id: agent.id,
-  source: "shared",
-  name: agent.name,
-  cardUrl: agent.card_url,
-  authType: "none",
-  bearerToken: "",
-  apiKeyHeader: "X-API-Key",
-  apiKeyValue: "",
-  basicUsername: "",
-  basicPassword: "",
-  extraHeaders: [],
-  invokeMetadataDefaults: [],
-  status: "idle",
-});
-
-const toSelfManagementBuiltInAgentConfig = (
-  profile: SelfManagementBuiltInAgentProfileResponse,
-): AgentConfig => ({
-  id: profile.id,
-  source: "shared",
-  name: profile.name,
-  cardUrl: SELF_MANAGEMENT_BUILT_IN_AGENT_CARD_URL,
-  authType: "none",
-  bearerToken: "",
-  apiKeyHeader: "X-API-Key",
-  apiKeyValue: "",
-  basicUsername: "",
-  basicPassword: "",
-  extraHeaders: [],
-  invokeMetadataDefaults: [],
-  status: "idle",
+  enabled: agent.enabled,
+  healthStatus: agent.health_status,
+  lastHealthCheckAt: agent.last_health_check_at ?? undefined,
+  lastHealthCheckError: agent.last_health_check_error ?? undefined,
+  lastHealthCheckReasonCode: agent.last_health_check_reason_code ?? undefined,
 });
 
 const getCatalogCache = (catalog: AgentConfig[] | undefined) => catalog ?? [];
@@ -164,57 +164,9 @@ export function useAgentsCatalogQuery(enabled = true) {
       const previousAgents = getCatalogCache(
         queryClient.getQueryData<AgentConfig[]>(queryKeys.agents.catalog()),
       );
-
-      const [personalResult, sharedResult, selfManagementProfileResult] =
-        await Promise.allSettled([
-          listAgents(1, 200),
-          listHubAgents(1, 200),
-          getSelfManagementBuiltInAgentProfile(),
-        ]);
-
-      if (
-        personalResult.status === "rejected" &&
-        sharedResult.status === "rejected" &&
-        selfManagementProfileResult.status === "rejected"
-      ) {
-        throw (
-          personalResult.reason ??
-          sharedResult.reason ??
-          selfManagementProfileResult.reason
-        );
-      }
-
-      const personalAgents =
-        personalResult.status === "fulfilled"
-          ? personalResult.value.items.map(toAgentConfig)
-          : previousAgents.filter((agent) => agent.source === "personal");
-
-      const sharedAgents =
-        sharedResult.status === "fulfilled"
-          ? sharedResult.value.items.map(toSharedAgentConfig)
-          : previousAgents.filter(
-              (agent) =>
-                agent.source === "shared" &&
-                agent.id !== SELF_MANAGEMENT_BUILT_IN_AGENT_ID,
-            );
-
-      const previousSelfManagementAgents = previousAgents.filter(
-        (agent) => agent.id === SELF_MANAGEMENT_BUILT_IN_AGENT_ID,
-      );
-      const selfManagementAgents =
-        selfManagementProfileResult.status === "fulfilled" &&
-        selfManagementProfileResult.value.configured
-          ? [
-              toSelfManagementBuiltInAgentConfig(
-                selfManagementProfileResult.value,
-              ),
-            ]
-          : previousSelfManagementAgents;
-
-      return mergeTransientAgentState(
-        [...personalAgents, ...sharedAgents, ...selfManagementAgents],
-        previousAgents,
-      );
+      const response = await listAgentsCatalog();
+      const nextAgents = response.items.map(toAgentConfig);
+      return mergeTransientAgentState(nextAgents, previousAgents);
     },
   });
 
@@ -238,7 +190,8 @@ export function useCreateAgentMutation() {
     onSuccess: async (response) => {
       queryClient.setQueryData<AgentConfig[] | undefined>(
         queryKeys.agents.catalog(),
-        (catalog) => upsertAgentInCatalog(catalog, toAgentConfig(response)),
+        (catalog) =>
+          upsertAgentInCatalog(catalog, toPersonalAgentConfig(response)),
       );
       try {
         await checkAgentHealth(response.id, true);
@@ -289,7 +242,11 @@ export function useUpdateAgentMutation() {
       queryClient.setQueryData<AgentConfig[] | undefined>(
         queryKeys.agents.catalog(),
         (catalog) =>
-          upsertAgentInCatalog(catalog, toAgentConfig(response), variables.id),
+          upsertAgentInCatalog(
+            catalog,
+            toPersonalAgentConfig(response),
+            variables.id,
+          ),
       );
       await refreshActiveCatalogQuery(queryClient);
     },
@@ -356,9 +313,14 @@ export function useValidateAgentMutation() {
       let response;
       try {
         response =
-          agent.source === "shared"
-            ? await validateHubAgentCard(agentId)
-            : await validateAgentCard(agentId);
+          agent.source === "builtin"
+            ? {
+                success: true,
+                message: "Built-in agent is managed by the local runtime.",
+              }
+            : agent.source === "shared"
+              ? await validateHubAgentCard(agentId)
+              : await validateAgentCard(agentId);
       } catch (error) {
         if (isNotFoundError(error)) {
           throw toNotFoundError();

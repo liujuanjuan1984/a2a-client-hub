@@ -16,12 +16,13 @@ from starlette.requests import Request
 from app.core.config import settings
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
+    REFRESH_TOKEN_TYPE,
     build_jwks_document,
+    create_user_access_token,
     create_user_refresh_token,
-    create_user_token,
     get_password_hash,
+    verify_jwt_token_claims,
     verify_password,
-    verify_refresh_token_claims,
 )
 from app.db.models.auth_audit_event import AuthAuditEvent
 from app.db.models.auth_refresh_session import AuthRefreshSession
@@ -44,7 +45,15 @@ LEGACY_BCRYPT_HASH = "".join(
         "oAHOBdMIkrTmNtd/4am6",
     )
 )
-LONG_UTF8_PASSWORD = "Aa" * 34 + "1!" + "界"  # pragma: allowlist secret
+LONG_UTF8_PASSWORD = "Aa" * 34 + "1!" + "界"
+
+
+@pytest.fixture(autouse=True)
+def trusted_cookie_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep cookie-auth tests deterministic across local env overrides."""
+
+    monkeypatch.setattr(settings, "auth_cookie_trusted_origins", [TRUSTED_ORIGIN])
+    monkeypatch.setattr(settings, "backend_cors_origins", [TRUSTED_ORIGIN])
 
 
 async def run_in_session(async_session_maker, coro_fn):
@@ -227,7 +236,7 @@ async def test_refresh_rotates_cookie_and_returns_new_access_token(
     assert after
     assert after != before
 
-    claims = verify_refresh_token_claims(after)
+    claims = verify_jwt_token_claims(after, expected_type=REFRESH_TOKEN_TYPE)
     assert claims is not None
     assert claims.session_id is not None
 
@@ -263,7 +272,9 @@ async def test_refresh_tolerates_recent_rotated_token_reuse_from_second_tab(
     assert login_response.status_code == 200
     initial_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
     assert initial_cookie
-    initial_claims = verify_refresh_token_claims(initial_cookie)
+    initial_claims = verify_jwt_token_claims(
+        initial_cookie, expected_type=REFRESH_TOKEN_TYPE
+    )
     assert initial_claims is not None
 
     async with create_test_client(
@@ -286,7 +297,9 @@ async def test_refresh_tolerates_recent_rotated_token_reuse_from_second_tab(
 
         rotated_cookie = client.cookies.get(settings.auth_refresh_cookie_name)
         assert rotated_cookie
-        rotated_claims = verify_refresh_token_claims(rotated_cookie)
+        rotated_claims = verify_jwt_token_claims(
+            rotated_cookie, expected_type=REFRESH_TOKEN_TYPE
+        )
         assert rotated_claims is not None
 
         stale_refresh = await second_tab_client.post(
@@ -301,7 +314,9 @@ async def test_refresh_tolerates_recent_rotated_token_reuse_from_second_tab(
             path=settings.auth_refresh_cookie_path,
         )
         assert healed_cookie
-        healed_claims = verify_refresh_token_claims(healed_cookie)
+        healed_claims = verify_jwt_token_claims(
+            healed_cookie, expected_type=REFRESH_TOKEN_TYPE
+        )
         assert healed_claims is not None
         assert healed_claims.session_id == rotated_claims.session_id
         assert healed_claims.jwt_id == rotated_claims.jwt_id
@@ -646,7 +661,7 @@ async def test_logout_all_revokes_all_refresh_sessions(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    access_token = create_user_token(user.id)
+    access_token = create_user_access_token(user.id)
 
     logout_all_response = await client.post(
         f"{settings.api_v1_prefix}/auth/logout-all",
@@ -688,7 +703,7 @@ async def test_logout_all_blocks_legacy_refresh_tokens(
 
     user = await run_in_session(async_session_maker, fetch_user)
     legacy_refresh = create_user_refresh_token(user.id)
-    access_token = create_user_token(user.id)
+    access_token = create_user_access_token(user.id)
 
     logout_all_response = await client.post(
         f"{settings.api_v1_prefix}/auth/logout-all",
@@ -725,7 +740,7 @@ async def test_change_password_updates_credentials(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
     login_response = await client.post(
         f"{settings.api_v1_prefix}/auth/login",
         json={"email": payload["email"], "password": payload["password"]},
@@ -790,7 +805,7 @@ async def test_change_password_blocks_legacy_refresh_tokens(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    access_token = create_user_token(user.id)
+    access_token = create_user_access_token(user.id)
     legacy_refresh = create_user_refresh_token(user.id)
 
     change_response = await client.post(
@@ -829,7 +844,7 @@ async def test_change_password_rejects_wrong_current_password(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.post(
         f"{settings.api_v1_prefix}/auth/password/change",
@@ -862,7 +877,7 @@ async def test_change_password_enforces_strength_rules(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.post(
         f"{settings.api_v1_prefix}/auth/password/change",
@@ -1117,7 +1132,7 @@ async def test_register_accepts_password_longer_than_72_utf8_bytes(
 async def test_authenticate_user_not_found_runs_dummy_hash_verification(
     async_db_session,
 ) -> None:
-    password = "NotUsed!1"  # pragma: allowlist secret
+    password = "NotUsed!1"
 
     with patch(
         "app.features.auth.service.verify_password", return_value=False
@@ -1231,7 +1246,7 @@ async def test_change_password_accepts_new_password_longer_than_72_utf8_bytes(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.post(
         f"{settings.api_v1_prefix}/auth/password/change",
@@ -1302,7 +1317,7 @@ async def test_me_endpoint_returns_current_user(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    token = create_user_token(user.id)
+    token = create_user_access_token(user.id)
 
     response = await client.get(
         f"{settings.api_v1_prefix}/auth/me",
@@ -1342,7 +1357,7 @@ async def test_me_endpoint_rejects_disabled_user(
 
     user_id = await run_in_session(async_session_maker, disable)
 
-    token = create_user_token(user_id)
+    token = create_user_access_token(user_id)
     response = await client.get(
         f"{settings.api_v1_prefix}/auth/me",
         headers={"Authorization": f"Bearer {token}"},
@@ -1427,7 +1442,7 @@ async def test_jwks_endpoint_exposes_active_key(client: AsyncClient) -> None:
     assert body["keys"][0]["kid"] == settings.jwt_key_id
 
 
-async def test_verify_refresh_token_claims_accepts_previous_key_without_kid(
+async def test_verify_jwt_token_claims_accepts_previous_key_without_kid_for_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     previous_private_key = rsa.generate_private_key(
@@ -1465,7 +1480,7 @@ async def test_verify_refresh_token_claims_accepts_previous_key_without_kid(
         algorithm=settings.jwt_algorithm,
     )
 
-    claims = verify_refresh_token_claims(token)
+    claims = verify_jwt_token_claims(token, expected_type=REFRESH_TOKEN_TYPE)
     assert claims is not None
 
 

@@ -37,9 +37,6 @@ class SelfManagementJobsService:
             raise ValueError("Authenticated user id is required")
         return user_id
 
-    def _timezone(self, user: User) -> str:
-        return cast(str, user.timezone or "UTC")
-
     def supports_prompt_update(self, payload: A2AScheduleTaskUpdate) -> bool:
         """Return whether the payload maps cleanly to the first-wave prompt update."""
 

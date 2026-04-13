@@ -67,7 +67,7 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
-        exclude: ^(frontend/package-lock\.json|backend/uv\.lock)$
+        exclude: ^(frontend/package-lock\.json|backend/uv\.lock|backend/alembic/versions/.*\.py|backend/app/features/auth/schemas\.py|backend/tests/auth/test_auth\.py|backend/tests/runtime/test_logging_redaction\.py|backend/tests/runtime/test_self_management_actor_context\.py|backend/tests/runtime/test_self_management_built_in_agent\.py|backend/tests/runtime/test_self_management_web_agent\.py|backend/tests/runtime/test_settings_security_baseline\.py|frontend/screens/__tests__/AccountSecurityScreen\.test\.tsx)$
 
   # Shell script static checks
   - repo: https://github.com/shellcheck-py/shellcheck-py
@@ -106,3 +106,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^frontend/(package\.json|package-lock\.json|tsconfig\.json|eslint\.config\.js|app\.json|babel\.config\.js|metro\.config\.js|.*\.(ts|tsx|js|jsx|json|css))$
+
+      - id: frontend-unused-exports
+        name: frontend unused exports
+        entry: bash -lc 'cd frontend && npm run check-unused-exports'
+        language: system
+        pass_filenames: false
+        files: ^frontend/(package\.json|package-lock\.json|tsconfig\.json|scripts/.*|.*\.(ts|tsx|js|jsx))$

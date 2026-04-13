@@ -7,6 +7,7 @@ from typing import Final
 ROUTER_MODULES: Final[tuple[str, ...]] = (
     "app.features.auth.router",
     "app.features.personal_agents.router",
+    "app.features.agents_catalog.router",
     "app.features.hub_agents.router",
     "app.features.hub_agents.admin_router",
     "app.api.routers.admin_proxy_allowlist",

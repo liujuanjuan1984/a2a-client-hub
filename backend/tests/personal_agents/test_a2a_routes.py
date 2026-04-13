@@ -639,6 +639,7 @@ async def test_personal_agents_health_check_routes_return_summary_and_items(
                 checked_at=checked_at,
                 skipped_cooldown=False,
                 error=None,
+                reason_code=None,
             )
         ]
         return summary, items
@@ -677,6 +678,7 @@ async def test_personal_agents_health_check_routes_return_summary_and_items(
         assert len(single_payload["items"]) == 1
         assert single_payload["items"][0]["agent_id"] == str(record.id)
         assert single_payload["items"][0]["health_status"] == "healthy"
+        assert single_payload["items"][0]["reason_code"] is None
 
     assert captured_calls == [
         {

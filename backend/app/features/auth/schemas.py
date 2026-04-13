@@ -42,7 +42,7 @@ class RegisterRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "email": "alice@example.com",
-                "password": "Pass123!",  # pragma: allowlist secret
+                "password": "Pass123!",
                 "name": "Alice",
                 "timezone": "UTC",
                 "invite_code": "abcd1234",
@@ -72,7 +72,7 @@ class LoginRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "email": "alice@example.com",
-                "password": "Pass123!",  # pragma: allowlist secret
+                "password": "Pass123!",
             }
         }
     )
@@ -161,9 +161,9 @@ class PasswordChangeRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "current_password": "OldPass!23",  # pragma: allowlist secret
-                "new_password": "N3wPass!23",  # pragma: allowlist secret
-                "new_password_confirm": "N3wPass!23",  # pragma: allowlist secret
+                "current_password": "OldPass!23",
+                "new_password": "N3wPass!23",
+                "new_password_confirm": "N3wPass!23",
             }
         }
     )

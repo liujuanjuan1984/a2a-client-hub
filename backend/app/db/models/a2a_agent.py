@@ -131,6 +131,11 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=True,
         comment="Latest persisted health check error summary.",
     )
+    last_health_check_reason_code = Column(
+        String(64),
+        nullable=True,
+        comment="Latest persisted structured health check reason code.",
+    )
     tags = Column(
         JSON,
         nullable=True,

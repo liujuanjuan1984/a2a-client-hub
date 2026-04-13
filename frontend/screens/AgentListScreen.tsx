@@ -1,7 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
+import { useCallback, useMemo } from "react";
+import { FlatList, RefreshControl, Text, View } from "react-native";
 
 import { AccountEntryButton } from "@/components/auth/AccountEntryButton";
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -9,151 +9,78 @@ import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
-import {
-  usePersonalAgentsListQuery,
-  useSharedAgentsListQuery,
-} from "@/hooks/useAgentListQueries";
-import {
-  checkAgentsHealth,
-  type A2AAgentHealthStatus,
-  type A2AAgentResponse,
-} from "@/lib/api/a2aAgents";
-import { type HubA2AAgentUserResponse } from "@/lib/api/hubA2aAgentsUser";
-import {
-  getSelfManagementBuiltInAgentProfile,
-  type SelfManagementBuiltInAgentProfileResponse,
-} from "@/lib/api/selfManagementAgent";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
+import { checkAgentsCatalogHealth } from "@/lib/api/agentsCatalog";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
-import { useAgentStore } from "@/store/agents";
+import { type AgentConfig, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 import { useSessionStore } from "@/store/session";
 
-const PERSONAL_PAGE_SIZE = 12;
-const SHARED_PAGE_SIZE = 8;
-const SELF_MANAGEMENT_BUILT_IN_PROFILE_QUERY_KEY = [
-  "self-management-built-in-agent",
-  "profile",
-] as const;
-
 const HEALTH_BADGE_STYLES: Record<
-  A2AAgentResponse["health_status"],
+  NonNullable<AgentConfig["healthStatus"]>,
   { label: string }
 > = {
-  healthy: {
-    label: "Healthy",
-  },
-  degraded: {
-    label: "Degraded",
-  },
-  unavailable: {
-    label: "Unavailable",
-  },
-  unknown: {
-    label: "Unknown",
-  },
+  healthy: { label: "Available" },
+  degraded: { label: "Needs attention" },
+  unavailable: { label: "Unavailable" },
+  unknown: { label: "Not checked" },
 };
 
-const PERSONAL_HEALTH_FILTERS: A2AAgentHealthStatus[] = [
-  "healthy",
-  "degraded",
-  "unavailable",
-  "unknown",
-];
+const SOURCE_LABELS: Record<AgentConfig["source"], string> = {
+  personal: "PERSONAL",
+  shared: "SHARED",
+  builtin: "BUILT-IN",
+};
+
+const SOURCE_SORT_ORDER: Record<AgentConfig["source"], number> = {
+  builtin: 0,
+  personal: 1,
+  shared: 2,
+};
+
+const resolveHealthStatus = (agent: AgentConfig) =>
+  agent.healthStatus ?? "unknown";
 
 export function AgentListScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const user = useSessionStore((state) => state.user);
   const setActiveAgent = useAgentStore((state) => state.setActiveAgent);
-  const [activeView, setActiveView] = useState<"personal" | "shared">(
-    "personal",
-  );
-  const [activePersonalHealthFilter, setActivePersonalHealthFilter] =
-    useState<A2AAgentHealthStatus>("healthy");
-  const isPersonalView = activeView === "personal";
+  const {
+    data: agents = [],
+    isLoading,
+    isRefetching,
+    refetch,
+    error,
+  } = useAgentsCatalogQuery(true);
 
-  const personalQuery = usePersonalAgentsListQuery({
-    size: PERSONAL_PAGE_SIZE,
-    healthBucket: activePersonalHealthFilter,
-    enabled: isPersonalView,
-  });
-
-  const sharedQuery = useSharedAgentsListQuery({
-    size: SHARED_PAGE_SIZE,
-    enabled: !isPersonalView,
-  });
-  const builtInAgentProfileQuery = useQuery({
-    queryKey: SELF_MANAGEMENT_BUILT_IN_PROFILE_QUERY_KEY,
-    enabled: !isPersonalView,
-    queryFn: getSelfManagementBuiltInAgentProfile,
-  });
-  const builtInAgentProfile =
-    builtInAgentProfileQuery.data?.configured === true
-      ? builtInAgentProfileQuery.data
-      : null;
-
-  const invalidateAgentQueries = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.listRoot() }),
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.sharedListRoot(),
-      }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.catalog() }),
-    ]);
-  };
-
-  const batchHealthMutation = useMutation({
-    mutationFn: async () => checkAgentsHealth(false),
-    onSuccess: async () => {
-      await invalidateAgentQueries();
-    },
-    onError: (error) => {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not check agent availability.";
-      toast.error("Availability check failed", message);
-    },
-  });
-
-  const counts = personalQuery.counts;
-  const visiblePersonalHealthFilters = useMemo(
+  const orderedAgents = useMemo(
     () =>
-      PERSONAL_HEALTH_FILTERS.filter((status) => (counts?.[status] ?? 0) > 0),
-    [counts],
+      [...agents].sort((left, right) => {
+        const sourceDelta =
+          SOURCE_SORT_ORDER[left.source] - SOURCE_SORT_ORDER[right.source];
+        if (sourceDelta !== 0) {
+          return sourceDelta;
+        }
+        return left.name.localeCompare(right.name);
+      }),
+    [agents],
   );
-  const totalPersonalAgents = useMemo(() => {
-    if (!counts) {
-      return 0;
-    }
-    return (
-      counts.healthy + counts.degraded + counts.unavailable + counts.unknown
-    );
-  }, [counts]);
-  const selectedFilterLabel =
-    HEALTH_BADGE_STYLES[activePersonalHealthFilter].label.toLowerCase();
 
-  useEffect(() => {
-    if (!isPersonalView) {
-      return;
-    }
-    if ((counts?.[activePersonalHealthFilter] ?? 0) > 0) {
-      return;
-    }
-    const fallbackFilter = visiblePersonalHealthFilters[0];
-    if (fallbackFilter && fallbackFilter !== activePersonalHealthFilter) {
-      setActivePersonalHealthFilter(fallbackFilter);
-    }
-  }, [
-    activePersonalHealthFilter,
-    counts,
-    isPersonalView,
-    visiblePersonalHealthFilters,
-  ]);
+  const counts = useMemo(
+    () => ({
+      builtin: orderedAgents.filter((agent) => agent.source === "builtin")
+        .length,
+      personal: orderedAgents.filter((agent) => agent.source === "personal")
+        .length,
+      shared: orderedAgents.filter((agent) => agent.source === "shared").length,
+    }),
+    [orderedAgents],
+  );
 
   const handleChat = useCallback(
     (agentId: string) => {
@@ -161,7 +88,6 @@ export function AgentListScreen() {
       const chatStore = useChatStore.getState();
       const latestSessionId =
         chatStore.getLatestConversationIdByAgentId(agentId);
-
       const conversationId =
         latestSessionId ?? chatStore.generateConversationId();
       blurActiveElement();
@@ -170,402 +96,256 @@ export function AgentListScreen() {
     [router, setActiveAgent],
   );
 
-  const handleRefresh = useCallback(async () => {
-    if (activeView === "personal") {
-      await personalQuery.refresh();
-      return;
-    }
-    await sharedQuery.refresh();
-  }, [activeView, personalQuery, sharedQuery]);
-
-  const handleLoadMore = useCallback(async () => {
-    if (activeView === "personal") {
-      if (!personalQuery.hasMore || personalQuery.loadingMore) {
-        return;
-      }
-      await personalQuery.loadMore();
-      return;
-    }
-
-    if (!sharedQuery.hasMore || sharedQuery.loadingMore) {
-      return;
-    }
-    await sharedQuery.loadMore();
-  }, [activeView, personalQuery, sharedQuery]);
-
-  const onRefresh = useCallback(() => handleRefresh(), [handleRefresh]);
-  const onEndReached = useCallback(() => handleLoadMore(), [handleLoadMore]);
-  const toggleActiveView = useCallback(() => {
-    setActiveView((currentView) =>
-      currentView === "personal" ? "shared" : "personal",
-    );
-  }, []);
-
-  const activeViewButtonLabel = isPersonalView ? "My" : "Shared";
-  const activeViewButtonIcon = isPersonalView ? "person-outline" : "people";
-
-  const renderPersonalAgentItem = useCallback(
-    ({ item: agent }: { item: A2AAgentResponse }) => {
-      const showCheckedAt = agent.health_status !== "healthy";
-      const checkedAtLabel = agent.last_health_check_at
-        ? `Checked ${formatLocalDateTime(agent.last_health_check_at)}`
-        : "Not checked yet";
-
-      return (
-        <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
-          <View className="px-4 py-4">
-            <Text
-              className="text-[13px] font-semibold text-white"
-              numberOfLines={1}
-            >
-              {agent.name}
-            </Text>
-            {!agent.enabled || showCheckedAt ? (
-              <View className="mt-3 flex-row items-center justify-between gap-3">
-                {agent.enabled ? (
-                  <View className="flex-1" />
-                ) : (
-                  <Text className="text-xs text-slate-400" numberOfLines={1}>
-                    Disabled
-                  </Text>
-                )}
-                {showCheckedAt ? (
-                  <Text
-                    className="flex-1 text-right text-xs text-slate-500"
-                    numberOfLines={1}
-                  >
-                    {checkedAtLabel}
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-            {agent.last_health_check_error ? (
-              <Text className="mt-2 text-xs text-rose-200" numberOfLines={2}>
-                {agent.last_health_check_error}
-              </Text>
-            ) : null}
-          </View>
-
-          <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
-            <View className="flex-row flex-wrap items-center gap-2">
-              <Button
-                label="Edit"
-                size="sm"
-                variant="secondary"
-                iconLeft="create-outline"
-                onPress={() => {
-                  blurActiveElement();
-                  router.push(`/agents/${agent.id}`);
-                }}
-              />
-            </View>
-
-            <Button
-              label="Chat"
-              size="sm"
-              variant="primary"
-              iconRight="chevron-forward"
-              onPress={() => handleChat(agent.id)}
-              accessibilityRole="button"
-              accessibilityLabel="Open chat"
-              accessibilityHint={`Open chat with ${agent.name}`}
-            />
-          </View>
-        </View>
-      );
+  const batchHealthMutation = useMutation({
+    mutationFn: async () => checkAgentsCatalogHealth(false),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.refetchQueries({
+          queryKey: queryKeys.agents.catalog(),
+          exact: true,
+          type: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.agents.listRoot(),
+        }),
+      ]);
     },
-    [handleChat, router],
-  );
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Could not check agent availability.";
+      toast.error("Availability check failed", message);
+    },
+  });
 
-  const renderSharedAgentItem = useCallback(
-    ({ item: agent }: { item: HubA2AAgentUserResponse }) => (
-      <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
-        <View className="px-4 py-4">
-          <View className="flex-row items-center justify-between">
-            <Text
-              className="flex-1 pr-4 text-[13px] font-semibold text-white"
-              numberOfLines={1}
-            >
-              {agent.name}
-            </Text>
-            <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-green">
-              SHARED
-            </Text>
-          </View>
-          <Text className="mt-3 text-xs text-slate-400">
-            {agent.credential_mode === "user"
-              ? agent.credential_configured
-                ? `Uses your saved ${agent.auth_type} credential${
-                    agent.credential_display_hint
-                      ? ` (${agent.credential_display_hint})`
-                      : ""
-                  }.`
-                : `Requires your ${agent.auth_type} credential before chat.`
-              : agent.credential_mode === "shared"
-                ? "Uses an admin-managed shared credential."
-                : "No credential required."}
+  const renderAgentMeta = (agent: AgentConfig) => {
+    const healthStatus = resolveHealthStatus(agent);
+    const checkedAtLabel = agent.lastHealthCheckAt
+      ? `Checked ${formatLocalDateTime(agent.lastHealthCheckAt)}`
+      : "Not checked yet";
+    const sourceLabel = SOURCE_LABELS[agent.source];
+
+    return (
+      <>
+        <View className="flex-row items-center justify-between gap-3">
+          <Text
+            className="flex-1 pr-4 text-[13px] font-semibold text-white"
+            numberOfLines={1}
+          >
+            {agent.name}
+          </Text>
+          <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-green">
+            {sourceLabel}
           </Text>
         </View>
 
-        <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
-          <View className="flex-row gap-2">
+        <View className="mt-3 flex-row items-center justify-between gap-3">
+          <Text className="text-xs text-slate-400" numberOfLines={1}>
+            {HEALTH_BADGE_STYLES[healthStatus].label}
+          </Text>
+          <Text
+            className="flex-1 text-right text-xs text-slate-500"
+            numberOfLines={1}
+          >
+            {checkedAtLabel}
+          </Text>
+        </View>
+      </>
+    );
+  };
+
+  const renderPersonalAgentItem = (agent: AgentConfig) => (
+    <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
+      <View className="px-4 py-4">
+        {renderAgentMeta(agent)}
+        {!agent.enabled ? (
+          <Text className="mt-2 text-xs text-slate-400" numberOfLines={1}>
+            Disabled
+          </Text>
+        ) : null}
+        {agent.lastHealthCheckError ? (
+          <Text className="mt-2 text-xs text-rose-200" numberOfLines={2}>
+            {agent.lastHealthCheckError}
+          </Text>
+        ) : null}
+      </View>
+
+      <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
+        <Button
+          label="Edit"
+          size="sm"
+          variant="secondary"
+          iconLeft="create-outline"
+          onPress={() => {
+            blurActiveElement();
+            router.push(`/agents/${agent.id}`);
+          }}
+        />
+        <Button
+          label="Chat"
+          size="sm"
+          variant="primary"
+          iconRight="chevron-forward"
+          onPress={() => handleChat(agent.id)}
+          accessibilityRole="button"
+          accessibilityLabel="Open chat"
+          accessibilityHint={`Open chat with ${agent.name}`}
+        />
+      </View>
+    </View>
+  );
+
+  const renderSharedAgentItem = (agent: AgentConfig) => (
+    <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
+      <View className="px-4 py-4">
+        {renderAgentMeta(agent)}
+        <Text className="mt-3 text-xs text-slate-400">
+          {agent.credentialMode === "user"
+            ? agent.credentialConfigured
+              ? `Uses your saved ${agent.authType} credential${
+                  agent.credentialDisplayHint
+                    ? ` (${agent.credentialDisplayHint})`
+                    : ""
+                }.`
+              : `Requires your ${agent.authType} credential before chat.`
+            : agent.credentialMode === "shared"
+              ? "Uses an admin-managed shared credential."
+              : "No credential required."}
+        </Text>
+        {agent.lastHealthCheckError ? (
+          <Text className="mt-2 text-xs text-rose-200" numberOfLines={2}>
+            {agent.lastHealthCheckError}
+          </Text>
+        ) : null}
+      </View>
+
+      <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
+        <View className="flex-row gap-2">
+          <Button
+            label="Details"
+            size="sm"
+            variant="secondary"
+            iconLeft="information-outline"
+            onPress={() => {
+              blurActiveElement();
+              router.push(`/agents/${agent.id}`);
+            }}
+          />
+          {agent.credentialMode === "user" ? (
             <Button
-              label="Details"
+              label={
+                agent.credentialConfigured
+                  ? "Edit credential"
+                  : "Set credential"
+              }
               size="sm"
               variant="secondary"
-              iconLeft="information-outline"
+              iconLeft="key-outline"
               onPress={() => {
                 blurActiveElement();
                 router.push(`/agents/${agent.id}`);
               }}
             />
-            {agent.credential_mode === "user" ? (
-              <Button
-                label={
-                  agent.credential_configured
-                    ? "Edit credential"
-                    : "Set credential"
-                }
-                size="sm"
-                variant="secondary"
-                iconLeft="key-outline"
-                onPress={() => {
-                  blurActiveElement();
-                  router.push(`/agents/${agent.id}`);
-                }}
-              />
-            ) : null}
-          </View>
-
-          <Button
-            label="Chat"
-            size="sm"
-            variant="primary"
-            iconRight="chevron-forward"
-            onPress={() => handleChat(agent.id)}
-            disabled={
-              agent.credential_mode === "user" && !agent.credential_configured
-            }
-            accessibilityRole="button"
-            accessibilityLabel="Open chat"
-            accessibilityHint={`Open chat with ${agent.name}`}
-          />
+          ) : null}
         </View>
+
+        <Button
+          label="Chat"
+          size="sm"
+          variant="primary"
+          iconRight="chevron-forward"
+          onPress={() => handleChat(agent.id)}
+          disabled={
+            agent.credentialMode === "user" && !agent.credentialConfigured
+          }
+          accessibilityRole="button"
+          accessibilityLabel="Open chat"
+          accessibilityHint={`Open chat with ${agent.name}`}
+        />
       </View>
-    ),
+    </View>
+  );
+
+  const renderBuiltInAgentItem = (agent: AgentConfig) => (
+    <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
+      <View className="px-4 py-4">
+        {renderAgentMeta(agent)}
+        <Text className="mt-3 text-xs text-slate-400">
+          {agent.description ??
+            "Manage your agents, sessions, and jobs through constrained built-in tools."}
+        </Text>
+        {agent.resources?.length ? (
+          <Text className="mt-2 text-xs text-slate-500">
+            Resources: {agent.resources.join(", ")}
+          </Text>
+        ) : null}
+      </View>
+
+      <View className="flex-row items-center justify-end gap-2 bg-black/20 px-4 py-2.5">
+        <Button
+          label="Chat"
+          size="sm"
+          variant="primary"
+          iconRight="chevron-forward"
+          onPress={() => handleChat(agent.id)}
+          accessibilityRole="button"
+          accessibilityLabel="Open built-in assistant"
+          accessibilityHint={`Open chat with ${agent.name}`}
+        />
+      </View>
+    </View>
+  );
+
+  const renderAgentItem = useCallback(
+    ({ item }: { item: AgentConfig }) => {
+      if (item.source === "builtin") {
+        return renderBuiltInAgentItem(item);
+      }
+      if (item.source === "shared") {
+        return renderSharedAgentItem(item);
+      }
+      return renderPersonalAgentItem(item);
+    },
     [handleChat, router],
   );
 
-  const renderBuiltInAgentCard = useCallback(
-    (profile: SelfManagementBuiltInAgentProfileResponse) => (
-      <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
-        <View className="px-4 py-4">
-          <View className="flex-row items-center justify-between">
-            <Text
-              className="flex-1 pr-4 text-[13px] font-semibold text-white"
-              numberOfLines={1}
-            >
-              {profile.name}
-            </Text>
-            <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-green">
-              BUILT-IN
-            </Text>
-          </View>
-          <Text className="mt-3 text-xs text-slate-400">
-            Manage your own {profile.resources.join(", ")} inside a2a-client-hub
-            through constrained built-in tools.
-          </Text>
-        </View>
-
-        <View className="flex-row items-center justify-end gap-2 bg-black/20 px-4 py-2.5">
-          <Button
-            label="Chat"
-            size="sm"
-            variant="primary"
-            iconRight="chevron-forward"
-            onPress={() => handleChat(profile.id)}
-            accessibilityRole="button"
-            accessibilityLabel="Open built-in assistant"
-            accessibilityHint={`Open chat with ${profile.name}`}
-          />
-        </View>
-      </View>
-    ),
-    [handleChat],
-  );
-
-  const sharedListData = useMemo(() => sharedQuery.items, [sharedQuery.items]);
-
   const renderHeader = useMemo(
     () => (
-      <View className="mb-5">
-        {isPersonalView ? (
-          <View className="rounded-2xl bg-surface p-4">
-            <View className="flex-row items-center gap-3">
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                className="min-w-0 flex-1"
-                contentContainerStyle={{ gap: 12, paddingRight: 4 }}
-              >
-                {visiblePersonalHealthFilters.map((status) => (
-                  <Button
-                    key={status}
-                    className="rounded-full"
-                    label={`${counts?.[status] ?? 0} ${HEALTH_BADGE_STYLES[status].label}`}
-                    size="xs"
-                    variant={
-                      activePersonalHealthFilter === status
-                        ? "primary"
-                        : "secondary"
-                    }
-                    onPress={() => setActivePersonalHealthFilter(status)}
-                  />
-                ))}
-              </ScrollView>
-              <Button
-                label={batchHealthMutation.isPending ? "Checking..." : "Check"}
-                size="sm"
-                variant="secondary"
-                iconLeft="pulse-outline"
-                onPress={() => {
-                  if (batchHealthMutation.isPending) {
-                    return;
-                  }
-                  batchHealthMutation.mutate();
-                }}
-              />
-            </View>
+      <View className="mb-5 rounded-2xl bg-surface p-4">
+        <View className="flex-row items-center justify-between gap-4">
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-white">
+              {orderedAgents.length} agents
+            </Text>
+            <Text className="mt-1 text-xs text-slate-400">
+              Built-in {counts.builtin} / Personal {counts.personal} / Shared{" "}
+              {counts.shared}
+            </Text>
           </View>
-        ) : builtInAgentProfile ? (
-          renderBuiltInAgentCard(builtInAgentProfile)
-        ) : null}
-      </View>
-    ),
-    [
-      activePersonalHealthFilter,
-      batchHealthMutation,
-      builtInAgentProfile,
-      counts,
-      isPersonalView,
-      renderBuiltInAgentCard,
-      setActivePersonalHealthFilter,
-      visiblePersonalHealthFilters,
-    ],
-  );
-
-  const renderFooter = useMemo(() => {
-    const hasMore =
-      activeView === "personal" ? personalQuery.hasMore : sharedQuery.hasMore;
-    const loadingMore =
-      activeView === "personal"
-        ? personalQuery.loadingMore
-        : sharedQuery.loadingMore;
-
-    if (!hasMore) {
-      return null;
-    }
-
-    return (
-      <View className="py-4 items-center">
-        <Button
-          label={loadingMore ? "Loading..." : "Load more"}
-          size="sm"
-          variant="secondary"
-          loading={loadingMore}
-          onPress={handleLoadMore}
-        />
-      </View>
-    );
-  }, [
-    activeView,
-    handleLoadMore,
-    personalQuery.hasMore,
-    personalQuery.loadingMore,
-    sharedQuery.hasMore,
-    sharedQuery.loadingMore,
-  ]);
-
-  const renderPersonalEmptyState = useMemo(() => {
-    if (personalQuery.loading && personalQuery.items.length === 0) {
-      return (
-        <View className="mt-8 items-center">
-          <Text className="text-sm text-gray-400">Loading agents...</Text>
-        </View>
-      );
-    }
-
-    if (totalPersonalAgents === 0) {
-      return (
-        <View className="items-center rounded-2xl bg-surface p-8">
-          <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-            <Text className="text-[11px] font-bold text-black">A2A</Text>
-          </View>
-          <Text className="text-base font-bold text-white">No agents yet</Text>
-          <Text className="mt-2 text-center text-sm text-slate-400">
-            Add your first agent to start chatting with A2A services.
-          </Text>
           <Button
-            className="mt-6"
-            label="Add an agent"
+            label={batchHealthMutation.isPending ? "Checking..." : "Check all"}
+            size="sm"
+            variant="secondary"
+            iconLeft="pulse-outline"
             onPress={() => {
-              blurActiveElement();
-              router.push("/agents/new");
+              if (batchHealthMutation.isPending) {
+                return;
+              }
+              batchHealthMutation.mutate();
             }}
           />
         </View>
-      );
-    }
-
-    return (
-      <View className="items-center rounded-2xl bg-surface p-8">
-        <Text className="text-base font-bold text-white">
-          No {selectedFilterLabel} agents right now
-        </Text>
-        <Text className="mt-2 text-center text-sm text-slate-400">
-          Try another health status or run an availability check to refresh the
-          latest results.
-        </Text>
       </View>
-    );
-  }, [
-    personalQuery.items.length,
-    personalQuery.loading,
-    router,
-    selectedFilterLabel,
-    totalPersonalAgents,
-  ]);
-
-  const renderSharedEmptyState = useMemo(() => {
-    if (sharedQuery.loading && sharedQuery.items.length === 0) {
-      return (
-        <View className="mt-8 items-center">
-          <Text className="text-sm text-gray-400">Loading agents...</Text>
-        </View>
-      );
-    }
-
-    return (
-      <View className="items-center rounded-2xl bg-surface p-8">
-        <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-          <Text className="text-[11px] font-bold text-black">A2A</Text>
-        </View>
-        <Text className="text-base font-bold text-white">
-          No more shared agents available
-        </Text>
-        <Text className="mt-2 text-center text-sm text-slate-400">
-          Shared agents published by admins will appear here alongside the
-          built-in assistant.
-        </Text>
-      </View>
-    );
-  }, [sharedQuery.items.length, sharedQuery.loading]);
+    ),
+    [batchHealthMutation, counts, orderedAgents.length],
+  );
 
   return (
     <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
         title="Agents"
-        subtitle="Manage your connected A2A services."
+        subtitle="Browse agents and check whether each one is available to you."
         rightElement={
           <View className="flex-row gap-2">
             <AccountEntryButton />
@@ -581,17 +361,6 @@ export function AgentListScreen() {
                 }}
               />
             ) : null}
-            <Button
-              label={activeViewButtonLabel}
-              size="sm"
-              variant="secondary"
-              iconLeft={activeViewButtonIcon}
-              accessibilityLabel={`Switch to ${
-                isPersonalView ? "shared" : "my"
-              } agents`}
-              accessibilityHint={`Currently showing ${activeViewButtonLabel.toLowerCase()} agents`}
-              onPress={toggleActiveView}
-            />
             <IconButton
               accessibilityLabel="Add agent"
               icon="add"
@@ -605,47 +374,49 @@ export function AgentListScreen() {
         }
       />
 
-      {isPersonalView ? (
-        <FlatList
-          data={personalQuery.items}
-          renderItem={renderPersonalAgentItem}
-          keyExtractor={(item) => item.id}
-          style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
-          contentContainerStyle={{ paddingBottom: 18 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={personalQuery.refreshing}
-              onRefresh={onRefresh}
-              tintColor="#FFFFFF"
-              colors={["#FFFFFF"]}
-            />
-          }
-          ListHeaderComponent={renderHeader}
-          ListEmptyComponent={renderPersonalEmptyState}
-          ListFooterComponent={renderFooter}
-          onEndReached={onEndReached}
-          onEndReachedThreshold={0.5}
-        />
+      {isLoading && orderedAgents.length === 0 ? (
+        <View className="mt-8 items-center">
+          <Text className="text-sm text-gray-400">Loading agents...</Text>
+        </View>
+      ) : error ? (
+        <View className="mt-8 rounded-2xl bg-surface p-6">
+          <Text className="text-base font-bold text-white">Load failed</Text>
+          <Text className="mt-2 text-sm text-gray-400">
+            {error instanceof Error ? error.message : "Could not load agents."}
+          </Text>
+        </View>
       ) : (
         <FlatList
-          data={sharedListData}
-          renderItem={renderSharedAgentItem}
-          keyExtractor={(item) => item.id}
+          data={orderedAgents}
+          renderItem={renderAgentItem}
+          keyExtractor={(item) => `${item.source}:${item.id}`}
           style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
           contentContainerStyle={{ paddingBottom: 18 }}
           refreshControl={
             <RefreshControl
-              refreshing={sharedQuery.refreshing}
-              onRefresh={onRefresh}
+              refreshing={isRefetching}
+              onRefresh={() => {
+                refetch().catch(() => undefined);
+              }}
               tintColor="#FFFFFF"
               colors={["#FFFFFF"]}
             />
           }
           ListHeaderComponent={renderHeader}
-          ListEmptyComponent={renderSharedEmptyState}
-          ListFooterComponent={renderFooter}
-          onEndReached={onEndReached}
-          onEndReachedThreshold={0.5}
+          ListEmptyComponent={
+            <View className="items-center rounded-2xl bg-surface p-8">
+              <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-primary">
+                <Text className="text-[11px] font-bold text-black">A2A</Text>
+              </View>
+              <Text className="text-base font-bold text-white">
+                No agents available
+              </Text>
+              <Text className="mt-2 text-center text-sm text-slate-400">
+                Add your first personal agent or wait for shared agents to be
+                published.
+              </Text>
+            </View>
+          }
         />
       )}
     </ScreenContainer>

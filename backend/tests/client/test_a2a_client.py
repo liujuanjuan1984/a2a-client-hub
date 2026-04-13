@@ -982,14 +982,20 @@ async def test_stream_with_fallback_downgrades_to_blocking_when_streaming_is_not
         selected_transport="JSONRPC",
     )
 
-    class _UnsupportedStreamAdapter:
-        async def stream_message(self, _request):
+    class _UnsupportedStreamIterator:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
             raise A2APeerProtocolError(
                 "Unknown method: SendStreamingMessage",
                 error_code="method_not_supported",
                 rpc_code=-32601,
             )
-            yield  # pragma: no cover
+
+    class _UnsupportedStreamAdapter:
+        def stream_message(self, _request):
+            return _UnsupportedStreamIterator()
 
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._get_peer_descriptor = AsyncMock(return_value=descriptor)
