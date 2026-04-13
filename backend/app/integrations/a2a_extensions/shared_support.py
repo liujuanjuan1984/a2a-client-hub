@@ -19,13 +19,7 @@ from app.integrations.a2a_error_contract import (
     build_upstream_error_details,
 )
 from app.integrations.a2a_error_contract import (
-    coerce_jsonrpc_error_code as coerce_jsonrpc_numeric_code,
-)
-from app.integrations.a2a_error_contract import (
     map_upstream_error_code as map_upstream_error_code_token,
-)
-from app.integrations.a2a_error_contract import (
-    normalize_error_data_type as normalize_upstream_error_data_type,
 )
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
@@ -171,14 +165,6 @@ class A2AExtensionSupport:
                 source="upstream_http",
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
-
-    @staticmethod
-    def coerce_jsonrpc_error_code(error: Dict[str, Any]) -> Optional[int]:
-        return coerce_jsonrpc_numeric_code(error)
-
-    @staticmethod
-    def normalize_error_data_type(error: Dict[str, Any]) -> Optional[str]:
-        return normalize_upstream_error_data_type(error)
 
     @staticmethod
     def map_upstream_error_code(
