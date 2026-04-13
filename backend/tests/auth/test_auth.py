@@ -44,7 +44,7 @@ LEGACY_BCRYPT_HASH = "".join(
         "oAHOBdMIkrTmNtd/4am6",
     )
 )
-LONG_UTF8_PASSWORD = "Aa" * 34 + "1!" + "界"  # pragma: allowlist secret
+LONG_UTF8_PASSWORD = "Aa" * 34 + "1!" + "界"
 
 
 async def run_in_session(async_session_maker, coro_fn):
@@ -1117,7 +1117,7 @@ async def test_register_accepts_password_longer_than_72_utf8_bytes(
 async def test_authenticate_user_not_found_runs_dummy_hash_verification(
     async_db_session,
 ) -> None:
-    password = "NotUsed!1"  # pragma: allowlist secret
+    password = "NotUsed!1"
 
     with patch(
         "app.features.auth.service.verify_password", return_value=False

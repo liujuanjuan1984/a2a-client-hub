@@ -20,7 +20,7 @@ def _build_user(*, is_superuser: bool = False) -> User:
         id=uuid4(),
         email=f"user-{uuid4().hex[:8]}@example.com",
         name="Web Agent User",
-        password_hash="test-password-hash",  # pragma: allowlist secret
+        password_hash="test-password-hash",
         is_superuser=is_superuser,
         timezone="UTC",
     )

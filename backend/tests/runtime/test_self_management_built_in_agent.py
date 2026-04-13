@@ -284,10 +284,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert _FakeSwivalSession.last_init_kwargs["provider"] == "openai"
     assert _FakeSwivalSession.last_init_kwargs["model"] == "gpt-test"
     assert _FakeSwivalSession.last_init_kwargs["base_url"] == "https://example.com/v1"
-    assert (
-        _FakeSwivalSession.last_init_kwargs["api_key"]
-        == "test-api-key"  # pragma: allowlist secret
-    )
+    assert _FakeSwivalSession.last_init_kwargs["api_key"] == "test-api-key"
     assert _FakeSwivalSession.last_init_kwargs["reasoning_effort"] == "medium"
     assert _FakeSwivalSession.last_init_kwargs["max_turns"] == 6
     assert _FakeSwivalSession.last_init_kwargs["max_output_tokens"] == 2048
