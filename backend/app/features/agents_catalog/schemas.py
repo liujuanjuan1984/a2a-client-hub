@@ -10,6 +10,14 @@ from pydantic import BaseModel, Field
 UnifiedAgentSource = Literal["personal", "shared", "builtin"]
 UnifiedAgentAuthType = Literal["none", "bearer", "basic"]
 UnifiedAgentHealthStatus = Literal["unknown", "healthy", "degraded", "unavailable"]
+UnifiedAgentHealthReasonCode = Literal[
+    "card_validation_failed",
+    "runtime_validation_failed",
+    "agent_unavailable",
+    "client_reset_required",
+    "credential_required",
+    "unexpected_error",
+]
 UnifiedAgentCredentialMode = Literal["none", "shared", "user"]
 
 
@@ -23,6 +31,7 @@ class UnifiedAgentCatalogItem(BaseModel):
     health_status: UnifiedAgentHealthStatus = "unknown"
     last_health_check_at: Optional[datetime] = None
     last_health_check_error: Optional[str] = None
+    last_health_check_reason_code: Optional[UnifiedAgentHealthReasonCode] = None
     credential_mode: Optional[UnifiedAgentCredentialMode] = None
     credential_configured: Optional[bool] = None
     credential_display_hint: Optional[str] = None
@@ -44,6 +53,7 @@ class UnifiedAgentHealthCheckItem(BaseModel):
     checked_at: datetime
     skipped_cooldown: bool = False
     error: Optional[str] = None
+    reason_code: Optional[UnifiedAgentHealthReasonCode] = None
 
 
 class UnifiedAgentHealthCheckSummary(BaseModel):
@@ -66,6 +76,7 @@ __all__ = [
     "UnifiedAgentCatalogResponse",
     "UnifiedAgentCredentialMode",
     "UnifiedAgentHealthCheckItem",
+    "UnifiedAgentHealthReasonCode",
     "UnifiedAgentHealthCheckResponse",
     "UnifiedAgentHealthCheckSummary",
     "UnifiedAgentHealthStatus",

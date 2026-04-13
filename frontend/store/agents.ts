@@ -34,6 +34,13 @@ export type AgentConfig = {
   healthStatus?: "unknown" | "healthy" | "degraded" | "unavailable";
   lastHealthCheckAt?: string;
   lastHealthCheckError?: string;
+  lastHealthCheckReasonCode?:
+    | "card_validation_failed"
+    | "runtime_validation_failed"
+    | "agent_unavailable"
+    | "client_reset_required"
+    | "credential_required"
+    | "unexpected_error";
   credentialMode?: "none" | "shared" | "user";
   credentialConfigured?: boolean;
   credentialDisplayHint?: string;

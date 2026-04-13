@@ -699,6 +699,7 @@ class SelfManagementToolkit:
                 else None
             ),
             "last_health_check_error": record.last_health_check_error,
+            "last_health_check_reason_code": record.last_health_check_reason_code,
             "tags": list(record.tags),
             "extra_headers": dict(record.extra_headers),
             "invoke_metadata_defaults": dict(record.invoke_metadata_defaults),
@@ -729,6 +730,7 @@ class SelfManagementToolkit:
                     "checked_at": item.checked_at.isoformat(),
                     "skipped_cooldown": bool(item.skipped_cooldown),
                     "error": item.error,
+                    "reason_code": item.reason_code,
                 }
                 for item in items
             ],

@@ -65,6 +65,7 @@ const toAgentConfig = (
   healthStatus: agent.health_status,
   lastHealthCheckAt: agent.last_health_check_at ?? undefined,
   lastHealthCheckError: agent.last_health_check_error ?? undefined,
+  lastHealthCheckReasonCode: agent.last_health_check_reason_code ?? undefined,
   credentialMode: agent.credential_mode ?? undefined,
   credentialConfigured: agent.credential_configured ?? undefined,
   credentialDisplayHint: agent.credential_display_hint ?? undefined,
@@ -98,6 +99,7 @@ const toPersonalAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
   healthStatus: agent.health_status,
   lastHealthCheckAt: agent.last_health_check_at ?? undefined,
   lastHealthCheckError: agent.last_health_check_error ?? undefined,
+  lastHealthCheckReasonCode: agent.last_health_check_reason_code ?? undefined,
 });
 
 const getCatalogCache = (catalog: AgentConfig[] | undefined) => catalog ?? [];

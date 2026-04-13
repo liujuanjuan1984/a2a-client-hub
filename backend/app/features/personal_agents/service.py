@@ -48,6 +48,16 @@ class A2AAgentValidationError(A2AAgentError):
     """Raised when payload validation fails."""
 
 
+class A2AAgentHealthReasonCode:
+    """Structured reason codes for persisted personal agent health results."""
+
+    CARD_VALIDATION_FAILED = "card_validation_failed"
+    RUNTIME_VALIDATION_FAILED = "runtime_validation_failed"
+    AGENT_UNAVAILABLE = "agent_unavailable"
+    CLIENT_RESET_REQUIRED = "client_reset_required"
+    UNEXPECTED_ERROR = "unexpected_error"
+
+
 @dataclass(frozen=True)
 class A2AAgentRecord:
     id: UUID
@@ -62,6 +72,7 @@ class A2AAgentRecord:
     last_health_check_at: datetime | None
     last_successful_health_check_at: datetime | None
     last_health_check_error: str | None
+    last_health_check_reason_code: str | None
     tags: list[str]
     extra_headers: dict[str, str]
     invoke_metadata_defaults: dict[str, str]
@@ -86,6 +97,7 @@ class A2AAgentHealthCheckItemRecord:
     checked_at: datetime
     skipped_cooldown: bool
     error: str | None
+    reason_code: str | None
 
 
 @dataclass(frozen=True)
@@ -112,6 +124,7 @@ class _A2AAgentHealthSnapshot:
     health_status: str
     consecutive_health_check_failures: int
     last_health_check_at: datetime | None
+    last_health_check_reason_code: str | None
     credential: A2AAgentCredential | None
 
 
@@ -157,6 +170,10 @@ class A2AAgentService(AgentValidationMixin):
             last_health_check_error=cast(
                 str | None,
                 getattr(agent, "last_health_check_error", None),
+            ),
+            last_health_check_reason_code=cast(
+                str | None,
+                getattr(agent, "last_health_check_reason_code", None),
             ),
             tags=cast(list[str], agent.tags or []),
             extra_headers=cast(dict[str, str], agent.extra_headers or {}),
@@ -309,6 +326,7 @@ class A2AAgentService(AgentValidationMixin):
                         checked_at=snapshot.last_health_check_at,
                         skipped_cooldown=True,
                         error=None,
+                        reason_code=snapshot.last_health_check_reason_code,
                     )
                 )
                 continue
@@ -339,6 +357,7 @@ class A2AAgentService(AgentValidationMixin):
                                 "last_health_check_at": now,
                                 "last_successful_health_check_at": now,
                                 "last_health_check_error": None,
+                                "last_health_check_reason_code": None,
                             },
                         )
                     )
@@ -350,6 +369,7 @@ class A2AAgentService(AgentValidationMixin):
                             checked_at=now,
                             skipped_cooldown=False,
                             error=None,
+                            reason_code=None,
                         )
                     )
                     continue
@@ -357,6 +377,7 @@ class A2AAgentService(AgentValidationMixin):
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
+                reason_code = A2AAgentHealthReasonCode.CARD_VALIDATION_FAILED
                 error_message = self._normalize_health_error(
                     self._extract_validation_error(validation)
                 )
@@ -368,6 +389,7 @@ class A2AAgentService(AgentValidationMixin):
                             "consecutive_health_check_failures": failure_count,
                             "last_health_check_at": now,
                             "last_health_check_error": error_message,
+                            "last_health_check_reason_code": reason_code,
                         },
                     )
                 )
@@ -379,16 +401,14 @@ class A2AAgentService(AgentValidationMixin):
                         checked_at=now,
                         skipped_cooldown=False,
                         error=error_message,
+                        reason_code=reason_code,
                     )
                 )
-            except (
-                A2AAgentUnavailableError,
-                A2AClientResetRequiredError,
-                A2ARuntimeValidationError,
-            ) as exc:
+            except A2ARuntimeValidationError as exc:
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
+                reason_code = A2AAgentHealthReasonCode.RUNTIME_VALIDATION_FAILED
                 error_message = self._normalize_health_error(str(exc))
                 pending_updates.append(
                     (
@@ -398,6 +418,7 @@ class A2AAgentService(AgentValidationMixin):
                             "consecutive_health_check_failures": failure_count,
                             "last_health_check_at": now,
                             "last_health_check_error": error_message,
+                            "last_health_check_reason_code": reason_code,
                         },
                     )
                 )
@@ -409,12 +430,72 @@ class A2AAgentService(AgentValidationMixin):
                         checked_at=now,
                         skipped_cooldown=False,
                         error=error_message,
+                        reason_code=reason_code,
+                    )
+                )
+            except A2AAgentUnavailableError as exc:
+                next_status, failure_count = self._resolve_failure_status(
+                    snapshot.consecutive_health_check_failures
+                )
+                reason_code = A2AAgentHealthReasonCode.AGENT_UNAVAILABLE
+                error_message = self._normalize_health_error(str(exc))
+                pending_updates.append(
+                    (
+                        snapshot.agent_id,
+                        {
+                            "health_status": next_status,
+                            "consecutive_health_check_failures": failure_count,
+                            "last_health_check_at": now,
+                            "last_health_check_error": error_message,
+                            "last_health_check_reason_code": reason_code,
+                        },
+                    )
+                )
+                status_counts[next_status] += 1
+                items.append(
+                    A2AAgentHealthCheckItemRecord(
+                        agent_id=snapshot.agent_id,
+                        health_status=next_status,
+                        checked_at=now,
+                        skipped_cooldown=False,
+                        error=error_message,
+                        reason_code=reason_code,
+                    )
+                )
+            except A2AClientResetRequiredError as exc:
+                next_status, failure_count = self._resolve_failure_status(
+                    snapshot.consecutive_health_check_failures
+                )
+                reason_code = A2AAgentHealthReasonCode.CLIENT_RESET_REQUIRED
+                error_message = self._normalize_health_error(str(exc))
+                pending_updates.append(
+                    (
+                        snapshot.agent_id,
+                        {
+                            "health_status": next_status,
+                            "consecutive_health_check_failures": failure_count,
+                            "last_health_check_at": now,
+                            "last_health_check_error": error_message,
+                            "last_health_check_reason_code": reason_code,
+                        },
+                    )
+                )
+                status_counts[next_status] += 1
+                items.append(
+                    A2AAgentHealthCheckItemRecord(
+                        agent_id=snapshot.agent_id,
+                        health_status=next_status,
+                        checked_at=now,
+                        skipped_cooldown=False,
+                        error=error_message,
+                        reason_code=reason_code,
                     )
                 )
             except Exception as exc:  # noqa: BLE001
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
+                reason_code = A2AAgentHealthReasonCode.UNEXPECTED_ERROR
                 error_message = self._normalize_health_error(str(exc))
                 pending_updates.append(
                     (
@@ -424,6 +505,7 @@ class A2AAgentService(AgentValidationMixin):
                             "consecutive_health_check_failures": failure_count,
                             "last_health_check_at": now,
                             "last_health_check_error": error_message,
+                            "last_health_check_reason_code": reason_code,
                         },
                     )
                 )
@@ -435,6 +517,7 @@ class A2AAgentService(AgentValidationMixin):
                         checked_at=now,
                         skipped_cooldown=False,
                         error=error_message,
+                        reason_code=reason_code,
                     )
                 )
 
@@ -889,6 +972,10 @@ class A2AAgentService(AgentValidationMixin):
                     last_health_check_at=cast(
                         datetime | None,
                         getattr(agent, "last_health_check_at", None),
+                    ),
+                    last_health_check_reason_code=cast(
+                        str | None,
+                        getattr(agent, "last_health_check_reason_code", None),
                     ),
                     credential=cast(A2AAgentCredential | None, credential),
                 )

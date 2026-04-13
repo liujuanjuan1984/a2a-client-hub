@@ -39,6 +39,7 @@ async def test_list_current_user_agent_catalog_returns_unified_items(
                 "health_status": "healthy",
                 "last_health_check_at": None,
                 "last_health_check_error": None,
+                "last_health_check_reason_code": None,
                 "description": "Built-in self-management assistant",
                 "runtime": "swival",
                 "resources": ["agents", "sessions"],
@@ -53,6 +54,7 @@ async def test_list_current_user_agent_catalog_returns_unified_items(
                 "health_status": "unknown",
                 "last_health_check_at": None,
                 "last_health_check_error": None,
+                "last_health_check_reason_code": None,
                 "credential_mode": "user",
                 "credential_configured": False,
                 "credential_display_hint": None,
@@ -114,6 +116,7 @@ async def test_check_current_user_agent_catalog_health_returns_summary_and_items
                     checked_at=checked_at,
                     skipped_cooldown=False,
                     error=None,
+                    reason_code=None,
                 ),
                 SimpleNamespace(
                     agent_id="shared-1",
@@ -122,6 +125,7 @@ async def test_check_current_user_agent_catalog_health_returns_summary_and_items
                     checked_at=checked_at,
                     skipped_cooldown=False,
                     error="User credential required",
+                    reason_code="credential_required",
                 ),
                 SimpleNamespace(
                     agent_id="self-management-assistant",
@@ -130,6 +134,7 @@ async def test_check_current_user_agent_catalog_health_returns_summary_and_items
                     checked_at=checked_at,
                     skipped_cooldown=False,
                     error=None,
+                    reason_code=None,
                 ),
             ],
         )
@@ -166,4 +171,5 @@ async def test_check_current_user_agent_catalog_health_returns_summary_and_items
         "checked_at": "2026-04-13T12:00:00Z",
         "skipped_cooldown": False,
         "error": "User credential required",
+        "reason_code": "credential_required",
     }

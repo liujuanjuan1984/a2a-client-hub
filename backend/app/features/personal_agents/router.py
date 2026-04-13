@@ -80,6 +80,7 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
         "last_health_check_at": record.last_health_check_at,
         "last_successful_health_check_at": record.last_successful_health_check_at,
         "last_health_check_error": record.last_health_check_error,
+        "last_health_check_reason_code": record.last_health_check_reason_code,
         "tags": record.tags,
         "extra_headers": record.extra_headers,
         "invoke_metadata_defaults": record.invoke_metadata_defaults,
@@ -342,6 +343,7 @@ async def check_agents_health(
                 checked_at=item.checked_at,
                 skipped_cooldown=item.skipped_cooldown,
                 error=item.error,
+                reason_code=cast(Any, item.reason_code),
             )
             for item in items
         ],
@@ -396,6 +398,7 @@ async def check_single_agent_health(
                 checked_at=item.checked_at,
                 skipped_cooldown=item.skipped_cooldown,
                 error=item.error,
+                reason_code=cast(Any, item.reason_code),
             )
             for item in items
         ],

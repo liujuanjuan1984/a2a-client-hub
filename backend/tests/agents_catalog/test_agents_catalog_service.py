@@ -37,6 +37,7 @@ async def test_list_catalog_reads_persisted_shared_and_builtin_snapshots(
                 health_status="healthy",
                 last_health_check_at=checked_at,
                 last_successful_health_check_at=checked_at,
+                last_health_check_reason_code=None,
             ),
             UserAgentAvailabilitySnapshot(
                 user_id=user.id,
@@ -45,6 +46,7 @@ async def test_list_catalog_reads_persisted_shared_and_builtin_snapshots(
                 health_status="unavailable",
                 last_health_check_at=checked_at,
                 last_health_check_error="Built-in runtime unavailable",
+                last_health_check_reason_code="agent_unavailable",
             ),
         ]
     )
@@ -100,11 +102,13 @@ async def test_list_catalog_reads_persisted_shared_and_builtin_snapshots(
     by_source = {item["source"]: item for item in items}
     assert by_source["shared"]["health_status"] == "healthy"
     assert by_source["shared"]["last_health_check_at"] == checked_at
+    assert by_source["shared"]["last_health_check_reason_code"] is None
     assert by_source["builtin"]["health_status"] == "unavailable"
     assert (
         by_source["builtin"]["last_health_check_error"]
         == "Built-in runtime unavailable"
     )
+    assert by_source["builtin"]["last_health_check_reason_code"] == "agent_unavailable"
 
 
 @pytest.mark.asyncio
@@ -206,6 +210,7 @@ async def test_check_catalog_health_persists_shared_and_builtin_snapshots(
         ("shared", "healthy"),
         ("builtin", "healthy"),
     }
+    assert all(item.reason_code is None for item in items)
 
     snapshots = (
         await async_db_session.scalars(
@@ -215,10 +220,16 @@ async def test_check_catalog_health_persists_shared_and_builtin_snapshots(
         )
     ).all()
     assert {
-        (row.agent_source, row.agent_id, row.health_status) for row in snapshots
+        (
+            row.agent_source,
+            row.agent_id,
+            row.health_status,
+            row.last_health_check_reason_code,
+        )
+        for row in snapshots
     } == {
-        ("shared", str(shared_agent_id), "healthy"),
-        ("builtin", "self-management-assistant", "healthy"),
+        ("shared", str(shared_agent_id), "healthy", None),
+        ("builtin", "self-management-assistant", "healthy", None),
     }
 
 
@@ -306,6 +317,7 @@ async def test_check_catalog_health_marks_missing_shared_credential_unavailable(
     assert items[0].agent_source == "shared"
     assert items[0].health_status == "unavailable"
     assert items[0].error == "User credential required"
+    assert items[0].reason_code == "credential_required"
 
     snapshot = await async_db_session.scalar(
         select(UserAgentAvailabilitySnapshot).where(
@@ -317,3 +329,4 @@ async def test_check_catalog_health_marks_missing_shared_credential_unavailable(
     assert snapshot is not None
     assert snapshot.health_status == "unavailable"
     assert snapshot.last_health_check_error == "User credential required"
+    assert snapshot.last_health_check_reason_code == "credential_required"

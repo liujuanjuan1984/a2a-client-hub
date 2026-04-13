@@ -44,6 +44,7 @@ class UnifiedAgentHealthCheckItemRecord:
     checked_at: datetime
     skipped_cooldown: bool
     error: str | None
+    reason_code: str | None
 
 
 @dataclass(frozen=True)
@@ -66,12 +67,19 @@ class _AvailabilitySnapshotRecord:
     last_health_check_at: datetime | None
     last_successful_health_check_at: datetime | None
     last_health_check_error: str | None
+    last_health_check_reason_code: str | None
 
 
 class UnifiedAgentCatalogService:
     """Current-user catalog aggregation across personal/shared/built-in agents."""
 
     _non_personal_sources = ("shared", "builtin")
+    _reason_card_validation_failed = "card_validation_failed"
+    _reason_runtime_validation_failed = "runtime_validation_failed"
+    _reason_agent_unavailable = "agent_unavailable"
+    _reason_client_reset_required = "client_reset_required"
+    _reason_credential_required = "credential_required"
+    _reason_unexpected_error = "unexpected_error"
 
     @staticmethod
     def _extract_validation_error(validation: Any) -> str:
@@ -180,6 +188,9 @@ class UnifiedAgentCatalogService:
                     datetime | None, row.last_successful_health_check_at
                 ),
                 last_health_check_error=cast(str | None, row.last_health_check_error),
+                last_health_check_reason_code=cast(
+                    str | None, row.last_health_check_reason_code
+                ),
             )
         return snapshots
 
@@ -270,6 +281,11 @@ class UnifiedAgentCatalogService:
                         if built_in_snapshot is not None
                         else None
                     ),
+                    "last_health_check_reason_code": (
+                        built_in_snapshot.last_health_check_reason_code
+                        if built_in_snapshot is not None
+                        else None
+                    ),
                     "description": built_in_profile.description,
                     "runtime": built_in_profile.runtime,
                     "resources": list(built_in_profile.resources),
@@ -289,6 +305,7 @@ class UnifiedAgentCatalogService:
                 "health_status": record.health_status,
                 "last_health_check_at": record.last_health_check_at,
                 "last_health_check_error": record.last_health_check_error,
+                "last_health_check_reason_code": record.last_health_check_reason_code,
                 "extra_headers": dict(record.extra_headers),
                 "invoke_metadata_defaults": dict(record.invoke_metadata_defaults),
             }
@@ -314,6 +331,11 @@ class UnifiedAgentCatalogService:
                 ),
                 "last_health_check_error": (
                     snapshots[("shared", str(record.id))].last_health_check_error
+                    if ("shared", str(record.id)) in snapshots
+                    else None
+                ),
+                "last_health_check_reason_code": (
+                    snapshots[("shared", str(record.id))].last_health_check_reason_code
                     if ("shared", str(record.id)) in snapshots
                     else None
                 ),
@@ -350,6 +372,7 @@ class UnifiedAgentCatalogService:
                 checked_at=item.checked_at,
                 skipped_cooldown=item.skipped_cooldown,
                 error=item.error,
+                reason_code=item.reason_code,
             )
             for item in personal_items
         ]
@@ -399,6 +422,7 @@ class UnifiedAgentCatalogService:
                         checked_at=snapshot.last_health_check_at,
                         skipped_cooldown=True,
                         error=snapshot.last_health_check_error,
+                        reason_code=snapshot.last_health_check_reason_code,
                     )
                 )
                 continue
@@ -406,6 +430,7 @@ class UnifiedAgentCatalogService:
             checked += 1
             health_status = A2AAgent.HEALTH_HEALTHY
             error_message: str | None = None
+            reason_code: str | None = None
             consecutive_failures = 0
             try:
                 runtime = await hub_a2a_runtime_builder.build(
@@ -423,11 +448,13 @@ class UnifiedAgentCatalogService:
                         if snapshot is not None
                         else 0
                     )
+                    reason_code = self._reason_card_validation_failed
                     error_message = self._normalize_health_error(
                         self._extract_validation_error(validation)
                     )
             except HubA2AUserCredentialRequiredError as exc:
                 health_status = A2AAgent.HEALTH_UNAVAILABLE
+                reason_code = self._reason_credential_required
                 error_message = self._normalize_health_error(str(exc))
             except HubA2ARuntimeValidationError as exc:
                 health_status, consecutive_failures = self._resolve_failure_status(
@@ -435,17 +462,31 @@ class UnifiedAgentCatalogService:
                     if snapshot is not None
                     else 0
                 )
+                reason_code = self._reason_runtime_validation_failed
                 error_message = self._normalize_health_error(str(exc))
-            except (
-                HubA2ARuntimeNotFoundError,
-                A2AAgentUnavailableError,
-                A2AClientResetRequiredError,
-            ) as exc:
+            except HubA2ARuntimeNotFoundError as exc:
                 health_status, consecutive_failures = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                     if snapshot is not None
                     else 0
                 )
+                reason_code = self._reason_agent_unavailable
+                error_message = self._normalize_health_error(str(exc))
+            except A2AAgentUnavailableError as exc:
+                health_status, consecutive_failures = self._resolve_failure_status(
+                    snapshot.consecutive_health_check_failures
+                    if snapshot is not None
+                    else 0
+                )
+                reason_code = self._reason_agent_unavailable
+                error_message = self._normalize_health_error(str(exc))
+            except A2AClientResetRequiredError as exc:
+                health_status, consecutive_failures = self._resolve_failure_status(
+                    snapshot.consecutive_health_check_failures
+                    if snapshot is not None
+                    else 0
+                )
+                reason_code = self._reason_client_reset_required
                 error_message = self._normalize_health_error(str(exc))
             except Exception as exc:  # noqa: BLE001
                 health_status, consecutive_failures = self._resolve_failure_status(
@@ -453,6 +494,7 @@ class UnifiedAgentCatalogService:
                     if snapshot is not None
                     else 0
                 )
+                reason_code = self._reason_unexpected_error
                 error_message = self._normalize_health_error(str(exc))
 
             pending_updates.append(
@@ -473,6 +515,7 @@ class UnifiedAgentCatalogService:
                             )
                         ),
                         "last_health_check_error": error_message,
+                        "last_health_check_reason_code": reason_code,
                     },
                 )
             )
@@ -485,6 +528,7 @@ class UnifiedAgentCatalogService:
                     checked_at=now,
                     skipped_cooldown=False,
                     error=error_message,
+                    reason_code=reason_code,
                 )
             )
 
@@ -508,6 +552,7 @@ class UnifiedAgentCatalogService:
                         checked_at=snapshot.last_health_check_at,
                         skipped_cooldown=True,
                         error=snapshot.last_health_check_error,
+                        reason_code=snapshot.last_health_check_reason_code,
                     )
                 )
             else:
@@ -548,6 +593,7 @@ class UnifiedAgentCatalogService:
                                 )
                             ),
                             "last_health_check_error": error_message,
+                            "last_health_check_reason_code": None,
                         },
                     )
                 )
@@ -560,6 +606,7 @@ class UnifiedAgentCatalogService:
                         checked_at=now,
                         skipped_cooldown=False,
                         error=error_message,
+                        reason_code=None,
                     )
                 )
 

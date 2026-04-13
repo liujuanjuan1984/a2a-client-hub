@@ -86,6 +86,7 @@ async def check_current_user_agent_catalog_health(
                 checked_at=item.checked_at,
                 skipped_cooldown=item.skipped_cooldown,
                 error=item.error,
+                reason_code=cast(Any, item.reason_code),
             )
             for item in items
         ],

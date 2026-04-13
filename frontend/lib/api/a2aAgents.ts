@@ -10,6 +10,12 @@ export type A2AAgentHealthStatus =
   | "healthy"
   | "degraded"
   | "unavailable";
+export type A2AAgentHealthReasonCode =
+  | "card_validation_failed"
+  | "runtime_validation_failed"
+  | "agent_unavailable"
+  | "client_reset_required"
+  | "unexpected_error";
 export type A2AAgentHealthBucket = "all" | A2AAgentHealthStatus | "attention";
 
 export type A2AAgentCardValidationResponse = {
@@ -35,6 +41,7 @@ export type A2AAgentResponse = {
   last_health_check_at?: string | null;
   last_successful_health_check_at?: string | null;
   last_health_check_error?: string | null;
+  last_health_check_reason_code?: A2AAgentHealthReasonCode | null;
   tags: string[];
   extra_headers: Record<string, string>;
   invoke_metadata_defaults: Record<string, string>;
@@ -78,6 +85,7 @@ type A2AAgentHealthCheckResponse = {
     checked_at: string;
     skipped_cooldown: boolean;
     error?: string | null;
+    reason_code?: A2AAgentHealthReasonCode | null;
   }[];
 };
 
