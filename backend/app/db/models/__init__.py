@@ -24,6 +24,7 @@ from app.db.models.hub_a2a_user_credential import HubA2AUserCredential
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.shortcut import Shortcut
 from app.db.models.user import User
+from app.db.models.user_agent_availability_snapshot import UserAgentAvailabilitySnapshot
 from app.db.models.ws_ticket import WsTicket
 
 __all__ = [
@@ -45,5 +46,6 @@ __all__ = [
     "ExternalSessionDirectoryCacheEntry",
     "User",
     "Shortcut",
+    "UserAgentAvailabilitySnapshot",
     "WsTicket",
 ]

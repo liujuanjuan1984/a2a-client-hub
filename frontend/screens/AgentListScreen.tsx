@@ -24,10 +24,10 @@ const HEALTH_BADGE_STYLES: Record<
   NonNullable<AgentConfig["healthStatus"]>,
   { label: string }
 > = {
-  healthy: { label: "Healthy" },
-  degraded: { label: "Degraded" },
+  healthy: { label: "Available" },
+  degraded: { label: "Needs attention" },
   unavailable: { label: "Unavailable" },
-  unknown: { label: "Unknown" },
+  unknown: { label: "Not checked" },
 };
 
 const SOURCE_LABELS: Record<AgentConfig["source"], string> = {
@@ -44,36 +44,6 @@ const SOURCE_SORT_ORDER: Record<AgentConfig["source"], number> = {
 
 const resolveHealthStatus = (agent: AgentConfig) =>
   agent.healthStatus ?? "unknown";
-
-const patchCatalogHealth = (
-  catalog: AgentConfig[] | undefined,
-  items: {
-    agent_id: string;
-    agent_source: AgentConfig["source"];
-    health_status: NonNullable<AgentConfig["healthStatus"]>;
-    checked_at: string;
-    error?: string | null;
-  }[],
-) => {
-  if (!catalog) {
-    return catalog;
-  }
-  const byKey = new Map(
-    items.map((item) => [`${item.agent_source}:${item.agent_id}`, item]),
-  );
-  return catalog.map((agent) => {
-    const match = byKey.get(`${agent.source}:${agent.id}`);
-    if (!match) {
-      return agent;
-    }
-    return {
-      ...agent,
-      healthStatus: match.health_status,
-      lastHealthCheckAt: match.checked_at,
-      lastHealthCheckError: match.error ?? undefined,
-    };
-  });
-};
 
 export function AgentListScreen() {
   const router = useRouter();
@@ -128,14 +98,17 @@ export function AgentListScreen() {
 
   const batchHealthMutation = useMutation({
     mutationFn: async () => checkAgentsCatalogHealth(false),
-    onSuccess: async (response) => {
-      queryClient.setQueryData<AgentConfig[] | undefined>(
-        queryKeys.agents.catalog(),
-        (catalog) => patchCatalogHealth(catalog, response.items),
-      );
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.listRoot(),
-      });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.refetchQueries({
+          queryKey: queryKeys.agents.catalog(),
+          exact: true,
+          type: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.agents.listRoot(),
+        }),
+      ]);
     },
     onError: (mutationError) => {
       const message =
@@ -372,7 +345,7 @@ export function AgentListScreen() {
     <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
         title="Agents"
-        subtitle="Browse and manage all available agents in one place."
+        subtitle="Browse agents and check whether each one is available to you."
         rightElement={
           <View className="flex-row gap-2">
             <AccountEntryButton />

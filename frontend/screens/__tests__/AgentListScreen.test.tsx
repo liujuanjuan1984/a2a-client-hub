@@ -8,7 +8,7 @@ const mockPush = jest.fn();
 const mockSetActiveAgent = jest.fn();
 const mockBlurActiveElement = jest.fn();
 const mockBatchMutate = jest.fn();
-const mockSetQueryData = jest.fn();
+const mockRefetchQueries = jest.fn(() => Promise.resolve());
 const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 
 let mockButtons: Record<string, unknown>[] = [];
@@ -78,7 +78,7 @@ jest.mock("@tanstack/react-query", () => ({
     mutate: mockBatchMutate,
   }),
   useQueryClient: () => ({
-    setQueryData: mockSetQueryData,
+    refetchQueries: mockRefetchQueries,
     invalidateQueries: mockInvalidateQueries,
   }),
 }));
