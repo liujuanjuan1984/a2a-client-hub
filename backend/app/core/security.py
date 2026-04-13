@@ -408,10 +408,6 @@ def verify_access_token(token: str) -> Optional[str]:
     return verify_jwt_token(token, expected_type=ACCESS_TOKEN_TYPE)
 
 
-def verify_refresh_token(token: str) -> Optional[str]:
-    return verify_jwt_token(token, expected_type=REFRESH_TOKEN_TYPE)
-
-
 def verify_refresh_token_claims(token: str) -> Optional[VerifiedJwtClaims]:
     return verify_jwt_token_claims(token, expected_type=REFRESH_TOKEN_TYPE)
 
