@@ -1353,7 +1353,7 @@ async def test_built_in_agent_permission_reply_route_returns_terminal_error_code
             json={"requestId": "expired-request", "reply": "always"},
         )
 
-    assert response.status_code == 400
+    assert response.status_code == 409
     assert response.json()["detail"] == {
         "message": "The write approval request is invalid or expired.",
         "error_code": "interrupt_request_expired",

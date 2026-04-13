@@ -43,14 +43,14 @@ _BUILT_IN_PERMISSION_REPLY_INVALID_OR_EXPIRED_DETAIL = (
 
 def _permission_reply_error_detail(
     exc: SelfManagementBuiltInAgentUnavailableError,
-) -> str | dict[str, str]:
+) -> tuple[int, str | dict[str, str]]:
     message = str(exc)
     if message == _BUILT_IN_PERMISSION_REPLY_INVALID_OR_EXPIRED_DETAIL:
-        return build_error_detail(
+        return status.HTTP_409_CONFLICT, build_error_detail(
             message=message,
             error_code="interrupt_request_expired",
         )
-    return message
+    return status.HTTP_400_BAD_REQUEST, message
 
 
 def _to_run_response(
@@ -237,6 +237,7 @@ async def reply_self_management_built_in_agent_permission_interrupt(
             detail=str(exc),
         ) from exc
     except SelfManagementBuiltInAgentUnavailableError as exc:
+        status_code, detail = _permission_reply_error_detail(exc)
         logger.exception(
             "Built-in self-management agent permission reply failed",
             extra={
@@ -246,8 +247,8 @@ async def reply_self_management_built_in_agent_permission_interrupt(
             },
         )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_permission_reply_error_detail(exc),
+            status_code=status_code,
+            detail=detail,
         ) from exc
     except Exception:
         logger.exception(
