@@ -766,30 +766,14 @@ export const useChatStore = create<ChatState>()(
               typeof currentSession.metadata === "object"
                 ? (currentSession.metadata as Record<string, unknown>)
                 : {};
-            const opencode =
-              metadata.opencode &&
-              typeof metadata.opencode === "object" &&
-              !Array.isArray(metadata.opencode)
-                ? (metadata.opencode as Record<string, unknown>)
-                : null;
-            const nextWorkingDirectory =
-              normalizeWorkingDirectory(currentSession.workingDirectory) ??
-              normalizeWorkingDirectory(opencode?.directory);
-            const nextMetadata = { ...metadata };
-            if (opencode) {
-              const nextOpencode = { ...opencode };
-              delete nextOpencode.directory;
-              if (Object.keys(nextOpencode).length > 0) {
-                nextMetadata.opencode = nextOpencode;
-              } else {
-                delete nextMetadata.opencode;
-              }
-            }
+            const nextWorkingDirectory = normalizeWorkingDirectory(
+              currentSession.workingDirectory,
+            );
             return [
               conversationId,
               {
                 ...currentSession,
-                metadata: nextMetadata,
+                metadata,
                 workingDirectory: nextWorkingDirectory,
               },
             ];
