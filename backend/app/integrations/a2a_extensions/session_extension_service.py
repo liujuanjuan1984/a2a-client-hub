@@ -632,7 +632,10 @@ class SessionExtensionService:
             return ExtensionCallResult(success=True, result=resolved_result, meta=meta)
 
         error = resp.error or {}
-        error_details = self._support.build_business_error_details(error, ext)
+        error_details = self._support.build_upstream_error_details(
+            error=error,
+            business_code_map=ext.business_code_map,
+        )
         self._support.record_extension_metric(
             metric_key, success=False, error_code=error_details.error_code
         )

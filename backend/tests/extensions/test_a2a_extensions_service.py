@@ -744,23 +744,23 @@ async def test_resolve_invoke_metadata_fetches_card_and_returns_contract(
 def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionSupport.map_business_error_code(
-            {"code": -32005},
-            ext,
+        A2AExtensionSupport.map_upstream_error_code(
+            error={"code": -32005},
+            business_code_map=ext.business_code_map,
         )
         == "upstream_payload_error"
     )
     assert (
-        A2AExtensionSupport.map_business_error_code(
-            {"code": "-32001"},
-            ext,
+        A2AExtensionSupport.map_upstream_error_code(
+            error={"code": "-32001"},
+            business_code_map=ext.business_code_map,
         )
         == "session_not_found"
     )
     assert (
-        A2AExtensionSupport.map_business_error_code(
-            {"code": -32006},
-            ext,
+        A2AExtensionSupport.map_upstream_error_code(
+            error={"code": -32006},
+            business_code_map=ext.business_code_map,
         )
         == "session_forbidden"
     )
@@ -769,22 +769,22 @@ def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
 def test_map_business_error_code_prefers_error_data_type() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionSupport.map_business_error_code(
-            {
+        A2AExtensionSupport.map_upstream_error_code(
+            error={
                 "code": -32001,
                 "data": {"type": "METHOD_DISABLED"},
             },
-            ext,
+            business_code_map=ext.business_code_map,
         )
         == "method_disabled"
     )
     assert (
-        A2AExtensionSupport.map_business_error_code(
-            {
+        A2AExtensionSupport.map_upstream_error_code(
+            error={
                 "code": -32003,
                 "data": {"type": "UPSTREAM_UNAUTHORIZED"},
             },
-            ext,
+            business_code_map=ext.business_code_map,
         )
         == "upstream_unauthorized"
     )
@@ -793,9 +793,9 @@ def test_map_business_error_code_prefers_error_data_type() -> None:
 def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionSupport.map_business_error_code(
-            {"code": -32602},
-            ext,
+        A2AExtensionSupport.map_upstream_error_code(
+            error={"code": -32602},
+            business_code_map=ext.business_code_map,
         )
         == "invalid_params"
     )
@@ -813,22 +813,22 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
         business_code_map={-32004: "interrupt_request_not_found"},
     )
     assert (
-        A2AExtensionSupport.map_interrupt_business_error_code(
-            {
+        A2AExtensionSupport.map_upstream_error_code(
+            error={
                 "code": -32004,
                 "data": {"type": "INTERRUPT_REQUEST_EXPIRED"},
             },
-            ext,
+            business_code_map=ext.business_code_map,
         )
         == "interrupt_request_expired"
     )
     assert (
-        A2AExtensionSupport.map_interrupt_business_error_code(
-            {
+        A2AExtensionSupport.map_upstream_error_code(
+            error={
                 "code": -32602,
                 "data": {"type": "INTERRUPT_TYPE_MISMATCH"},
             },
-            ext,
+            business_code_map=ext.business_code_map,
         )
         == "interrupt_type_mismatch"
     )
