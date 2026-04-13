@@ -10,7 +10,7 @@ EXPLORATORY_ARGS=(
   --ignore-names
   "pytestmark,model_config"
   --ignore-decorators
-  "@app.get,@app.post,@app.put,@app.patch,@app.delete,@app.websocket,@router.get,@router.post,@router.put,@router.patch,@router.delete,@router.websocket,@field_validator,@model_validator,@validator,@root_validator"
+  "@app.get,@app.post,@app.put,@app.patch,@app.delete,@app.websocket,@router.get,@router.post,@router.put,@router.patch,@router.delete,@router.websocket,@field_validator,@model_validator,@validator,@root_validator,@mcp.tool"
 )
 
 case "$MODE" in
