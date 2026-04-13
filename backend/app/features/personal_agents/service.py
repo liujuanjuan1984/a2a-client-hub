@@ -28,6 +28,7 @@ from app.features.health_check_helpers import (
     build_health_check_item_fields,
     build_health_snapshot_update,
 )
+from app.features.health_reason_codes import AgentHealthReasonCode
 from app.features.personal_agents.runtime import (
     A2ARuntimeValidationError,
     a2a_runtime_builder,
@@ -50,16 +51,6 @@ class A2AAgentNotFoundError(A2AAgentError):
 
 class A2AAgentValidationError(A2AAgentError):
     """Raised when payload validation fails."""
-
-
-class A2AAgentHealthReasonCode:
-    """Structured reason codes for persisted personal agent health results."""
-
-    CARD_VALIDATION_FAILED = "card_validation_failed"
-    RUNTIME_VALIDATION_FAILED = "runtime_validation_failed"
-    AGENT_UNAVAILABLE = "agent_unavailable"
-    CLIENT_RESET_REQUIRED = "client_reset_required"
-    UNEXPECTED_ERROR = "unexpected_error"
 
 
 @dataclass(frozen=True)
@@ -402,7 +393,7 @@ class A2AAgentService(AgentValidationMixin):
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
-                reason_code = A2AAgentHealthReasonCode.CARD_VALIDATION_FAILED
+                reason_code = AgentHealthReasonCode.CARD_VALIDATION_FAILED
                 error_message = self._normalize_health_error(
                     self._extract_validation_error(validation)
                 )
@@ -434,7 +425,7 @@ class A2AAgentService(AgentValidationMixin):
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
-                reason_code = A2AAgentHealthReasonCode.RUNTIME_VALIDATION_FAILED
+                reason_code = AgentHealthReasonCode.RUNTIME_VALIDATION_FAILED
                 error_message = self._normalize_health_error(str(exc))
                 pending_updates.append(
                     (
@@ -464,7 +455,7 @@ class A2AAgentService(AgentValidationMixin):
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
-                reason_code = A2AAgentHealthReasonCode.AGENT_UNAVAILABLE
+                reason_code = AgentHealthReasonCode.AGENT_UNAVAILABLE
                 error_message = self._normalize_health_error(str(exc))
                 pending_updates.append(
                     (
@@ -494,7 +485,7 @@ class A2AAgentService(AgentValidationMixin):
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
-                reason_code = A2AAgentHealthReasonCode.CLIENT_RESET_REQUIRED
+                reason_code = AgentHealthReasonCode.CLIENT_RESET_REQUIRED
                 error_message = self._normalize_health_error(str(exc))
                 pending_updates.append(
                     (
@@ -524,7 +515,7 @@ class A2AAgentService(AgentValidationMixin):
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )
-                reason_code = A2AAgentHealthReasonCode.UNEXPECTED_ERROR
+                reason_code = AgentHealthReasonCode.UNEXPECTED_ERROR
                 error_message = self._normalize_health_error(str(exc))
                 pending_updates.append(
                     (

@@ -21,6 +21,7 @@ from app.features.health_check_helpers import (
     build_health_check_item_fields,
     build_health_snapshot_update,
 )
+from app.features.health_reason_codes import AgentHealthReasonCode
 from app.features.hub_agents.runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
@@ -78,12 +79,6 @@ class UnifiedAgentCatalogService:
     """Current-user catalog aggregation across personal/shared/built-in agents."""
 
     _non_personal_sources = ("shared", "builtin")
-    _reason_card_validation_failed = "card_validation_failed"
-    _reason_runtime_validation_failed = "runtime_validation_failed"
-    _reason_agent_unavailable = "agent_unavailable"
-    _reason_client_reset_required = "client_reset_required"
-    _reason_credential_required = "credential_required"
-    _reason_unexpected_error = "unexpected_error"
 
     @staticmethod
     def _extract_validation_error(validation: Any) -> str:
@@ -472,13 +467,13 @@ class UnifiedAgentCatalogService:
                         if snapshot is not None
                         else 0
                     )
-                    reason_code = self._reason_card_validation_failed
+                    reason_code = AgentHealthReasonCode.CARD_VALIDATION_FAILED
                     error_message = self._normalize_health_error(
                         self._extract_validation_error(validation)
                     )
             except HubA2AUserCredentialRequiredError as exc:
                 health_status = A2AAgent.HEALTH_UNAVAILABLE
-                reason_code = self._reason_credential_required
+                reason_code = AgentHealthReasonCode.CREDENTIAL_REQUIRED
                 error_message = self._normalize_health_error(str(exc))
             except HubA2ARuntimeValidationError as exc:
                 health_status, consecutive_failures = self._resolve_failure_status(
@@ -486,7 +481,7 @@ class UnifiedAgentCatalogService:
                     if snapshot is not None
                     else 0
                 )
-                reason_code = self._reason_runtime_validation_failed
+                reason_code = AgentHealthReasonCode.RUNTIME_VALIDATION_FAILED
                 error_message = self._normalize_health_error(str(exc))
             except HubA2ARuntimeNotFoundError as exc:
                 health_status, consecutive_failures = self._resolve_failure_status(
@@ -494,7 +489,7 @@ class UnifiedAgentCatalogService:
                     if snapshot is not None
                     else 0
                 )
-                reason_code = self._reason_agent_unavailable
+                reason_code = AgentHealthReasonCode.AGENT_UNAVAILABLE
                 error_message = self._normalize_health_error(str(exc))
             except A2AAgentUnavailableError as exc:
                 health_status, consecutive_failures = self._resolve_failure_status(
@@ -502,7 +497,7 @@ class UnifiedAgentCatalogService:
                     if snapshot is not None
                     else 0
                 )
-                reason_code = self._reason_agent_unavailable
+                reason_code = AgentHealthReasonCode.AGENT_UNAVAILABLE
                 error_message = self._normalize_health_error(str(exc))
             except A2AClientResetRequiredError as exc:
                 health_status, consecutive_failures = self._resolve_failure_status(
@@ -510,7 +505,7 @@ class UnifiedAgentCatalogService:
                     if snapshot is not None
                     else 0
                 )
-                reason_code = self._reason_client_reset_required
+                reason_code = AgentHealthReasonCode.CLIENT_RESET_REQUIRED
                 error_message = self._normalize_health_error(str(exc))
             except Exception as exc:  # noqa: BLE001
                 health_status, consecutive_failures = self._resolve_failure_status(
@@ -518,7 +513,7 @@ class UnifiedAgentCatalogService:
                     if snapshot is not None
                     else 0
                 )
-                reason_code = self._reason_unexpected_error
+                reason_code = AgentHealthReasonCode.UNEXPECTED_ERROR
                 error_message = self._normalize_health_error(str(exc))
 
             pending_updates.append(
