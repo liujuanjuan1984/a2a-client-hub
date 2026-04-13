@@ -84,6 +84,7 @@ export function ChatHeaderPanel({
   providerDiscoveryStatus,
   interruptRecoveryStatus,
   sessionPromptAsyncStatus,
+  sessionAppendStatus,
   sessionCommandStatus,
   sessionShellStatus,
   invokeMetadataStatus,
@@ -102,6 +103,7 @@ export function ChatHeaderPanel({
   providerDiscoveryStatus: CapabilityStatus;
   interruptRecoveryStatus: CapabilityStatus;
   sessionPromptAsyncStatus: CapabilityStatus;
+  sessionAppendStatus: CapabilityStatus;
   sessionCommandStatus: CapabilityStatus;
   sessionShellStatus: CapabilityStatus;
   invokeMetadataStatus: CapabilityStatus;
@@ -113,6 +115,7 @@ export function ChatHeaderPanel({
     { label: "Provider Discovery", status: providerDiscoveryStatus },
     { label: "Interrupt Recovery", status: interruptRecoveryStatus },
     { label: "Prompt Async", status: sessionPromptAsyncStatus },
+    { label: "Streaming Append", status: sessionAppendStatus },
     { label: "Session Command", status: sessionCommandStatus },
     { label: "Session Shell", status: sessionShellStatus },
     { label: "Invoke Metadata", status: invokeMetadataStatus },

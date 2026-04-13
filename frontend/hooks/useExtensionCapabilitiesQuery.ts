@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import {
-  getExtensionCapabilities,
-  type CodexTurnsCapability,
-} from "@/lib/api/a2aExtensions";
+import { getExtensionCapabilities } from "@/lib/api/a2aExtensions";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentSource } from "@/store/agents";
 
@@ -24,32 +21,6 @@ type InvokeMetadataCapability = {
     description?: string | null;
   }[];
   error?: string | null;
-};
-type DeclaredMethodCapability = {
-  declared: boolean;
-  consumedByHub: boolean;
-  availability?: "always" | "enabled" | "disabled" | "unsupported";
-  configKey?: string | null;
-  reason?: string | null;
-  retention?: string | null;
-};
-
-const resolveDeclaredMethodStatus = (
-  method?: DeclaredMethodCapability | null,
-): GenericCapabilityStatus => {
-  if (!method) {
-    return "unknown";
-  }
-  if (!method.declared || !method.consumedByHub) {
-    return "unsupported";
-  }
-  if (
-    method.availability === "disabled" ||
-    method.availability === "unsupported"
-  ) {
-    return "unsupported";
-  }
-  return "supported";
 };
 
 const resolveSessionControlStatus = (
@@ -132,10 +103,12 @@ export const useExtensionCapabilitiesQuery = ({
         ? "supported"
         : "unsupported"
       : "unknown";
-  const codexTurns =
-    (query.data?.codexTurns as CodexTurnsCapability | null | undefined) ?? null;
-  const codexTurnSteerStatus: GenericCapabilityStatus =
-    resolveDeclaredMethodStatus(codexTurns?.methods.steer);
+  const sessionAppendStatus: GenericCapabilityStatus =
+    query.data?.sessionControl?.append != null
+      ? query.data.sessionControl.append.status === "supported"
+        ? "supported"
+        : "unsupported"
+      : "unknown";
 
   return {
     ...query,
@@ -150,8 +123,8 @@ export const useExtensionCapabilitiesQuery = ({
     sessionControl: query.data?.sessionControl ?? null,
     invokeMetadata:
       (query.data?.invokeMetadata as InvokeMetadataCapability) ?? null,
-    codexTurns,
-    codexTurnSteerStatus,
+    sessionAppend: query.data?.sessionControl?.append ?? null,
+    sessionAppendStatus,
     canShowModelPicker: modelSelectionStatus !== "unsupported",
   };
 };

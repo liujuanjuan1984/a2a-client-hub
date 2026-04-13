@@ -224,12 +224,19 @@ export function useChatScreenController({
       : !activeAgentId || !agent?.source
         ? "unsupported"
         : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
-  const codexTurnSteerStatus: GenericCapabilityStatus =
+  const sessionAppendStatus: GenericCapabilityStatus =
     isBuiltInSelfManagementAgent
       ? "unsupported"
       : !activeAgentId || !agent?.source
         ? "unsupported"
-        : extensionCapabilitiesQuery.codexTurnSteerStatus;
+        : extensionCapabilitiesQuery.sessionAppendStatus;
+  const sessionAppendRequiresStreamIdentity =
+    !isBuiltInSelfManagementAgent &&
+    Boolean(
+      activeAgentId &&
+      agent?.source &&
+      extensionCapabilitiesQuery.sessionAppend?.requiresStreamIdentity,
+    );
   const invokeMetadataStatus: GenericCapabilityStatus =
     isBuiltInSelfManagementAgent
       ? "unsupported"
@@ -628,17 +635,18 @@ export function useChatScreenController({
       const externalSessionId =
         currentSession.externalSessionRef?.externalSessionId?.trim() ?? "";
       const streamIdentity = readSharedStreamIdentity(currentSession?.metadata);
-      const canSteerRunningTurn = Boolean(
-        codexTurnSteerStatus === "supported" &&
-        streamIdentity.threadId &&
-        streamIdentity.turnId,
+      const canAppendToRunningTurn = Boolean(
+        sessionAppendStatus === "supported" &&
+        (!sessionAppendRequiresStreamIdentity ||
+          (streamIdentity.threadId && streamIdentity.turnId)),
       );
-      return (
-        Boolean(externalSessionId) &&
-        (sessionPromptAsyncStatus === "supported" || canSteerRunningTurn)
-      );
+      return Boolean(externalSessionId) && canAppendToRunningTurn;
     },
-    [codexTurnSteerStatus, pendingInterrupt, sessionPromptAsyncStatus],
+    [
+      pendingInterrupt,
+      sessionAppendRequiresStreamIdentity,
+      sessionAppendStatus,
+    ],
   );
 
   const appendMessageToRunningSession = useCallback(
@@ -1576,6 +1584,7 @@ export function useChatScreenController({
     sessionCommandStatus,
     sessionShellStatus,
     sessionPromptAsyncStatus,
+    sessionAppendStatus,
     invokeMetadataStatus,
     selectedModel,
     workingDirectory,

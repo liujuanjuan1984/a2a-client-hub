@@ -80,6 +80,7 @@ export function ChatScreen({
         providerDiscoveryStatus={controller.providerDiscoveryStatus}
         interruptRecoveryStatus={controller.interruptRecoveryStatus}
         sessionPromptAsyncStatus={controller.sessionPromptAsyncStatus}
+        sessionAppendStatus={controller.sessionAppendStatus}
         sessionCommandStatus={controller.sessionCommandStatus}
         sessionShellStatus={controller.sessionShellStatus}
         invokeMetadataStatus={controller.invokeMetadataStatus}

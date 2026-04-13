@@ -39,15 +39,19 @@ const mockExtensionCapabilitiesState = {
   interruptRecoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
   sessionCommandStatus: "supported" as MockCapabilityStatus,
-  codexTurnSteerStatus: "unknown" as MockCapabilityStatus,
-  codexTurns: null as {
-    methods: {
-      steer?: {
-        declared: boolean;
-        consumedByHub: boolean;
-        availability?: "always" | "enabled" | "disabled" | "unsupported";
-      };
-    };
+  sessionAppendStatus: "supported" as MockCapabilityStatus,
+  sessionAppend: {
+    declared: true,
+    consumedByHub: true,
+    status: "supported" as const,
+    routeMode: "prompt_async" as const,
+    requiresStreamIdentity: false,
+  } as {
+    declared: boolean;
+    consumedByHub: boolean;
+    status: "supported" | "unsupported";
+    routeMode: "unsupported" | "prompt_async" | "turn_steer" | "hybrid";
+    requiresStreamIdentity: boolean;
   } | null,
   invokeMetadataStatus: "unsupported" as MockCapabilityStatus,
   invokeMetadata: null as {
@@ -596,8 +600,14 @@ describe("ChatScreen interrupt handling", () => {
     mockExtensionCapabilitiesState.interruptRecoveryStatus = "supported";
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
     mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
-    mockExtensionCapabilitiesState.codexTurnSteerStatus = "unknown";
-    mockExtensionCapabilitiesState.codexTurns = null;
+    mockExtensionCapabilitiesState.sessionAppendStatus = "supported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: true,
+      consumedByHub: true,
+      status: "supported",
+      routeMode: "prompt_async",
+      requiresStreamIdentity: false,
+    };
     mockExtensionCapabilitiesState.invokeMetadataStatus = "unsupported";
     mockExtensionCapabilitiesState.invokeMetadata = null;
     mockExtensionCapabilitiesState.canShowModelPicker = true;
@@ -1140,6 +1150,14 @@ describe("ChatScreen interrupt handling", () => {
 
   it("requires an explicit interrupt before sending when append capability is unsupported", async () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
+    mockExtensionCapabilitiesState.sessionAppendStatus = "unsupported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: false,
+      consumedByHub: false,
+      status: "unsupported",
+      routeMode: "unsupported",
+      requiresStreamIdentity: false,
+    };
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       streamState: "streaming",
@@ -1172,17 +1190,15 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("uses append when codex turn steering is consumed by Hub", async () => {
+  it("uses append when the Hub append contract is supported via turn steering", async () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
-    mockExtensionCapabilitiesState.codexTurnSteerStatus = "supported";
-    mockExtensionCapabilitiesState.codexTurns = {
-      methods: {
-        steer: {
-          declared: true,
-          consumedByHub: true,
-          availability: "always",
-        },
-      },
+    mockExtensionCapabilitiesState.sessionAppendStatus = "supported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: true,
+      consumedByHub: true,
+      status: "supported",
+      routeMode: "turn_steer",
+      requiresStreamIdentity: true,
     };
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
@@ -1242,17 +1258,15 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("requires interrupt when codex turn steering is disabled", async () => {
+  it("requires interrupt when the Hub append contract is unsupported", async () => {
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
-    mockExtensionCapabilitiesState.codexTurnSteerStatus = "unsupported";
-    mockExtensionCapabilitiesState.codexTurns = {
-      methods: {
-        steer: {
-          declared: true,
-          consumedByHub: true,
-          availability: "disabled",
-        },
-      },
+    mockExtensionCapabilitiesState.sessionAppendStatus = "unsupported";
+    mockExtensionCapabilitiesState.sessionAppend = {
+      declared: true,
+      consumedByHub: true,
+      status: "unsupported",
+      routeMode: "unsupported",
+      requiresStreamIdentity: false,
     };
     mockChatState.sessions[conversationId] = {
       ...baseSession(),

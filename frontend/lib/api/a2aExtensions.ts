@@ -65,6 +65,13 @@ type A2AExtensionCapabilities = {
   interruptRecovery: boolean;
   sessionPromptAsync: boolean;
   sessionControl: {
+    append: {
+      declared: boolean;
+      consumedByHub: boolean;
+      status: "supported" | "unsupported";
+      routeMode: "unsupported" | "prompt_async" | "turn_steer" | "hybrid";
+      requiresStreamIdentity: boolean;
+    };
     promptAsync: {
       declared: boolean;
       consumedByHub: boolean;
@@ -231,9 +238,6 @@ export type CodexDiscoveryCapability = NonNullable<
 export type CodexThreadsCapability = NonNullable<
   A2AExtensionCapabilities["codexThreads"]
 >;
-export type CodexTurnsCapability = NonNullable<
-  A2AExtensionCapabilities["codexTurns"]
->;
 export type CodexReviewCapability = NonNullable<
   A2AExtensionCapabilities["codexReview"]
 >;
@@ -243,6 +247,8 @@ export type CodexExecCapability = NonNullable<
 export type RequestExecutionOptionsCapability = NonNullable<
   A2AExtensionCapabilities["requestExecutionOptions"]
 >;
+export type SessionAppendCapability =
+  A2AExtensionCapabilities["sessionControl"]["append"];
 
 type InterruptAckResult = {
   ok: true;

@@ -52,6 +52,7 @@ describe("ChatHeaderPanel", () => {
         providerDiscoveryStatus="unknown"
         interruptRecoveryStatus="unsupported"
         sessionPromptAsyncStatus="supported"
+        sessionAppendStatus="supported"
         sessionCommandStatus="unsupported"
         sessionShellStatus="unknown"
         invokeMetadataStatus="supported"
@@ -73,6 +74,7 @@ describe("ChatHeaderPanel", () => {
     expect(screen.getByText("Model Selection")).toBeTruthy();
     expect(screen.getByText("Provider Discovery")).toBeTruthy();
     expect(screen.getByText("Interrupt Recovery")).toBeTruthy();
+    expect(screen.getByText("Streaming Append")).toBeTruthy();
     expect(screen.getAllByText("Available").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);

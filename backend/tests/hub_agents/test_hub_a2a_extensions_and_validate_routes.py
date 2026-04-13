@@ -2394,6 +2394,13 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         },
         "sessionPromptAsync": True,
         "sessionControl": {
+            "append": {
+                "declared": True,
+                "consumedByHub": True,
+                "status": "supported",
+                "routeMode": "hybrid",
+                "requiresStreamIdentity": False,
+            },
             "promptAsync": {
                 "declared": True,
                 "consumedByHub": True,
@@ -2852,6 +2859,13 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         },
         "sessionPromptAsync": False,
         "sessionControl": {
+            "append": {
+                "declared": False,
+                "consumedByHub": True,
+                "status": "unsupported",
+                "routeMode": "unsupported",
+                "requiresStreamIdentity": False,
+            },
             "promptAsync": {
                 "declared": False,
                 "consumedByHub": True,
@@ -3140,6 +3154,13 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         },
         "sessionPromptAsync": True,
         "sessionControl": {
+            "append": {
+                "declared": True,
+                "consumedByHub": True,
+                "status": "supported",
+                "routeMode": "prompt_async",
+                "requiresStreamIdentity": False,
+            },
             "promptAsync": {
                 "declared": True,
                 "consumedByHub": True,
