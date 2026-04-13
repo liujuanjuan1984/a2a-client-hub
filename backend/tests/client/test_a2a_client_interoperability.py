@@ -954,6 +954,49 @@ async def test_sdk_http_json_adapter_send_message_uses_sdk_transport_defaults(
 
 
 @pytest.mark.asyncio
+async def test_sdk_http_json_adapter_stream_message_downgrades_when_peer_disables_streaming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeFactory:
+        def __init__(self, *, config, consumers) -> None:
+            captured["config"] = config
+            captured["consumers"] = consumers
+
+        def create(self, *_args, **_kwargs):
+            class FakeClient:
+                async def send_message(self, _message):
+                    yield {"event": "blocking-result"}
+
+                async def close(self) -> None:
+                    return None
+
+            return FakeClient()
+
+    monkeypatch.setattr(sdk_module, "ClientFactory", FakeFactory)
+
+    adapter = SDKA2AAdapter(
+        SimpleNamespace(
+            card=Mock(),
+            selected_transport="HTTP+JSON",
+            supports_streaming=False,
+        ),
+        transport_http_client=AsyncMock(),
+    )
+
+    events: list[dict[str, str]] = []
+    async for payload in adapter.stream_message(
+        client_module.A2AMessageRequest(query="hello", context_id="ctx-1")
+    ):
+        events.append(payload)
+
+    assert events == [{"event": "blocking-result"}]
+    assert captured["config"].streaming is False
+    await adapter.close()
+
+
+@pytest.mark.asyncio
 async def test_sdk_http_json_adapter_get_task_forwards_history_length_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -43,6 +43,7 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
     A2AOutboundNotAllowedError,
     A2APeerProtocolError,
+    A2AStreamingNotSupportedError,
     A2AUnsupportedBindingError,
     A2AUnsupportedOperationError,
     A2AUpstreamTimeoutError,
@@ -715,6 +716,7 @@ class A2AClient:
     ) -> AsyncIterator[Any]:
         descriptor = await self._get_peer_descriptor()
         last_error: Exception | None = None
+        should_downgrade_to_blocking = False
         for dialect in await self._get_preferred_dialects(descriptor):
             adapter = await self._get_adapter(dialect)
             did_reset_adapter = False
@@ -771,11 +773,26 @@ class A2AClient:
                     except Exception as retry_exc:  # noqa: BLE001
                         exc = retry_exc
                 last_error = exc
+                should_downgrade_to_blocking = (
+                    not yielded_payload
+                    and self._should_fallback_stream_to_blocking(exc)
+                )
                 if not self._should_try_alternate_dialect(
                     descriptor=descriptor,
                     dialect=dialect,
                     exc=exc,
                 ):
+                    if should_downgrade_to_blocking:
+                        logger.info(
+                            "Downgrading A2A stream to blocking invoke",
+                            extra={
+                                "agent_url": redact_url_for_logging(self.agent_url),
+                                "failed_dialect": dialect,
+                                "error_type": type(exc).__name__,
+                                "error_code": getattr(exc, "error_code", None),
+                            },
+                        )
+                        break
                     raise
                 await self._discard_adapter(dialect, expected_adapter=adapter)
                 logger.info(
@@ -786,6 +803,9 @@ class A2AClient:
                     },
                 )
                 continue
+        if should_downgrade_to_blocking:
+            yield await self._send_with_fallback(request)
+            return
         if last_error is not None:
             raise last_error
 
@@ -1037,7 +1057,34 @@ class A2AClient:
         if dialect != JSONRPC_SLASH_DIALECT:
             return False
         if isinstance(exc, A2APeerProtocolError):
-            return exc.error_code == "method_not_found" or exc.code == -32601
+            return (
+                exc.error_code in {"method_not_found", "method_not_supported"}
+                or exc.code == -32601
+            )
+        return False
+
+    @staticmethod
+    def _should_fallback_stream_to_blocking(exc: Exception) -> bool:
+        message = str(exc).lower()
+        if isinstance(exc, A2AStreamingNotSupportedError):
+            return True
+        if isinstance(exc, A2AUnsupportedOperationError):
+            return (
+                getattr(exc, "error_code", None) == "streaming_not_supported"
+                or "stream" in message
+            )
+        if not isinstance(exc, A2APeerProtocolError):
+            return False
+        if exc.error_code in {
+            "method_not_found",
+            "method_not_supported",
+            "streaming_not_supported",
+        }:
+            return True
+        if exc.code == -32601:
+            return True
+        if getattr(exc, "error_code", None) == "unsupported_operation":
+            return "stream" in message
         return False
 
     async def _fetch_authenticated_extended_agent_card(

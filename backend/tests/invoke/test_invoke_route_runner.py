@@ -690,6 +690,99 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_consume_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Gateway:
+        async def stream(self, **kwargs):  # noqa: ARG002
+            yield SimpleNamespace(
+                model_dump=lambda exclude_none=True: {  # noqa: ARG005
+                    "kind": "message",
+                    "message_id": "msg-run-http-invoke-1",
+                    "task_id": "task-run-http-invoke-1",
+                    "parts": [{"type": "text", "text": "downgraded result"}],
+                    "metadata": {
+                        "event_id": "evt-run-http-invoke-1",
+                        "block_type": "text",
+                    },
+                }
+            )
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        return invoke_route_runner._InvokeState(
+            local_session_id=None,
+            local_source=None,
+            context_id=None,
+            metadata={},
+            stream_identity={},
+            stream_usage={},
+        )
+
+    async def fake_persist_stream_block_update(**kwargs):  # noqa: ARG001
+        return None
+
+    async def fake_persist_interrupt_lifecycle_event(**kwargs):  # noqa: ARG001
+        return None
+
+    async def fake_flush_stream_buffer(**kwargs):  # noqa: ARG001
+        return None
+
+    async def fake_persist_local_outcome(**kwargs):  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_persist_stream_block_update",
+        fake_persist_stream_block_update,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_persist_interrupt_lifecycle_event",
+        fake_persist_interrupt_lifecycle_event,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_flush_stream_buffer",
+        fake_flush_stream_buffer,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_persist_local_outcome",
+        fake_persist_local_outcome,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        gateway=_Gateway(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert isinstance(response, A2AAgentInvokeResponse)
+    assert response.success is True
+    assert response.content == "downgraded result"
+    assert response.error is None
+
+
+@pytest.mark.asyncio
 async def test_run_http_invoke_returns_structured_error_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
