@@ -6,11 +6,12 @@ from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
 )
+from app.features.working_directory import merge_working_directory_metadata
 from app.schemas.pagination import Pagination
 
 SessionSource = Literal["manual", "scheduled"]
@@ -100,6 +101,93 @@ class SessionMessagesPageInfo(BaseModel):
 class SessionMessagesQueryResponse(BaseModel):
     items: list[SessionMessageItem]
     page_info: SessionMessagesPageInfo = Field(alias="pageInfo")
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionControlResultItem(BaseModel):
+    intent: Literal["append", "preempt"]
+    status: Literal[
+        "accepted",
+        "completed",
+        "no_inflight",
+        "unavailable",
+        "failed",
+    ]
+    session_id: Optional[str] = Field(alias="sessionId", default=None)
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionAppendMessageRequest(BaseModel):
+    content: str = Field(..., min_length=1, description="Text to append.")
+    user_message_id: UUID | None = Field(alias="userMessageId", default=None)
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional extension metadata object forwarded to upstream.",
+    )
+    working_directory: Optional[str] = Field(
+        alias="workingDirectory",
+        default=None,
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "SessionAppendMessageRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
+
+
+class SessionAppendMessageResponse(BaseModel):
+    conversation_id: str = Field(alias="conversationId")
+    user_message: SessionMessageItem = Field(alias="userMessage")
+    session_control: SessionControlResultItem = Field(alias="sessionControl")
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionCommandRunRequest(BaseModel):
+    command: str = Field(..., min_length=1, description="Slash command name.")
+    arguments: str = Field(default="", description="Optional command arguments.")
+    prompt: str = Field(default="", description="Optional command prompt body.")
+    user_message_id: UUID | None = Field(alias="userMessageId", default=None)
+    agent_message_id: UUID | None = Field(alias="agentMessageId", default=None)
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional extension metadata object forwarded to upstream.",
+    )
+    working_directory: Optional[str] = Field(
+        alias="workingDirectory",
+        default=None,
+        description="Optional hub-stable working directory for provider adaptation.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def normalize_working_directory(self) -> "SessionCommandRunRequest":
+        if self.working_directory is None:
+            return self
+        self.metadata = merge_working_directory_metadata(
+            self.metadata,
+            self.working_directory,
+        )
+        self.working_directory = None
+        return self
+
+
+class SessionCommandRunResponse(BaseModel):
+    conversation_id: str = Field(alias="conversationId")
+    user_message: SessionMessageItem = Field(alias="userMessage")
+    agent_message: SessionMessageItem = Field(alias="agentMessage")
 
     model_config = {"populate_by_name": True}
 

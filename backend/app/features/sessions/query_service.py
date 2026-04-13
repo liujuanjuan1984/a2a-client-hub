@@ -80,6 +80,29 @@ class SessionQueryService:
             "created_at": thread.created_at,
         }
 
+    def _serialize_message_item(
+        self,
+        *,
+        message: AgentMessage,
+        blocks_by_message_id: dict[UUID, list[AgentMessageBlock]],
+    ) -> dict[str, Any]:
+        message_id = cast(UUID, message.id)
+        role = sender_to_role(getattr(message, "sender", ""))
+        raw_blocks: list[AgentMessageBlock] = blocks_by_message_id.get(message_id, [])
+        status = normalize_non_empty_text(getattr(message, "status", None)) or "done"
+        rendered_blocks, content = project_message_blocks(
+            raw_blocks,
+            message_status=status,
+        )
+        return {
+            "id": str(message_id),
+            "role": role,
+            "content": content,
+            "created_at": message.created_at,
+            "status": status,
+            "blocks": rendered_blocks,
+        }
+
     async def _resolve_working_directory(
         self,
         db: AsyncSession,
@@ -280,27 +303,11 @@ class SessionQueryService:
         items: list[dict[str, Any]] = []
         next_before_cursor: str | None = None
         for message in messages:
-            message_id = cast(UUID, message.id)
-            role = sender_to_role(getattr(message, "sender", ""))
-            raw_blocks: list[AgentMessageBlock] = blocks_by_message_id.get(
-                message_id, []
-            )
-            status = (
-                normalize_non_empty_text(getattr(message, "status", None)) or "done"
-            )
-            rendered_blocks, content = project_message_blocks(
-                raw_blocks,
-                message_status=status,
-            )
             items.append(
-                {
-                    "id": str(message_id),
-                    "role": role,
-                    "content": content,
-                    "created_at": message.created_at,
-                    "status": status,
-                    "blocks": rendered_blocks,
-                }
+                self._serialize_message_item(
+                    message=message,
+                    blocks_by_message_id=blocks_by_message_id,
+                )
             )
 
         if has_more_before and items:
@@ -322,6 +329,50 @@ class SessionQueryService:
             "nextBefore": next_before_cursor,
         }
         return items, {"pageInfo": page_info}, False
+
+    async def get_message_items(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+        message_ids: list[UUID],
+    ) -> tuple[list[dict[str, Any]], bool]:
+        resolved_conversation_id = parse_conversation_id(conversation_id)
+        ordered_ids = dedupe_uuid_list_keep_order(message_ids)
+        if not ordered_ids:
+            return [], False
+
+        stmt = select(AgentMessage).where(
+            and_(
+                AgentMessage.user_id == user_id,
+                AgentMessage.conversation_id == resolved_conversation_id,
+                AgentMessage.id.in_(ordered_ids),
+            )
+        )
+        messages = list((await db.scalars(stmt)).all())
+        messages_by_id = {cast(UUID, message.id): message for message in messages}
+        if any(message_id not in messages_by_id for message_id in ordered_ids):
+            raise ValueError("message_not_found")
+
+        blocks = await block_store.list_blocks_by_message_ids(
+            db,
+            user_id=user_id,
+            message_ids=ordered_ids,
+        )
+        blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
+        for block in blocks:
+            block_message_id = cast(UUID, block.message_id)
+            blocks_by_message_id.setdefault(block_message_id, []).append(block)
+
+        items = [
+            self._serialize_message_item(
+                message=messages_by_id[message_id],
+                blocks_by_message_id=blocks_by_message_id,
+            )
+            for message_id in ordered_ids
+        ]
+        return items, False
 
     async def list_message_blocks(
         self,

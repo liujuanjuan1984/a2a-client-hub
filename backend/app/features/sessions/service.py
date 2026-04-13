@@ -96,6 +96,21 @@ class SessionHubService:
             block_ids=block_ids,
         )
 
+    async def get_message_items(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+        message_ids: list[UUID],
+    ) -> tuple[list[dict[str, Any]], bool]:
+        return await self._query.get_message_items(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message_ids=message_ids,
+        )
+
     async def continue_session(
         self,
         db: AsyncSession,
@@ -348,6 +363,27 @@ class SessionHubService:
                 user_message_id=user_message_id,
                 agent_message_id=agent_message_id,
             )
+        )
+
+    async def record_user_message_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        user_id: UUID,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        user_message_id: UUID | None = None,
+    ) -> dict[str, UUID]:
+        return await self._history.record_user_message_by_local_session_id(
+            db,
+            local_session_id=local_session_id,
+            user_id=user_id,
+            content=content,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+            user_message_id=user_message_id,
         )
 
     async def record_interrupt_lifecycle_event_by_local_session_id(

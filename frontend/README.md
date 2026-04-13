@@ -110,6 +110,8 @@ Message id contract:
 
 - `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
+- Running-session `append` and upstream `session command` now write canonical conversation messages through conversation-scoped Hub APIs instead of overlay-only cache entries.
+- The chat timeline must not merge non-canonical overlay-only messages into `messages:query` results.
 - Non-text block details (`reasoning`/`tool_call`) are fetched on demand via `POST /me/conversations/{conversation_id}/blocks:query`.
 - `blocks:query` detail items include `messageId` and must match the target message before cache patching.
 - `tool_call` blocks may include a normalized `toolCall` view from backend (`name`, `status`, `callId`, `arguments`, `result`, `error`); frontend should render that stable field instead of parsing provider-private raw payloads.

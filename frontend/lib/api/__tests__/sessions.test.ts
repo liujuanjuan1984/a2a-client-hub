@@ -1,5 +1,10 @@
 import { apiRequest } from "@/lib/api/client";
-import { cancelSession, continueSession } from "@/lib/api/sessions";
+import {
+  appendSessionMessage,
+  cancelSession,
+  continueSession,
+  runSessionCommand,
+} from "@/lib/api/sessions";
 
 jest.mock("@/lib/api/client", () => ({
   apiRequest: jest.fn(),
@@ -49,5 +54,71 @@ describe("sessions api", () => {
     expect(result.conversationId).toBe("conv-2");
     expect(result.metadata).toEqual({ provider: "opencode" });
     expect(result.workingDirectory).toBe("/workspace/app");
+  });
+
+  it("posts append session message request to unified conversation endpoint", async () => {
+    mockedApiRequest.mockResolvedValue({
+      conversationId: "conv-3",
+      userMessage: { id: "msg-user-1" },
+      sessionControl: {
+        intent: "append",
+        status: "accepted",
+        sessionId: "ses-1",
+      },
+    });
+
+    await appendSessionMessage("conv-3", {
+      content: "append this",
+      userMessageId: "msg-user-1",
+      metadata: { shared: { stream: { turn_id: "turn-1" } } },
+      workingDirectory: "/workspace/app",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conv-3/messages:append",
+      {
+        method: "POST",
+        body: {
+          content: "append this",
+          userMessageId: "msg-user-1",
+          metadata: { shared: { stream: { turn_id: "turn-1" } } },
+          workingDirectory: "/workspace/app",
+        },
+      },
+    );
+  });
+
+  it("posts run session command request to unified conversation endpoint", async () => {
+    mockedApiRequest.mockResolvedValue({
+      conversationId: "conv-4",
+      userMessage: { id: "msg-user-2" },
+      agentMessage: { id: "msg-agent-2" },
+    });
+
+    await runSessionCommand("conv-4", {
+      command: "/review",
+      arguments: "--quick",
+      prompt: "Focus on tests",
+      userMessageId: "msg-user-2",
+      agentMessageId: "msg-agent-2",
+      metadata: { provider: "opencode" },
+      workingDirectory: "/workspace/app",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conv-4/commands:run",
+      {
+        method: "POST",
+        body: {
+          command: "/review",
+          arguments: "--quick",
+          prompt: "Focus on tests",
+          userMessageId: "msg-user-2",
+          agentMessageId: "msg-agent-2",
+          metadata: { provider: "opencode" },
+          workingDirectory: "/workspace/app",
+        },
+      },
+    );
   });
 });

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -302,6 +303,175 @@ async def test_invalid_messages_cursor_returns_400(
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_before_cursor"
+
+
+async def test_append_route_persists_canonical_user_message(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="append")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-append-1",
+        title="Append Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+
+    class _FakeExtensions:
+        async def append_session_control(self, **kwargs):
+            assert kwargs["session_id"] == "ses-append-1"
+            assert kwargs["request_payload"]["parts"][0]["text"] == "append this"
+            return SimpleNamespace(
+                success=True,
+                result={"ok": True, "session_id": "ses-append-1"},
+                error_code=None,
+            )
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(
+        me_sessions,
+        "get_a2a_extensions_service",
+        lambda: _FakeExtensions(),
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        append_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:append",
+            json={
+                "content": "append this",
+                "userMessageId": str(uuid4()),
+            },
+        )
+        assert append_resp.status_code == 200
+        append_payload = append_resp.json()
+        assert append_payload["conversationId"] == str(session.id)
+        assert append_payload["userMessage"]["role"] == "user"
+        assert append_payload["userMessage"]["content"] == "append this"
+        assert append_payload["sessionControl"] == {
+            "intent": "append",
+            "status": "accepted",
+            "sessionId": "ses-append-1",
+        }
+
+        messages_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+        assert messages_resp.status_code == 200
+        items = messages_resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["id"] == append_payload["userMessage"]["id"]
+        assert items[0]["content"] == "append this"
+
+
+async def test_command_route_persists_canonical_command_messages(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="command")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-command-1",
+        title="Command Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+
+    class _FakeExtensions:
+        async def command_session(self, **kwargs):
+            assert kwargs["session_id"] == "ses-command-1"
+            assert kwargs["request_payload"]["command"] == "/review"
+            assert kwargs["request_payload"]["arguments"] == "--quick"
+            return SimpleNamespace(
+                success=True,
+                result={
+                    "item": {
+                        "messageId": "upstream-msg-1",
+                        "role": "agent",
+                        "parts": [{"type": "text", "text": "Review complete."}],
+                    }
+                },
+                error_code=None,
+            )
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(
+        me_sessions,
+        "get_a2a_extensions_service",
+        lambda: _FakeExtensions(),
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        command_resp = await client.post(
+            f"/me/conversations/{session.id}/commands:run",
+            json={
+                "command": "/review",
+                "arguments": "--quick",
+                "prompt": "Focus on tests",
+                "userMessageId": str(uuid4()),
+                "agentMessageId": str(uuid4()),
+            },
+        )
+        assert command_resp.status_code == 200
+        command_payload = command_resp.json()
+        assert command_payload["conversationId"] == str(session.id)
+        assert (
+            command_payload["userMessage"]["content"]
+            == "/review --quick\nFocus on tests"
+        )
+        assert command_payload["agentMessage"]["content"] == "Review complete."
+
+        messages_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+        assert messages_resp.status_code == 200
+        items = messages_resp.json()["items"]
+        assert [item["id"] for item in items] == [
+            command_payload["userMessage"]["id"],
+            command_payload["agentMessage"]["id"],
+        ]
+        assert items[0]["content"] == "/review --quick\nFocus on tests"
+        assert items[1]["content"] == "Review complete."
 
 
 async def test_blocks_query_returns_404_when_block_not_found(

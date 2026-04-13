@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
-import { mergeConversationOverlayMessages } from "@/lib/chatHistoryCache";
 import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 
@@ -100,12 +99,9 @@ export function useSessionHistoryQuery(options: {
         cursorByPageRef.current.delete(resolvedPage + 1);
       }
       return {
-        items: mergeConversationOverlayMessages(
-          conversationId,
-          mapSessionMessagesToChatMessages(response.items, {
-            keepEmptyMessages: true,
-          }),
-        ),
+        items: mapSessionMessagesToChatMessages(response.items, {
+          keepEmptyMessages: true,
+        }),
         nextPage,
       };
     },

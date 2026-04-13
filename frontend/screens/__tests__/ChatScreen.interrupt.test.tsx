@@ -10,7 +10,8 @@ const mockReplyPermissions = jest.fn();
 const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
 const mockReplyElicitation = jest.fn();
-const mockCommandSession = jest.fn();
+const mockAppendSessionMessage = jest.fn();
+const mockRunSessionCommand = jest.fn();
 const mockRecoverInterrupts = jest.fn();
 const mockInvokeAgent = jest.fn();
 const mockInvokeHubAgent = jest.fn();
@@ -19,7 +20,6 @@ const mockRunSelfManagementBuiltInAgent = jest.fn();
 const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
 const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
-const mockAddConversationOverlayMessage = jest.fn();
 const mockUpdateConversationMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
@@ -422,8 +422,11 @@ jest.mock("@/hooks/useShortcutsQuery", () => ({
 }));
 
 jest.mock("@/lib/api/sessions", () => ({
+  appendSessionMessage: (...args: unknown[]) =>
+    mockAppendSessionMessage(...args),
   continueSession: (...args: unknown[]) => mockContinueSession(...args),
   querySessionMessageBlocks: jest.fn(async () => ({ items: [] })),
+  runSessionCommand: (...args: unknown[]) => mockRunSessionCommand(...args),
 }));
 
 jest.mock("@/lib/api/a2aExtensions", () => ({
@@ -431,7 +434,6 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
     errorCode: string | null = null;
     upstreamError: Record<string, unknown> | null = null;
   },
-  commandSession: (...args: unknown[]) => mockCommandSession(...args),
   recoverInterrupts: (...args: unknown[]) => mockRecoverInterrupts(...args),
   replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
@@ -454,8 +456,6 @@ jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
 jest.mock("@/lib/chatHistoryCache", () => ({
   addConversationMessage: (...args: unknown[]) =>
     mockAddConversationMessage(...args),
-  addConversationOverlayMessage: (...args: unknown[]) =>
-    mockAddConversationOverlayMessage(...args),
   updateConversationMessage: (...args: unknown[]) =>
     mockUpdateConversationMessage(...args),
 }));
@@ -551,13 +551,8 @@ describe("ChatScreen interrupt handling", () => {
       },
     });
     mockInvokeHubAgent.mockReset().mockResolvedValue({ success: true });
-    mockCommandSession.mockReset().mockResolvedValue({
-      item: {
-        messageId: "msg-cmd-1",
-        role: "assistant",
-        parts: [{ type: "text", text: "Review complete." }],
-      },
-    });
+    mockAppendSessionMessage.mockReset();
+    mockRunSessionCommand.mockReset();
     mockGetSelfManagementBuiltInAgentProfile.mockReset().mockResolvedValue({
       id: SELF_MANAGEMENT_AGENT_ID,
       name: "A2A Client Hub Assistant",
@@ -594,7 +589,6 @@ describe("ChatScreen interrupt handling", () => {
       });
     mockRecoverInterrupts.mockReset().mockResolvedValue({ items: [] });
     mockAddConversationMessage.mockReset();
-    mockAddConversationOverlayMessage.mockReset();
     mockUpdateConversationMessage.mockReset();
     mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
     mockExtensionCapabilitiesState.interruptRecoveryStatus = "supported";
@@ -1076,22 +1070,31 @@ describe("ChatScreen interrupt handling", () => {
     act(() => {
       input.props.onChangeText("append this");
     });
+    mockAppendSessionMessage.mockResolvedValueOnce({
+      conversationId,
+      userMessage: {
+        id: "append-user-1",
+        role: "user",
+        content: "append this",
+        created_at: "2026-02-16T00:00:00.000Z",
+        status: "done",
+        blocks: [],
+      },
+      sessionControl: {
+        intent: "append",
+        status: "accepted",
+        sessionId: "ses-upstream-1",
+      },
+    });
     await act(async () => {
       await sendButton.props.onPress();
     });
 
-    expect(mockInvokeAgent).toHaveBeenCalledWith("agent-1", {
-      query: "append this",
-      conversationId,
+    expect(mockAppendSessionMessage).toHaveBeenCalledWith(conversationId, {
+      content: "append this",
       userMessageId: expect.any(String),
+      metadata: {},
       workingDirectory: "/workspace/app",
-      sessionBinding: {
-        provider: "opencode",
-        externalSessionId: "ses-upstream-1",
-      },
-      sessionControl: {
-        intent: "append",
-      },
     });
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();
     expect(mockChatState.bindExternalSession).toHaveBeenCalledWith(
@@ -1101,9 +1104,10 @@ describe("ChatScreen interrupt handling", () => {
         externalSessionId: "ses-upstream-1",
       },
     );
-    expect(mockAddConversationOverlayMessage).toHaveBeenCalledWith(
+    expect(mockAddConversationMessage).toHaveBeenCalledWith(
       conversationId,
       expect.objectContaining({
+        id: "append-user-1",
         role: "user",
         content: "append this",
       }),
@@ -1225,13 +1229,28 @@ describe("ChatScreen interrupt handling", () => {
     act(() => {
       input.props.onChangeText("steer this");
     });
+    mockAppendSessionMessage.mockResolvedValueOnce({
+      conversationId,
+      userMessage: {
+        id: "append-user-2",
+        role: "user",
+        content: "steer this",
+        created_at: "2026-02-16T00:01:00.000Z",
+        status: "done",
+        blocks: [],
+      },
+      sessionControl: {
+        intent: "append",
+        status: "accepted",
+        sessionId: "ses-upstream-5",
+      },
+    });
     await act(async () => {
       await sendButton.props.onPress();
     });
 
-    expect(mockInvokeAgent).toHaveBeenCalledWith("agent-1", {
-      query: "steer this",
-      conversationId,
+    expect(mockAppendSessionMessage).toHaveBeenCalledWith(conversationId, {
+      content: "steer this",
       userMessageId: expect.any(String),
       metadata: {
         shared: {
@@ -1240,13 +1259,6 @@ describe("ChatScreen interrupt handling", () => {
             turn_id: "turn-1",
           },
         },
-      },
-      sessionBinding: {
-        provider: "codex",
-        externalSessionId: "ses-upstream-5",
-      },
-      sessionControl: {
-        intent: "append",
       },
     });
     expect(mockToastInfo).toHaveBeenCalledWith(
@@ -1318,7 +1330,9 @@ describe("ChatScreen interrupt handling", () => {
         externalSessionId: "ses-upstream-4",
       },
     };
-    mockInvokeAgent.mockRejectedValueOnce(new Error("append unavailable"));
+    mockAppendSessionMessage.mockRejectedValueOnce(
+      new Error("append unavailable"),
+    );
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
@@ -1357,6 +1371,25 @@ describe("ChatScreen interrupt handling", () => {
     const input = root.findByProps({ placeholder: "Type your message" });
     const sendButton = root.findByProps({ testID: "chat-send-button" });
 
+    mockRunSessionCommand.mockResolvedValueOnce({
+      conversationId,
+      userMessage: {
+        id: "command-user-1",
+        role: "user",
+        content: "/review --quick\nFocus on tests",
+        created_at: "2026-02-16T00:02:00.000Z",
+        status: "done",
+        blocks: [],
+      },
+      agentMessage: {
+        id: "command-agent-1",
+        role: "agent",
+        content: "Done",
+        created_at: "2026-02-16T00:02:01.000Z",
+        status: "done",
+        blocks: [],
+      },
+    });
     act(() => {
       input.props.onChangeText("/review --quick\nFocus on tests");
     });
@@ -1364,22 +1397,16 @@ describe("ChatScreen interrupt handling", () => {
       await sendButton.props.onPress();
     });
 
-    expect(mockCommandSession).toHaveBeenCalledWith({
-      source: "personal",
-      agentId: "agent-1",
-      sessionId: "ses-upstream-4",
-      request: {
-        command: "/review",
-        arguments: "--quick",
-        parts: [{ type: "text", text: "Focus on tests" }],
-      },
-      metadata: {
-        provider: "OpenCode",
-        externalSessionId: "ses-upstream-4",
-      },
+    expect(mockRunSessionCommand).toHaveBeenCalledWith(conversationId, {
+      command: "/review",
+      arguments: "--quick",
+      prompt: "Focus on tests",
+      userMessageId: expect.any(String),
+      agentMessageId: expect.any(String),
+      metadata: {},
       workingDirectory: "/workspace/app",
     });
-    expect(mockAddConversationOverlayMessage).toHaveBeenCalledTimes(2);
+    expect(mockAddConversationMessage).toHaveBeenCalledTimes(2);
     expect(mockToastSuccess).toHaveBeenCalledWith(
       "Command executed",
       "/review",
@@ -1408,7 +1435,7 @@ describe("ChatScreen interrupt handling", () => {
       await sendButton.props.onPress();
     });
 
-    expect(mockCommandSession).not.toHaveBeenCalled();
+    expect(mockRunSessionCommand).not.toHaveBeenCalled();
     expect(mockChatState.sendMessage).toHaveBeenCalledWith(
       conversationId,
       "agent-1",
@@ -1441,7 +1468,7 @@ describe("ChatScreen interrupt handling", () => {
       await Promise.resolve();
     });
 
-    expect(mockCommandSession).not.toHaveBeenCalled();
+    expect(mockRunSessionCommand).not.toHaveBeenCalled();
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();
     expect(mockToastError).toHaveBeenCalledWith(
       "Command unavailable",

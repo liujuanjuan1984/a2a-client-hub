@@ -462,6 +462,8 @@ The backend now exposes a unified conversation read model for manual, scheduled,
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages:append`
+- `POST /api/v1/me/conversations/{conversation_id}/commands:run`
 - `POST /api/v1/me/conversations/{conversation_id}/blocks:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
@@ -488,6 +490,8 @@ Message query contract boundary:
 
 - `messages:query` is the primary chat read model and returns ordered message timeline items with block payloads plus backward cursor pagination (`pageInfo.hasMoreBefore`, `pageInfo.nextBefore`).
 - `SessionMessageItem.id` is the canonical local message UUID for all roles.
+- `messages:append` persists the appended user text as a canonical conversation message before frontend timeline refresh/reopen.
+- `commands:run` persists both the command input and the returned command output as canonical conversation messages.
 - Message body is persisted and queried via ordered blocks for all roles (`user`/`agent`/`system`).
 - `messages:query` keeps full `content` for `text` blocks; `reasoning`/`tool_call` block `content` is fetched via `blocks:query` on demand.
 - `tool_call` blocks also expose a normalized `toolCall` view (`name`, `status`, `callId`, `arguments`, `result`, `error`) so frontend rendering does not need to parse provider-private payload shapes directly.
