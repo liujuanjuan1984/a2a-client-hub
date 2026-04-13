@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -166,9 +166,10 @@ class UnifiedAgentCatalogService:
             await db.scalars(
                 select(UserAgentAvailabilitySnapshot).where(
                     UserAgentAvailabilitySnapshot.user_id == user_id,
-                    UserAgentAvailabilitySnapshot.agent_source.in_(
-                        self._non_personal_sources
-                    ),
+                    tuple_(
+                        UserAgentAvailabilitySnapshot.agent_source,
+                        UserAgentAvailabilitySnapshot.agent_id,
+                    ).in_(sorted(keys)),
                 )
             )
         ).all()
@@ -176,8 +177,6 @@ class UnifiedAgentCatalogService:
         snapshots: dict[tuple[str, str], _AvailabilitySnapshotRecord] = {}
         for row in rows:
             key = (str(row.agent_source), str(row.agent_id))
-            if key not in keys:
-                continue
             snapshots[key] = _AvailabilitySnapshotRecord(
                 agent_source=str(row.agent_source),
                 agent_id=str(row.agent_id),
@@ -213,16 +212,15 @@ class UnifiedAgentCatalogService:
             await db.scalars(
                 select(UserAgentAvailabilitySnapshot).where(
                     UserAgentAvailabilitySnapshot.user_id == user_id,
-                    UserAgentAvailabilitySnapshot.agent_source.in_(
-                        self._non_personal_sources
-                    ),
+                    tuple_(
+                        UserAgentAvailabilitySnapshot.agent_source,
+                        UserAgentAvailabilitySnapshot.agent_id,
+                    ).in_(sorted(keys)),
                 )
             )
         ).all()
         existing_by_key = {
-            (str(row.agent_source), str(row.agent_id)): row
-            for row in existing_rows
-            if (str(row.agent_source), str(row.agent_id)) in keys
+            (str(row.agent_source), str(row.agent_id)): row for row in existing_rows
         }
 
         for source, agent_id, payload in updates:
