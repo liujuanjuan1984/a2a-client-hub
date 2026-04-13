@@ -22,6 +22,7 @@ import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { type AgentAuthType } from "@/lib/agentAuth";
 import { AGENT_ERROR_MESSAGES } from "@/lib/agentCatalogCache";
 import { executeWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
+import { DEFAULT_API_KEY_HEADER } from "@/lib/agentHeaders";
 import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import {
   deleteHubAgentCredential,
@@ -115,7 +116,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   );
   const [bearerToken, setBearerToken] = useState(agent?.bearerToken ?? "");
   const [apiKeyHeader, setApiKeyHeader] = useState(
-    agent?.apiKeyHeader ?? "X-API-Key",
+    agent?.apiKeyHeader ?? DEFAULT_API_KEY_HEADER,
   );
   const [apiKeyValue, setApiKeyValue] = useState(agent?.apiKeyValue ?? "");
   const [basicUsername, setBasicUsername] = useState(
@@ -191,7 +192,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     setCardUrl(agent.cardUrl ?? "");
     setAuthType(agent.authType ?? "none");
     setBearerToken(agent.bearerToken ?? "");
-    setApiKeyHeader(agent.apiKeyHeader ?? "X-API-Key");
+    setApiKeyHeader(agent.apiKeyHeader ?? DEFAULT_API_KEY_HEADER);
     setApiKeyValue(agent.apiKeyValue ?? "");
     setBasicUsername(agent.basicUsername ?? "");
     setBasicPassword(agent.basicPassword ?? "");
@@ -205,7 +206,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       cardUrl: agent.cardUrl ?? "",
       authType: agent.authType ?? "none",
       bearerToken: agent.bearerToken ?? "",
-      apiKeyHeader: agent.apiKeyHeader ?? "X-API-Key",
+      apiKeyHeader: agent.apiKeyHeader ?? DEFAULT_API_KEY_HEADER,
       apiKeyValue: agent.apiKeyValue ?? "",
       basicUsername: agent.basicUsername ?? "",
       basicPassword: agent.basicPassword ?? "",
@@ -318,7 +319,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     }
     setAuthType(nextType);
     setBearerToken("");
-    setApiKeyHeader("X-API-Key");
+    setApiKeyHeader(DEFAULT_API_KEY_HEADER);
     setApiKeyValue("");
     setBasicUsername("");
     setBasicPassword("");
@@ -766,7 +767,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
           <View className="gap-3">
             <Input
               label="Header Name"
-              placeholder="e.g., X-API-Key"
+              placeholder={`e.g., ${DEFAULT_API_KEY_HEADER}`}
               value={apiKeyHeader}
               onChangeText={setApiKeyHeader}
             />

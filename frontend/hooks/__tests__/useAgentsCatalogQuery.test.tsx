@@ -9,6 +9,7 @@ import {
   useUpdateAgentMutation,
   useValidateAgentMutation,
 } from "@/hooks/useAgentsCatalogQuery";
+import { DEFAULT_API_KEY_HEADER } from "@/lib/agentHeaders";
 import { ApiRequestError } from "@/lib/api/client";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentConfig, useAgentStore } from "@/store/agents";
@@ -60,7 +61,7 @@ const buildAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
   cardUrl: "https://example.com/agent-1.json",
   authType: "none",
   bearerToken: "",
-  apiKeyHeader: "X-API-Key",
+  apiKeyHeader: DEFAULT_API_KEY_HEADER,
   apiKeyValue: "",
   basicUsername: "",
   basicPassword: "",
@@ -416,7 +417,7 @@ describe("useAgentsCatalogQuery mutations", () => {
         cardUrl: "https://example.com/new.json",
         authType: "none",
         bearerToken: "",
-        apiKeyHeader: "X-API-Key",
+        apiKeyHeader: DEFAULT_API_KEY_HEADER,
         apiKeyValue: "",
         basicUsername: "",
         basicPassword: "",
@@ -462,7 +463,7 @@ describe("useAgentsCatalogQuery mutations", () => {
           cardUrl: "https://example.com/new.json",
           authType: "none",
           bearerToken: "",
-          apiKeyHeader: "X-API-Key",
+          apiKeyHeader: DEFAULT_API_KEY_HEADER,
           apiKeyValue: "",
           basicUsername: "",
           basicPassword: "",

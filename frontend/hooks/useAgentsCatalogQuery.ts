@@ -10,7 +10,7 @@ import {
   toValidationErrorMessage,
   upsertAgentInCatalog,
 } from "@/lib/agentCatalogCache";
-import { headersToEntries } from "@/lib/agentHeaders";
+import { DEFAULT_API_KEY_HEADER, headersToEntries } from "@/lib/agentHeaders";
 import { buildAgentUpsertPayload } from "@/lib/agentUpsert";
 import {
   checkAgentHealth,
@@ -52,7 +52,7 @@ const toAgentConfig = (
         ? "basic"
         : "none",
   bearerToken: "",
-  apiKeyHeader: "X-API-Key",
+  apiKeyHeader: DEFAULT_API_KEY_HEADER,
   apiKeyValue: "",
   basicUsername: "",
   basicPassword: "",
@@ -86,7 +86,7 @@ const toPersonalAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
         ? "basic"
         : "none",
   bearerToken: "",
-  apiKeyHeader: "X-API-Key",
+  apiKeyHeader: DEFAULT_API_KEY_HEADER,
   apiKeyValue: "",
   basicUsername: "",
   basicPassword: "",

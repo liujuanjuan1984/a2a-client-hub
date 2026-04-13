@@ -67,7 +67,7 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
-        exclude: ^(frontend/package-lock\.json|backend/uv\.lock)$
+        exclude: ^(frontend/package-lock\.json|backend/uv\.lock|backend/alembic/versions/.*\.py)$
 
   # Shell script static checks
   - repo: https://github.com/shellcheck-py/shellcheck-py

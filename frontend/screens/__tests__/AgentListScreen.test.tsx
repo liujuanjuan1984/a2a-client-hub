@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Text } from "react-native";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 
+import { DEFAULT_API_KEY_HEADER } from "@/lib/agentHeaders";
 import { AgentListScreen } from "@/screens/AgentListScreen";
 
 const mockPush = jest.fn();
@@ -21,7 +22,7 @@ let mockAgents = [
     cardUrl: "https://example.com/personal.json",
     authType: "none" as const,
     bearerToken: "",
-    apiKeyHeader: "X-API-Key", // pragma: allowlist secret
+    apiKeyHeader: DEFAULT_API_KEY_HEADER,
     apiKeyValue: "",
     basicUsername: "",
     basicPassword: "",
@@ -39,7 +40,7 @@ let mockAgents = [
     cardUrl: "builtin://self-management-assistant",
     authType: "none" as const,
     bearerToken: "",
-    apiKeyHeader: "X-API-Key", // pragma: allowlist secret
+    apiKeyHeader: DEFAULT_API_KEY_HEADER,
     apiKeyValue: "",
     basicUsername: "",
     basicPassword: "",
@@ -58,7 +59,7 @@ let mockAgents = [
     cardUrl: "https://example.com/shared.json",
     authType: "bearer" as const,
     bearerToken: "",
-    apiKeyHeader: "X-API-Key", // pragma: allowlist secret
+    apiKeyHeader: DEFAULT_API_KEY_HEADER,
     apiKeyValue: "",
     basicUsername: "",
     basicPassword: "",

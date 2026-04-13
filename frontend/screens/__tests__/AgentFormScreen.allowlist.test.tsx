@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { ReactElement } from "react";
 
+import { DEFAULT_API_KEY_HEADER } from "@/lib/agentHeaders";
 import { AgentFormScreen } from "@/screens/AgentFormScreen";
 import { useSessionStore } from "@/store/session";
 import { createTestQueryClient } from "@/test-utils/queryClient";
@@ -245,7 +246,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
       cardUrl: "https://existing.example.com/agent.json",
       authType: "none",
       bearerToken: "",
-      apiKeyHeader: "X-API-Key", // pragma: allowlist secret
+      apiKeyHeader: DEFAULT_API_KEY_HEADER,
       apiKeyValue: "",
       basicUsername: "",
       basicPassword: "",

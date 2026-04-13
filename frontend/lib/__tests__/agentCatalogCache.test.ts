@@ -7,6 +7,7 @@ import {
   toValidationErrorMessage,
   upsertAgentInCatalog,
 } from "@/lib/agentCatalogCache";
+import { DEFAULT_API_KEY_HEADER } from "@/lib/agentHeaders";
 import { type AgentConfig } from "@/store/agents";
 
 const buildAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
@@ -16,7 +17,7 @@ const buildAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
   cardUrl: "https://example.com/agent-1.json",
   authType: "none",
   bearerToken: "",
-  apiKeyHeader: "X-API-Key",
+  apiKeyHeader: DEFAULT_API_KEY_HEADER,
   apiKeyValue: "",
   basicUsername: "",
   basicPassword: "",

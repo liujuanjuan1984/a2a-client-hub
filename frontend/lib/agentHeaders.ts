@@ -7,6 +7,8 @@ export type HeaderEntry = {
 
 export type HeaderEntryWithId = HeaderEntry & { id: string };
 
+export const DEFAULT_API_KEY_HEADER = "X-API-Key"; // pragma: allowlist secret
+
 export const buildHeaderObject = (items: HeaderEntry[]) =>
   items.reduce<Record<string, string>>((acc, item) => {
     const key = item.key.trim();
