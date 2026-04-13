@@ -47,6 +47,14 @@ LEGACY_BCRYPT_HASH = "".join(
 LONG_UTF8_PASSWORD = "Aa" * 34 + "1!" + "界"
 
 
+@pytest.fixture(autouse=True)
+def trusted_cookie_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep cookie-auth tests deterministic across local env overrides."""
+
+    monkeypatch.setattr(settings, "auth_cookie_trusted_origins", [TRUSTED_ORIGIN])
+    monkeypatch.setattr(settings, "backend_cors_origins", [TRUSTED_ORIGIN])
+
+
 async def run_in_session(async_session_maker, coro_fn):
     async with async_session_maker() as session:
         return await coro_fn(session)
