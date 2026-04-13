@@ -353,6 +353,8 @@ class SelfManagementBuiltInAgentService:
             interrupt = asked_interrupts.get(request_id)
             if interrupt is None:
                 continue
+            if verify_self_management_interrupt_token_claims(request_id) is None:
+                continue
             recovered.append(
                 SelfManagementBuiltInAgentRecoveredInterrupt(
                     request_id=request_id,
