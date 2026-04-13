@@ -58,6 +58,9 @@ describe("ChatHeaderPanel", () => {
     );
 
     expect(screen.getByText("Agent Endpoint")).toBeTruthy();
+    expect(screen.getByText("Check")).toBeTruthy();
+    expect(screen.queryByText("Diagnostics")).toBeNull();
+    expect(screen.queryByText("Test")).toBeNull();
     expect(screen.queryByText("Codex Discovery")).toBeNull();
     expect(screen.queryByText("Browse")).toBeNull();
     expect(

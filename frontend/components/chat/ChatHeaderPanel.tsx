@@ -153,6 +153,17 @@ export function ChatHeaderPanel({
 
       {showDetails ? (
         <View className="mt-4 gap-3 overflow-hidden rounded-2xl bg-surface p-4 shadow-sm">
+          <View className="flex-row justify-end">
+            <Button
+              label="Check"
+              size="xs"
+              variant="secondary"
+              iconLeft="pulse-outline"
+              loading={testingConnection}
+              onPress={onTestConnection}
+            />
+          </View>
+
           <View className="flex-row flex-wrap gap-3">
             <InfoCard label="Agent Endpoint" value={agent.cardUrl} fullWidth />
             <InfoCard label="Conversation ID" value={conversationId ?? "N/A"} />
@@ -161,21 +172,6 @@ export function ChatHeaderPanel({
               <InfoCard label="Runtime" value={session.runtimeStatus} />
             ) : null}
             <InfoCard label="Transport" value={session?.transport ?? "N/A"} />
-            <View className={INFO_CARD_CLASS}>
-              <Text className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                Diagnostics
-              </Text>
-              <View className="mt-2 items-start">
-                <Button
-                  label="Test"
-                  size="xs"
-                  variant="secondary"
-                  iconLeft="pulse-outline"
-                  loading={testingConnection}
-                  onPress={onTestConnection}
-                />
-              </View>
-            </View>
             {workingDirectory ? (
               <InfoCard
                 label="Working Directory"
