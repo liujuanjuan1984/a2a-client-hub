@@ -85,49 +85,44 @@ export function AgentListScreen() {
     [agents],
   );
 
-  const healthCounts = useMemo(
-    () =>
-      orderedAgents.reduce<Record<UnifiedAgentHealthStatus, number>>(
-        (result, agent) => {
-          const healthStatus = resolveHealthStatus(agent);
-          result[healthStatus] += 1;
-          return result;
-        },
-        {
-          healthy: 0,
-          degraded: 0,
-          unavailable: 0,
-          unknown: 0,
-        },
-      ),
-    [orderedAgents],
-  );
+  const { filteredAgents, healthCounts, sourceCounts, selectedFilterLabel } =
+    useMemo(() => {
+      const nextHealthCounts: Record<UnifiedAgentHealthStatus, number> = {
+        healthy: 0,
+        degraded: 0,
+        unavailable: 0,
+        unknown: 0,
+      };
+      const nextSourceCounts: Record<AgentConfig["source"], number> = {
+        builtin: 0,
+        personal: 0,
+        shared: 0,
+      };
+      const nextFilteredAgents: AgentConfig[] = [];
 
-  const filteredAgents = useMemo(() => {
-    if (activeHealthFilter === "all") {
-      return orderedAgents;
-    }
+      for (const agent of orderedAgents) {
+        const healthStatus = resolveHealthStatus(agent);
+        nextHealthCounts[healthStatus] += 1;
+        nextSourceCounts[agent.source] += 1;
 
-    return orderedAgents.filter(
-      (agent) => resolveHealthStatus(agent) === activeHealthFilter,
-    );
-  }, [activeHealthFilter, orderedAgents]);
+        if (
+          activeHealthFilter === "all" ||
+          healthStatus === activeHealthFilter
+        ) {
+          nextFilteredAgents.push(agent);
+        }
+      }
 
-  const counts = useMemo(
-    () => ({
-      builtin: orderedAgents.filter((agent) => agent.source === "builtin")
-        .length,
-      personal: orderedAgents.filter((agent) => agent.source === "personal")
-        .length,
-      shared: orderedAgents.filter((agent) => agent.source === "shared").length,
-    }),
-    [orderedAgents],
-  );
-
-  const selectedHealthFilterLabel =
-    activeHealthFilter === "all"
-      ? "all"
-      : HEALTH_BADGE_STYLES[activeHealthFilter].label.toLowerCase();
+      return {
+        filteredAgents: nextFilteredAgents,
+        healthCounts: nextHealthCounts,
+        sourceCounts: nextSourceCounts,
+        selectedFilterLabel:
+          activeHealthFilter === "all"
+            ? "all"
+            : HEALTH_BADGE_STYLES[activeHealthFilter].label.toLowerCase(),
+      };
+    }, [activeHealthFilter, orderedAgents]);
 
   const handleChat = useCallback(
     (agentId: string) => {
@@ -141,6 +136,14 @@ export function AgentListScreen() {
       router.push(buildChatRoute(agentId, conversationId));
     },
     [router, setActiveAgent],
+  );
+
+  const handleOpenAgentDetails = useCallback(
+    (agentId: string) => {
+      blurActiveElement();
+      router.push(`/agents/${agentId}`);
+    },
+    [router],
   );
 
   const batchHealthMutation = useMutation({
@@ -165,6 +168,13 @@ export function AgentListScreen() {
       toast.error("Availability check failed", message);
     },
   });
+
+  const handleCheckAll = useCallback(() => {
+    if (batchHealthMutation.isPending) {
+      return;
+    }
+    batchHealthMutation.mutate();
+  }, [batchHealthMutation]);
 
   const renderAgentMeta = (agent: AgentConfig) => {
     const healthStatus = resolveHealthStatus(agent);
@@ -224,10 +234,7 @@ export function AgentListScreen() {
           size="sm"
           variant="secondary"
           iconLeft="create-outline"
-          onPress={() => {
-            blurActiveElement();
-            router.push(`/agents/${agent.id}`);
-          }}
+          onPress={() => handleOpenAgentDetails(agent.id)}
         />
         <Button
           label="Chat"
@@ -274,10 +281,7 @@ export function AgentListScreen() {
             size="sm"
             variant="secondary"
             iconLeft="information-outline"
-            onPress={() => {
-              blurActiveElement();
-              router.push(`/agents/${agent.id}`);
-            }}
+            onPress={() => handleOpenAgentDetails(agent.id)}
           />
           {agent.credentialMode === "user" ? (
             <Button
@@ -289,10 +293,7 @@ export function AgentListScreen() {
               size="sm"
               variant="secondary"
               iconLeft="key-outline"
-              onPress={() => {
-                blurActiveElement();
-                router.push(`/agents/${agent.id}`);
-              }}
+              onPress={() => handleOpenAgentDetails(agent.id)}
             />
           ) : null}
         </View>
@@ -354,7 +355,7 @@ export function AgentListScreen() {
       }
       return renderPersonalAgentItem(item);
     },
-    [handleChat, router],
+    [handleChat, handleOpenAgentDetails],
   );
 
   const renderHeader = useMemo(
@@ -366,8 +367,8 @@ export function AgentListScreen() {
               {filteredAgents.length} of {orderedAgents.length} agents
             </Text>
             <Text className="mt-1 text-xs text-slate-400">
-              Built-in {counts.builtin} / Personal {counts.personal} / Shared{" "}
-              {counts.shared}
+              Built-in {sourceCounts.builtin} / Personal {sourceCounts.personal}{" "}
+              / Shared {sourceCounts.shared}
             </Text>
           </View>
           <Button
@@ -375,12 +376,7 @@ export function AgentListScreen() {
             size="sm"
             variant="secondary"
             iconLeft="pulse-outline"
-            onPress={() => {
-              if (batchHealthMutation.isPending) {
-                return;
-              }
-              batchHealthMutation.mutate();
-            }}
+            onPress={handleCheckAll}
           />
         </View>
 
@@ -408,10 +404,11 @@ export function AgentListScreen() {
     [
       activeHealthFilter,
       batchHealthMutation,
-      counts,
       filteredAgents.length,
+      handleCheckAll,
       healthCounts,
       orderedAgents.length,
+      sourceCounts,
     ],
   );
 
@@ -494,7 +491,7 @@ export function AgentListScreen() {
             ) : (
               <View className="items-center rounded-2xl bg-surface p-8">
                 <Text className="text-base font-bold text-white">
-                  No {selectedHealthFilterLabel} agents right now
+                  No {selectedFilterLabel} agents right now
                 </Text>
                 <Text className="mt-2 text-center text-sm text-slate-400">
                   Switch to another health status or run Check all to refresh
