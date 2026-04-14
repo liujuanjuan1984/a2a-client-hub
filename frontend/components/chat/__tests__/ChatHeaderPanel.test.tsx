@@ -11,7 +11,7 @@ jest.mock("@/components/ui/BackButton", () => ({
 }));
 
 describe("ChatHeaderPanel", () => {
-  it("does not render Codex Discovery in the generic agent info panel", () => {
+  it("renders a compact generic agent info panel without discovery-specific details", () => {
     const agent = {
       id: "agent-1",
       name: "Planner",
@@ -59,9 +59,10 @@ describe("ChatHeaderPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Agent Endpoint")).toBeTruthy();
+    expect(screen.getByText("Agent Card")).toBeTruthy();
     expect(screen.getByText("Check")).toBeTruthy();
     expect(screen.getByText("Modes")).toBeTruthy();
+    expect(screen.getByText("sse").props.numberOfLines).toBe(1);
     expect(screen.getByText("text -> text")).toBeTruthy();
     expect(screen.queryByText("Diagnostics")).toBeNull();
     expect(screen.queryByText("Test")).toBeNull();
@@ -72,12 +73,16 @@ describe("ChatHeaderPanel", () => {
     ).toBeNull();
     expect(screen.getByText("Capabilities")).toBeTruthy();
     expect(screen.getByText("Model Selection")).toBeTruthy();
-    expect(screen.getByText("Provider Discovery")).toBeTruthy();
-    expect(screen.getByText("Interrupt Recovery")).toBeTruthy();
     expect(screen.getByText("Streaming Append")).toBeTruthy();
-    expect(screen.getAllByText("Available").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    expect(screen.getByText("Prompt Async")).toBeTruthy();
+    expect(screen.getByText("Invoke Metadata")).toBeTruthy();
+    expect(screen.queryByText("Provider Discovery")).toBeNull();
+    expect(screen.queryByText("Interrupt Recovery")).toBeNull();
+    expect(screen.queryByText("Session Command")).toBeNull();
+    expect(screen.queryByText("Session Shell")).toBeNull();
+    expect(screen.queryByText("Available")).toBeNull();
+    expect(screen.queryByText("Unknown")).toBeNull();
+    expect(screen.queryByText("Unavailable")).toBeNull();
     expect(screen.queryByText("IN: text")).toBeNull();
     expect(screen.queryByText("OUT: text")).toBeNull();
   });

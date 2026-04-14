@@ -184,14 +184,32 @@ describe("AgentListScreen", () => {
 
     expect(mockFlatLists).toHaveLength(1);
     const labels = mockButtons.map((button) => button.label);
-    expect(labels).toContain("Check all");
-    expect(labels).toContain("All 3");
+    expect(labels).toContain("Check");
     expect(labels).toContain("Healthy 2");
-    expect(labels).toContain("Not checked 1");
+    expect(labels).toContain("Unknown 1");
+    expect(labels).not.toContain("All 3");
+    expect(labels).not.toContain("Degraded 0");
+    expect(labels).not.toContain("Unavailable 0");
     expect(labels).toContain("Edit");
     expect(labels.filter((label) => label === "Chat")).toHaveLength(2);
     expect(labels).not.toContain("My");
     expect(labels).not.toContain("Shared");
+    expect(
+      tree!.root
+        .findAllByType(Text)
+        .some(
+          (node: ReactTestInstance) =>
+            typeof node.props.children === "string" &&
+            node.props.children.startsWith("Checked "),
+        ),
+    ).toBe(false);
+    expect(
+      tree!.root
+        .findAllByType(Text)
+        .some(
+          (node: ReactTestInstance) => node.props.children === "Not checked",
+        ),
+    ).toBe(false);
     expect(
       tree!.root
         .findAllByType(Text)
@@ -212,13 +230,13 @@ describe("AgentListScreen", () => {
       tree = create(<AgentListScreen />);
     });
 
-    const notCheckedButton = mockButtons.find(
-      (button) => button.label === "Not checked 1",
+    const unknownButton = mockButtons.find(
+      (button) => button.label === "Unknown 1",
     );
-    expect(notCheckedButton).toBeDefined();
+    expect(unknownButton).toBeDefined();
 
     await act(async () => {
-      (notCheckedButton?.onPress as (() => void) | undefined)?.();
+      (unknownButton?.onPress as (() => void) | undefined)?.();
     });
 
     expect(
@@ -242,9 +260,7 @@ describe("AgentListScreen", () => {
       create(<AgentListScreen />);
     });
 
-    const checkButton = mockButtons.find(
-      (button) => button.label === "Check all",
-    );
+    const checkButton = mockButtons.find((button) => button.label === "Check");
     expect(checkButton).toBeDefined();
 
     await act(async () => {

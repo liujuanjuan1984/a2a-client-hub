@@ -25,44 +25,17 @@ const resolveModesValue = (session?: AgentSession) => {
   return `${inputValue} -> ${outputValue}`;
 };
 
-const resolveCapabilityBadge = (status: CapabilityStatus) => {
-  if (status === "supported") {
-    return {
-      label: "Available",
-      container: "border-emerald-500/30 bg-emerald-500/10",
-      text: "text-emerald-200",
-    };
-  }
-  if (status === "unsupported") {
-    return {
-      label: "Unavailable",
-      container: "border-slate-500/30 bg-slate-500/10",
-      text: "text-slate-300",
-    };
-  }
-  return {
-    label: "Unknown",
-    container: "border-amber-500/30 bg-amber-500/10",
-    text: "text-amber-200",
-  };
-};
-
-const InfoCard = ({
-  label,
-  value,
-  fullWidth = false,
-}: {
-  label: string;
-  value: string;
-  fullWidth?: boolean;
-}) => (
-  <View className={`${INFO_CARD_CLASS} ${fullWidth ? "basis-full" : ""}`}>
-    <Text className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+const InfoCard = ({ label, value }: { label: string; value: string }) => (
+  <View className={INFO_CARD_CLASS}>
+    <Text
+      className="text-[10px] font-medium uppercase tracking-wider text-slate-500"
+      numberOfLines={1}
+    >
       {label}
     </Text>
     <Text
       className="mt-1 text-[11px] font-normal leading-4 text-slate-300"
-      numberOfLines={fullWidth ? undefined : 2}
+      numberOfLines={1}
     >
       {value}
     </Text>
@@ -120,6 +93,9 @@ export function ChatHeaderPanel({
     { label: "Session Shell", status: sessionShellStatus },
     { label: "Invoke Metadata", status: invokeMetadataStatus },
   ];
+  const availableCapabilities = capabilityItems
+    .filter((item) => item.status === "supported")
+    .map((item) => item.label);
 
   return (
     <View
@@ -169,7 +145,8 @@ export function ChatHeaderPanel({
 
       {showDetails ? (
         <View className="mt-4 gap-3 overflow-hidden rounded-2xl bg-surface p-4 shadow-sm">
-          <View className="flex-row justify-end">
+          <View className="flex-row items-center gap-3">
+            <InfoCard label="Agent Card" value={agent.cardUrl} />
             <Button
               label="Check"
               size="xs"
@@ -181,7 +158,6 @@ export function ChatHeaderPanel({
           </View>
 
           <View className="flex-row flex-wrap gap-3">
-            <InfoCard label="Agent Endpoint" value={agent.cardUrl} fullWidth />
             <InfoCard label="Conversation ID" value={conversationId ?? "N/A"} />
             <InfoCard label="Source" value={sessionSource ?? "N/A"} />
             {session?.runtimeStatus ? (
@@ -190,41 +166,29 @@ export function ChatHeaderPanel({
             <InfoCard label="Transport" value={session?.transport ?? "N/A"} />
             {modesValue ? <InfoCard label="Modes" value={modesValue} /> : null}
             {workingDirectory ? (
-              <InfoCard
-                label="Working Directory"
-                value={workingDirectory}
-                fullWidth
-              />
+              <InfoCard label="Working Directory" value={workingDirectory} />
             ) : null}
           </View>
 
-          <View>
-            <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-              Capabilities
-            </Text>
-            <View className="mt-2 flex-row flex-wrap gap-2">
-              {capabilityItems.map((item) => {
-                const badge = resolveCapabilityBadge(item.status);
-                return (
+          {availableCapabilities.length > 0 ? (
+            <View>
+              <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                Capabilities
+              </Text>
+              <View className="mt-2 flex-row flex-wrap gap-2">
+                {availableCapabilities.map((label) => (
                   <View
-                    key={item.label}
-                    className="min-w-[46%] flex-1 rounded-xl border border-white/5 bg-black/20 px-3 py-2.5"
+                    key={label}
+                    className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5"
                   >
-                    <Text className="text-[10px] font-medium text-slate-300">
-                      {item.label}
+                    <Text className="text-[10px] font-medium text-emerald-200">
+                      {label}
                     </Text>
-                    <View
-                      className={`mt-2 self-start rounded-full border px-2.5 py-1 ${badge.container}`}
-                    >
-                      <Text className={`text-[10px] font-medium ${badge.text}`}>
-                        {badge.label}
-                      </Text>
-                    </View>
                   </View>
-                );
-              })}
+                ))}
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {session?.externalSessionRef?.externalSessionId ? (
             <>

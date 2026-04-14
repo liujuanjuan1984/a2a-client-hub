@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, RefreshControl, Text, View } from "react-native";
 
 import { AccountEntryButton } from "@/components/auth/AccountEntryButton";
@@ -14,7 +14,6 @@ import {
   checkAgentsCatalogHealth,
   type UnifiedAgentHealthStatus,
 } from "@/lib/api/agentsCatalog";
-import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
@@ -23,8 +22,6 @@ import { type AgentConfig, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 import { useSessionStore } from "@/store/session";
 
-type AgentHealthFilter = UnifiedAgentHealthStatus | "all";
-
 const HEALTH_BADGE_STYLES: Record<
   NonNullable<AgentConfig["healthStatus"]>,
   { label: string }
@@ -32,7 +29,7 @@ const HEALTH_BADGE_STYLES: Record<
   healthy: { label: "Healthy" },
   degraded: { label: "Degraded" },
   unavailable: { label: "Unavailable" },
-  unknown: { label: "Not checked" },
+  unknown: { label: "Unknown" },
 };
 
 const HEALTH_FILTER_ORDER: UnifiedAgentHealthStatus[] = [
@@ -63,7 +60,7 @@ export function AgentListScreen() {
   const user = useSessionStore((state) => state.user);
   const setActiveAgent = useAgentStore((state) => state.setActiveAgent);
   const [activeHealthFilter, setActiveHealthFilter] =
-    useState<AgentHealthFilter>("healthy");
+    useState<UnifiedAgentHealthStatus>("healthy");
   const {
     data: agents = [],
     isLoading,
@@ -105,10 +102,7 @@ export function AgentListScreen() {
         nextHealthCounts[healthStatus] += 1;
         nextSourceCounts[agent.source] += 1;
 
-        if (
-          activeHealthFilter === "all" ||
-          healthStatus === activeHealthFilter
-        ) {
+        if (healthStatus === activeHealthFilter) {
           nextFilteredAgents.push(agent);
         }
       }
@@ -118,11 +112,25 @@ export function AgentListScreen() {
         healthCounts: nextHealthCounts,
         sourceCounts: nextSourceCounts,
         selectedFilterLabel:
-          activeHealthFilter === "all"
-            ? "all"
-            : HEALTH_BADGE_STYLES[activeHealthFilter].label.toLowerCase(),
+          HEALTH_BADGE_STYLES[activeHealthFilter].label.toLowerCase(),
       };
     }, [activeHealthFilter, orderedAgents]);
+
+  const visibleHealthFilters = useMemo(
+    () => HEALTH_FILTER_ORDER.filter((status) => healthCounts[status] > 0),
+    [healthCounts],
+  );
+
+  useEffect(() => {
+    if (healthCounts[activeHealthFilter] > 0) {
+      return;
+    }
+
+    const fallbackFilter = visibleHealthFilters[0];
+    if (fallbackFilter) {
+      setActiveHealthFilter(fallbackFilter);
+    }
+  }, [activeHealthFilter, healthCounts, visibleHealthFilters]);
 
   const handleChat = useCallback(
     (agentId: string) => {
@@ -177,38 +185,20 @@ export function AgentListScreen() {
   }, [batchHealthMutation]);
 
   const renderAgentMeta = (agent: AgentConfig) => {
-    const healthStatus = resolveHealthStatus(agent);
-    const checkedAtLabel = agent.lastHealthCheckAt
-      ? `Checked ${formatLocalDateTime(agent.lastHealthCheckAt)}`
-      : "Not checked yet";
     const sourceLabel = SOURCE_LABELS[agent.source];
 
     return (
-      <>
-        <View className="flex-row items-center justify-between gap-3">
-          <Text
-            className="flex-1 pr-4 text-[13px] font-semibold text-white"
-            numberOfLines={1}
-          >
-            {agent.name}
-          </Text>
-          <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-green">
-            {sourceLabel}
-          </Text>
-        </View>
-
-        <View className="mt-3 flex-row items-center justify-between gap-3">
-          <Text className="text-xs text-slate-400" numberOfLines={1}>
-            {HEALTH_BADGE_STYLES[healthStatus].label}
-          </Text>
-          <Text
-            className="flex-1 text-right text-xs text-slate-500"
-            numberOfLines={1}
-          >
-            {checkedAtLabel}
-          </Text>
-        </View>
-      </>
+      <View className="flex-row items-center justify-between gap-3">
+        <Text
+          className="flex-1 pr-4 text-[13px] font-semibold text-white"
+          numberOfLines={1}
+        >
+          {agent.name}
+        </Text>
+        <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-green">
+          {sourceLabel}
+        </Text>
+      </View>
     );
   };
 
@@ -364,15 +354,12 @@ export function AgentListScreen() {
         <View className="flex-row items-center justify-between gap-4">
           <View className="flex-1">
             <Text className="text-sm font-semibold text-white">
-              {filteredAgents.length} of {orderedAgents.length} agents
-            </Text>
-            <Text className="mt-1 text-xs text-slate-400">
               Built-in {sourceCounts.builtin} / Personal {sourceCounts.personal}{" "}
               / Shared {sourceCounts.shared}
             </Text>
           </View>
           <Button
-            label={batchHealthMutation.isPending ? "Checking..." : "Check all"}
+            label={batchHealthMutation.isPending ? "Checking..." : "Check"}
             size="sm"
             variant="secondary"
             iconLeft="pulse-outline"
@@ -381,14 +368,7 @@ export function AgentListScreen() {
         </View>
 
         <View className="mt-4 flex-row flex-wrap items-center gap-3">
-          <Button
-            className="rounded-full"
-            label={`All ${orderedAgents.length}`}
-            size="xs"
-            variant={activeHealthFilter === "all" ? "primary" : "secondary"}
-            onPress={() => setActiveHealthFilter("all")}
-          />
-          {HEALTH_FILTER_ORDER.map((status) => (
+          {visibleHealthFilters.map((status) => (
             <Button
               key={status}
               className="rounded-full"
@@ -404,11 +384,10 @@ export function AgentListScreen() {
     [
       activeHealthFilter,
       batchHealthMutation,
-      filteredAgents.length,
       handleCheckAll,
-      healthCounts,
-      orderedAgents.length,
       sourceCounts,
+      visibleHealthFilters,
+      healthCounts,
     ],
   );
 
@@ -494,8 +473,8 @@ export function AgentListScreen() {
                   No {selectedFilterLabel} agents right now
                 </Text>
                 <Text className="mt-2 text-center text-sm text-slate-400">
-                  Switch to another health status or run Check all to refresh
-                  the latest results.
+                  Switch to another health status or run Check to refresh the
+                  latest results.
                 </Text>
               </View>
             )
