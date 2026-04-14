@@ -48,8 +48,33 @@ class _FakeSwivalSession:
         type(self).last_init_kwargs = dict(kwargs)
         type(self).instance_count += 1
         type(self).instances.append(self)
+        self._system_prompt = cast(str, kwargs.get("system_prompt", ""))
         self._conv_state: dict[str, object] | None = None
         self.closed = False
+
+    def _setup(self) -> None:
+        if self._conv_state is None:
+            self._conv_state = self._make_per_run_state(
+                system_content=self._system_with_memory("", policy="interactive")
+            )
+
+    def _system_with_memory(
+        self,
+        _question: str,
+        report: object | None = None,
+        policy: str = "autonomous",
+    ) -> str:
+        del report, policy
+        return self._system_prompt
+
+    def _make_per_run_state(
+        self,
+        system_content: str | None = None,
+    ) -> dict[str, object]:
+        messages: list[dict[str, str]] = []
+        if isinstance(system_content, str) and system_content.strip():
+            messages.append({"role": "system", "content": system_content})
+        return {"messages": messages}
 
     def ask(self, message: str) -> object:
         if type(self).next_error is not None:
@@ -59,7 +84,7 @@ class _FakeSwivalSession:
         type(self).last_message = message
         type(self).ask_call_count += 1
         if self._conv_state is None:
-            self._conv_state = {"messages": []}
+            self._setup()
         messages = cast(list[dict[str, str]], self._conv_state["messages"])
         messages.append({"role": "user", "content": message})
         messages.append({"role": "assistant", "content": type(self).next_answer})
@@ -375,9 +400,13 @@ async def test_built_in_agent_rebuilds_session_when_delegated_token_expires(
     assert _FakeSwivalSession.instance_count == 2
     assert _FakeSwivalSession.instances[0].closed is True
     assert _FakeSwivalSession.instances[1]._conv_state is not None
+    transferred_messages = cast(
+        list[dict[str, str]], _FakeSwivalSession.instances[1]._conv_state["messages"]
+    )
+    assert transferred_messages[0]["role"] == "system"
     assert cast(
         list[dict[str, str]], _FakeSwivalSession.instances[1]._conv_state["messages"]
-    )[:2] == [
+    )[1:3] == [
         {"role": "user", "content": "List my jobs"},
         {"role": "assistant", "content": "Built-in agent reply"},
     ]
@@ -1058,7 +1087,7 @@ async def test_built_in_agent_permission_reply_once_resumes_with_write_tools(
     assert _FakeSwivalSession.instance_count == 1
 
 
-async def test_built_in_agent_permission_reply_rejects_repeated_write_approval(
+async def test_built_in_agent_session_refresh_preserves_new_system_prompt(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1081,40 +1110,37 @@ async def test_built_in_agent_permission_reply_rejects_repeated_write_approval(
     )
     assert interrupt_result.interrupt is not None
 
-    _FakeSwivalSession.next_answer = _approval_answer(
-        "I still need write approval before I can pause that job.",
-        "self.jobs.pause",
-    )
+    _FakeSwivalSession.next_answer = "Paused the requested job."
 
-    with pytest.raises(SelfManagementBuiltInAgentUnavailableError) as excinfo:
-        await self_management_built_in_agent_service.reply_permission_interrupt(
-            db=async_db_session,
-            current_user=user,
-            request_id=interrupt_result.interrupt.request_id,
-            reply="once",
-        )
-
-    assert "requested write approval after write tools were enabled" in str(
-        excinfo.value
-    )
-
-    messages, _extra, _db_mutated = await session_hub_service.list_messages(
-        async_db_session,
-        user_id=cast(Any, user.id),
-        conversation_id=conversation_id,
-        before=None,
-        limit=20,
-    )
-    assert [item["role"] for item in messages] == ["user", "agent"]
-    assert messages[1]["status"] == "interrupted"
-
-    recovered = await self_management_built_in_agent_service.recover_pending_interrupts(
+    result = await self_management_built_in_agent_service.reply_permission_interrupt(
         db=async_db_session,
         current_user=user,
-        conversation_id=conversation_id,
+        request_id=interrupt_result.interrupt.request_id,
+        reply="once",
     )
-    assert [item.request_id for item in recovered] == [
-        interrupt_result.interrupt.request_id
+
+    assert result.status == "completed"
+    assert _FakeSwivalSession.instance_count == 2
+    assert _FakeSwivalSession.instances[1]._conv_state is not None
+    next_messages = cast(
+        list[dict[str, str]], _FakeSwivalSession.instances[1]._conv_state["messages"]
+    )
+    assert next_messages[0]["role"] == "system"
+    assert (
+        "This run includes explicitly approved write tools."
+        in next_messages[0]["content"]
+    )
+    assert "The currently approved write operations are: self.jobs.pause." in (
+        next_messages[0]["content"]
+    )
+    assert next_messages[1:3] == [
+        {"role": "user", "content": "Pause my job"},
+        {
+            "role": "assistant",
+            "content": "I can pause the requested job after you approve write access.\n"
+            "[[SELF_MANAGEMENT_WRITE_APPROVAL_REQUIRED]]\n"
+            "[[SELF_MANAGEMENT_WRITE_OPERATIONS:self.jobs.pause]]",
+        },
     ]
 
 
@@ -1554,7 +1580,7 @@ async def test_built_in_agent_reuses_conversation_session_for_follow_up_turns(
     assert _FakeSwivalSession.instance_count == 1
     assert _FakeSwivalSession.ask_call_count == 2
     assert _FakeSwivalSession.instances[0]._conv_state is not None
-    assert len(_FakeSwivalSession.instances[0]._conv_state["messages"]) == 4
+    assert len(_FakeSwivalSession.instances[0]._conv_state["messages"]) == 5
 
 
 async def test_built_in_agent_rehydrates_runtime_from_durable_history_after_registry_loss(
@@ -1587,12 +1613,16 @@ async def test_built_in_agent_rehydrates_runtime_from_durable_history_after_regi
     assert _FakeSwivalSession.instance_count == 2
     assert _FakeSwivalSession.ask_call_count == 2
     assert _FakeSwivalSession.instances[1]._conv_state is not None
-    assert len(_FakeSwivalSession.instances[1]._conv_state["messages"]) == 4
+    assert len(_FakeSwivalSession.instances[1]._conv_state["messages"]) == 5
     assert _FakeSwivalSession.instances[1]._conv_state["messages"][0] == {
+        "role": "system",
+        "content": cast(str, _FakeSwivalSession.instances[1]._system_prompt),
+    }
+    assert _FakeSwivalSession.instances[1]._conv_state["messages"][1] == {
         "role": "user",
         "content": "List my jobs",
     }
-    assert _FakeSwivalSession.instances[1]._conv_state["messages"][1] == {
+    assert _FakeSwivalSession.instances[1]._conv_state["messages"][2] == {
         "role": "assistant",
         "content": "Built-in agent reply",
     }

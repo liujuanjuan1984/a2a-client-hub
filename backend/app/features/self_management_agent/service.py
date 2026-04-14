@@ -1093,7 +1093,9 @@ class SelfManagementBuiltInAgentService:
             delegated_write_operation_ids=delegated_write_operation_ids,
         )
         if previous_session is not None:
-            self._transfer_conversation_state(previous_session, new_session)
+            await asyncio.to_thread(
+                self._transfer_conversation_state, previous_session, new_session
+            )
             await asyncio.to_thread(self._close_swival_session, previous_session)
         else:
             await self._best_effort_rehydrate_swival_session(
@@ -1141,8 +1143,13 @@ class SelfManagementBuiltInAgentService:
         existing_state = cast(
             dict[str, Any] | None, getattr(session, "_conv_state", None)
         )
-        if isinstance(existing_state, dict) and existing_state.get("messages"):
-            return
+        if isinstance(existing_state, dict):
+            existing_messages = existing_state.get("messages")
+            if isinstance(existing_messages, list) and any(
+                not (isinstance(message, dict) and message.get("role") == "system")
+                for message in existing_messages
+            ):
+                return
 
         make_state = getattr(session, "_make_per_run_state", None)
         if callable(make_state):
@@ -1309,14 +1316,82 @@ class SelfManagementBuiltInAgentService:
                 continue
         return str(user_runtime_dir.resolve())
 
+    def _build_session_conversation_state(
+        self,
+        session: Any,
+    ) -> dict[str, Any] | None:
+        conv_state = getattr(session, "_conv_state", None)
+        if isinstance(conv_state, dict):
+            return copy.deepcopy(conv_state)
+
+        setup = getattr(session, "_setup", None)
+        if callable(setup):
+            try:
+                setup()
+            except Exception:
+                return None
+            conv_state = getattr(session, "_conv_state", None)
+            if isinstance(conv_state, dict):
+                return copy.deepcopy(conv_state)
+
+        make_state = getattr(session, "_make_per_run_state", None)
+        if not callable(make_state):
+            return None
+
+        system_content = None
+        system_with_memory = getattr(session, "_system_with_memory", None)
+        if callable(system_with_memory):
+            try:
+                system_content = system_with_memory("", policy="interactive")
+            except TypeError:
+                system_content = system_with_memory("")
+            except Exception:
+                system_content = None
+        try:
+            return cast(
+                dict[str, Any],
+                make_state(system_content=cast(str | None, system_content)),
+            )
+        except TypeError:
+            return cast(dict[str, Any], make_state())
+        except Exception:
+            return None
+
     def _transfer_conversation_state(
         self,
         previous_session: Any,
         next_session: Any,
     ) -> None:
-        conv_state = getattr(previous_session, "_conv_state", None)
-        if conv_state is not None:
-            setattr(next_session, "_conv_state", copy.deepcopy(conv_state))
+        previous_state = self._build_session_conversation_state(previous_session)
+        if previous_state is not None:
+            next_state = self._build_session_conversation_state(next_session)
+            previous_messages = previous_state.get("messages")
+            next_messages = next_state.get("messages") if next_state else None
+            previous_non_system_messages = (
+                [
+                    copy.deepcopy(message)
+                    for message in previous_messages
+                    if not (
+                        isinstance(message, dict) and message.get("role") == "system"
+                    )
+                ]
+                if isinstance(previous_messages, list)
+                else []
+            )
+            next_system_messages = (
+                [
+                    copy.deepcopy(message)
+                    for message in next_messages
+                    if isinstance(message, dict) and message.get("role") == "system"
+                ]
+                if isinstance(next_messages, list)
+                else []
+            )
+            transferred_state = copy.deepcopy(next_state) if next_state else {}
+            transferred_state["messages"] = (
+                next_system_messages + previous_non_system_messages
+            )
+            setattr(next_session, "_conv_state", transferred_state)
         trace_session_id = getattr(previous_session, "_trace_session_id", None)
         if isinstance(trace_session_id, str) and trace_session_id.strip():
             setattr(next_session, "_trace_session_id", trace_session_id)
