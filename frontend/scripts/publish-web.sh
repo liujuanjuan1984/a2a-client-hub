@@ -4,7 +4,6 @@ set -euo pipefail
 HOST=${HOST:-127.0.0.1}
 PORT=${PORT:-8787}
 
-rm -rf dist
 npx expo export -p web
 
 echo "Serving dist/ on http://${HOST}:${PORT}"
