@@ -89,6 +89,29 @@ Use `npm run publish:web` to export and serve the web build locally.
 - Default port: `8787`
 - Override with env vars: `HOST`, `PORT`
 - Run in background: `DETACH=1 npm run publish:web`
+- The publish helper clears `dist/` before each export so stale hashed bundles are not carried into the next local build snapshot.
+
+## Web Runtime Troubleshooting
+
+### `Requiring unknown module "<id>"`
+
+If the web app fails at runtime with an error like `Requiring unknown module "1352"` and the stack points to `entry-*.js`, `__expo-metro-runtime-*.js`, or a route chunk such as `AgentListScreen-*.js`, treat it as a mixed-bundle symptom first.
+
+Typical cause:
+
+- The browser, CDN, reverse proxy, or static host is serving an older `entry-*.js` / route chunk together with a newer build, or vice versa.
+
+Practical recovery steps:
+
+1. Hard refresh the page and clear browser cache for the site.
+2. Redeploy the full exported `dist/` directory atomically instead of partially updating only some files.
+3. Invalidate CDN or proxy caches for `index.html`, route HTML files, and hashed JS bundles after deployment.
+4. Rebuild locally with `npm run publish:web` to confirm the latest source exports cleanly.
+
+Notes:
+
+- A successful local `expo export -p web` strongly suggests the problem is deployment/cache related rather than a missing source import.
+- If you are using a manual upload flow, make sure the target directory is replaced as one release unit instead of merging old and new bundle files over time.
 
 ## Unified Conversations
 
