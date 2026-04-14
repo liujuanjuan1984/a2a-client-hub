@@ -20,6 +20,7 @@ const mockRunSelfManagementBuiltInAgent = jest.fn();
 const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
 const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
+const mockRemoveConversationMessage = jest.fn();
 const mockUpdateConversationMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
@@ -456,6 +457,8 @@ jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
 jest.mock("@/lib/chatHistoryCache", () => ({
   addConversationMessage: (...args: unknown[]) =>
     mockAddConversationMessage(...args),
+  removeConversationMessage: (...args: unknown[]) =>
+    mockRemoveConversationMessage(...args),
   updateConversationMessage: (...args: unknown[]) =>
     mockUpdateConversationMessage(...args),
 }));
@@ -527,6 +530,9 @@ describe("ChatScreen interrupt handling", () => {
     mockReplyQuestion.mockReset();
     mockRejectQuestion.mockReset();
     mockReplyElicitation.mockReset();
+    mockAddConversationMessage.mockReset();
+    mockRemoveConversationMessage.mockReset();
+    mockUpdateConversationMessage.mockReset();
     mockToastInfo.mockReset();
     mockToastSuccess.mockReset();
     mockToastError.mockReset();
@@ -1759,11 +1765,83 @@ describe("ChatScreen interrupt handling", () => {
       conversationId,
       "builtin-perm-stale-1",
     );
+    expect(mockRemoveConversationMessage).toHaveBeenCalledWith(
+      conversationId,
+      expect.any(String),
+    );
+    expect(mockUpdateConversationMessage).not.toHaveBeenCalled();
+    expect(mockChatState.sessions[conversationId]?.streamState).toBe("idle");
+    expect(mockChatState.sessions[conversationId]?.lastStreamError).toBeNull();
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Interrupt closed",
       "The interrupt request expired and was removed.",
     );
     expect(mockToastError).not.toHaveBeenCalled();
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("restores built-in permission reply state after non-terminal errors", async () => {
+    mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(
+      new ApiRequestError("Server Error", 500, {
+        errorCode: "internal_error",
+        upstreamError: {
+          message: "Permission reply failed upstream.",
+        },
+      }),
+    );
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      agentId: SELF_MANAGEMENT_AGENT_ID,
+      pendingInterrupt: {
+        requestId: "builtin-perm-failed-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "self-management-write",
+          patterns: ["self.jobs.pause"],
+          displayMessage: "Approve write access to continue.",
+        },
+      },
+      pendingInterrupts: [
+        {
+          requestId: "builtin-perm-failed-1",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve write access to continue.",
+          },
+        },
+      ],
+    };
+
+    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const root = tree.root;
+    const permissionButton = root.findByProps({
+      testID: "interrupt-permission-once",
+    });
+
+    await act(async () => {
+      await permissionButton.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockRemoveConversationMessage).toHaveBeenCalledWith(
+      conversationId,
+      expect.any(String),
+    );
+    expect(mockUpdateConversationMessage).not.toHaveBeenCalled();
+    expect(mockChatState.clearPendingInterrupt).not.toHaveBeenCalled();
+    expect(mockChatState.sessions[conversationId]?.streamState).toBe("idle");
+    expect(mockChatState.sessions[conversationId]?.lastStreamError).toBeNull();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Interrupt callback failed",
+      "Server Error [internal_error]：Permission reply failed upstream.",
+    );
 
     act(() => {
       tree.unmount();

@@ -57,6 +57,7 @@ import {
 } from "@/lib/chat-utils";
 import {
   addConversationMessage,
+  removeConversationMessage,
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
 import {
@@ -539,13 +540,7 @@ export function useChatScreenController({
           }),
         );
       } catch (error) {
-        updateConversationMessage(conversationId, nextAgentMessageId, {
-          content:
-            error instanceof Error
-              ? error.message
-              : "Built-in assistant request failed.",
-          status: "error",
-        });
+        removeConversationMessage(conversationId, nextAgentMessageId);
         applyBuiltInAgentSessionUpdate(
           conversationId,
           activeAgentId,
@@ -553,11 +548,8 @@ export function useChatScreenController({
             ...current,
             agentId: activeAgentId,
             lastActiveAt: new Date().toISOString(),
-            streamState: "error",
-            lastStreamError:
-              error instanceof Error
-                ? error.message
-                : "Built-in assistant request failed.",
+            streamState: "idle",
+            lastStreamError: null,
           }),
         );
         throw error;
