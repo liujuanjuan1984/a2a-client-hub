@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FlatList, RefreshControl, Text, View } from "react-native";
 
 import { AccountEntryButton } from "@/components/auth/AccountEntryButton";
@@ -10,7 +10,10 @@ import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
-import { checkAgentsCatalogHealth } from "@/lib/api/agentsCatalog";
+import {
+  checkAgentsCatalogHealth,
+  type UnifiedAgentHealthStatus,
+} from "@/lib/api/agentsCatalog";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
@@ -20,15 +23,24 @@ import { type AgentConfig, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 import { useSessionStore } from "@/store/session";
 
+type AgentHealthFilter = UnifiedAgentHealthStatus | "all";
+
 const HEALTH_BADGE_STYLES: Record<
   NonNullable<AgentConfig["healthStatus"]>,
   { label: string }
 > = {
-  healthy: { label: "Available" },
-  degraded: { label: "Needs attention" },
+  healthy: { label: "Healthy" },
+  degraded: { label: "Degraded" },
   unavailable: { label: "Unavailable" },
   unknown: { label: "Not checked" },
 };
+
+const HEALTH_FILTER_ORDER: UnifiedAgentHealthStatus[] = [
+  "healthy",
+  "degraded",
+  "unavailable",
+  "unknown",
+];
 
 const SOURCE_LABELS: Record<AgentConfig["source"], string> = {
   personal: "PERSONAL",
@@ -50,6 +62,8 @@ export function AgentListScreen() {
   const queryClient = useQueryClient();
   const user = useSessionStore((state) => state.user);
   const setActiveAgent = useAgentStore((state) => state.setActiveAgent);
+  const [activeHealthFilter, setActiveHealthFilter] =
+    useState<AgentHealthFilter>("healthy");
   const {
     data: agents = [],
     isLoading,
@@ -71,6 +85,34 @@ export function AgentListScreen() {
     [agents],
   );
 
+  const healthCounts = useMemo(
+    () =>
+      orderedAgents.reduce<Record<UnifiedAgentHealthStatus, number>>(
+        (result, agent) => {
+          const healthStatus = resolveHealthStatus(agent);
+          result[healthStatus] += 1;
+          return result;
+        },
+        {
+          healthy: 0,
+          degraded: 0,
+          unavailable: 0,
+          unknown: 0,
+        },
+      ),
+    [orderedAgents],
+  );
+
+  const filteredAgents = useMemo(() => {
+    if (activeHealthFilter === "all") {
+      return orderedAgents;
+    }
+
+    return orderedAgents.filter(
+      (agent) => resolveHealthStatus(agent) === activeHealthFilter,
+    );
+  }, [activeHealthFilter, orderedAgents]);
+
   const counts = useMemo(
     () => ({
       builtin: orderedAgents.filter((agent) => agent.source === "builtin")
@@ -81,6 +123,11 @@ export function AgentListScreen() {
     }),
     [orderedAgents],
   );
+
+  const selectedHealthFilterLabel =
+    activeHealthFilter === "all"
+      ? "all"
+      : HEALTH_BADGE_STYLES[activeHealthFilter].label.toLowerCase();
 
   const handleChat = useCallback(
     (agentId: string) => {
@@ -316,7 +363,7 @@ export function AgentListScreen() {
         <View className="flex-row items-center justify-between gap-4">
           <View className="flex-1">
             <Text className="text-sm font-semibold text-white">
-              {orderedAgents.length} agents
+              {filteredAgents.length} of {orderedAgents.length} agents
             </Text>
             <Text className="mt-1 text-xs text-slate-400">
               Built-in {counts.builtin} / Personal {counts.personal} / Shared{" "}
@@ -336,9 +383,36 @@ export function AgentListScreen() {
             }}
           />
         </View>
+
+        <View className="mt-4 flex-row flex-wrap items-center gap-3">
+          <Button
+            className="rounded-full"
+            label={`All ${orderedAgents.length}`}
+            size="xs"
+            variant={activeHealthFilter === "all" ? "primary" : "secondary"}
+            onPress={() => setActiveHealthFilter("all")}
+          />
+          {HEALTH_FILTER_ORDER.map((status) => (
+            <Button
+              key={status}
+              className="rounded-full"
+              label={`${HEALTH_BADGE_STYLES[status].label} ${healthCounts[status]}`}
+              size="xs"
+              variant={activeHealthFilter === status ? "primary" : "secondary"}
+              onPress={() => setActiveHealthFilter(status)}
+            />
+          ))}
+        </View>
       </View>
     ),
-    [batchHealthMutation, counts, orderedAgents.length],
+    [
+      activeHealthFilter,
+      batchHealthMutation,
+      counts,
+      filteredAgents.length,
+      healthCounts,
+      orderedAgents.length,
+    ],
   );
 
   return (
@@ -387,7 +461,7 @@ export function AgentListScreen() {
         </View>
       ) : (
         <FlatList
-          data={orderedAgents}
+          data={filteredAgents}
           renderItem={renderAgentItem}
           keyExtractor={(item) => `${item.source}:${item.id}`}
           style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
@@ -404,18 +478,30 @@ export function AgentListScreen() {
           }
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={
-            <View className="items-center rounded-2xl bg-surface p-8">
-              <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-                <Text className="text-[11px] font-bold text-black">A2A</Text>
+            orderedAgents.length === 0 ? (
+              <View className="items-center rounded-2xl bg-surface p-8">
+                <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-primary">
+                  <Text className="text-[11px] font-bold text-black">A2A</Text>
+                </View>
+                <Text className="text-base font-bold text-white">
+                  No agents available
+                </Text>
+                <Text className="mt-2 text-center text-sm text-slate-400">
+                  Add your first personal agent or wait for shared agents to be
+                  published.
+                </Text>
               </View>
-              <Text className="text-base font-bold text-white">
-                No agents available
-              </Text>
-              <Text className="mt-2 text-center text-sm text-slate-400">
-                Add your first personal agent or wait for shared agents to be
-                published.
-              </Text>
-            </View>
+            ) : (
+              <View className="items-center rounded-2xl bg-surface p-8">
+                <Text className="text-base font-bold text-white">
+                  No {selectedHealthFilterLabel} agents right now
+                </Text>
+                <Text className="mt-2 text-center text-sm text-slate-400">
+                  Switch to another health status or run Check all to refresh
+                  the latest results.
+                </Text>
+              </View>
+            )
           }
         />
       )}
