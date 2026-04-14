@@ -395,20 +395,6 @@ type PromptAsyncAckResult = {
   sessionId: string;
 };
 
-type SessionCommandResultItem = {
-  kind?: string;
-  messageId?: string;
-  message_id?: string;
-  role?: string;
-  parts?: unknown[];
-  createdAt?: string;
-  created_at?: string;
-};
-
-type SessionCommandResult = {
-  item: SessionCommandResultItem | null;
-};
-
 type InterruptRecoveryResponseItem = {
   requestId: string;
   sessionId: string;
@@ -487,54 +473,6 @@ export const promptSessionAsync = async (input: {
     },
   );
   return assertPromptAsyncResult(response, input.sessionId);
-};
-
-export const commandSession = async (input: {
-  source: ExtensionAgentSource;
-  agentId: string;
-  sessionId: string;
-  request: {
-    command: string;
-    arguments: string;
-    parts?: Record<string, unknown>[];
-  };
-  metadata?: Record<string, unknown>;
-  workingDirectory?: string | null;
-}): Promise<SessionCommandResult> => {
-  const response = await apiRequest<
-    A2AExtensionResponse,
-    {
-      request: {
-        command: string;
-        arguments: string;
-        parts?: Record<string, unknown>[];
-      };
-      metadata?: Record<string, unknown>;
-      workingDirectory?: string | null;
-    }
-  >(
-    buildSessionPath(
-      input.source,
-      input.agentId,
-      `${encodeURIComponent(input.sessionId)}:command`,
-    ),
-    {
-      method: "POST",
-      body: {
-        request: input.request,
-        ...(input.metadata ? { metadata: input.metadata } : {}),
-        ...(input.workingDirectory
-          ? { workingDirectory: input.workingDirectory }
-          : {}),
-      },
-    },
-  );
-  assertExtensionSuccess(response);
-  const result = asRecord(response.result) ?? {};
-  const item = asRecord(result.item);
-  return {
-    item: item ? (item as SessionCommandResultItem) : null,
-  };
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>

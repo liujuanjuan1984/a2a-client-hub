@@ -1,7 +1,6 @@
 import {
   A2AExtensionCallError,
   assertExtensionSuccess,
-  commandSession,
   getExtensionCapabilities,
   listModelProviders,
   listModels,
@@ -115,53 +114,6 @@ describe("assertExtensionSuccess", () => {
         },
       }),
     ).rejects.toThrow("prompt_async acknowledged without ok=true");
-  });
-
-  it("calls session command endpoint and returns the mapped item payload", async () => {
-    mockedApiRequest.mockResolvedValue({
-      success: true,
-      result: {
-        item: {
-          kind: "message",
-          messageId: "msg-cmd-1",
-          role: "assistant",
-          parts: [{ type: "text", text: "Review complete." }],
-        },
-      },
-    });
-
-    const result = await commandSession({
-      source: "shared",
-      agentId: "agent-1",
-      sessionId: "ses-1",
-      request: {
-        command: "/review",
-        arguments: "--quick",
-        parts: [{ type: "text", text: "Focus on tests" }],
-      },
-      metadata: { provider: "opencode", externalSessionId: "ses-1" },
-      workingDirectory: "/workspace/project",
-    });
-
-    expect(mockedApiRequest).toHaveBeenCalledWith(
-      "/a2a/agents/agent-1/extensions/sessions/ses-1:command",
-      {
-        method: "POST",
-        body: {
-          request: {
-            command: "/review",
-            arguments: "--quick",
-            parts: [{ type: "text", text: "Focus on tests" }],
-          },
-          metadata: { provider: "opencode", externalSessionId: "ses-1" },
-          workingDirectory: "/workspace/project",
-        },
-      },
-    );
-    expect(result.item).toMatchObject({
-      messageId: "msg-cmd-1",
-      role: "assistant",
-    });
   });
 
   it("forwards interrupt metadata when provided", async () => {

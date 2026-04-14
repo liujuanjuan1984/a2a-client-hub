@@ -1,7 +1,4 @@
-import {
-  mapA2AMessageToChatMessage,
-  mapSessionMessagesToChatMessages,
-} from "@/lib/sessionHistory";
+import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 
 describe("session history mapping", () => {
   it("maps canonical ids from block-based history", () => {
@@ -120,7 +117,9 @@ describe("session history mapping", () => {
         {
           id: "5f4d5d35-9099-49a0-8ce2-2cf56d79314d",
           role: "user",
+          kind: "session_append_user",
           created_at: "2026-02-14T00:00:04.000Z",
+          operationId: "op-append-1",
         },
       ],
       { keepEmptyMessages: true },
@@ -130,7 +129,9 @@ describe("session history mapping", () => {
     expect(mapped[0]).toMatchObject({
       id: "5f4d5d35-9099-49a0-8ce2-2cf56d79314d",
       role: "user",
+      kind: "session_append_user",
       content: "",
+      operationId: "op-append-1",
       blocks: [],
     });
   });
@@ -202,6 +203,38 @@ describe("session history mapping", () => {
     expect(mapped[0]?.content).toBe("");
   });
 
+  it("preserves structured data blocks for canonical command results", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "cmd-output-1",
+        role: "agent",
+        kind: "session_command_output",
+        operationId: "op-command-1",
+        created_at: "2026-03-29T00:00:00.000Z",
+        blocks: [
+          {
+            id: "data-block-1",
+            type: "data",
+            content: '{"summary":"done","files":["a.ts"]}',
+            isFinished: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({
+      id: "cmd-output-1",
+      kind: "session_command_output",
+      operationId: "op-command-1",
+      content: "",
+    });
+    expect(mapped[0]?.blocks?.[0]).toMatchObject({
+      type: "data",
+      content: '{"summary":"done","files":["a.ts"]}',
+    });
+  });
+
   it("preserves normalized toolCall metadata from session payload", () => {
     const mapped = mapSessionMessagesToChatMessages([
       {
@@ -264,35 +297,5 @@ describe("session history mapping", () => {
     expect(mapped).toHaveLength(1);
     expect(mapped[0]?.content).toBe("final answer");
     expect(mapped[0]?.blocks?.[0]?.content).toBe("draft");
-  });
-
-  it("maps an A2A command result message into a chat message", () => {
-    const mapped = mapA2AMessageToChatMessage(
-      {
-        messageId: "msg-cmd-1",
-        role: "assistant",
-        parts: [{ type: "text", text: "Review complete." }],
-      },
-      { fallbackCreatedAt: "2026-03-27T00:00:00.000Z" },
-    );
-
-    expect(mapped).toEqual({
-      id: "msg-cmd-1",
-      role: "agent",
-      content: "Review complete.",
-      createdAt: "2026-03-27T00:00:00.000Z",
-      status: "done",
-      blocks: [],
-    });
-  });
-
-  it("rejects A2A messages without usable text content", () => {
-    const mapped = mapA2AMessageToChatMessage({
-      messageId: "msg-cmd-empty",
-      role: "assistant",
-      parts: [{ type: "data", data: { ok: true } }],
-    });
-
-    expect(mapped).toBeNull();
   });
 });

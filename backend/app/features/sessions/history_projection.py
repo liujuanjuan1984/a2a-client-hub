@@ -53,6 +53,92 @@ def _default_lane_id(block_type: str) -> str:
     return "primary_text" if block_type == "text" else block_type
 
 
+def _normalize_message_block_specs(
+    block_specs: list[dict[str, Any]] | None,
+) -> list[dict[str, str | None]]:
+    normalized_specs: list[dict[str, str | None]] = []
+    for index, raw_spec in enumerate(block_specs or []):
+        block_type = normalize_block_type(
+            normalize_non_empty_text(raw_spec.get("block_type"))
+            or normalize_non_empty_text(raw_spec.get("type"))
+            or "text"
+        )
+        content = raw_spec.get("content")
+        if not isinstance(content, str):
+            continue
+        source = normalize_non_empty_text(raw_spec.get("source"))
+        normalized_specs.append(
+            {
+                "block_type": block_type,
+                "content": content,
+                "source": source or "finalize_snapshot",
+                "block_id": (
+                    normalize_non_empty_text(raw_spec.get("block_id"))
+                    or f"persisted:{block_type}:{index + 1}"
+                ),
+                "lane_id": (
+                    normalize_non_empty_text(raw_spec.get("lane_id"))
+                    or _default_lane_id(block_type)
+                ),
+            }
+        )
+    return normalized_specs
+
+
+async def _apply_message_block_specs(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    message_id: UUID,
+    block_specs: list[dict[str, str | None]],
+    idempotency_key: str | None,
+) -> None:
+    if not block_specs:
+        return
+    existing_blocks = await block_store.list_blocks_by_message_id(
+        db,
+        user_id=user_id,
+        message_id=message_id,
+    )
+    if existing_blocks:
+        if len(existing_blocks) != len(block_specs):
+            raise ValueError("idempotency_conflict")
+        for existing_block, expected_spec in zip(
+            existing_blocks, block_specs, strict=True
+        ):
+            if (
+                normalize_block_type(cast(str | None, existing_block.block_type))
+                != expected_spec["block_type"]
+                or (cast(str | None, existing_block.content) or "")
+                != (expected_spec["content"] or "")
+                or normalize_non_empty_text(cast(str | None, existing_block.source))
+                != normalize_non_empty_text(expected_spec["source"])
+            ):
+                raise ValueError("idempotency_conflict")
+        return
+
+    for index, block_spec in enumerate(block_specs, start=1):
+        persisted_block = await create_block_with_conflict_recovery(
+            db,
+            user_id=user_id,
+            message_id=message_id,
+            block_seq=index,
+            block_id=cast(str, block_spec["block_id"]),
+            lane_id=cast(str, block_spec["lane_id"]),
+            block_type=cast(str, block_spec["block_type"]),
+            content=cast(str, block_spec["content"]),
+            is_finished=True,
+            source=block_spec["source"],
+            start_event_seq=None,
+            end_event_seq=None,
+            base_seq=None,
+            start_event_id=None,
+            end_event_id=None,
+        )
+        if persisted_block is None and idempotency_key:
+            raise ValueError("idempotency_conflict")
+
+
 def _should_preserve_existing_interrupt_content(
     *,
     block_type: str,
@@ -306,6 +392,7 @@ class SessionHistoryProjectionService:
         invoke_metadata: dict[str, Any] | None = None,
         extra_metadata: dict[str, Any] | None = None,
         response_metadata: dict[str, Any] | None = None,
+        response_blocks: list[dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
@@ -339,6 +426,7 @@ class SessionHistoryProjectionService:
         normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
         if normalized_idempotency_key:
             metadata["invoke_idempotency_key"] = normalized_idempotency_key
+        normalized_response_blocks = _normalize_message_block_specs(response_blocks)
         if (
             source == "manual"
             and (session_title := derive_session_title_from_query(query))
@@ -635,7 +723,15 @@ class SessionHistoryProjectionService:
             content=query,
             source="user_input",
         )
-        if isinstance(response_content, str) and response_content:
+        if normalized_response_blocks:
+            await _apply_message_block_specs(
+                db,
+                user_id=user_id,
+                message_id=cast(UUID, agent_message.id),
+                block_specs=normalized_response_blocks,
+                idempotency_key=normalized_idempotency_key,
+            )
+        elif isinstance(response_content, str) and response_content:
             existing_agent_blocks = await block_store.list_blocks_by_message_id(
                 db,
                 user_id=user_id,
@@ -693,6 +789,7 @@ class SessionHistoryProjectionService:
         invoke_metadata: dict[str, Any] | None = None,
         extra_metadata: dict[str, Any] | None = None,
         response_metadata: dict[str, Any] | None = None,
+        response_blocks: list[dict[str, Any]] | None = None,
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
@@ -722,6 +819,7 @@ class SessionHistoryProjectionService:
             invoke_metadata=invoke_metadata,
             extra_metadata=extra_metadata,
             response_metadata=response_metadata,
+            response_blocks=response_blocks,
             idempotency_key=idempotency_key,
             user_message_id=user_message_id,
             agent_message_id=agent_message_id,
@@ -729,6 +827,144 @@ class SessionHistoryProjectionService:
             finish_reason=finish_reason,
             error_code=error_code,
         )
+
+    async def record_user_message_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        user_id: UUID,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        user_message_id: UUID | None = None,
+    ) -> dict[str, UUID]:
+        session = await self._support.get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if session is None:
+            return {}
+
+        normalized_content = str(content or "")
+        if not normalized_content.strip():
+            raise ValueError("invalid_query")
+
+        normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
+        existing_user_message = (
+            await self._support.find_message_by_id_and_sender(
+                db,
+                user_id=user_id,
+                message_id=user_message_id,
+                sender="user",
+                conversation_id=local_session_id,
+            )
+            if isinstance(user_message_id, UUID)
+            else None
+        )
+        if existing_user_message is None and normalized_idempotency_key:
+            existing_user_message = await self._support.find_message_by_idempotency_key(
+                db,
+                user_id=user_id,
+                conversation_id=local_session_id,
+                sender="user",
+                idempotency_key=normalized_idempotency_key,
+            )
+            if (
+                existing_user_message is not None
+                and isinstance(user_message_id, UUID)
+                and existing_user_message.id != user_message_id
+            ):
+                raise ValueError("message_id_conflict")
+
+        message_metadata = dict(metadata or {})
+        if normalized_idempotency_key:
+            message_metadata["invoke_idempotency_key"] = normalized_idempotency_key
+
+        if existing_user_message is None:
+            try:
+                create_kwargs: dict[str, Any] = {
+                    "user_id": user_id,
+                    "sender": "user",
+                    "status": "done",
+                    "conversation_id": local_session_id,
+                    "metadata": message_metadata,
+                    "invoke_idempotency_key": normalized_idempotency_key,
+                }
+                if isinstance(user_message_id, UUID):
+                    create_kwargs["id"] = user_message_id
+                user_message = await message_store.create_agent_message(
+                    db,
+                    **create_kwargs,
+                )
+            except message_store.AgentMessageCreationError as exc:
+                if isinstance(user_message_id, UUID) and is_agent_message_pk_violation(
+                    exc
+                ):
+                    raise ValueError("message_id_conflict") from exc
+                if not (
+                    normalized_idempotency_key
+                    and is_idempotency_unique_violation(
+                        exc,
+                        index_name="uq_agent_messages_conversation_sender_invoke_idempotency_key",
+                    )
+                ):
+                    raise
+                recovered_user_message = (
+                    await self._support.find_message_by_idempotency_key(
+                        db,
+                        user_id=user_id,
+                        conversation_id=local_session_id,
+                        sender="user",
+                        idempotency_key=normalized_idempotency_key,
+                    )
+                )
+                if recovered_user_message is None:
+                    raise
+                if (
+                    isinstance(user_message_id, UUID)
+                    and recovered_user_message.id != user_message_id
+                ):
+                    raise ValueError("message_id_conflict")
+                user_message = recovered_user_message
+        else:
+            user_message = existing_user_message
+            if isinstance(user_message_id, UUID) and user_message.id != user_message_id:
+                raise ValueError("message_id_conflict")
+            if normalized_idempotency_key:
+                setattr(
+                    user_message,
+                    "invoke_idempotency_key",
+                    normalized_idempotency_key,
+                )
+            if message_metadata:
+                merged_metadata = dict(
+                    getattr(user_message, "message_metadata", {}) or {}
+                )
+                merged_metadata.update(message_metadata)
+                setattr(user_message, "message_metadata", merged_metadata)
+                await db.flush()
+
+        await self._support.ensure_idempotent_user_query(
+            db,
+            user_id=user_id,
+            user_message=user_message,
+            query=normalized_content,
+            idempotency_key=normalized_idempotency_key,
+        )
+        await self._support.upsert_single_text_block(
+            db,
+            user_id=user_id,
+            message_id=cast(UUID, user_message.id),
+            content=normalized_content,
+            source="user_input",
+        )
+        setattr(session, "last_active_at", utc_now())
+        return {
+            "conversation_id": local_session_id,
+            "user_message_id": cast(UUID, user_message.id),
+        }
 
     async def ensure_local_invoke_message_headers_by_local_session_id(
         self,

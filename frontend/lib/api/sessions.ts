@@ -52,9 +52,11 @@ type SessionMessageBlockDetailItem = {
 export type SessionMessageItem = {
   id: string;
   role: "user" | "agent" | "system";
+  kind?: string;
   content?: string;
   created_at: string;
   status?: string;
+  operationId?: string | null;
   blocks?: SessionMessageBlockItem[];
 };
 
@@ -75,6 +77,24 @@ export type SessionCancelResult = {
   taskId?: string | null;
   cancelled: boolean;
   status: "accepted" | "pending" | "no_inflight" | "already_terminal";
+};
+
+export type SessionControlResult = {
+  intent: "append" | "preempt";
+  status: "accepted" | "completed" | "no_inflight" | "unavailable" | "failed";
+  sessionId?: string | null;
+};
+
+export type SessionAppendMessageResult = {
+  conversationId: string;
+  userMessage: SessionMessageItem;
+  sessionControl: SessionControlResult;
+};
+
+export type SessionCommandRunResult = {
+  conversationId: string;
+  userMessage: SessionMessageItem;
+  agentMessage: SessionMessageItem;
 };
 
 export const listSessionsPage = async (options?: {
@@ -225,3 +245,76 @@ export const cancelSession = async (
       method: "POST",
     },
   );
+
+export const appendSessionMessage = async (
+  conversationId: string,
+  input: {
+    content: string;
+    userMessageId?: string;
+    operationId?: string;
+    metadata?: Record<string, unknown>;
+    workingDirectory?: string | null;
+  },
+): Promise<SessionAppendMessageResult> =>
+  apiRequest<
+    SessionAppendMessageResult,
+    {
+      content: string;
+      userMessageId?: string;
+      operationId?: string;
+      metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
+    }
+  >(`/me/conversations/${encodeURIComponent(conversationId)}/messages:append`, {
+    method: "POST",
+    body: {
+      content: input.content,
+      ...(input.userMessageId ? { userMessageId: input.userMessageId } : {}),
+      ...(input.operationId ? { operationId: input.operationId } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(input.workingDirectory
+        ? { workingDirectory: input.workingDirectory }
+        : {}),
+    },
+  });
+
+export const runSessionCommand = async (
+  conversationId: string,
+  input: {
+    command: string;
+    arguments: string;
+    prompt: string;
+    userMessageId?: string;
+    agentMessageId?: string;
+    operationId?: string;
+    metadata?: Record<string, unknown>;
+    workingDirectory?: string | null;
+  },
+): Promise<SessionCommandRunResult> =>
+  apiRequest<
+    SessionCommandRunResult,
+    {
+      command: string;
+      arguments: string;
+      prompt: string;
+      userMessageId?: string;
+      agentMessageId?: string;
+      operationId?: string;
+      metadata?: Record<string, unknown>;
+      workingDirectory?: string | null;
+    }
+  >(`/me/conversations/${encodeURIComponent(conversationId)}/commands:run`, {
+    method: "POST",
+    body: {
+      command: input.command,
+      arguments: input.arguments,
+      prompt: input.prompt,
+      ...(input.userMessageId ? { userMessageId: input.userMessageId } : {}),
+      ...(input.agentMessageId ? { agentMessageId: input.agentMessageId } : {}),
+      ...(input.operationId ? { operationId: input.operationId } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(input.workingDirectory
+        ? { workingDirectory: input.workingDirectory }
+        : {}),
+    },
+  });

@@ -10,9 +10,11 @@ import {
 type SessionMessageItem = {
   id: string;
   role: string;
+  kind?: string;
   content?: string;
   created_at: string;
   status?: string;
+  operationId?: string | null;
   blocks?: {
     id: string;
     type: string;
@@ -24,15 +26,6 @@ type SessionMessageItem = {
     toolCall?: ToolCallView | null;
     interrupt?: RuntimeInterrupt | null;
   }[];
-};
-
-type A2AMessageItem = {
-  messageId?: string;
-  message_id?: string;
-  role?: string;
-  parts?: unknown[];
-  createdAt?: string;
-  created_at?: string;
 };
 
 type MapSessionMessagesOptions = {
@@ -116,76 +109,6 @@ const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
   });
 };
 
-const extractTextFromParts = (parts: unknown[]) =>
-  parts
-    .map((part) => {
-      if (!part || typeof part !== "object" || Array.isArray(part)) {
-        return null;
-      }
-      const typed = part as {
-        kind?: unknown;
-        type?: unknown;
-        text?: unknown;
-        content?: unknown;
-      };
-      const rawKind = typed.kind ?? typed.type;
-      const normalizedKind =
-        typeof rawKind === "string" ? rawKind.trim().toLowerCase() : null;
-      if (normalizedKind && normalizedKind !== "text") {
-        return null;
-      }
-      if (typeof typed.text === "string") {
-        return typed.text;
-      }
-      if (typeof typed.content === "string") {
-        return typed.content;
-      }
-      return null;
-    })
-    .filter((item): item is string => Boolean(item))
-    .join("");
-
-export const mapA2AMessageToChatMessage = (
-  item: A2AMessageItem | null | undefined,
-  options?: {
-    fallbackCreatedAt?: string;
-  },
-): ChatMessage | null => {
-  if (!item || typeof item !== "object") {
-    return null;
-  }
-  const messageId =
-    typeof item.messageId === "string" && item.messageId.trim()
-      ? item.messageId.trim()
-      : typeof item.message_id === "string" && item.message_id.trim()
-        ? item.message_id.trim()
-        : "";
-  if (!messageId) {
-    return null;
-  }
-
-  const content = Array.isArray(item.parts)
-    ? extractTextFromParts(item.parts)
-    : "";
-  if (!content.trim()) {
-    return null;
-  }
-
-  return {
-    id: messageId,
-    role: normalizeSessionMessageRole(item.role ?? "assistant"),
-    content,
-    createdAt:
-      typeof item.createdAt === "string" && item.createdAt.trim()
-        ? item.createdAt
-        : typeof item.created_at === "string" && item.created_at.trim()
-          ? item.created_at
-          : (options?.fallbackCreatedAt ?? new Date().toISOString()),
-    status: "done",
-    blocks: [],
-  };
-};
-
 export const mapSessionMessagesToChatMessages = (
   items: SessionMessageItem[],
   options?: MapSessionMessagesOptions,
@@ -218,9 +141,15 @@ export const mapSessionMessagesToChatMessages = (
     mapped.push({
       id: messageId,
       role,
+      kind: typeof item.kind === "string" ? item.kind : "message",
       content: normalizedContent,
       createdAt: item.created_at,
       status: resolveMessageStatus(item.status),
+      operationId:
+        typeof item.operationId === "string" &&
+        item.operationId.trim().length > 0
+          ? item.operationId
+          : null,
       blocks,
     });
   });

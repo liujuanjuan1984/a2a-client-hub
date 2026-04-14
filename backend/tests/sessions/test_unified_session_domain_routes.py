@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -302,6 +303,311 @@ async def test_invalid_messages_cursor_returns_400(
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_before_cursor"
+
+
+async def test_append_route_persists_canonical_user_message(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="append")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-append-1",
+        title="Append Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+    operation_id = str(uuid4())
+    user_message_id = str(uuid4())
+    extension_calls: list[dict[str, object]] = []
+
+    class _FakeExtensions:
+        async def append_session_control(self, **kwargs):
+            extension_calls.append(kwargs)
+            assert kwargs["session_id"] == "ses-append-1"
+            assert kwargs["request_payload"]["parts"][0]["text"] == "append this"
+            return SimpleNamespace(
+                success=True,
+                result={"ok": True, "session_id": "ses-append-1"},
+                error_code=None,
+            )
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(
+        me_sessions,
+        "get_a2a_extensions_service",
+        lambda: _FakeExtensions(),
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        append_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:append",
+            json={
+                "content": "append this",
+                "userMessageId": user_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert append_resp.status_code == 200
+        append_payload = append_resp.json()
+        assert append_payload["conversationId"] == str(session.id)
+        assert append_payload["userMessage"]["role"] == "user"
+        assert append_payload["userMessage"]["kind"] == "session_append_user"
+        assert append_payload["userMessage"]["content"] == "append this"
+        assert append_payload["userMessage"]["operationId"] == operation_id
+        assert append_payload["sessionControl"] == {
+            "intent": "append",
+            "status": "accepted",
+            "sessionId": "ses-append-1",
+        }
+        replay_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:append",
+            json={
+                "content": "append this",
+                "userMessageId": user_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_resp.status_code == 200
+        replay_payload = replay_resp.json()
+        assert (
+            replay_payload["userMessage"]["id"] == append_payload["userMessage"]["id"]
+        )
+        assert len(extension_calls) == 1
+
+        messages_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+        assert messages_resp.status_code == 200
+        items = messages_resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["id"] == append_payload["userMessage"]["id"]
+        assert items[0]["kind"] == "session_append_user"
+        assert items[0]["content"] == "append this"
+        assert items[0]["operationId"] == operation_id
+
+    session.external_session_id = None
+    await async_db_session.commit()
+
+    async def _replay_runtime_should_not_run(**kwargs):
+        raise AssertionError("replay should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _replay_runtime_should_not_run
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        replay_without_binding_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:append",
+            json={
+                "content": "append this",
+                "userMessageId": user_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_without_binding_resp.status_code == 200
+        assert (
+            replay_without_binding_resp.json()["userMessage"]["id"]
+            == append_payload["userMessage"]["id"]
+        )
+
+
+async def test_command_route_persists_canonical_command_messages(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="command")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-command-1",
+        title="Command Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+    operation_id = str(uuid4())
+    user_message_id = str(uuid4())
+    agent_message_id = str(uuid4())
+    extension_calls: list[dict[str, object]] = []
+
+    class _FakeExtensions:
+        async def command_session(self, **kwargs):
+            extension_calls.append(kwargs)
+            assert kwargs["session_id"] == "ses-command-1"
+            assert kwargs["request_payload"]["command"] == "/review"
+            assert kwargs["request_payload"]["arguments"] == "--quick"
+            return SimpleNamespace(
+                success=True,
+                result={
+                    "item": {
+                        "messageId": "upstream-msg-1",
+                        "role": "agent",
+                        "parts": [
+                            {"type": "text", "text": "Review complete."},
+                            {
+                                "type": "data",
+                                "data": {
+                                    "summary": "done",
+                                    "files": ["backend/app.py"],
+                                },
+                            },
+                        ],
+                    }
+                },
+                error_code=None,
+            )
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(
+        me_sessions,
+        "get_a2a_extensions_service",
+        lambda: _FakeExtensions(),
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        command_resp = await client.post(
+            f"/me/conversations/{session.id}/commands:run",
+            json={
+                "command": "/review",
+                "arguments": "--quick",
+                "prompt": "Focus on tests",
+                "userMessageId": user_message_id,
+                "agentMessageId": agent_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert command_resp.status_code == 200
+        command_payload = command_resp.json()
+        assert command_payload["conversationId"] == str(session.id)
+        assert (
+            command_payload["userMessage"]["content"]
+            == "/review --quick\nFocus on tests"
+        )
+        assert command_payload["userMessage"]["kind"] == "session_command_input"
+        assert command_payload["userMessage"]["operationId"] == operation_id
+        assert command_payload["agentMessage"]["content"] == "Review complete."
+        assert command_payload["agentMessage"]["kind"] == "session_command_output"
+        assert command_payload["agentMessage"]["operationId"] == operation_id
+        assert [
+            block["type"] for block in command_payload["agentMessage"]["blocks"]
+        ] == [
+            "text",
+            "data",
+        ]
+        replay_resp = await client.post(
+            f"/me/conversations/{session.id}/commands:run",
+            json={
+                "command": "/review",
+                "arguments": "--quick",
+                "prompt": "Focus on tests",
+                "userMessageId": user_message_id,
+                "agentMessageId": agent_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_resp.status_code == 200
+        replay_payload = replay_resp.json()
+        assert (
+            replay_payload["userMessage"]["id"] == command_payload["userMessage"]["id"]
+        )
+        assert (
+            replay_payload["agentMessage"]["id"]
+            == command_payload["agentMessage"]["id"]
+        )
+        assert len(extension_calls) == 1
+
+        messages_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+        assert messages_resp.status_code == 200
+        items = messages_resp.json()["items"]
+        assert [item["id"] for item in items] == [
+            command_payload["userMessage"]["id"],
+            command_payload["agentMessage"]["id"],
+        ]
+        assert [item["kind"] for item in items] == [
+            "session_command_input",
+            "session_command_output",
+        ]
+        assert items[0]["content"] == "/review --quick\nFocus on tests"
+        assert items[1]["content"] == "Review complete."
+        assert items[1]["operationId"] == operation_id
+        assert [block["type"] for block in items[1]["blocks"]] == ["text", "data"]
+
+    session.external_session_id = None
+    await async_db_session.commit()
+
+    async def _replay_runtime_should_not_run(**kwargs):
+        raise AssertionError("replay should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _replay_runtime_should_not_run
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        replay_without_binding_resp = await client.post(
+            f"/me/conversations/{session.id}/commands:run",
+            json={
+                "command": "/review",
+                "arguments": "--quick",
+                "prompt": "Focus on tests",
+                "userMessageId": user_message_id,
+                "agentMessageId": agent_message_id,
+                "operationId": operation_id,
+            },
+        )
+        assert replay_without_binding_resp.status_code == 200
+        assert (
+            replay_without_binding_resp.json()["agentMessage"]["id"]
+            == command_payload["agentMessage"]["id"]
+        )
 
 
 async def test_blocks_query_returns_404_when_block_not_found(

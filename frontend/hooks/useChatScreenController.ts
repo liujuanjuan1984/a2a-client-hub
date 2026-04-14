@@ -25,7 +25,6 @@ import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
   A2AExtensionCallError,
-  commandSession,
   recoverInterrupts,
 } from "@/lib/api/a2aExtensions";
 import type {
@@ -41,7 +40,12 @@ import {
   runSelfManagementBuiltInAgent,
   toPendingRuntimeInterrupt,
 } from "@/lib/api/selfManagementAgent";
-import { continueSession } from "@/lib/api/sessions";
+import {
+  appendSessionMessage,
+  continueSession,
+  runSessionCommand,
+  type SessionMessageItem,
+} from "@/lib/api/sessions";
 import {
   buildPendingInterruptState,
   buildInvokePayload,
@@ -53,7 +57,6 @@ import {
 } from "@/lib/chat-utils";
 import {
   addConversationMessage,
-  addConversationOverlayMessage,
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
 import {
@@ -67,11 +70,8 @@ import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { parseComposerInput } from "@/lib/sessionCommand";
-import { mapA2AMessageToChatMessage } from "@/lib/sessionHistory";
-import {
-  readSharedSessionBinding,
-  readSharedStreamIdentity,
-} from "@/lib/sharedMetadata";
+import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
+import { readSharedStreamIdentity } from "@/lib/sharedMetadata";
 import { toast } from "@/lib/toast";
 import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -623,6 +623,17 @@ export function useChatScreenController({
     [],
   );
 
+  const addCanonicalSessionMessages = useCallback(
+    (nextConversationId: string, items: SessionMessageItem[]) => {
+      mapSessionMessagesToChatMessages(items, {
+        keepEmptyMessages: true,
+      }).forEach((message) => {
+        addConversationMessage(nextConversationId, message);
+      });
+    },
+    [],
+  );
+
   const isAppendAvailableForSession = useCallback(
     (
       currentSession:
@@ -659,7 +670,7 @@ export function useChatScreenController({
       nextConversationId: string,
       nextAgentId: string,
       content: string,
-      nextAgentSource: AgentSource,
+      _nextAgentSource: AgentSource,
     ) => {
       const parsedInput = parseComposerInput(content);
       if (parsedInput.kind !== "message") {
@@ -682,25 +693,18 @@ export function useChatScreenController({
       }
 
       const trimmedContent = parsedInput.text.trim();
+      const operationId = generateUuid();
       const userMessageId = generateUuid();
-      const response = await invokeSessionControl(
-        nextConversationId,
-        nextAgentId,
-        nextAgentSource,
-        trimmedContent,
-        {
-          userMessageId,
-          sessionControlIntent: "append",
-        },
-      );
-
-      addConversationOverlayMessage(nextConversationId, {
-        id: userMessageId,
-        role: "user",
+      const response = await appendSessionMessage(nextConversationId, {
         content: trimmedContent,
-        createdAt: new Date().toISOString(),
-        status: "done",
+        userMessageId,
+        operationId,
+        metadata: currentSession?.metadata ?? {},
+        ...(currentSession?.workingDirectory
+          ? { workingDirectory: currentSession.workingDirectory }
+          : {}),
       });
+      addCanonicalSessionMessages(nextConversationId, [response.userMessage]);
       useChatStore.getState().bindExternalSession(nextConversationId, {
         agentId: nextAgentId,
         externalSessionId:
@@ -711,7 +715,7 @@ export function useChatScreenController({
         "Your message was sent to the running upstream session.",
       );
     },
-    [invokeSessionControl, isAppendAvailableForSession],
+    [addCanonicalSessionMessages, isAppendAvailableForSession],
   );
 
   const preemptRunningSession = useCallback(
@@ -784,65 +788,26 @@ export function useChatScreenController({
           throw error;
         }
 
-        const sessionBinding = readSharedSessionBinding(
-          currentSession?.metadata,
-        );
-        const provider =
-          currentSession?.externalSessionRef?.provider?.trim() ||
-          sessionBinding.provider;
-        const metadata = {
-          ...(provider ? { provider } : {}),
-          externalSessionId,
-        };
-        const createdAt = new Date().toISOString();
         if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
           throw new Error("Built-in agents do not support session commands.");
         }
-        const result = await commandSession({
-          source: nextAgentSource,
-          agentId: nextAgentId,
-          sessionId: externalSessionId,
-          request: {
-            command: parsedInput.command,
-            arguments: parsedInput.arguments,
-            ...(parsedInput.prompt
-              ? {
-                  parts: [
-                    {
-                      type: "text",
-                      text: parsedInput.prompt,
-                    },
-                  ],
-                }
-              : {}),
-          },
-          metadata,
+        const operationId = generateUuid();
+        const result = await runSessionCommand(nextConversationId, {
+          command: parsedInput.command,
+          arguments: parsedInput.arguments,
+          prompt: parsedInput.prompt,
+          userMessageId: generateUuid(),
+          agentMessageId: generateUuid(),
+          operationId,
+          metadata: currentSession?.metadata ?? {},
           ...(currentSession?.workingDirectory
             ? { workingDirectory: currentSession.workingDirectory }
             : {}),
         });
-        addConversationOverlayMessage(nextConversationId, {
-          id: generateUuid(),
-          role: "user",
-          content: parsedInput.prompt
-            ? `${parsedInput.command}${
-                parsedInput.arguments ? ` ${parsedInput.arguments}` : ""
-              }\n${parsedInput.prompt}`
-            : `${parsedInput.command}${
-                parsedInput.arguments ? ` ${parsedInput.arguments}` : ""
-              }`,
-          createdAt,
-          status: "done",
-        });
-        const mapped = mapA2AMessageToChatMessage(result.item, {
-          fallbackCreatedAt: createdAt,
-        });
-        if (!mapped) {
-          throw new Error(
-            "Session command response did not include a usable message.",
-          );
-        }
-        addConversationOverlayMessage(nextConversationId, mapped);
+        addCanonicalSessionMessages(nextConversationId, [
+          result.userMessage,
+          result.agentMessage,
+        ]);
         toast.success("Command executed", parsedInput.command);
         return;
       }
@@ -899,6 +864,7 @@ export function useChatScreenController({
     },
     [
       appendMessageToRunningSession,
+      addCanonicalSessionMessages,
       buildSkippedToastError,
       isAppendAvailableForSession,
       runtimeStatusContract,

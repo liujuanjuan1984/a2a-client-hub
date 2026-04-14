@@ -1,6 +1,7 @@
 import React from "react";
 import { Text, View } from "react-native";
 
+import { DataBlock } from "./blocks/DataBlock";
 import { GenericBlock } from "./blocks/GenericBlock";
 import { InterruptEventBlock } from "./blocks/InterruptEventBlock";
 import { ReasoningBlock } from "./blocks/ReasoningBlock";
@@ -68,6 +69,11 @@ export function MessageBlock({
           fallbackBlockId={blockId}
           isFirst={isFirst}
         />
+      );
+      break;
+    case "data":
+      content = (
+        <DataBlock block={block} fallbackBlockId={blockId} isFirst={isFirst} />
       );
       break;
     case "text":

@@ -24,9 +24,11 @@ export type MessageBlock = {
 export type ChatMessage = {
   id: string;
   role: ChatRole;
+  kind?: string;
   content: string;
   createdAt: string;
   status?: "streaming" | "done" | "error" | "interrupted";
+  operationId?: string | null;
   blocks?: MessageBlock[];
   errorCode?: string | null;
   errorMessage?: string | null;
