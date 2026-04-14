@@ -185,16 +185,56 @@ describe("AgentListScreen", () => {
     expect(mockFlatLists).toHaveLength(1);
     const labels = mockButtons.map((button) => button.label);
     expect(labels).toContain("Check all");
+    expect(labels).toContain("All 3");
+    expect(labels).toContain("Healthy 2");
+    expect(labels).toContain("Not checked 1");
     expect(labels).toContain("Edit");
-    expect(labels).toContain("Details");
-    expect(labels.filter((label) => label === "Chat")).toHaveLength(3);
+    expect(labels.filter((label) => label === "Chat")).toHaveLength(2);
     expect(labels).not.toContain("My");
     expect(labels).not.toContain("Shared");
     expect(
       tree!.root
         .findAllByType(Text)
+        .some(
+          (node: ReactTestInstance) => node.props.children === "Shared Agent",
+        ),
+    ).toBe(false);
+    expect(
+      tree!.root
+        .findAllByType(Text)
         .some((node: ReactTestInstance) => node.props.children === "BUILT-IN"),
     ).toBe(true);
+  });
+
+  it("switches the unified list when a health filter is selected", async () => {
+    let tree;
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const notCheckedButton = mockButtons.find(
+      (button) => button.label === "Not checked 1",
+    );
+    expect(notCheckedButton).toBeDefined();
+
+    await act(async () => {
+      (notCheckedButton?.onPress as (() => void) | undefined)?.();
+    });
+
+    expect(
+      tree!.root
+        .findAllByType(Text)
+        .some(
+          (node: ReactTestInstance) => node.props.children === "Shared Agent",
+        ),
+    ).toBe(true);
+    expect(
+      tree!.root
+        .findAllByType(Text)
+        .some(
+          (node: ReactTestInstance) => node.props.children === "Personal Agent",
+        ),
+    ).toBe(false);
   });
 
   it("triggers a unified health check from the header action", async () => {
