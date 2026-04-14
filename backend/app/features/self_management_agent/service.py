@@ -23,6 +23,7 @@ from app.core.security import (
     SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
     create_self_management_access_token,
     create_self_management_interrupt_token,
+    get_self_management_allowed_operations,
     get_self_management_interrupt_conversation_id,
     get_self_management_interrupt_message,
     get_self_management_interrupt_tool_names,
@@ -71,15 +72,27 @@ _DEFAULT_SYSTEM_PROMPT = (
     "required identifiers, ask one concise follow-up question."
 )
 _WRITE_APPROVAL_SENTINEL = "[[SELF_MANAGEMENT_WRITE_APPROVAL_REQUIRED]]"
+_WRITE_APPROVAL_OPERATIONS_PREFIX = "[[SELF_MANAGEMENT_WRITE_OPERATIONS:"
+_WRITE_APPROVAL_OPERATIONS_SUFFIX = "]]"
 _READ_ONLY_APPENDIX = (
     " This run is read-only. Do not attempt write operations. If the user's latest "
     "request would require a write tool, explain the intended change briefly, do not "
-    "claim that any change was applied, and append a final line containing exactly "
-    f"{_WRITE_APPROVAL_SENTINEL}."
+    "claim that any change was applied, append a final line containing exactly "
+    f"{_WRITE_APPROVAL_SENTINEL}, then append one more final line containing exactly "
+    "`[[SELF_MANAGEMENT_WRITE_OPERATIONS:<comma-separated operation ids>]]` using "
+    "only the required write operation ids from this catalog: "
+    "self.agents.check_health, self.agents.check_health_all, self.agents.create, "
+    "self.agents.delete, self.agents.update_config, self.jobs.create, "
+    "self.jobs.delete, self.jobs.pause, self.jobs.resume, self.jobs.update, "
+    "self.jobs.update_prompt, self.jobs.update_schedule, self.sessions.archive, "
+    "self.sessions.unarchive, self.sessions.update."
 )
 _WRITE_ENABLED_APPENDIX = (
     " This run includes explicitly approved write tools. Only perform a write when "
-    "the user's latest request clearly asks for that change."
+    "the user's latest request clearly asks for that change. When additional write "
+    "operations outside the approved tool set are needed, do not claim that any "
+    "change was applied, append the approval sentinel, and append the exact "
+    "operation ids that still require approval."
 )
 
 
@@ -165,8 +178,8 @@ class _ConversationRuntimeState:
     """One in-memory swival conversation runtime owned by one user conversation."""
 
     session: Any | None = None
-    write_tools_enabled: bool = False
-    auto_approve_writes: bool = False
+    delegated_write_operation_ids: frozenset[str] = frozenset()
+    auto_approve_write_operation_ids: frozenset[str] = frozenset()
     delegated_token_expires_at_monotonic: float = 0.0
     last_accessed_monotonic: float = 0.0
     lock: asyncio.Lock | None = None
@@ -201,11 +214,11 @@ class SelfManagementBuiltInAgentService:
         self,
         *,
         runtime_state: _ConversationRuntimeState,
-        write_tools_enabled: bool,
+        delegated_write_operation_ids: frozenset[str],
     ) -> bool:
         if runtime_state.session is None:
             return True
-        if runtime_state.write_tools_enabled != write_tools_enabled:
+        if runtime_state.delegated_write_operation_ids != delegated_write_operation_ids:
             return True
         expires_at = runtime_state.delegated_token_expires_at_monotonic
         if expires_at <= 0:
@@ -220,7 +233,7 @@ class SelfManagementBuiltInAgentService:
         session = runtime_state.session
         runtime_state.session = None
         runtime_state.delegated_token_expires_at_monotonic = 0.0
-        runtime_state.write_tools_enabled = False
+        runtime_state.delegated_write_operation_ids = frozenset()
         runtime_state.last_accessed_monotonic = time.monotonic()
         if session is not None:
             await asyncio.to_thread(self._close_swival_session, session)
@@ -400,6 +413,7 @@ class SelfManagementBuiltInAgentService:
         conversation_id: str,
         message: str,
         allow_write_tools: bool,
+        allowed_write_operation_ids: frozenset[str] = frozenset(),
     ) -> _ExecutedBuiltInRun:
         if not self.is_configured():
             raise SelfManagementBuiltInAgentConfigError(
@@ -426,18 +440,31 @@ class SelfManagementBuiltInAgentService:
         )
         tool_definitions: tuple[SelfManagementToolDefinition, ...]
         async with runtime_state.get_lock():
-            effective_write_tools = (
-                allow_write_tools or runtime_state.auto_approve_writes
+            effective_write_operation_ids = (
+                allowed_write_operation_ids
+                if allowed_write_operation_ids
+                else (
+                    frozenset(
+                        definition.operation_id
+                        for definition in self._list_write_tool_definitions()
+                    )
+                    if allow_write_tools
+                    else runtime_state.auto_approve_write_operation_ids
+                )
+            )
+            effective_write_tools = allow_write_tools or bool(
+                effective_write_operation_ids
             )
             tool_definitions = self._select_run_tool_definitions(
-                allow_write_tools=effective_write_tools
+                allow_write_tools=effective_write_tools,
+                delegated_write_operation_ids=effective_write_operation_ids,
             )
             session = await self._ensure_conversation_session(
                 db=db,
                 runtime_state=runtime_state,
                 current_user=current_user,
                 conversation_id=local_session_id,
-                write_tools_enabled=effective_write_tools,
+                delegated_write_operation_ids=effective_write_operation_ids,
             )
             try:
                 result = await asyncio.to_thread(session.ask, message)
@@ -456,16 +483,26 @@ class SelfManagementBuiltInAgentService:
         answer = cast(str | None, getattr(result, "answer", None))
         exhausted = bool(getattr(result, "exhausted", False))
         if not effective_write_tools and self._answer_requests_write_approval(answer):
+            requested_write_operation_ids = self._extract_requested_write_operation_ids(
+                answer
+            )
+            if not requested_write_operation_ids:
+                await self._invalidate_runtime_session(runtime_state)
+                raise SelfManagementBuiltInAgentUnavailableError(
+                    "swival built-in agent requested write approval without "
+                    "declaring any write operations"
+                )
             interrupt = self._build_permission_interrupt(
                 current_user=current_user,
                 conversation_id=local_session_id,
                 message=message,
                 answer=answer,
+                allowed_write_operation_ids=requested_write_operation_ids,
             )
             return _ExecutedBuiltInRun(
                 result=SelfManagementBuiltInAgentRunResult(
                     status=SelfManagementBuiltInAgentRunStatus.INTERRUPTED,
-                    answer=self._strip_write_approval_sentinel(answer),
+                    answer=self._strip_write_approval_metadata(answer),
                     exhausted=exhausted,
                     runtime="swival",
                     resources=profile.resources,
@@ -536,6 +573,11 @@ class SelfManagementBuiltInAgentService:
             raise SelfManagementBuiltInAgentUnavailableError(
                 "The write approval request is missing the original prompt."
             )
+        approved_operation_ids = get_self_management_allowed_operations(claims)
+        if not approved_operation_ids:
+            raise SelfManagementBuiltInAgentUnavailableError(
+                "The write approval request is missing the approved operations."
+            )
 
         if reply == "reject":
             result = SelfManagementBuiltInAgentRunResult(
@@ -579,7 +621,7 @@ class SelfManagementBuiltInAgentService:
                 conversation_id=conversation_id,
             )
             async with runtime_state.get_lock():
-                runtime_state.auto_approve_writes = True
+                runtime_state.auto_approve_write_operation_ids = approved_operation_ids
                 runtime_state.last_accessed_monotonic = time.monotonic()
 
         executed = await self._execute_run(
@@ -588,6 +630,7 @@ class SelfManagementBuiltInAgentService:
             conversation_id=conversation_id,
             message=interrupt_message,
             allow_write_tools=True,
+            allowed_write_operation_ids=approved_operation_ids,
         )
         await self._persist_interrupt_resolution(
             db=db,
@@ -641,8 +684,20 @@ class SelfManagementBuiltInAgentService:
         )
         return f"{base}{mount_path}/"
 
-    def _build_system_prompt(self, *, allow_write_tools: bool) -> str:
+    def _build_system_prompt(
+        self,
+        *,
+        allow_write_tools: bool,
+        delegated_write_operation_ids: frozenset[str] = frozenset(),
+    ) -> str:
         if allow_write_tools:
+            if delegated_write_operation_ids:
+                approved_operations = ", ".join(sorted(delegated_write_operation_ids))
+                return (
+                    _DEFAULT_SYSTEM_PROMPT
+                    + _WRITE_ENABLED_APPENDIX
+                    + f" The currently approved write operations are: {approved_operations}."
+                )
             return _DEFAULT_SYSTEM_PROMPT + _WRITE_ENABLED_APPENDIX
         return _DEFAULT_SYSTEM_PROMPT + _READ_ONLY_APPENDIX
 
@@ -651,11 +706,59 @@ class SelfManagementBuiltInAgentService:
             return False
         return _WRITE_APPROVAL_SENTINEL in answer
 
-    def _strip_write_approval_sentinel(self, answer: str | None) -> str | None:
+    def _strip_write_approval_metadata(self, answer: str | None) -> str | None:
         if not isinstance(answer, str):
             return answer
-        stripped = answer.replace(_WRITE_APPROVAL_SENTINEL, "").strip()
+        stripped_lines = [
+            line.strip()
+            for line in answer.splitlines()
+            if line.strip()
+            and line.strip() != _WRITE_APPROVAL_SENTINEL
+            and not (
+                line.strip().startswith(_WRITE_APPROVAL_OPERATIONS_PREFIX)
+                and line.strip().endswith(_WRITE_APPROVAL_OPERATIONS_SUFFIX)
+            )
+        ]
+        stripped = "\n".join(stripped_lines).strip()
         return stripped or None
+
+    def _list_write_tool_definitions(self) -> tuple[SelfManagementToolDefinition, ...]:
+        return tuple(
+            definition
+            for definition in list_self_management_mcp_tool_definitions()
+            if definition.confirmation_policy != SelfManagementConfirmationPolicy.NONE
+        )
+
+    def _extract_requested_write_operation_ids(
+        self,
+        answer: str | None,
+    ) -> tuple[str, ...]:
+        if not isinstance(answer, str):
+            return ()
+        allowed_operation_ids = {
+            definition.operation_id
+            for definition in self._list_write_tool_definitions()
+        }
+        requested_operation_ids: list[str] = []
+        for raw_line in answer.splitlines():
+            line = raw_line.strip()
+            if not (
+                line.startswith(_WRITE_APPROVAL_OPERATIONS_PREFIX)
+                and line.endswith(_WRITE_APPROVAL_OPERATIONS_SUFFIX)
+            ):
+                continue
+            raw_payload = line.removeprefix(
+                _WRITE_APPROVAL_OPERATIONS_PREFIX
+            ).removesuffix(_WRITE_APPROVAL_OPERATIONS_SUFFIX)
+            for raw_operation_id in raw_payload.split(","):
+                operation_id = raw_operation_id.strip()
+                if (
+                    operation_id
+                    and operation_id in allowed_operation_ids
+                    and operation_id not in requested_operation_ids
+                ):
+                    requested_operation_ids.append(operation_id)
+        return tuple(requested_operation_ids)
 
     def _build_permission_interrupt(
         self,
@@ -664,39 +767,52 @@ class SelfManagementBuiltInAgentService:
         conversation_id: str,
         message: str,
         answer: str | None,
+        allowed_write_operation_ids: tuple[str, ...],
     ) -> SelfManagementBuiltInAgentInterrupt:
-        write_tool_names = tuple(
-            definition.tool_name
-            for definition in self._select_run_tool_definitions(allow_write_tools=True)
-            if definition.confirmation_policy != SelfManagementConfirmationPolicy.NONE
+        write_tool_definitions = tuple(
+            definition
+            for definition in self._list_write_tool_definitions()
+            if definition.operation_id in allowed_write_operation_ids
         )
         request_id = create_self_management_interrupt_token(
             cast(Any, current_user.id),
             conversation_id=conversation_id,
             message=message,
-            tool_names=write_tool_names,
+            tool_names=tuple(
+                definition.tool_name for definition in write_tool_definitions
+            ),
+            allowed_operations=allowed_write_operation_ids,
         )
-        display_message = self._strip_write_approval_sentinel(answer) or (
+        display_message = self._strip_write_approval_metadata(answer) or (
             "This change requires explicit write approval before the built-in agent "
             "can continue."
         )
         return SelfManagementBuiltInAgentInterrupt(
             request_id=request_id,
             permission="self-management-write",
-            patterns=write_tool_names,
+            patterns=tuple(
+                definition.tool_name for definition in write_tool_definitions
+            ),
             display_message=display_message,
         )
 
     def _select_run_tool_definitions(
-        self, *, allow_write_tools: bool
+        self,
+        *,
+        allow_write_tools: bool,
+        delegated_write_operation_ids: frozenset[str] = frozenset(),
     ) -> tuple[SelfManagementToolDefinition, ...]:
         tool_definitions = list_self_management_mcp_tool_definitions()
-        if allow_write_tools:
+        if allow_write_tools and not delegated_write_operation_ids:
             return tool_definitions
+        allowed_write_operation_ids = (
+            delegated_write_operation_ids if allow_write_tools else frozenset()
+        )
         return tuple(
             definition
             for definition in tool_definitions
             if definition.confirmation_policy == SelfManagementConfirmationPolicy.NONE
+            or definition.operation_id in allowed_write_operation_ids
         )
 
     async def _ensure_local_builtin_session(
@@ -904,11 +1020,11 @@ class SelfManagementBuiltInAgentService:
         runtime_state: _ConversationRuntimeState,
         current_user: User,
         conversation_id: str,
-        write_tools_enabled: bool,
+        delegated_write_operation_ids: frozenset[str],
     ) -> Any:
         if not self._runtime_session_needs_refresh(
             runtime_state=runtime_state,
-            write_tools_enabled=write_tools_enabled,
+            delegated_write_operation_ids=delegated_write_operation_ids,
         ):
             runtime_state.last_accessed_monotonic = time.monotonic()
             return runtime_state.session
@@ -917,7 +1033,7 @@ class SelfManagementBuiltInAgentService:
         new_session = await asyncio.to_thread(
             self._create_swival_session,
             current_user=current_user,
-            write_tools_enabled=write_tools_enabled,
+            delegated_write_operation_ids=delegated_write_operation_ids,
         )
         if previous_session is not None:
             self._transfer_conversation_state(previous_session, new_session)
@@ -931,7 +1047,7 @@ class SelfManagementBuiltInAgentService:
             )
 
         runtime_state.session = new_session
-        runtime_state.write_tools_enabled = write_tools_enabled
+        runtime_state.delegated_write_operation_ids = delegated_write_operation_ids
         runtime_state.delegated_token_expires_at_monotonic = float(
             getattr(
                 new_session,
@@ -1070,11 +1186,13 @@ class SelfManagementBuiltInAgentService:
         self,
         *,
         current_user: User,
-        write_tools_enabled: bool,
+        delegated_write_operation_ids: frozenset[str],
     ) -> Any:
+        write_tools_enabled = bool(delegated_write_operation_ids)
         session_cls = self._load_swival_session_cls()
         tool_definitions = self._select_run_tool_definitions(
-            allow_write_tools=write_tools_enabled
+            allow_write_tools=write_tools_enabled,
+            delegated_write_operation_ids=delegated_write_operation_ids,
         )
         delegated_token_ttl_seconds = self._delegated_token_ttl_seconds()
         token = create_self_management_access_token(
@@ -1094,7 +1212,8 @@ class SelfManagementBuiltInAgentService:
             max_output_tokens=settings.self_management_swival_max_output_tokens,
             reasoning_effort=settings.self_management_swival_reasoning_effort,
             system_prompt=self._build_system_prompt(
-                allow_write_tools=write_tools_enabled
+                allow_write_tools=write_tools_enabled,
+                delegated_write_operation_ids=delegated_write_operation_ids,
             ),
             files="none",
             commands="none",
