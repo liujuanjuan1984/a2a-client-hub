@@ -1643,6 +1643,64 @@ async def test_built_in_agent_permission_reply_always_enables_session_scoped_wri
     ] == ("http://internal-mcp/mcp-write/")
 
 
+async def test_built_in_agent_requests_additional_approval_for_new_write_operations(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    interrupt = self_management_built_in_agent_service._build_permission_interrupt(
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        answer="Need approval",
+        allowed_write_operation_ids=("self.jobs.pause",),
+    )
+
+    await self_management_built_in_agent_service.reply_permission_interrupt(
+        db=async_db_session,
+        current_user=user,
+        request_id=interrupt.request_id,
+        reply="always",
+    )
+
+    _FakeSwivalSession.next_answer = _approval_answer(
+        "Deleting that agent requires additional approval.",
+        "self.agents.delete",
+    )
+    follow_up_result = await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Delete my agent",
+        allow_write_tools=False,
+    )
+
+    assert follow_up_result.status == "interrupted"
+    assert follow_up_result.write_tools_enabled is True
+    assert follow_up_result.interrupt is not None
+    assert follow_up_result.interrupt.patterns == ("self.agents.delete",)
+
+    _FakeSwivalSession.next_answer = "Deleted the requested agent."
+    resumed_result = (
+        await self_management_built_in_agent_service.reply_permission_interrupt(
+            db=async_db_session,
+            current_user=user,
+            request_id=follow_up_result.interrupt.request_id,
+            reply="once",
+        )
+    )
+
+    assert resumed_result.status == "completed"
+    assert resumed_result.write_tools_enabled is True
+    assert "self.jobs.pause" in resumed_result.tool_names
+    assert "self.agents.delete" in resumed_result.tool_names
+    assert "self.sessions.update" not in resumed_result.tool_names
+
+
 async def test_built_in_agent_runtime_patches_private_swival_mcp_tool_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

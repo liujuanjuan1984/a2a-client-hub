@@ -518,10 +518,50 @@ class SelfManagementBuiltInAgentService:
                 local_source=local_source,
             )
         if effective_write_tools and self._answer_requests_write_approval(answer):
-            await self._invalidate_runtime_session(runtime_state)
-            raise SelfManagementBuiltInAgentUnavailableError(
-                "swival built-in agent requested write approval after write "
-                "tools were enabled"
+            requested_write_operation_ids = self._extract_requested_write_operation_ids(
+                answer
+            )
+            if not requested_write_operation_ids:
+                await self._invalidate_runtime_session(runtime_state)
+                raise SelfManagementBuiltInAgentUnavailableError(
+                    "swival built-in agent requested write approval without "
+                    "declaring any write operations"
+                )
+            missing_write_operation_ids = tuple(
+                operation_id
+                for operation_id in requested_write_operation_ids
+                if operation_id not in effective_write_operation_ids
+            )
+            if not missing_write_operation_ids:
+                await self._invalidate_runtime_session(runtime_state)
+                raise SelfManagementBuiltInAgentUnavailableError(
+                    "swival built-in agent requested write approval after write "
+                    "tools were enabled"
+                )
+            interrupt = self._build_permission_interrupt(
+                current_user=current_user,
+                conversation_id=local_session_id,
+                message=message,
+                answer=answer,
+                allowed_write_operation_ids=missing_write_operation_ids,
+            )
+            return _ExecutedBuiltInRun(
+                result=SelfManagementBuiltInAgentRunResult(
+                    status=SelfManagementBuiltInAgentRunStatus.INTERRUPTED,
+                    answer=self._strip_write_approval_metadata(answer),
+                    exhausted=exhausted,
+                    runtime="swival",
+                    resources=profile.resources,
+                    tool_names=tuple(
+                        definition.tool_name for definition in tool_definitions
+                    ),
+                    write_tools_enabled=True,
+                    interrupt=interrupt,
+                ),
+                profile=profile,
+                local_session=local_session,
+                local_session_id=local_session_id,
+                local_source=local_source,
             )
         return _ExecutedBuiltInRun(
             result=SelfManagementBuiltInAgentRunResult(
@@ -621,7 +661,24 @@ class SelfManagementBuiltInAgentService:
                 conversation_id=conversation_id,
             )
             async with runtime_state.get_lock():
+                approved_operation_ids = (
+                    runtime_state.auto_approve_write_operation_ids
+                    | runtime_state.delegated_write_operation_ids
+                    | approved_operation_ids
+                )
                 runtime_state.auto_approve_write_operation_ids = approved_operation_ids
+                runtime_state.last_accessed_monotonic = time.monotonic()
+        else:
+            runtime_state = await self._get_conversation_runtime_state(
+                current_user_id=str(current_user.id),
+                conversation_id=conversation_id,
+            )
+            async with runtime_state.get_lock():
+                approved_operation_ids = (
+                    runtime_state.auto_approve_write_operation_ids
+                    | runtime_state.delegated_write_operation_ids
+                    | approved_operation_ids
+                )
                 runtime_state.last_accessed_monotonic = time.monotonic()
 
         executed = await self._execute_run(
