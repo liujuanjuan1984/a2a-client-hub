@@ -162,12 +162,26 @@ jest.mock("@/components/chat/ChatTimelinePanel", () => ({
               first.
             </Text>
             {props.pendingInterrupt.type === "permission" ? (
-              <Pressable
-                testID="interrupt-permission-once"
-                onPress={() => props.onPermissionReply?.("once")}
-              >
-                <Text>Allow once</Text>
-              </Pressable>
+              <>
+                <Pressable
+                  testID="interrupt-permission-once"
+                  onPress={() => props.onPermissionReply?.("once")}
+                >
+                  <Text>Allow once</Text>
+                </Pressable>
+                <Pressable
+                  testID="interrupt-permission-always"
+                  onPress={() => props.onPermissionReply?.("always")}
+                >
+                  <Text>Always allow</Text>
+                </Pressable>
+                <Pressable
+                  testID="interrupt-permission-reject"
+                  onPress={() => props.onPermissionReply?.("reject")}
+                >
+                  <Text>Reject</Text>
+                </Pressable>
+              </>
             ) : null}
             {props.pendingInterrupt.type === "question" ? (
               <>
@@ -350,7 +364,7 @@ jest.mock("@/hooks/useAgentsCatalogQuery", () => ({
       },
       {
         id: SELF_MANAGEMENT_AGENT_ID,
-        source: "shared",
+        source: "builtin",
         name: "A2A Client Hub Assistant",
         cardUrl: "builtin://self-management-assistant",
         status: "success",
@@ -1626,22 +1640,29 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("submits built-in permission replies through the existing interrupt action card", async () => {
-    mockChatState.sessions[conversationId] = {
-      ...baseSession(),
-      agentId: SELF_MANAGEMENT_AGENT_ID,
-      pendingInterrupt: {
-        requestId: "builtin-perm-2",
-        type: "permission",
-        phase: "asked",
-        details: {
-          permission: "self-management-write",
-          patterns: ["self.jobs.pause"],
-          displayMessage: "Approve write access to continue.",
-        },
-      },
-      pendingInterrupts: [
-        {
+  it.each([
+    {
+      buttonTestId: "interrupt-permission-once",
+      reply: "once" as const,
+      expectedResolution: "replied",
+    },
+    {
+      buttonTestId: "interrupt-permission-always",
+      reply: "always" as const,
+      expectedResolution: "replied",
+    },
+    {
+      buttonTestId: "interrupt-permission-reject",
+      reply: "reject" as const,
+      expectedResolution: "rejected",
+    },
+  ])(
+    "submits built-in permission reply %s through the existing interrupt action card",
+    async ({ buttonTestId, reply, expectedResolution }) => {
+      mockChatState.sessions[conversationId] = {
+        ...baseSession(),
+        agentId: SELF_MANAGEMENT_AGENT_ID,
+        pendingInterrupt: {
           requestId: "builtin-perm-2",
           type: "permission",
           phase: "asked",
@@ -1651,61 +1672,75 @@ describe("ChatScreen interrupt handling", () => {
             displayMessage: "Approve write access to continue.",
           },
         },
-      ],
-    };
+        pendingInterrupts: [
+          {
+            requestId: "builtin-perm-2",
+            type: "permission",
+            phase: "asked",
+            details: {
+              permission: "self-management-write",
+              patterns: ["self.jobs.pause"],
+              displayMessage: "Approve write access to continue.",
+            },
+          },
+        ],
+      };
 
-    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
-    const root = tree.root;
-    const permissionButton = root.findByProps({
-      testID: "interrupt-permission-once",
-    });
+      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+      const root = tree.root;
+      const permissionButton = root.findByProps({
+        testID: buttonTestId,
+      });
 
-    await act(async () => {
-      await permissionButton.props.onPress();
-      await Promise.resolve();
-    });
+      await act(async () => {
+        await permissionButton.props.onPress();
+        await Promise.resolve();
+      });
 
-    expect(
-      mockReplySelfManagementBuiltInAgentPermissionInterrupt,
-    ).toHaveBeenCalledWith({
-      requestId: "builtin-perm-2",
-      reply: "once",
-      agentMessageId: expect.any(String),
-    });
-    expect(mockAddConversationMessage).toHaveBeenCalledWith(
-      conversationId,
-      expect.objectContaining({
-        role: "agent",
-        content: "",
-        status: "streaming",
-      }),
-    );
-    expect(mockUpdateConversationMessage).toHaveBeenCalledWith(
-      conversationId,
-      expect.any(String),
-      expect.objectContaining({
-        content: "Write approval was handled.",
-        status: "done",
-      }),
-    );
-    expect(mockChatState.sessions[conversationId]?.pendingInterrupt).toBeNull();
-    expect(
-      mockChatState.sessions[conversationId]?.lastResolvedInterrupt,
-    ).toMatchObject({
-      requestId: "builtin-perm-2",
-      type: "permission",
-      phase: "resolved",
-      resolution: "replied",
-    });
-    expect(mockToastSuccess).toHaveBeenCalledWith(
-      "Action submitted",
-      "Authorization request handled.",
-    );
+      expect(
+        mockReplySelfManagementBuiltInAgentPermissionInterrupt,
+      ).toHaveBeenCalledWith({
+        requestId: "builtin-perm-2",
+        reply,
+        agentMessageId: expect.any(String),
+      });
+      expect(mockAddConversationMessage).toHaveBeenCalledWith(
+        conversationId,
+        expect.objectContaining({
+          role: "agent",
+          content: "",
+          status: "streaming",
+        }),
+      );
+      expect(mockUpdateConversationMessage).toHaveBeenCalledWith(
+        conversationId,
+        expect.any(String),
+        expect.objectContaining({
+          content: "Write approval was handled.",
+          status: "done",
+        }),
+      );
+      expect(
+        mockChatState.sessions[conversationId]?.pendingInterrupt,
+      ).toBeNull();
+      expect(
+        mockChatState.sessions[conversationId]?.lastResolvedInterrupt,
+      ).toMatchObject({
+        requestId: "builtin-perm-2",
+        type: "permission",
+        phase: "resolved",
+        resolution: expectedResolution,
+      });
+      expect(mockToastSuccess).toHaveBeenCalledWith(
+        "Action submitted",
+        "Authorization request handled.",
+      );
 
-    act(() => {
-      tree.unmount();
-    });
-  });
+      act(() => {
+        tree.unmount();
+      });
+    },
+  );
 
   it("clears stale built-in permission interrupts when the reply request expired", async () => {
     mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(

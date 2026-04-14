@@ -346,22 +346,25 @@ export function useChatInterruptController({
     (reply: "once" | "always" | "reject") => {
       if (
         !activeAgentId ||
-        !agentSource ||
         !conversationId ||
         !pendingInterrupt ||
         pendingInterrupt.type !== "permission"
       ) {
         return;
       }
+      if (!onPermissionReplyOverride && !agentSource) {
+        return;
+      }
+      const replyAgentSource = agentSource;
       const requestId = pendingInterrupt.requestId;
       runInterruptAction(
         `permission:${reply}`,
         async () => {
           if (onPermissionReplyOverride) {
             await onPermissionReplyOverride({ requestId, reply });
-          } else {
+          } else if (replyAgentSource) {
             await replyPermissionInterrupt({
-              source: agentSource,
+              source: replyAgentSource,
               agentId: activeAgentId,
               requestId,
               reply,
@@ -369,6 +372,8 @@ export function useChatInterruptController({
                 ? { workingDirectory: normalizedWorkingDirectory }
                 : {}),
             });
+          } else {
+            return;
           }
           acknowledgeLocalInterruptResolution(
             requestId,
