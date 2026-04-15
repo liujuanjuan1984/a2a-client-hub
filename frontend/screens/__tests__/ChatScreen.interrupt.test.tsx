@@ -11,6 +11,7 @@ const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
 const mockReplyElicitation = jest.fn();
 const mockAppendSessionMessage = jest.fn();
+const mockListSessionMessagesPage = jest.fn();
 const mockRunSessionCommand = jest.fn();
 const mockRecoverInterrupts = jest.fn();
 const mockInvokeAgent = jest.fn();
@@ -21,6 +22,7 @@ const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
 const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
 const mockRemoveConversationMessage = jest.fn();
+const mockSetConversationMessages = jest.fn();
 const mockUpdateConversationMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
@@ -241,7 +243,7 @@ type MockAgentSession = {
   pendingInterrupts: unknown[];
   pendingInterrupt: unknown;
   lastResolvedInterrupt: unknown;
-  streamState: "idle" | "streaming" | "recoverable" | "error";
+  streamState: "idle" | "streaming" | "continuing" | "recoverable" | "error";
   lastStreamError: string | null;
   transport: string;
   inputModes: string[];
@@ -440,6 +442,8 @@ jest.mock("@/lib/api/sessions", () => ({
   appendSessionMessage: (...args: unknown[]) =>
     mockAppendSessionMessage(...args),
   continueSession: (...args: unknown[]) => mockContinueSession(...args),
+  listSessionMessagesPage: (...args: unknown[]) =>
+    mockListSessionMessagesPage(...args),
   querySessionMessageBlocks: jest.fn(async () => ({ items: [] })),
   runSessionCommand: (...args: unknown[]) => mockRunSessionCommand(...args),
 }));
@@ -473,6 +477,8 @@ jest.mock("@/lib/chatHistoryCache", () => ({
     mockAddConversationMessage(...args),
   removeConversationMessage: (...args: unknown[]) =>
     mockRemoveConversationMessage(...args),
+  setConversationMessages: (...args: unknown[]) =>
+    mockSetConversationMessages(...args),
   updateConversationMessage: (...args: unknown[]) =>
     mockUpdateConversationMessage(...args),
 }));
@@ -546,11 +552,19 @@ describe("ChatScreen interrupt handling", () => {
     mockReplyElicitation.mockReset();
     mockAddConversationMessage.mockReset();
     mockRemoveConversationMessage.mockReset();
+    mockSetConversationMessages.mockReset();
     mockUpdateConversationMessage.mockReset();
     mockToastInfo.mockReset();
     mockToastSuccess.mockReset();
     mockToastError.mockReset();
     mockContinueSession.mockReset();
+    mockListSessionMessagesPage.mockReset().mockResolvedValue({
+      items: [],
+      pageInfo: {
+        hasMoreBefore: false,
+        nextBefore: null,
+      },
+    });
     mockChatState.ensureSession.mockReset();
     mockChatState.generateConversationId
       .mockReset()
@@ -1741,6 +1755,92 @@ describe("ChatScreen interrupt handling", () => {
       });
     },
   );
+
+  it("closes the built-in authorization card on fast-ack and enters continuation state", async () => {
+    mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockImplementationOnce(
+      async (payload: { agentMessageId: string }) => {
+        return {
+          status: "accepted",
+          answer: null,
+          exhausted: false,
+          runtime: "swival",
+          resources: ["agents", "jobs", "sessions"],
+          tools: ["self.jobs.pause"],
+          write_tools_enabled: true,
+          interrupt: null,
+          continuation: {
+            phase: "running",
+            agentMessageId: payload.agentMessageId,
+          },
+        };
+      },
+    );
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      agentId: SELF_MANAGEMENT_AGENT_ID,
+      pendingInterrupt: {
+        requestId: "builtin-perm-async-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "self-management-write",
+          patterns: ["self.jobs.pause"],
+          displayMessage: "Approve write access to continue.",
+        },
+      },
+      pendingInterrupts: [
+        {
+          requestId: "builtin-perm-async-1",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve write access to continue.",
+          },
+        },
+      ],
+    };
+
+    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const root = tree.root;
+    const permissionButton = root.findByProps({
+      testID: "interrupt-permission-once",
+    });
+
+    await act(async () => {
+      await permissionButton.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(
+      mockReplySelfManagementBuiltInAgentPermissionInterrupt,
+    ).toHaveBeenCalledWith({
+      requestId: "builtin-perm-async-1",
+      reply: "once",
+      agentMessageId: expect.any(String),
+    });
+    expect(mockChatState.sessions[conversationId]?.pendingInterrupt).toBeNull();
+    expect(mockChatState.sessions[conversationId]?.streamState).toBe(
+      "continuing",
+    );
+    expect(
+      mockChatState.sessions[conversationId]?.lastResolvedInterrupt,
+    ).toMatchObject({
+      requestId: "builtin-perm-async-1",
+      type: "permission",
+      phase: "resolved",
+      resolution: "replied",
+    });
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Action submitted",
+      "Authorization request handled.",
+    );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
 
   it("clears stale built-in permission interrupts when the reply request expired", async () => {
     mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(

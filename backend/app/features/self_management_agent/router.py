@@ -12,6 +12,7 @@ from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.transaction import commit_safely
 from app.features.self_management_agent.schemas import (
+    SelfManagementBuiltInAgentContinuation,
     SelfManagementBuiltInAgentInterrupt,
     SelfManagementBuiltInAgentInterruptDetails,
     SelfManagementBuiltInAgentInterruptRecoveryRequest,
@@ -78,6 +79,14 @@ def _to_run_response(
         tools=list(result.tool_names),
         write_tools_enabled=result.write_tools_enabled,
         interrupt=interrupt,
+        continuation=(
+            SelfManagementBuiltInAgentContinuation(
+                phase="running",
+                agentMessageId=result.continuation.agent_message_id,
+            )
+            if result.continuation is not None
+            else None
+        ),
     )
 
 
@@ -215,7 +224,7 @@ async def reply_self_management_built_in_agent_permission_interrupt(
     current_user: User = Depends(get_current_user),
 ) -> SelfManagementBuiltInAgentRunResponse:
     try:
-        result = (
+        outcome = (
             await self_management_built_in_agent_service.reply_permission_interrupt(
                 db=db,
                 current_user=current_user,
@@ -263,4 +272,8 @@ async def reply_self_management_built_in_agent_permission_interrupt(
         raise
 
     await commit_safely(db)
-    return _to_run_response(result)
+    if outcome.continuation_request is not None:
+        self_management_built_in_agent_service.schedule_permission_reply_continuation(
+            outcome.continuation_request
+        )
+    return _to_run_response(outcome.result)

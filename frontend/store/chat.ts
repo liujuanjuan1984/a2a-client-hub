@@ -557,7 +557,10 @@ export const useChatStore = create<ChatState>()(
         if (!trimmed) return;
 
         const previousSession = get().sessions[conversationId];
-        if (previousSession?.streamState === "streaming") {
+        if (
+          previousSession?.streamState === "streaming" ||
+          previousSession?.streamState === "continuing"
+        ) {
           throw new Error(
             "A response is still streaming. Resolve session control before sending a new turn.",
           );
@@ -640,7 +643,10 @@ export const useChatStore = create<ChatState>()(
           return;
         }
 
-        if (session?.streamState === "streaming") {
+        if (
+          session?.streamState === "streaming" ||
+          session?.streamState === "continuing"
+        ) {
           throw new Error(
             "A response is still streaming. Resolve session control before retrying.",
           );

@@ -33,7 +33,7 @@ export type AgentSession = {
   pendingInterrupts: PendingRuntimeInterrupt[];
   pendingInterrupt?: PendingRuntimeInterrupt | null;
   lastResolvedInterrupt?: ResolvedRuntimeInterruptRecord | null;
-  streamState?: "idle" | "streaming" | "recoverable" | "error";
+  streamState?: "idle" | "streaming" | "continuing" | "recoverable" | "error";
   lastStreamError?: string | null;
   lastReceivedSequence?: number;
   lastUserMessageId?: string;

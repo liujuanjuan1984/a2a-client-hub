@@ -43,6 +43,7 @@ import {
 import {
   appendSessionMessage,
   continueSession,
+  listSessionMessagesPage,
   runSessionCommand,
   type SessionMessageItem,
 } from "@/lib/api/sessions";
@@ -58,6 +59,7 @@ import {
 import {
   addConversationMessage,
   removeConversationMessage,
+  setConversationMessages,
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
 import {
@@ -80,6 +82,8 @@ import { useChatStore } from "@/store/chat";
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const INTERRUPT_RECOVERY_THROTTLE_MS = 5_000;
+const BUILT_IN_CONTINUATION_POLL_INTERVAL_MS = 800;
+const BUILT_IN_CONTINUATION_TIMEOUT_MS = 45_000;
 
 export function useChatScreenController({
   routeAgentId,
@@ -150,6 +154,10 @@ export function useChatScreenController({
   const lastInterruptRecoveryRef = useRef<{
     key: string;
     triggeredAt: number;
+  } | null>(null);
+  const builtInContinuationMonitorRef = useRef<{
+    key: string;
+    cancelled: boolean;
   } | null>(null);
   const loadingEarlierRef = useRef(false);
   const isInitialLoadRef = useRef(true);
@@ -519,6 +527,28 @@ export function useChatScreenController({
           ? toPendingRuntimeInterrupt(result.interrupt)
           : null;
 
+        if (result.status === "accepted") {
+          applyBuiltInAgentSessionUpdate(
+            conversationId,
+            activeAgentId,
+            (current) => ({
+              ...current,
+              agentId: activeAgentId,
+              lastActiveAt: new Date().toISOString(),
+              streamState: "continuing",
+              lastStreamError: null,
+              lastAgentMessageId:
+                result.continuation?.agentMessageId ?? nextAgentMessageId,
+              lastResolvedInterrupt: buildBuiltInResolvedInterruptRecord(
+                requestId,
+                resolution,
+              ),
+              ...buildPendingInterruptState([]),
+            }),
+          );
+          return;
+        }
+
         updateConversationMessage(conversationId, nextAgentMessageId, {
           content: result.answer ?? "",
           status: result.status === "interrupted" ? "interrupted" : "done",
@@ -807,7 +837,9 @@ export function useChatScreenController({
       const effectiveContent = parsedInput.text;
       const currentSession =
         useChatStore.getState().sessions[nextConversationId];
-      const isActivelyStreaming = currentSession?.streamState === "streaming";
+      const isActivelyStreaming =
+        currentSession?.streamState === "streaming" ||
+        currentSession?.streamState === "continuing";
 
       if (isSelfManagementBuiltInAgent(nextAgentId)) {
         if (isActivelyStreaming) {
@@ -1012,7 +1044,17 @@ export function useChatScreenController({
   }, [isAppendAvailableForSession, session]);
 
   const streamSendHint = useMemo(() => {
-    if (session?.streamState !== "streaming" || pendingInterrupt) {
+    if (pendingInterrupt) {
+      return null;
+    }
+    if (session?.streamState === "continuing") {
+      return {
+        tone: "interrupt" as const,
+        message:
+          "The assistant is still finishing the approved action. Wait for it to complete before sending a new message.",
+      };
+    }
+    if (session?.streamState !== "streaming") {
       return null;
     }
     if (canAppendToRunningStream) {
@@ -1223,6 +1265,139 @@ export function useChatScreenController({
   ]);
 
   useEffect(() => {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      !isBuiltInSelfManagementAgent ||
+      session?.streamState !== "continuing" ||
+      !session.lastAgentMessageId
+    ) {
+      return;
+    }
+
+    const targetAgentMessageId = session.lastAgentMessageId;
+    const monitorKey = `${conversationId}:${targetAgentMessageId}`;
+    const previousMonitor = builtInContinuationMonitorRef.current;
+    if (previousMonitor?.key === monitorKey && !previousMonitor.cancelled) {
+      return;
+    }
+    if (previousMonitor) {
+      previousMonitor.cancelled = true;
+    }
+
+    const monitor = {
+      key: monitorKey,
+      cancelled: false,
+    };
+    builtInContinuationMonitorRef.current = monitor;
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, ms);
+      });
+
+    const monitorContinuation = async () => {
+      const startedAt = Date.now();
+      while (!monitor.cancelled) {
+        try {
+          const page = await listSessionMessagesPage(conversationId, {
+            before: null,
+            limit: 8,
+          });
+          const mappedMessages = mapSessionMessagesToChatMessages(page.items, {
+            keepEmptyMessages: true,
+          });
+          setConversationMessages(conversationId, mappedMessages);
+
+          const currentAgentMessage = mappedMessages.find(
+            (message) =>
+              message.id === targetAgentMessageId && message.role === "agent",
+          );
+          if (
+            currentAgentMessage &&
+            currentAgentMessage.status &&
+            currentAgentMessage.status !== "streaming"
+          ) {
+            if (currentAgentMessage.status === "interrupted") {
+              await recoverBuiltInPendingInterrupts({
+                nextConversationId: conversationId,
+              });
+            }
+            applyBuiltInAgentSessionUpdate(
+              conversationId,
+              activeAgentId,
+              (current) => ({
+                ...current,
+                agentId: activeAgentId,
+                lastActiveAt: new Date().toISOString(),
+                streamState:
+                  currentAgentMessage.status === "error" ? "error" : "idle",
+                lastStreamError:
+                  currentAgentMessage.status === "error"
+                    ? currentAgentMessage.content.trim() ||
+                      "Built-in assistant continuation failed."
+                    : null,
+              }),
+            );
+            return;
+          }
+        } catch (error) {
+          console.warn("[Chat] built-in continuation refresh failed", {
+            conversationId,
+            agentId: activeAgentId,
+            agentMessageId: targetAgentMessageId,
+            error:
+              error instanceof Error
+                ? error.message
+                : "built_in_continuation_refresh_failed",
+          });
+        }
+
+        if (Date.now() - startedAt >= BUILT_IN_CONTINUATION_TIMEOUT_MS) {
+          const timeoutMessage =
+            "Built-in assistant continuation timed out while waiting for persisted output.";
+          updateConversationMessage(conversationId, targetAgentMessageId, {
+            content: timeoutMessage,
+            status: "error",
+          });
+          applyBuiltInAgentSessionUpdate(
+            conversationId,
+            activeAgentId,
+            (current) => ({
+              ...current,
+              agentId: activeAgentId,
+              lastActiveAt: new Date().toISOString(),
+              streamState: "error",
+              lastStreamError: timeoutMessage,
+            }),
+          );
+          return;
+        }
+
+        await sleep(BUILT_IN_CONTINUATION_POLL_INTERVAL_MS);
+      }
+    };
+
+    const continuationPromise = monitorContinuation();
+    continuationPromise.catch(() => undefined);
+
+    return () => {
+      monitor.cancelled = true;
+      if (builtInContinuationMonitorRef.current === monitor) {
+        builtInContinuationMonitorRef.current = null;
+      }
+    };
+  }, [
+    activeAgentId,
+    applyBuiltInAgentSessionUpdate,
+    conversationId,
+    isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
+    session?.lastAgentMessageId,
+    session?.streamState,
+  ]);
+
+  useEffect(() => {
     if (!pendingInterrupt) {
       return;
     }
@@ -1332,6 +1507,7 @@ export function useChatScreenController({
       contentHeightRef.current = h;
       if (
         session?.streamState === "streaming" ||
+        session?.streamState === "continuing" ||
         forceScrollToBottomRef.current
       ) {
         scheduleStickToBottom(false);
@@ -1471,7 +1647,8 @@ export function useChatScreenController({
     if (
       !conversationId ||
       !activeAgentId ||
-      session?.streamState === "streaming"
+      session?.streamState === "streaming" ||
+      session?.streamState === "continuing"
     ) {
       return;
     }
