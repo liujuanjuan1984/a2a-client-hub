@@ -26,6 +26,13 @@ type ResolvedInterruptKeyInput = {
   resolution: "replied" | "rejected" | "expired";
 };
 
+export type PermissionReplyActionMode = "ack-fast" | "transactional";
+
+type PermissionReplyActionResult = {
+  mode: PermissionReplyActionMode;
+  resolvedRequestId?: string;
+};
+
 type UseChatInterruptControllerParams = {
   activeAgentId?: string | null;
   agentSource?: ExtensionAgentSource | null;
@@ -39,7 +46,7 @@ type UseChatInterruptControllerParams = {
     | ((input: {
         requestId: string;
         reply: "once" | "always" | "reject";
-      }) => Promise<void>)
+      }) => Promise<PermissionReplyActionResult>)
     | null;
   permissionReplySuccessMessage?: string | null;
 };
@@ -360,8 +367,14 @@ export function useChatInterruptController({
       runInterruptAction(
         `permission:${reply}`,
         async () => {
+          let actionResult: PermissionReplyActionResult = {
+            mode: "transactional",
+          };
           if (onPermissionReplyOverride) {
-            await onPermissionReplyOverride({ requestId, reply });
+            actionResult = await onPermissionReplyOverride({
+              requestId,
+              reply,
+            });
           } else if (replyAgentSource) {
             await replyPermissionInterrupt({
               source: replyAgentSource,
@@ -380,7 +393,10 @@ export function useChatInterruptController({
             "permission",
             reply === "reject" ? "rejected" : "replied",
           );
-          clearPendingInterrupt(conversationId, requestId);
+          clearPendingInterrupt(
+            conversationId,
+            actionResult.resolvedRequestId ?? requestId,
+          );
         },
         permissionReplySuccessMessage ??
           "Permission reply delivered to upstream.",

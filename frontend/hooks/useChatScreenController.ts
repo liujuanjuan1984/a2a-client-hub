@@ -17,6 +17,7 @@ import { useChatBlockDetailController } from "@/hooks/useChatBlockDetailControll
 import { useChatComposerController } from "@/hooks/useChatComposerController";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useChatInterruptController } from "@/hooks/useChatInterruptController";
+import type { PermissionReplyActionMode } from "@/hooks/useChatInterruptController";
 import {
   type GenericCapabilityStatus,
   useExtensionCapabilitiesQuery,
@@ -485,9 +486,15 @@ export function useChatScreenController({
     }: {
       requestId: string;
       reply: "once" | "always" | "reject";
-    }) => {
+    }): Promise<{
+      mode: PermissionReplyActionMode;
+      resolvedRequestId?: string;
+    }> => {
       if (!conversationId || !activeAgentId) {
-        return;
+        return {
+          mode: "transactional",
+          resolvedRequestId: requestId,
+        };
       }
 
       const nextAgentMessageId = generateUuid();
@@ -546,7 +553,10 @@ export function useChatScreenController({
               ...buildPendingInterruptState([]),
             }),
           );
-          return;
+          return {
+            mode: "ack-fast",
+            resolvedRequestId: requestId,
+          };
         }
 
         updateConversationMessage(conversationId, nextAgentMessageId, {
@@ -569,6 +579,10 @@ export function useChatScreenController({
             ...buildPendingInterruptState(nextInterrupt ? [nextInterrupt] : []),
           }),
         );
+        return {
+          mode: "transactional",
+          resolvedRequestId: requestId,
+        };
       } catch (error) {
         removeConversationMessage(conversationId, nextAgentMessageId);
         applyBuiltInAgentSessionUpdate(
