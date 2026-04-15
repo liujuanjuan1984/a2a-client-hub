@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -396,6 +396,7 @@ class SessionHistoryProjectionService:
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
+        user_sender: Literal["user", "automation"] = "user",
         agent_status: str | None = None,
         finish_reason: str | None = None,
         error_code: str | None = None,
@@ -499,12 +500,15 @@ class SessionHistoryProjectionService:
             resolved_agent_status = "done" if success else "error"
         resolved_finish_reason = normalize_non_empty_text(finish_reason)
         resolved_error_code = normalize_non_empty_text(error_code)
+        resolved_user_sender: Literal["user", "automation"] = (
+            "automation" if user_sender == "automation" else "user"
+        )
         requested_user_message = (
             await self._support.find_message_by_id_and_sender(
                 db,
                 user_id=user_id,
                 message_id=user_message_id,
-                sender="user",
+                sender=resolved_user_sender,
                 conversation_id=conversation_id,
             )
             if isinstance(user_message_id, UUID)
@@ -529,7 +533,7 @@ class SessionHistoryProjectionService:
                     db,
                     user_id=user_id,
                     conversation_id=conversation_id,
-                    sender="user",
+                    sender=resolved_user_sender,
                     idempotency_key=normalized_idempotency_key,
                 )
             )
@@ -566,7 +570,7 @@ class SessionHistoryProjectionService:
                         db,
                         id=user_message_id,
                         user_id=user_id,
-                        sender="user",
+                        sender=resolved_user_sender,
                         status="done",
                         conversation_id=conversation_id,
                         metadata=metadata,
@@ -576,7 +580,7 @@ class SessionHistoryProjectionService:
                     user_message = await message_store.create_agent_message(
                         db,
                         user_id=user_id,
-                        sender="user",
+                        sender=resolved_user_sender,
                         status="done",
                         conversation_id=conversation_id,
                         metadata=metadata,
@@ -600,7 +604,7 @@ class SessionHistoryProjectionService:
                         db,
                         user_id=user_id,
                         conversation_id=conversation_id,
-                        sender="user",
+                        sender=resolved_user_sender,
                         idempotency_key=normalized_idempotency_key,
                     )
                 )
@@ -721,7 +725,9 @@ class SessionHistoryProjectionService:
             user_id=user_id,
             message_id=cast(UUID, user_message.id),
             content=query,
-            source="user_input",
+            source=(
+                "user_input" if resolved_user_sender == "user" else "automation_input"
+            ),
         )
         if normalized_response_blocks:
             await _apply_message_block_specs(
@@ -793,6 +799,7 @@ class SessionHistoryProjectionService:
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
+        user_sender: Literal["user", "automation"] = "user",
         agent_status: str | None = None,
         finish_reason: str | None = None,
         error_code: str | None = None,
@@ -823,6 +830,7 @@ class SessionHistoryProjectionService:
             idempotency_key=idempotency_key,
             user_message_id=user_message_id,
             agent_message_id=agent_message_id,
+            user_sender=user_sender,
             agent_status=agent_status,
             finish_reason=finish_reason,
             error_code=error_code,
@@ -982,6 +990,7 @@ class SessionHistoryProjectionService:
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
+        user_sender: Literal["user", "automation"] = "user",
     ) -> dict[str, UUID]:
         session = await self._support.get_local_session_by_id(
             db,
@@ -1000,7 +1009,7 @@ class SessionHistoryProjectionService:
                         and_(
                             AgentMessage.user_id == user_id,
                             AgentMessage.conversation_id == local_session_id,
-                            AgentMessage.sender.in_(["user", "automation"]),
+                            AgentMessage.sender == user_sender,
                             AgentMessage.invoke_idempotency_key
                             == normalized_idempotency_key,
                         )
@@ -1055,6 +1064,7 @@ class SessionHistoryProjectionService:
             idempotency_key=idempotency_key,
             user_message_id=user_message_id,
             agent_message_id=agent_message_id,
+            user_sender=user_sender,
             agent_status="streaming",
             finish_reason=None,
             error_code=None,

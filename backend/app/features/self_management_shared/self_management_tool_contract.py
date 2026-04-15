@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.features.self_management_shared.capability_catalog import (
-    ALL_SELF_MANAGEMENT_OPERATIONS,
+    list_self_management_operations,
 )
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
@@ -97,6 +97,11 @@ class _SessionUpdateInput(_SessionGetInput):
     title: str = Field(min_length=1, max_length=255)
 
 
+class _SessionsSendMessageInput(_StrictBaseModel):
+    conversation_ids: list[str] = Field(min_length=1, max_length=10)
+    message: str = Field(min_length=1, max_length=50_000)
+
+
 class _AgentsListInput(_StrictBaseModel):
     page: int = Field(default=1, ge=1)
     size: int = Field(default=20, ge=1)
@@ -148,6 +153,11 @@ class _AgentUpdateConfigInput(_AgentGetInput):
     basic_password: str | None = None
 
 
+class _AgentsStartSessionsInput(_StrictBaseModel):
+    agent_ids: list[str] = Field(min_length=1, max_length=10)
+    message: str = Field(min_length=1, max_length=50_000)
+
+
 _INPUT_MODELS_BY_OPERATION_ID: dict[str, type[BaseModel]] = {
     "self.jobs.list": _JobsListInput,
     "self.jobs.get": _JobGetInput,
@@ -163,6 +173,7 @@ _INPUT_MODELS_BY_OPERATION_ID: dict[str, type[BaseModel]] = {
     "self.sessions.update": _SessionUpdateInput,
     "self.sessions.archive": _SessionGetInput,
     "self.sessions.unarchive": _SessionGetInput,
+    "self.sessions.send_message": _SessionsSendMessageInput,
     "self.agents.list": _AgentsListInput,
     "self.agents.get": _AgentGetInput,
     "self.agents.check_health": _AgentCheckHealthInput,
@@ -170,6 +181,7 @@ _INPUT_MODELS_BY_OPERATION_ID: dict[str, type[BaseModel]] = {
     "self.agents.create": _AgentCreateInput,
     "self.agents.update_config": _AgentUpdateConfigInput,
     "self.agents.delete": _AgentGetInput,
+    "self.agents.start_sessions": _AgentsStartSessionsInput,
 }
 
 
@@ -216,20 +228,14 @@ def list_self_management_tool_definitions(
 ) -> tuple[SelfManagementToolDefinition, ...]:
     """List self-management tool definitions filtered by surface."""
 
-    definitions: list[SelfManagementToolDefinition] = []
-    for operation in ALL_SELF_MANAGEMENT_OPERATIONS.values():
-        if operation.tool_name is None:
-            continue
-        if first_wave_only and not operation.first_wave_exposed:
-            continue
-        if (
-            surface is not None
-            and operation.surfaces
-            and surface not in operation.surfaces
-        ):
-            continue
-        definitions.append(build_self_management_tool_definition(operation))
-    return tuple(sorted(definitions, key=lambda item: item.operation_id))
+    return tuple(
+        build_self_management_tool_definition(operation)
+        for operation in list_self_management_operations(
+            surface=surface,
+            first_wave_only=first_wave_only,
+            require_tool_name=True,
+        )
+    )
 
 
 __all__ = [

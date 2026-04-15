@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from app.features.self_management_shared.actor_context import (
     SelfManagementAction,
     SelfManagementResource,
@@ -109,6 +111,22 @@ SELF_AGENTS_DELETE = SelfManagementOperation(
     description="Soft-delete one current-user agent.",
 )
 
+SELF_AGENTS_START_SESSIONS = SelfManagementOperation(
+    operation_id="self.agents.start_sessions",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.AGENTS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_agent.start_sessions.requested",
+    tool_name="self.agents.start_sessions",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Start one or more new conversations for the current user's agents, "
+        "send a delegated message, and wait for each reply."
+    ),
+)
+
 SELF_SESSIONS_LIST = SelfManagementOperation(
     operation_id="self.sessions.list",
     scope=SelfManagementScope.SELF,
@@ -170,6 +188,22 @@ SELF_SESSIONS_UNARCHIVE = SelfManagementOperation(
     first_wave_exposed=True,
     surfaces=_SELF_ENTRY_SURFACES,
     description="Restore one archived current-user session.",
+)
+
+SELF_SESSIONS_SEND_MESSAGE = SelfManagementOperation(
+    operation_id="self.sessions.send_message",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.SESSIONS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_session.send_message.requested",
+    tool_name="self.sessions.send_message",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Send one delegated message to one or more current-user conversations "
+        "and wait for each target agent reply."
+    ),
 )
 
 SELF_JOBS_LIST = SelfManagementOperation(
@@ -382,11 +416,13 @@ FIRST_WAVE_EXPOSED_OPERATIONS = (
     SELF_AGENTS_CREATE,
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_AGENTS_DELETE,
+    SELF_AGENTS_START_SESSIONS,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_GET,
     SELF_SESSIONS_UPDATE,
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_UNARCHIVE,
+    SELF_SESSIONS_SEND_MESSAGE,
     SELF_JOBS_LIST,
     SELF_JOBS_GET,
     SELF_JOBS_CREATE,
@@ -432,6 +468,85 @@ def get_self_management_operation(operation_id: str) -> SelfManagementOperation:
         raise KeyError(f"Unknown self-management operation: {operation_id}") from exc
 
 
+def list_self_management_operations(
+    *,
+    surface: SelfManagementSurface | None = None,
+    first_wave_only: bool = True,
+    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
+    action: SelfManagementAction | None = None,
+    require_tool_name: bool = False,
+) -> tuple[SelfManagementOperation, ...]:
+    """List registered operations through one shared filter path."""
+
+    source_operations = (
+        FIRST_WAVE_EXPOSED_OPERATIONS
+        if first_wave_only
+        else tuple(ALL_SELF_MANAGEMENT_OPERATIONS.values())
+    )
+    filtered: list[SelfManagementOperation] = []
+    for operation in source_operations:
+        if require_tool_name and operation.tool_name is None:
+            continue
+        if (
+            surface is not None
+            and operation.surfaces
+            and surface not in operation.surfaces
+        ):
+            continue
+        if (
+            confirmation_policy is not None
+            and operation.confirmation_policy != confirmation_policy
+        ):
+            continue
+        if action is not None and operation.action != action:
+            continue
+        filtered.append(operation)
+    return tuple(sorted(filtered, key=lambda item: item.operation_id))
+
+
+def list_self_management_operation_ids(
+    *,
+    surface: SelfManagementSurface | None = None,
+    first_wave_only: bool = True,
+    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
+    action: SelfManagementAction | None = None,
+    require_tool_name: bool = False,
+) -> tuple[str, ...]:
+    """List filtered operation ids in stable order."""
+
+    return tuple(
+        operation.operation_id
+        for operation in list_self_management_operations(
+            surface=surface,
+            first_wave_only=first_wave_only,
+            confirmation_policy=confirmation_policy,
+            action=action,
+            require_tool_name=require_tool_name,
+        )
+    )
+
+
+def list_self_management_tool_names(
+    *,
+    surface: SelfManagementSurface | None = None,
+    first_wave_only: bool = True,
+    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
+    action: SelfManagementAction | None = None,
+) -> tuple[str, ...]:
+    """List filtered tool names in stable order."""
+
+    return tuple(
+        cast(str, operation.tool_name)
+        for operation in list_self_management_operations(
+            surface=surface,
+            first_wave_only=first_wave_only,
+            confirmation_policy=confirmation_policy,
+            action=action,
+            require_tool_name=True,
+        )
+    )
+
+
 __all__ = [
     "ADMIN_HUB_AGENTS_CREATE",
     "ADMIN_HUB_AGENTS_DELETE",
@@ -451,6 +566,7 @@ __all__ = [
     "SELF_AGENTS_CHECK_HEALTH",
     "SELF_AGENTS_CHECK_HEALTH_ALL",
     "SELF_AGENTS_DELETE",
+    "SELF_AGENTS_START_SESSIONS",
     "SELF_AGENTS_UPDATE_CONFIG",
     "SELF_JOBS_CREATE",
     "SELF_JOBS_DELETE",
@@ -464,8 +580,12 @@ __all__ = [
     "SELF_SESSIONS_ARCHIVE",
     "SELF_SESSIONS_GET",
     "SELF_SESSIONS_LIST",
+    "SELF_SESSIONS_SEND_MESSAGE",
     "SELF_SESSIONS_UNARCHIVE",
     "SELF_SESSIONS_UPDATE",
     "UNSUPPORTED_FIRST_WAVE_OPERATION_IDS",
     "get_self_management_operation",
+    "list_self_management_operation_ids",
+    "list_self_management_operations",
+    "list_self_management_tool_names",
 ]

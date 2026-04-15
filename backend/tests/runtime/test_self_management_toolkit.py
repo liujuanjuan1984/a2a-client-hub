@@ -3,6 +3,9 @@ from __future__ import annotations
 import pytest
 
 from app.features.personal_agents import service as personal_agent_service_module
+from app.features.self_management_shared import (
+    delegated_conversation_service as delegated_conversation_service_module,
+)
 from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
@@ -10,11 +13,13 @@ from app.features.self_management_shared.actor_context import (
 from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_CHECK_HEALTH,
     SELF_AGENTS_CHECK_HEALTH_ALL,
+    SELF_AGENTS_START_SESSIONS,
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_UPDATE_SCHEDULE,
     SELF_SESSIONS_LIST,
+    SELF_SESSIONS_SEND_MESSAGE,
 )
 from app.features.self_management_shared.self_management_toolkit import (
     SelfManagementToolInputError,
@@ -203,3 +208,87 @@ async def test_self_management_toolkit_rejects_invalid_schedule_inputs(
         )
 
     assert str(exc_info.value) == "`time_point` must be an object."
+
+
+async def test_self_management_toolkit_sends_session_message(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Toolkit Delegated Session",
+    )
+    toolkit = _build_toolkit(async_db_session, user)
+
+    async def _fake_send_messages_to_sessions(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["conversation_ids"] == [thread.id]
+        assert kwargs["message"] == "ping"
+        return {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [{"conversation_id": str(thread.id), "status": "completed"}],
+        }
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module.self_management_delegated_conversation_service,
+        "send_messages_to_sessions",
+        _fake_send_messages_to_sessions,
+    )
+
+    result = await toolkit.execute(
+        operation_id=SELF_SESSIONS_SEND_MESSAGE.operation_id,
+        arguments={
+            "conversation_ids": [str(thread.id)],
+            "message": "ping",
+        },
+    )
+
+    assert result.payload["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert result.payload["items"] == [
+        {"conversation_id": str(thread.id), "status": "completed"}
+    ]
+
+
+async def test_self_management_toolkit_starts_agent_sessions(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="toolkit-start-sessions",
+    )
+    toolkit = _build_toolkit(async_db_session, user)
+
+    async def _fake_start_sessions_for_agents(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["agent_ids"] == [agent.id]
+        assert kwargs["message"] == "hello"
+        return {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [{"agent_id": str(agent.id), "status": "completed"}],
+        }
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module.self_management_delegated_conversation_service,
+        "start_sessions_for_agents",
+        _fake_start_sessions_for_agents,
+    )
+
+    result = await toolkit.execute(
+        operation_id=SELF_AGENTS_START_SESSIONS.operation_id,
+        arguments={
+            "agent_ids": [str(agent.id)],
+            "message": "hello",
+        },
+    )
+
+    assert result.payload["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert result.payload["items"] == [
+        {"agent_id": str(agent.id), "status": "completed"}
+    ]

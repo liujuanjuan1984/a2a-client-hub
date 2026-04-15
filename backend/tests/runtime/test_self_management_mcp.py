@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.core.security import create_self_management_access_token
+from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_block import AgentMessageBlock
+from app.features.invoke import route_runner as invoke_route_runner
+from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.features.personal_agents import service as personal_agent_service_module
+from app.features.self_management_shared import (
+    delegated_conversation_service as delegated_conversation_service_module,
+)
 from app.features.self_management_shared.self_management_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
     _MCP_USER_ID_STATE_KEY,
@@ -57,6 +66,7 @@ async def test_self_management_write_mcp_server_lists_write_tools() -> None:
     assert "self.agents.create" in tool_names
     assert "self.agents.update_config" in tool_names
     assert "self.agents.delete" in tool_names
+    assert "self.agents.start_sessions" in tool_names
     assert "self.jobs.create" in tool_names
     assert "self.jobs.pause" in tool_names
     assert "self.jobs.resume" in tool_names
@@ -64,6 +74,7 @@ async def test_self_management_write_mcp_server_lists_write_tools() -> None:
     assert "self.jobs.delete" in tool_names
     assert "self.sessions.update" in tool_names
     assert "self.sessions.archive" in tool_names
+    assert "self.sessions.send_message" in tool_names
     assert "self.sessions.unarchive" in tool_names
 
 
@@ -404,6 +415,376 @@ async def test_execute_self_management_mcp_operation_supports_session_writes(
     assert archive_result["result"]["session"]["status"] == "archived"
     assert unarchive_result["ok"] is True
     assert unarchive_result["result"]["session"]["status"] == "active"
+
+
+async def test_execute_self_management_mcp_operation_supports_session_send_message(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Delegated Session",
+    )
+
+    async def _fake_send_messages_to_sessions(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["conversation_ids"] == [thread.id]
+        assert kwargs["message"] == "ping"
+        return {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "session",
+                    "conversation_id": str(thread.id),
+                    "status": "completed",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module.self_management_delegated_conversation_service,
+        "send_messages_to_sessions",
+        _fake_send_messages_to_sessions,
+    )
+
+    result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.send_message",
+        arguments={
+            "conversation_ids": [str(thread.id)],
+            "message": "ping",
+        },
+        db=async_db_session,
+    )
+
+    assert result == {
+        "ok": True,
+        "result": {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "session",
+                    "conversation_id": str(thread.id),
+                    "status": "completed",
+                }
+            ],
+        },
+    }
+
+
+async def test_execute_self_management_mcp_operation_supports_agent_start_sessions(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-start-sessions",
+    )
+
+    async def _fake_start_sessions_for_agents(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["agent_ids"] == [agent.id]
+        assert kwargs["message"] == "hello"
+        return {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "agent",
+                    "agent_id": str(agent.id),
+                    "status": "completed",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module.self_management_delegated_conversation_service,
+        "start_sessions_for_agents",
+        _fake_start_sessions_for_agents,
+    )
+
+    result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.start_sessions",
+        arguments={
+            "agent_ids": [str(agent.id)],
+            "message": "hello",
+        },
+        db=async_db_session,
+    )
+
+    assert result == {
+        "ok": True,
+        "result": {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "agent",
+                    "agent_id": str(agent.id),
+                    "status": "completed",
+                }
+            ],
+        },
+    }
+
+
+async def test_execute_self_management_mcp_operation_persists_delegated_session_send(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-delegated-session-e2e",
+        name="Delegated Session Agent",
+    )
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Delegated Session Thread",
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(
+            name="Delegated Session Agent",
+            url="https://example.com/a2a",
+        )
+    )
+
+    async def _fake_load_for_external_call(_db, _loader):
+        return runtime
+
+    async def _fake_finalize_outbound_invoke_payload(**kwargs):
+        return kwargs["payload"]
+
+    async def _fake_noop(**_kwargs):
+        return None
+
+    async def _fake_consume_stream(**kwargs):
+        await kwargs["on_event"](
+            {
+                "kind": "artifact-update",
+                "artifact": {
+                    "parts": [{"kind": "text", "text": "delegated draft"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "block_type": "text",
+                                "event_id": "evt-delegated-1",
+                                "sequence": 1,
+                            }
+                        }
+                    },
+                },
+            }
+        )
+        outcome = StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="delegated final",
+            error_message=None,
+            error_code=None,
+            elapsed_seconds=1.0,
+            idle_seconds=0.1,
+            terminal_event_seen=True,
+        )
+        await kwargs["on_finalized"](outcome)
+        return outcome
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module,
+        "load_for_external_call",
+        _fake_load_for_external_call,
+    )
+    monkeypatch.setattr(
+        delegated_conversation_service_module,
+        "get_a2a_service",
+        lambda: SimpleNamespace(gateway=object()),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload",
+        _fake_finalize_outbound_invoke_payload,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_preempt_previous_invoke_if_requested",
+        _fake_noop,
+    )
+    monkeypatch.setattr(invoke_route_runner, "_register_inflight_invoke", _fake_noop)
+    monkeypatch.setattr(invoke_route_runner, "_unregister_inflight_invoke", _fake_noop)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "consume_stream",
+        _fake_consume_stream,
+    )
+
+    result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.send_message",
+        arguments={
+            "conversation_ids": [str(thread.id)],
+            "message": "ping",
+        },
+        db=async_db_session,
+    )
+
+    assert result["ok"] is True
+    assert result["result"]["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert result["result"]["items"][0]["status"] == "completed"
+
+    automation_message = await async_db_session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.conversation_id == thread.id,
+            AgentMessage.sender == "automation",
+        )
+    )
+    agent_message = await async_db_session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.conversation_id == thread.id,
+            AgentMessage.sender == "agent",
+        )
+    )
+    assert automation_message is not None
+    assert agent_message is not None
+    assert automation_message.message_metadata["delegated_by"] == (
+        "self_management_built_in_agent"
+    )
+    assert automation_message.message_metadata["delegated_target_kind"] == "session"
+    assert automation_message.message_metadata["delegated_target_id"] == str(thread.id)
+    assert automation_message.message_metadata["message_kind"] == (
+        "delegated_session_message"
+    )
+    assert agent_message.message_metadata["message_kind"] == "delegated_session_message"
+
+    persisted_user_block = await async_db_session.scalar(
+        select(AgentMessageBlock).where(
+            AgentMessageBlock.message_id == automation_message.id,
+        )
+    )
+    assert persisted_user_block is not None
+    assert persisted_user_block.content == "ping"
+    assert persisted_user_block.source == "automation_input"
+
+
+async def test_execute_self_management_mcp_operation_persists_delegated_agent_start(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-delegated-agent-e2e",
+        name="Delegated Agent",
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(
+            name="Delegated Agent",
+            url="https://example.com/a2a",
+        )
+    )
+
+    async def _fake_load_for_external_call(_db, _loader):
+        return runtime
+
+    async def _fake_finalize_outbound_invoke_payload(**kwargs):
+        return kwargs["payload"]
+
+    async def _fake_noop(**_kwargs):
+        return None
+
+    async def _fake_consume_stream(**kwargs):
+        await kwargs["on_event"](
+            {
+                "kind": "artifact-update",
+                "artifact": {
+                    "parts": [{"kind": "text", "text": "agent delegated draft"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "block_type": "text",
+                                "event_id": "evt-agent-start-1",
+                                "sequence": 1,
+                            }
+                        }
+                    },
+                },
+            }
+        )
+        outcome = StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="agent delegated final",
+            error_message=None,
+            error_code=None,
+            elapsed_seconds=1.0,
+            idle_seconds=0.1,
+            terminal_event_seen=True,
+        )
+        await kwargs["on_finalized"](outcome)
+        return outcome
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module,
+        "load_for_external_call",
+        _fake_load_for_external_call,
+    )
+    monkeypatch.setattr(
+        delegated_conversation_service_module,
+        "get_a2a_service",
+        lambda: SimpleNamespace(gateway=object()),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_finalize_outbound_invoke_payload",
+        _fake_finalize_outbound_invoke_payload,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_preempt_previous_invoke_if_requested",
+        _fake_noop,
+    )
+    monkeypatch.setattr(invoke_route_runner, "_register_inflight_invoke", _fake_noop)
+    monkeypatch.setattr(invoke_route_runner, "_unregister_inflight_invoke", _fake_noop)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "consume_stream",
+        _fake_consume_stream,
+    )
+
+    result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.start_sessions",
+        arguments={
+            "agent_ids": [str(agent.id)],
+            "message": "hello",
+        },
+        db=async_db_session,
+    )
+
+    assert result["ok"] is True
+    assert result["result"]["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+
+    automation_message = await async_db_session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.user_id == user.id,
+            AgentMessage.sender == "automation",
+        )
+    )
+    assert automation_message is not None
+    assert automation_message.message_metadata["delegated_target_kind"] == "agent"
+    assert automation_message.message_metadata["delegated_target_id"] == str(agent.id)
+    assert automation_message.message_metadata["message_kind"] == (
+        "delegated_agent_message"
+    )
 
 
 async def test_self_management_mcp_http_app_requires_bearer_auth(

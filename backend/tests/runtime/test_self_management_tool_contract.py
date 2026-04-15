@@ -4,8 +4,10 @@ from app.features.self_management_shared.capability_catalog import (
     ADMIN_HUB_AGENTS_LIST,
     SELF_AGENTS_CHECK_HEALTH,
     SELF_AGENTS_CREATE,
+    SELF_AGENTS_START_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_UPDATE_SCHEDULE,
+    SELF_SESSIONS_SEND_MESSAGE,
 )
 from app.features.self_management_shared.self_management_tool_contract import (
     build_self_management_tool_definition,
@@ -41,7 +43,9 @@ def test_list_self_management_tool_definitions_filters_by_surface() -> None:
     assert "self.jobs.delete" in operation_ids
     assert "self.sessions.archive" in operation_ids
     assert "self.sessions.get" in operation_ids
+    assert "self.sessions.send_message" in operation_ids
     assert "self.agents.update_config" in operation_ids
+    assert "self.agents.start_sessions" in operation_ids
     assert "admin.agents.list" not in operation_ids
 
 
@@ -61,6 +65,28 @@ def test_build_self_management_tool_definition_supports_agent_health_check() -> 
     assert definition.tool_name == "self.agents.check_health"
     assert definition.confirmation_policy.value == "required"
     assert definition.input_json_schema["properties"]["force"]["type"] == "boolean"
+
+
+def test_build_self_management_tool_definition_supports_session_send_message() -> None:
+    definition = build_self_management_tool_definition(SELF_SESSIONS_SEND_MESSAGE)
+
+    assert definition.operation_id == "self.sessions.send_message"
+    assert definition.tool_name == "self.sessions.send_message"
+    assert definition.confirmation_policy.value == "required"
+    assert definition.input_json_schema["properties"]["conversation_ids"]["type"] == (
+        "array"
+    )
+    assert definition.input_json_schema["properties"]["message"]["type"] == "string"
+
+
+def test_build_self_management_tool_definition_supports_agent_start_sessions() -> None:
+    definition = build_self_management_tool_definition(SELF_AGENTS_START_SESSIONS)
+
+    assert definition.operation_id == "self.agents.start_sessions"
+    assert definition.tool_name == "self.agents.start_sessions"
+    assert definition.confirmation_policy.value == "required"
+    assert definition.input_json_schema["properties"]["agent_ids"]["type"] == "array"
+    assert definition.input_json_schema["properties"]["message"]["type"] == "string"
 
 
 def test_build_self_management_tool_definition_documents_job_conversation_policy() -> (
