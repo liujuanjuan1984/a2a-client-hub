@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
@@ -16,6 +16,7 @@ from app.utils.session_identity import normalize_non_empty_text
 
 _STREAM_METADATA_SCHEMA_VERSION = 1
 STREAM_BLOCK_FLUSH_CHUNK_LIMIT = 20
+InvokeTransport = Literal["http_json", "http_sse", "scheduled", "ws"]
 
 
 class InvokePersistenceState(Protocol):
@@ -37,6 +38,25 @@ class InvokePersistenceState(Protocol):
     persisted_block_count: int
     chunk_buffer: list[dict[str, Any]]
     current_block_type: str | None
+
+
+@dataclass(frozen=True)
+class InvokePersistenceRequest:
+    user_id: UUID
+    agent_id: UUID
+    agent_source: Literal["personal", "shared"]
+    query: str
+    transport: InvokeTransport
+    stream_enabled: bool
+    user_sender: Literal["user", "automation"] = "user"
+    extra_persisted_metadata: dict[str, Any] = field(default_factory=dict)
+
+    def build_extra_metadata(self) -> dict[str, Any]:
+        return {
+            "transport": self.transport,
+            "stream": self.stream_enabled,
+            **dict(self.extra_persisted_metadata),
+        }
 
 
 @dataclass(frozen=True)
@@ -96,7 +116,7 @@ def build_stream_metadata_from_outcome(
 def resolve_invoke_idempotency_key(
     *,
     state: InvokePersistenceState,
-    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+    transport: InvokeTransport,
 ) -> str | None:
     metadata_run_id = None
     if isinstance(state.metadata, dict):
@@ -213,14 +233,7 @@ def resolve_stream_event_id(
 async def ensure_local_message_headers(
     *,
     state: InvokePersistenceState,
-    user_id: UUID,
-    agent_id: UUID,
-    agent_source: Literal["personal", "shared"],
-    query: str,
-    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
-    stream_enabled: bool,
-    user_sender: Literal["user", "automation"] = "user",
-    extra_persisted_metadata: dict[str, Any] | None = None,
+    request: InvokePersistenceRequest,
     session_factory: Any,
     commit_fn: Any,
     session_hub: Any,
@@ -242,7 +255,7 @@ async def ensure_local_message_headers(
 
     idempotency_key = state.idempotency_key or resolve_invoke_idempotency_key(
         state=state,
-        transport=transport,
+        transport=request.transport,
     )
     state.idempotency_key = idempotency_key
     async with session_factory() as persist_db:
@@ -253,21 +266,17 @@ async def ensure_local_message_headers(
                 persist_db,
                 local_session_id=state.local_session_id,
                 source=state.local_source,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                query=query,
+                user_id=request.user_id,
+                agent_id=request.agent_id,
+                agent_source=request.agent_source,
+                query=request.query,
                 context_id=state.context_id,
                 invoke_metadata=state.metadata,
-                extra_metadata={
-                    "transport": transport,
-                    "stream": stream_enabled,
-                    **dict(extra_persisted_metadata or {}),
-                },
+                extra_metadata=request.build_extra_metadata(),
                 idempotency_key=idempotency_key,
                 user_message_id=coerce_uuid(state.user_message_id),
                 agent_message_id=coerce_uuid(state.agent_message_id),
-                user_sender=user_sender,
+                user_sender=request.user_sender,
             )
         )
         await commit_fn(persist_db)
@@ -287,14 +296,7 @@ async def persist_stream_block_update(
     *,
     state: InvokePersistenceState,
     event_payload: dict[str, Any],
-    user_id: UUID,
-    agent_id: UUID,
-    agent_source: Literal["personal", "shared"],
-    query: str,
-    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
-    stream_enabled: bool,
-    user_sender: Literal["user", "automation"] = "user",
-    extra_persisted_metadata: dict[str, Any] | None = None,
+    request: InvokePersistenceRequest,
     stream_service: Any,
     session_factory: Any,
     commit_fn: Any,
@@ -310,14 +312,7 @@ async def persist_stream_block_update(
         return
     await ensure_headers_fn(
         state=state,
-        user_id=user_id,
-        agent_id=agent_id,
-        agent_source=agent_source,
-        query=query,
-        transport=transport,
-        stream_enabled=stream_enabled,
-        user_sender=user_sender,
-        extra_persisted_metadata=extra_persisted_metadata,
+        request=request,
     )
     if flush_buffer_fn is None:
         flush_buffer_fn = flush_stream_buffer
@@ -346,7 +341,7 @@ async def persist_stream_block_update(
     if state.current_block_type is not None and state.current_block_type != block_type:
         await flush_buffer_fn(
             state=state,
-            user_id=user_id,
+            user_id=request.user_id,
             session_factory=session_factory,
             commit_fn=commit_fn,
             session_hub=session_hub,
@@ -376,7 +371,7 @@ async def persist_stream_block_update(
     if is_finished or len(state.chunk_buffer) >= STREAM_BLOCK_FLUSH_CHUNK_LIMIT:
         await flush_buffer_fn(
             state=state,
-            user_id=user_id,
+            user_id=request.user_id,
             session_factory=session_factory,
             commit_fn=commit_fn,
             session_hub=session_hub,
@@ -387,14 +382,7 @@ async def persist_interrupt_lifecycle_event(
     *,
     state: InvokePersistenceState,
     event_payload: dict[str, Any],
-    user_id: UUID,
-    agent_id: UUID,
-    agent_source: Literal["personal", "shared"],
-    query: str,
-    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
-    stream_enabled: bool,
-    user_sender: Literal["user", "automation"] = "user",
-    extra_persisted_metadata: dict[str, Any] | None = None,
+    request: InvokePersistenceRequest,
     stream_service: Any,
     build_interrupt_message_content: Any,
     session_factory: Any,
@@ -412,14 +400,7 @@ async def persist_interrupt_lifecycle_event(
         return
     await ensure_headers_fn(
         state=state,
-        user_id=user_id,
-        agent_id=agent_id,
-        agent_source=agent_source,
-        query=query,
-        transport=transport,
-        stream_enabled=stream_enabled,
-        user_sender=user_sender,
-        extra_persisted_metadata=extra_persisted_metadata,
+        request=request,
     )
     if flush_buffer_fn is None:
         flush_buffer_fn = flush_stream_buffer
@@ -428,7 +409,7 @@ async def persist_interrupt_lifecycle_event(
         return
     await flush_buffer_fn(
         state=state,
-        user_id=user_id,
+        user_id=request.user_id,
         session_factory=session_factory,
         commit_fn=commit_fn,
         session_hub=session_hub,
@@ -443,7 +424,7 @@ async def persist_interrupt_lifecycle_event(
             return
         persisted_block = await session_hub.append_agent_message_block_update(
             persist_db,
-            user_id=user_id,
+            user_id=request.user_id,
             agent_message_id=agent_message_id,
             seq=persist_seq,
             block_type="interrupt_event",
@@ -515,14 +496,7 @@ async def persist_local_outcome(
     *,
     state: InvokePersistenceState,
     outcome: StreamOutcome,
-    user_id: UUID,
-    agent_id: UUID,
-    agent_source: Literal["personal", "shared"],
-    query: str,
-    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
-    stream_enabled: bool,
-    user_sender: Literal["user", "automation"] = "user",
-    extra_persisted_metadata: dict[str, Any] | None = None,
+    request: InvokePersistenceRequest,
     response_metadata: dict[str, Any] | None = None,
     session_factory: Any,
     commit_fn: Any,
@@ -534,21 +508,14 @@ async def persist_local_outcome(
         return
     await ensure_headers_fn(
         state=state,
-        user_id=user_id,
-        agent_id=agent_id,
-        agent_source=agent_source,
-        query=query,
-        transport=transport,
-        stream_enabled=stream_enabled,
-        user_sender=user_sender,
-        extra_persisted_metadata=extra_persisted_metadata,
+        request=request,
     )
     if persist_final_block_fn is None:
         persist_final_block_fn = persist_synthetic_final_block_if_needed
     await persist_final_block_fn(
         state=state,
         outcome=outcome,
-        user_id=user_id,
+        user_id=request.user_id,
         session_factory=session_factory,
         commit_fn=commit_fn,
         session_hub=session_hub,
@@ -561,7 +528,7 @@ async def persist_local_outcome(
     )
     idempotency_key = state.idempotency_key or resolve_invoke_idempotency_key(
         state=state,
-        transport=transport,
+        transport=request.transport,
     )
     state.idempotency_key = idempotency_key
     async with session_factory() as persist_db:
@@ -570,19 +537,15 @@ async def persist_local_outcome(
                 persist_db,
                 local_session_id=state.local_session_id,
                 source=state.local_source,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                query=query,
+                user_id=request.user_id,
+                agent_id=request.agent_id,
+                agent_source=request.agent_source,
+                query=request.query,
                 response_content=persisted_content,
                 success=outcome.success,
                 context_id=state.context_id,
                 invoke_metadata=state.metadata,
-                extra_metadata={
-                    "transport": transport,
-                    "stream": stream_enabled,
-                    **dict(extra_persisted_metadata or {}),
-                },
+                extra_metadata=request.build_extra_metadata(),
                 response_metadata=metadata_payload,
                 idempotency_key=idempotency_key,
                 agent_status=resolve_agent_status_from_outcome(outcome),
@@ -590,7 +553,7 @@ async def persist_local_outcome(
                 error_code=outcome.error_code,
                 user_message_id=coerce_uuid(state.user_message_id),
                 agent_message_id=coerce_uuid(state.agent_message_id),
-                user_sender=user_sender,
+                user_sender=request.user_sender,
             )
         )
         await commit_fn(persist_db)
@@ -656,7 +619,9 @@ def is_interrupt_requested(payload: A2AAgentInvokeRequest) -> bool:
 
 
 __all__ = [
+    "InvokePersistenceRequest",
     "InvokePersistenceState",
+    "InvokeTransport",
     "PersistedStreamEnvelope",
     "PersistedStreamError",
     "STREAM_BLOCK_FLUSH_CHUNK_LIMIT",

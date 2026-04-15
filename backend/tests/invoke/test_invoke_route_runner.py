@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 from types import SimpleNamespace
+from typing import Literal
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,6 +20,7 @@ from app.db.locking import (
 )
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
+from app.features.invoke.stream_persistence import InvokePersistenceRequest
 from app.features.sessions.common import (
     BindInflightTaskReport,
     PreemptedInvokeReport,
@@ -72,6 +74,29 @@ class _CancelableCloseWebSocket:
         self.close_started.set()
         await self.close_released.wait()
         self.close_finished.set()
+
+
+def _build_persistence_request(
+    *,
+    user_id: UUID | None = None,
+    agent_id: UUID | None = None,
+    agent_source: Literal["personal", "shared"] = "shared",
+    query: str = "hello",
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"] = "http_json",
+    stream_enabled: bool = True,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, object] | None = None,
+) -> InvokePersistenceRequest:
+    return InvokePersistenceRequest(
+        user_id=user_id or uuid4(),
+        agent_id=agent_id or uuid4(),
+        agent_source=agent_source,
+        query=query,
+        transport=transport,
+        stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=dict(extra_persisted_metadata or {}),
+    )
 
 
 @pytest.mark.asyncio
@@ -913,12 +938,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     )
     on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="scheduled",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="scheduled"),
     )
 
     await on_event(
@@ -1042,12 +1062,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
     )
     on_event, _ = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_sse",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="http_sse"),
     )
 
     await on_event(
@@ -1652,12 +1667,10 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
     )
     on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_json",
-        stream_enabled=False,
+        request=_build_persistence_request(
+            transport="http_json",
+            stream_enabled=False,
+        ),
     )
 
     await on_event({"task": {"id": "task-xyz"}})
@@ -1816,12 +1829,7 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
     await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
         state=state,
         event_payload=event_payload,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="ws",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="ws"),
     )
 
     assert event_payload["message_id"] == agent_message_id
@@ -1903,12 +1911,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
         state=state,
         event_payload=event_payload,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_json",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="http_json"),
     )
 
     updates = captured["updates"]
@@ -1997,12 +2000,7 @@ async def test_persist_stream_block_update_normalizes_message_events(
     await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
         state=state,
         event_payload=event_payload,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_sse",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="http_sse"),
     )
 
     assert captured == {}
@@ -2080,12 +2078,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
                 },
             },
         },
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_json",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="http_json"),
     )
     assert flushed_batches == []
     assert len(state.chunk_buffer) == 1
@@ -2103,12 +2096,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
                 },
             },
         },
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_json",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="http_json"),
     )
 
     assert len(flushed_batches) == 1
@@ -2185,12 +2173,7 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
     await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
         state=state,
         event_payload=event_payload,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_json",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="http_json"),
     )
 
     expected_event_id = f"{refs['agent_message_id']}:4"
@@ -2284,12 +2267,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
 
     on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_sse",
-        stream_enabled=True,
+        request=_build_persistence_request(transport="http_sse"),
     )
 
     await on_event(
@@ -2434,12 +2412,10 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
             idle_seconds=0.1,
             terminal_event_seen=True,
         ),
-        user_id=uuid4(),
-        agent_id=uuid4(),
-        agent_source="shared",
-        query="hello",
-        transport="http_json",
-        stream_enabled=False,
+        request=_build_persistence_request(
+            transport="http_json",
+            stream_enabled=False,
+        ),
     )
 
     assert captured_chunk["seq"] == 1

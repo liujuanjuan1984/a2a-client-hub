@@ -140,18 +140,21 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
     )
 
     runtime = SimpleNamespace(resolved=SimpleNamespace(name="Delegated Agent"))
-    created_conversation_id = uuid4()
+    captured_conversation_id: str | None = None
 
     async def _fake_load_for_external_call(_db, _loader):
         return runtime
 
     async def _fake_run_background_invoke(**kwargs):
+        nonlocal captured_conversation_id
         assert kwargs["runtime"] is runtime
         assert kwargs["user_id"] == user.id
         assert kwargs["agent_id"] == agent.id
         assert kwargs["agent_source"] == "personal"
         assert kwargs["payload"].query == "hello"
-        assert kwargs["payload"].conversation_id is None
+        assert isinstance(kwargs["payload"].conversation_id, str)
+        assert kwargs["payload"].conversation_id
+        captured_conversation_id = kwargs["payload"].conversation_id
         assert kwargs["user_sender"] == "automation"
         assert kwargs["extra_persisted_metadata"] == {
             "delegated_by": "self_management_built_in_agent",
@@ -164,7 +167,7 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
             "response_content": "agent pong",
             "error": None,
             "error_code": None,
-            "conversation_id": created_conversation_id,
+            "conversation_id": captured_conversation_id,
             "message_refs": {
                 "user_message_id": uuid4(),
                 "agent_message_id": uuid4(),
@@ -196,13 +199,14 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
     )
 
     assert result["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert captured_conversation_id is not None
     assert result["items"] == [
         {
             "target_type": "agent",
             "agent_id": str(agent.id),
             "agent_source": "personal",
             "agent_name": "Delegated Agent",
-            "conversation_id": str(created_conversation_id),
+            "conversation_id": captured_conversation_id,
             "status": "completed",
             "response_content": "agent pong",
             "error": None,

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,6 +14,7 @@ from app.features.invoke.service import (
     a2a_invoke_service,
 )
 from app.features.invoke.stream_persistence import (
+    InvokePersistenceRequest,
     build_stream_metadata_from_outcome,
     ensure_local_message_headers,
     flush_stream_buffer,
@@ -139,6 +140,29 @@ class _SessionContext:
 
     async def __aexit__(self, _exc_type, _exc, _tb) -> None:
         return None
+
+
+def _build_request(
+    *,
+    user_id: UUID,
+    agent_id: UUID | None = None,
+    agent_source: Literal["personal", "shared"] = "personal",
+    query: str = "hello",
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"] = "http_sse",
+    stream_enabled: bool = True,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
+) -> InvokePersistenceRequest:
+    return InvokePersistenceRequest(
+        user_id=user_id,
+        agent_id=agent_id or uuid4(),
+        agent_source=agent_source,
+        query=query,
+        transport=transport,
+        stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=dict(extra_persisted_metadata or {}),
+    )
 
 
 @pytest.mark.asyncio
@@ -275,12 +299,7 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
         await persist_stream_block_update(
             state=state,
             event_payload=event_payload,
-            user_id=user.id,
-            agent_id=uuid4(),
-            agent_source="personal",
-            query="hello",
-            transport="http_sse",
-            stream_enabled=True,
+            request=_build_request(user_id=user.id),
             stream_service=a2a_invoke_service,
             session_factory=_session_factory,
             commit_fn=_commit,
@@ -307,12 +326,7 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
             idle_seconds=0.1,
             terminal_event_seen=True,
         ),
-        user_id=user.id,
-        agent_id=uuid4(),
-        agent_source="personal",
-        query="hello",
-        transport="http_sse",
-        stream_enabled=True,
+        request=_build_request(user_id=user.id),
         session_factory=_session_factory,
         commit_fn=_commit,
         session_hub=session_hub_service,
@@ -471,12 +485,7 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
         await persist_stream_block_update(
             state=state,
             event_payload=event_payload,
-            user_id=user.id,
-            agent_id=uuid4(),
-            agent_source="personal",
-            query="hello",
-            transport="http_sse",
-            stream_enabled=True,
+            request=_build_request(user_id=user.id),
             stream_service=a2a_invoke_service,
             session_factory=_session_factory,
             commit_fn=_commit,
@@ -503,12 +512,7 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
             idle_seconds=0.1,
             terminal_event_seen=True,
         ),
-        user_id=user.id,
-        agent_id=uuid4(),
-        agent_source="personal",
-        query="hello",
-        transport="http_sse",
-        stream_enabled=True,
+        request=_build_request(user_id=user.id),
         session_factory=_session_factory,
         commit_fn=_commit,
         session_hub=session_hub_service,

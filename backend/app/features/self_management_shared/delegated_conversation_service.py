@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -174,6 +174,7 @@ class SelfManagementDelegatedConversationService:
         agent_id: UUID,
         message: str,
     ) -> dict[str, Any]:
+        local_conversation_id = str(uuid4())
         runtime_info = await self._resolve_runtime_for_agent(
             db=db,
             current_user=current_user,
@@ -195,7 +196,7 @@ class SelfManagementDelegatedConversationService:
             agent_id=agent_id,
             agent_source="personal",
             message=message,
-            conversation_id=None,
+            conversation_id=local_conversation_id,
             target_kind="agent",
             target_id=str(agent_id),
         )
@@ -207,7 +208,7 @@ class SelfManagementDelegatedConversationService:
             "conversation_id": (
                 str(invoke_result.get("conversation_id"))
                 if invoke_result.get("conversation_id") is not None
-                else None
+                else local_conversation_id
             ),
             **self._serialize_invoke_result(invoke_result),
         }
