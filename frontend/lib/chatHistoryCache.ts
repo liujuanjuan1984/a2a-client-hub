@@ -98,6 +98,17 @@ export const updateConversationMessage = (
   writeMessages(conversationId, next);
 };
 
+export const removeConversationMessage = (
+  conversationId: string,
+  messageId: string,
+) => {
+  const targetId = normalizeMessageId(messageId);
+  if (!targetId) return;
+  const current = getConversationMessages(conversationId);
+  const next = current.filter((item) => item.id !== targetId);
+  writeMessages(conversationId, next);
+};
+
 export const updateConversationMessageWithUpdater = (
   conversationId: string,
   messageId: string,

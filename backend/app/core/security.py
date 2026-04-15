@@ -366,12 +366,20 @@ def create_self_management_interrupt_token(
     conversation_id: str,
     message: str,
     tool_names: Sequence[str],
+    allowed_operations: Sequence[str] = (),
 ) -> str:
     normalized_conversation_id = str(conversation_id).strip()
     if not normalized_conversation_id:
         raise ValueError("conversation_id is required")
     normalized_tool_names = sorted(
         {str(tool_name).strip() for tool_name in tool_names if str(tool_name).strip()}
+    )
+    normalized_operations = sorted(
+        {
+            str(operation_id).strip()
+            for operation_id in allowed_operations
+            if str(operation_id).strip()
+        }
     )
     return create_jwt_token(
         subject=str(user_id),
@@ -381,6 +389,7 @@ def create_self_management_interrupt_token(
             SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM: normalized_conversation_id,
             SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM: message,
             SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM: normalized_tool_names,
+            SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
         },
     )
 
