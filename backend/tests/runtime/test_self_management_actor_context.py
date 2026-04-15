@@ -310,7 +310,9 @@ def test_first_wave_capability_catalog_contains_expected_surfaces() -> None:
     assert "self.jobs.create" in exposed_ids
     assert "self.sessions.get" in exposed_ids
     assert "self.sessions.archive" in exposed_ids
+    assert "self.sessions.send_message" in exposed_ids
     assert "self.agents.create" in exposed_ids
+    assert "self.agents.start_sessions" in exposed_ids
     assert "self.agents.update_config" in exposed_ids
     assert all(item.first_wave_exposed for item in FIRST_WAVE_EXPOSED_OPERATIONS)
     assert all(item.surfaces for item in FIRST_WAVE_EXPOSED_OPERATIONS)

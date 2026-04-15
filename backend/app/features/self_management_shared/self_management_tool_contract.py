@@ -97,6 +97,11 @@ class _SessionUpdateInput(_SessionGetInput):
     title: str = Field(min_length=1, max_length=255)
 
 
+class _SessionsSendMessageInput(_StrictBaseModel):
+    conversation_ids: list[str] = Field(min_length=1, max_length=10)
+    message: str = Field(min_length=1, max_length=50_000)
+
+
 class _AgentsListInput(_StrictBaseModel):
     page: int = Field(default=1, ge=1)
     size: int = Field(default=20, ge=1)
@@ -148,6 +153,11 @@ class _AgentUpdateConfigInput(_AgentGetInput):
     basic_password: str | None = None
 
 
+class _AgentsStartSessionsInput(_StrictBaseModel):
+    agent_ids: list[str] = Field(min_length=1, max_length=10)
+    message: str = Field(min_length=1, max_length=50_000)
+
+
 _INPUT_MODELS_BY_OPERATION_ID: dict[str, type[BaseModel]] = {
     "self.jobs.list": _JobsListInput,
     "self.jobs.get": _JobGetInput,
@@ -163,6 +173,7 @@ _INPUT_MODELS_BY_OPERATION_ID: dict[str, type[BaseModel]] = {
     "self.sessions.update": _SessionUpdateInput,
     "self.sessions.archive": _SessionGetInput,
     "self.sessions.unarchive": _SessionGetInput,
+    "self.sessions.send_message": _SessionsSendMessageInput,
     "self.agents.list": _AgentsListInput,
     "self.agents.get": _AgentGetInput,
     "self.agents.check_health": _AgentCheckHealthInput,
@@ -170,6 +181,7 @@ _INPUT_MODELS_BY_OPERATION_ID: dict[str, type[BaseModel]] = {
     "self.agents.create": _AgentCreateInput,
     "self.agents.update_config": _AgentUpdateConfigInput,
     "self.agents.delete": _AgentGetInput,
+    "self.agents.start_sessions": _AgentsStartSessionsInput,
 }
 
 

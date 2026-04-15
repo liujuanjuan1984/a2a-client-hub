@@ -24,6 +24,7 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_DELETE,
     SELF_AGENTS_GET,
     SELF_AGENTS_LIST,
+    SELF_AGENTS_START_SESSIONS,
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_JOBS_CREATE,
     SELF_JOBS_DELETE,
@@ -37,9 +38,13 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_GET,
     SELF_SESSIONS_LIST,
+    SELF_SESSIONS_SEND_MESSAGE,
     SELF_SESSIONS_UNARCHIVE,
     SELF_SESSIONS_UPDATE,
     get_self_management_operation,
+)
+from app.features.self_management_shared.delegated_conversation_service import (
+    self_management_delegated_conversation_service,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
@@ -110,6 +115,8 @@ class SelfManagementToolkit:
             payload = await self._archive_session(args)
         elif operation.operation_id == SELF_SESSIONS_UNARCHIVE.operation_id:
             payload = await self._unarchive_session(args)
+        elif operation.operation_id == SELF_SESSIONS_SEND_MESSAGE.operation_id:
+            payload = await self._send_session_message(args)
         elif operation.operation_id == SELF_AGENTS_LIST.operation_id:
             payload = await self._list_agents(args)
         elif operation.operation_id == SELF_AGENTS_GET.operation_id:
@@ -124,6 +131,8 @@ class SelfManagementToolkit:
             payload = await self._update_agent_config(args)
         elif operation.operation_id == SELF_AGENTS_DELETE.operation_id:
             payload = await self._delete_agent(args)
+        elif operation.operation_id == SELF_AGENTS_START_SESSIONS.operation_id:
+            payload = await self._start_agent_sessions(args)
         else:  # pragma: no cover - defensive guard
             raise SelfManagementToolInputError(
                 f"Operation `{operation_id}` is not implemented by the toolkit."
@@ -356,6 +365,18 @@ class SelfManagementToolkit:
         )
         return {"session": self._serialize_session(session_item)}
 
+    async def _send_session_message(self, args: dict[str, Any]) -> dict[str, Any]:
+        return await self_management_delegated_conversation_service.send_messages_to_sessions(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            conversation_ids=self._as_uuid_list(
+                args.get("conversation_ids"),
+                field_name="conversation_ids",
+            ),
+            message=self._as_str(args.get("message"), field_name="message"),
+        )
+
     async def _list_agents(self, args: dict[str, Any]) -> dict[str, Any]:
         page = self._as_int(args.get("page", 1), field_name="page", minimum=1)
         size = self._as_int(args.get("size", 20), field_name="size", minimum=1)
@@ -496,6 +517,15 @@ class SelfManagementToolkit:
         )
         return {"agent_id": str(agent_id), "deleted": True}
 
+    async def _start_agent_sessions(self, args: dict[str, Any]) -> dict[str, Any]:
+        return await self_management_delegated_conversation_service.start_sessions_for_agents(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            agent_ids=self._as_uuid_list(args.get("agent_ids"), field_name="agent_ids"),
+            message=self._as_str(args.get("message"), field_name="message"),
+        )
+
     def _timezone_str(self) -> str:
         return cast(str, self.current_user.timezone or "UTC")
 
@@ -546,6 +576,14 @@ class SelfManagementToolkit:
         if value is None:
             return None
         return self._as_uuid(value, field_name=field_name)
+
+    def _as_uuid_list(self, value: Any, *, field_name: str) -> list[UUID]:
+        raw_values = self._as_optional_str_list(value, field_name=field_name)
+        if not raw_values:
+            raise SelfManagementToolInputError(
+                f"`{field_name}` must contain at least one UUID string."
+            )
+        return [self._as_uuid(item, field_name=field_name) for item in raw_values]
 
     @staticmethod
     def _as_optional_bool(value: Any, *, field_name: str) -> bool | None:

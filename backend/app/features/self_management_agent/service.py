@@ -82,10 +82,11 @@ _READ_ONLY_APPENDIX = (
     "`[[SELF_MANAGEMENT_WRITE_OPERATIONS:<comma-separated operation ids>]]` using "
     "only the required write operation ids from this catalog: "
     "self.agents.check_health, self.agents.check_health_all, self.agents.create, "
-    "self.agents.delete, self.agents.update_config, self.jobs.create, "
-    "self.jobs.delete, self.jobs.pause, self.jobs.resume, self.jobs.update, "
+    "self.agents.delete, self.agents.start_sessions, "
+    "self.agents.update_config, self.jobs.create, self.jobs.delete, "
+    "self.jobs.pause, self.jobs.resume, self.jobs.update, "
     "self.jobs.update_prompt, self.jobs.update_schedule, self.sessions.archive, "
-    "self.sessions.unarchive, self.sessions.update."
+    "self.sessions.send_message, self.sessions.unarchive, self.sessions.update."
 )
 _WRITE_ENABLED_APPENDIX = (
     " This run includes explicitly approved write tools. Only perform a write when "

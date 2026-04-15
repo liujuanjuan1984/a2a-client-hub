@@ -9,6 +9,9 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.security import create_self_management_access_token
 from app.features.personal_agents import service as personal_agent_service_module
+from app.features.self_management_shared import (
+    delegated_conversation_service as delegated_conversation_service_module,
+)
 from app.features.self_management_shared.self_management_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
     _MCP_USER_ID_STATE_KEY,
@@ -57,6 +60,7 @@ async def test_self_management_write_mcp_server_lists_write_tools() -> None:
     assert "self.agents.create" in tool_names
     assert "self.agents.update_config" in tool_names
     assert "self.agents.delete" in tool_names
+    assert "self.agents.start_sessions" in tool_names
     assert "self.jobs.create" in tool_names
     assert "self.jobs.pause" in tool_names
     assert "self.jobs.resume" in tool_names
@@ -64,6 +68,7 @@ async def test_self_management_write_mcp_server_lists_write_tools() -> None:
     assert "self.jobs.delete" in tool_names
     assert "self.sessions.update" in tool_names
     assert "self.sessions.archive" in tool_names
+    assert "self.sessions.send_message" in tool_names
     assert "self.sessions.unarchive" in tool_names
 
 
@@ -404,6 +409,122 @@ async def test_execute_self_management_mcp_operation_supports_session_writes(
     assert archive_result["result"]["session"]["status"] == "archived"
     assert unarchive_result["ok"] is True
     assert unarchive_result["result"]["session"]["status"] == "active"
+
+
+async def test_execute_self_management_mcp_operation_supports_session_send_message(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Delegated Session",
+    )
+
+    async def _fake_send_messages_to_sessions(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["conversation_ids"] == [thread.id]
+        assert kwargs["message"] == "ping"
+        return {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "session",
+                    "conversation_id": str(thread.id),
+                    "status": "completed",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module.self_management_delegated_conversation_service,
+        "send_messages_to_sessions",
+        _fake_send_messages_to_sessions,
+    )
+
+    result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.send_message",
+        arguments={
+            "conversation_ids": [str(thread.id)],
+            "message": "ping",
+        },
+        db=async_db_session,
+    )
+
+    assert result == {
+        "ok": True,
+        "result": {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "session",
+                    "conversation_id": str(thread.id),
+                    "status": "completed",
+                }
+            ],
+        },
+    }
+
+
+async def test_execute_self_management_mcp_operation_supports_agent_start_sessions(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    agent = await create_a2a_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="mcp-start-sessions",
+    )
+
+    async def _fake_start_sessions_for_agents(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["agent_ids"] == [agent.id]
+        assert kwargs["message"] == "hello"
+        return {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "agent",
+                    "agent_id": str(agent.id),
+                    "status": "completed",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        delegated_conversation_service_module.self_management_delegated_conversation_service,
+        "start_sessions_for_agents",
+        _fake_start_sessions_for_agents,
+    )
+
+    result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.agents.start_sessions",
+        arguments={
+            "agent_ids": [str(agent.id)],
+            "message": "hello",
+        },
+        db=async_db_session,
+    )
+
+    assert result == {
+        "ok": True,
+        "result": {
+            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "items": [
+                {
+                    "target_type": "agent",
+                    "agent_id": str(agent.id),
+                    "status": "completed",
+                }
+            ],
+        },
+    }
 
 
 async def test_self_management_mcp_http_app_requires_bearer_auth(

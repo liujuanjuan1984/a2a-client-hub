@@ -109,6 +109,22 @@ SELF_AGENTS_DELETE = SelfManagementOperation(
     description="Soft-delete one current-user agent.",
 )
 
+SELF_AGENTS_START_SESSIONS = SelfManagementOperation(
+    operation_id="self.agents.start_sessions",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.AGENTS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_agent.start_sessions.requested",
+    tool_name="self.agents.start_sessions",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Start one or more new conversations for the current user's agents, "
+        "send a delegated message, and wait for each reply."
+    ),
+)
+
 SELF_SESSIONS_LIST = SelfManagementOperation(
     operation_id="self.sessions.list",
     scope=SelfManagementScope.SELF,
@@ -170,6 +186,22 @@ SELF_SESSIONS_UNARCHIVE = SelfManagementOperation(
     first_wave_exposed=True,
     surfaces=_SELF_ENTRY_SURFACES,
     description="Restore one archived current-user session.",
+)
+
+SELF_SESSIONS_SEND_MESSAGE = SelfManagementOperation(
+    operation_id="self.sessions.send_message",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.SESSIONS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_session.send_message.requested",
+    tool_name="self.sessions.send_message",
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Send one delegated message to one or more current-user conversations "
+        "and wait for each target agent reply."
+    ),
 )
 
 SELF_JOBS_LIST = SelfManagementOperation(
@@ -382,11 +414,13 @@ FIRST_WAVE_EXPOSED_OPERATIONS = (
     SELF_AGENTS_CREATE,
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_AGENTS_DELETE,
+    SELF_AGENTS_START_SESSIONS,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_GET,
     SELF_SESSIONS_UPDATE,
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_UNARCHIVE,
+    SELF_SESSIONS_SEND_MESSAGE,
     SELF_JOBS_LIST,
     SELF_JOBS_GET,
     SELF_JOBS_CREATE,
@@ -451,6 +485,7 @@ __all__ = [
     "SELF_AGENTS_CHECK_HEALTH",
     "SELF_AGENTS_CHECK_HEALTH_ALL",
     "SELF_AGENTS_DELETE",
+    "SELF_AGENTS_START_SESSIONS",
     "SELF_AGENTS_UPDATE_CONFIG",
     "SELF_JOBS_CREATE",
     "SELF_JOBS_DELETE",
@@ -464,6 +499,7 @@ __all__ = [
     "SELF_SESSIONS_ARCHIVE",
     "SELF_SESSIONS_GET",
     "SELF_SESSIONS_LIST",
+    "SELF_SESSIONS_SEND_MESSAGE",
     "SELF_SESSIONS_UNARCHIVE",
     "SELF_SESSIONS_UPDATE",
     "UNSUPPORTED_FIRST_WAVE_OPERATION_IDS",

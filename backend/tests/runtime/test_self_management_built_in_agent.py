@@ -204,6 +204,7 @@ async def test_built_in_agent_profile_exposes_full_available_tool_surface(
         "self.agents.delete",
         "self.agents.get",
         "self.agents.list",
+        "self.agents.start_sessions",
         "self.agents.update_config",
         "self.jobs.create",
         "self.jobs.delete",
@@ -217,6 +218,7 @@ async def test_built_in_agent_profile_exposes_full_available_tool_surface(
         "self.sessions.archive",
         "self.sessions.get",
         "self.sessions.list",
+        "self.sessions.send_message",
         "self.sessions.unarchive",
         "self.sessions.update",
     ]
@@ -526,6 +528,7 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
         "self.agents.delete",
         "self.agents.get",
         "self.agents.list",
+        "self.agents.start_sessions",
         "self.agents.update_config",
         "self.jobs.create",
         "self.jobs.delete",
@@ -539,6 +542,7 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
         "self.sessions.archive",
         "self.sessions.get",
         "self.sessions.list",
+        "self.sessions.send_message",
         "self.sessions.unarchive",
         "self.sessions.update",
     )
@@ -602,6 +606,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
         "self.agents.delete",
         "self.agents.get",
         "self.agents.list",
+        "self.agents.start_sessions",
         "self.agents.update_config",
         "self.jobs.create",
         "self.jobs.delete",
@@ -615,6 +620,7 @@ async def test_built_in_agent_run_route_returns_swival_result(
         "self.sessions.archive",
         "self.sessions.get",
         "self.sessions.list",
+        "self.sessions.send_message",
         "self.sessions.unarchive",
         "self.sessions.update",
     ]
