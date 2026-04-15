@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.features.self_management_shared.capability_catalog import (
-    ALL_SELF_MANAGEMENT_OPERATIONS,
+    list_self_management_operations,
 )
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
@@ -228,20 +228,14 @@ def list_self_management_tool_definitions(
 ) -> tuple[SelfManagementToolDefinition, ...]:
     """List self-management tool definitions filtered by surface."""
 
-    definitions: list[SelfManagementToolDefinition] = []
-    for operation in ALL_SELF_MANAGEMENT_OPERATIONS.values():
-        if operation.tool_name is None:
-            continue
-        if first_wave_only and not operation.first_wave_exposed:
-            continue
-        if (
-            surface is not None
-            and operation.surfaces
-            and surface not in operation.surfaces
-        ):
-            continue
-        definitions.append(build_self_management_tool_definition(operation))
-    return tuple(sorted(definitions, key=lambda item: item.operation_id))
+    return tuple(
+        build_self_management_tool_definition(operation)
+        for operation in list_self_management_operations(
+            surface=surface,
+            first_wave_only=first_wave_only,
+            require_tool_name=True,
+        )
+    )
 
 
 __all__ = [

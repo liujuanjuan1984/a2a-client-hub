@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from app.features.self_management_shared.actor_context import (
     SelfManagementAction,
     SelfManagementResource,
@@ -466,6 +468,85 @@ def get_self_management_operation(operation_id: str) -> SelfManagementOperation:
         raise KeyError(f"Unknown self-management operation: {operation_id}") from exc
 
 
+def list_self_management_operations(
+    *,
+    surface: SelfManagementSurface | None = None,
+    first_wave_only: bool = True,
+    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
+    action: SelfManagementAction | None = None,
+    require_tool_name: bool = False,
+) -> tuple[SelfManagementOperation, ...]:
+    """List registered operations through one shared filter path."""
+
+    source_operations = (
+        FIRST_WAVE_EXPOSED_OPERATIONS
+        if first_wave_only
+        else tuple(ALL_SELF_MANAGEMENT_OPERATIONS.values())
+    )
+    filtered: list[SelfManagementOperation] = []
+    for operation in source_operations:
+        if require_tool_name and operation.tool_name is None:
+            continue
+        if (
+            surface is not None
+            and operation.surfaces
+            and surface not in operation.surfaces
+        ):
+            continue
+        if (
+            confirmation_policy is not None
+            and operation.confirmation_policy != confirmation_policy
+        ):
+            continue
+        if action is not None and operation.action != action:
+            continue
+        filtered.append(operation)
+    return tuple(sorted(filtered, key=lambda item: item.operation_id))
+
+
+def list_self_management_operation_ids(
+    *,
+    surface: SelfManagementSurface | None = None,
+    first_wave_only: bool = True,
+    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
+    action: SelfManagementAction | None = None,
+    require_tool_name: bool = False,
+) -> tuple[str, ...]:
+    """List filtered operation ids in stable order."""
+
+    return tuple(
+        operation.operation_id
+        for operation in list_self_management_operations(
+            surface=surface,
+            first_wave_only=first_wave_only,
+            confirmation_policy=confirmation_policy,
+            action=action,
+            require_tool_name=require_tool_name,
+        )
+    )
+
+
+def list_self_management_tool_names(
+    *,
+    surface: SelfManagementSurface | None = None,
+    first_wave_only: bool = True,
+    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
+    action: SelfManagementAction | None = None,
+) -> tuple[str, ...]:
+    """List filtered tool names in stable order."""
+
+    return tuple(
+        cast(str, operation.tool_name)
+        for operation in list_self_management_operations(
+            surface=surface,
+            first_wave_only=first_wave_only,
+            confirmation_policy=confirmation_policy,
+            action=action,
+            require_tool_name=True,
+        )
+    )
+
+
 __all__ = [
     "ADMIN_HUB_AGENTS_CREATE",
     "ADMIN_HUB_AGENTS_DELETE",
@@ -504,4 +585,7 @@ __all__ = [
     "SELF_SESSIONS_UPDATE",
     "UNSUPPORTED_FIRST_WAVE_OPERATION_IDS",
     "get_self_management_operation",
+    "list_self_management_operation_ids",
+    "list_self_management_operations",
+    "list_self_management_tool_names",
 ]

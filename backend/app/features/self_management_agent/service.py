@@ -31,6 +31,10 @@ from app.core.security import (
 )
 from app.db.models.agent_message import AgentMessage
 from app.db.models.user import User
+from app.features.self_management_shared.actor_context import SelfManagementAction
+from app.features.self_management_shared.capability_catalog import (
+    list_self_management_operation_ids,
+)
 from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
     SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
@@ -45,6 +49,7 @@ from app.features.self_management_shared.self_management_tool_contract import (
 )
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
+    SelfManagementSurface,
 )
 from app.features.sessions import block_store, message_store
 from app.features.sessions.common import (
@@ -74,6 +79,12 @@ _DEFAULT_SYSTEM_PROMPT = (
 _WRITE_APPROVAL_SENTINEL = "[[SELF_MANAGEMENT_WRITE_APPROVAL_REQUIRED]]"
 _WRITE_APPROVAL_OPERATIONS_PREFIX = "[[SELF_MANAGEMENT_WRITE_OPERATIONS:"
 _WRITE_APPROVAL_OPERATIONS_SUFFIX = "]]"
+_WEB_AGENT_WRITE_OPERATION_IDS = list_self_management_operation_ids(
+    surface=SelfManagementSurface.WEB_AGENT,
+    confirmation_policy=SelfManagementConfirmationPolicy.REQUIRED,
+    action=SelfManagementAction.WRITE,
+    require_tool_name=True,
+)
 _READ_ONLY_APPENDIX = (
     " This run is read-only. Do not attempt write operations. If the user's latest "
     "request would require a write tool, explain the intended change briefly, do not "
@@ -81,12 +92,8 @@ _READ_ONLY_APPENDIX = (
     f"{_WRITE_APPROVAL_SENTINEL}, then append one more final line containing exactly "
     "`[[SELF_MANAGEMENT_WRITE_OPERATIONS:<comma-separated operation ids>]]` using "
     "only the required write operation ids from this catalog: "
-    "self.agents.check_health, self.agents.check_health_all, self.agents.create, "
-    "self.agents.delete, self.agents.start_sessions, "
-    "self.agents.update_config, self.jobs.create, self.jobs.delete, "
-    "self.jobs.pause, self.jobs.resume, self.jobs.update, "
-    "self.jobs.update_prompt, self.jobs.update_schedule, self.sessions.archive, "
-    "self.sessions.send_message, self.sessions.unarchive, self.sessions.update."
+    + ", ".join(_WEB_AGENT_WRITE_OPERATION_IDS)
+    + "."
 )
 _WRITE_ENABLED_APPENDIX = (
     " This run includes explicitly approved write tools. Only perform a write when "
