@@ -1081,6 +1081,8 @@ async def _ensure_local_message_headers(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
 ) -> None:
     await ensure_local_message_headers_impl(
         state=state,
@@ -1090,6 +1092,8 @@ async def _ensure_local_message_headers(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
@@ -1106,6 +1110,8 @@ async def _persist_stream_block_update(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
 ) -> None:
     async def _ensure_headers_adapter(**kwargs: Any) -> None:
         await _ensure_local_message_headers(
@@ -1116,6 +1122,8 @@ async def _persist_stream_block_update(
             query=kwargs["query"],
             transport=kwargs["transport"],
             stream_enabled=kwargs["stream_enabled"],
+            user_sender=kwargs.get("user_sender", "user"),
+            extra_persisted_metadata=kwargs.get("extra_persisted_metadata"),
         )
 
     async def _flush_buffer_adapter(**kwargs: Any) -> None:
@@ -1133,6 +1141,8 @@ async def _persist_stream_block_update(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
         stream_service=a2a_invoke_service,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
@@ -1152,6 +1162,8 @@ async def _persist_interrupt_lifecycle_event(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
 ) -> None:
     async def _ensure_headers_adapter(**kwargs: Any) -> None:
         await _ensure_local_message_headers(
@@ -1162,6 +1174,8 @@ async def _persist_interrupt_lifecycle_event(
             query=kwargs["query"],
             transport=kwargs["transport"],
             stream_enabled=kwargs["stream_enabled"],
+            user_sender=kwargs.get("user_sender", "user"),
+            extra_persisted_metadata=kwargs.get("extra_persisted_metadata"),
         )
 
     async def _flush_buffer_adapter(**kwargs: Any) -> None:
@@ -1179,6 +1193,8 @@ async def _persist_interrupt_lifecycle_event(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
         stream_service=a2a_invoke_service,
         build_interrupt_message_content=serialize_interrupt_event_block_content,
         session_factory=AsyncSessionLocal,
@@ -1213,6 +1229,8 @@ async def _persist_local_outcome(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
     response_metadata: dict[str, Any] | None = None,
 ) -> None:
     async def _ensure_headers_adapter(**kwargs: Any) -> None:
@@ -1224,6 +1242,8 @@ async def _persist_local_outcome(
             query=kwargs["query"],
             transport=kwargs["transport"],
             stream_enabled=kwargs["stream_enabled"],
+            user_sender=kwargs.get("user_sender", "user"),
+            extra_persisted_metadata=kwargs.get("extra_persisted_metadata"),
         )
 
     async def _persist_final_block_adapter(**kwargs: Any) -> None:
@@ -1242,6 +1262,8 @@ async def _persist_local_outcome(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
         response_metadata=response_metadata,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
@@ -1276,6 +1298,8 @@ def _build_consume_stream_callbacks(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
     logger: Any = None,
     log_extra: dict[str, Any] | None = None,
 ) -> tuple[
@@ -1302,6 +1326,8 @@ def _build_consume_stream_callbacks(
             query=query,
             transport=transport,
             stream_enabled=stream_enabled,
+            user_sender=user_sender,
+            extra_persisted_metadata=extra_persisted_metadata,
         )
         await _persist_interrupt_lifecycle_event(
             state=state,
@@ -1312,6 +1338,8 @@ def _build_consume_stream_callbacks(
             query=query,
             transport=transport,
             stream_enabled=stream_enabled,
+            user_sender=user_sender,
+            extra_persisted_metadata=extra_persisted_metadata,
         )
 
     async def on_finalized(outcome: StreamOutcome) -> dict[str, Any] | None:
@@ -1326,6 +1354,8 @@ def _build_consume_stream_callbacks(
                 query=query,
                 transport=transport,
                 stream_enabled=stream_enabled,
+                user_sender=user_sender,
+                extra_persisted_metadata=extra_persisted_metadata,
             )
             return _build_persisted_finalization_ack_event(
                 state=state,
@@ -1544,6 +1574,8 @@ async def run_background_invoke(
     validate_message: Callable[[dict[str, Any]], list[Any]],
     logger: Any,
     log_extra: dict[str, Any],
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
     total_timeout_seconds: float | None = None,
     idle_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
@@ -1604,6 +1636,8 @@ async def run_background_invoke(
         query=payload.query,
         transport="scheduled",
         stream_enabled=True,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
         logger=logger,
         log_extra=stream_log_extra,
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -396,6 +396,7 @@ class SessionHistoryProjectionService:
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
+        user_sender: Literal["user", "automation"] = "user",
         agent_status: str | None = None,
         finish_reason: str | None = None,
         error_code: str | None = None,
@@ -499,12 +500,15 @@ class SessionHistoryProjectionService:
             resolved_agent_status = "done" if success else "error"
         resolved_finish_reason = normalize_non_empty_text(finish_reason)
         resolved_error_code = normalize_non_empty_text(error_code)
+        resolved_user_sender: Literal["user", "automation"] = (
+            "automation" if user_sender == "automation" else "user"
+        )
         requested_user_message = (
             await self._support.find_message_by_id_and_sender(
                 db,
                 user_id=user_id,
                 message_id=user_message_id,
-                sender="user",
+                sender=resolved_user_sender,
                 conversation_id=conversation_id,
             )
             if isinstance(user_message_id, UUID)
@@ -529,7 +533,7 @@ class SessionHistoryProjectionService:
                     db,
                     user_id=user_id,
                     conversation_id=conversation_id,
-                    sender="user",
+                    sender=resolved_user_sender,
                     idempotency_key=normalized_idempotency_key,
                 )
             )
@@ -566,7 +570,7 @@ class SessionHistoryProjectionService:
                         db,
                         id=user_message_id,
                         user_id=user_id,
-                        sender="user",
+                        sender=resolved_user_sender,
                         status="done",
                         conversation_id=conversation_id,
                         metadata=metadata,
@@ -576,7 +580,7 @@ class SessionHistoryProjectionService:
                     user_message = await message_store.create_agent_message(
                         db,
                         user_id=user_id,
-                        sender="user",
+                        sender=resolved_user_sender,
                         status="done",
                         conversation_id=conversation_id,
                         metadata=metadata,
@@ -600,7 +604,7 @@ class SessionHistoryProjectionService:
                         db,
                         user_id=user_id,
                         conversation_id=conversation_id,
-                        sender="user",
+                        sender=resolved_user_sender,
                         idempotency_key=normalized_idempotency_key,
                     )
                 )
@@ -721,7 +725,9 @@ class SessionHistoryProjectionService:
             user_id=user_id,
             message_id=cast(UUID, user_message.id),
             content=query,
-            source="user_input",
+            source=(
+                "user_input" if resolved_user_sender == "user" else "automation_input"
+            ),
         )
         if normalized_response_blocks:
             await _apply_message_block_specs(
@@ -793,6 +799,7 @@ class SessionHistoryProjectionService:
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
+        user_sender: Literal["user", "automation"] = "user",
         agent_status: str | None = None,
         finish_reason: str | None = None,
         error_code: str | None = None,
@@ -823,6 +830,7 @@ class SessionHistoryProjectionService:
             idempotency_key=idempotency_key,
             user_message_id=user_message_id,
             agent_message_id=agent_message_id,
+            user_sender=user_sender,
             agent_status=agent_status,
             finish_reason=finish_reason,
             error_code=error_code,
@@ -982,6 +990,7 @@ class SessionHistoryProjectionService:
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
+        user_sender: Literal["user", "automation"] = "user",
     ) -> dict[str, UUID]:
         session = await self._support.get_local_session_by_id(
             db,
@@ -1000,7 +1009,7 @@ class SessionHistoryProjectionService:
                         and_(
                             AgentMessage.user_id == user_id,
                             AgentMessage.conversation_id == local_session_id,
-                            AgentMessage.sender.in_(["user", "automation"]),
+                            AgentMessage.sender == user_sender,
                             AgentMessage.invoke_idempotency_key
                             == normalized_idempotency_key,
                         )
@@ -1055,10 +1064,144 @@ class SessionHistoryProjectionService:
             idempotency_key=idempotency_key,
             user_message_id=user_message_id,
             agent_message_id=agent_message_id,
+            user_sender=user_sender,
             agent_status="streaming",
             finish_reason=None,
             error_code=None,
         )
+
+    async def record_actor_message_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        user_id: UUID,
+        sender: Literal["user", "automation"],
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        user_message_id: UUID | None = None,
+    ) -> dict[str, UUID]:
+        if sender == "user":
+            return await self.record_user_message_by_local_session_id(
+                db,
+                local_session_id=local_session_id,
+                user_id=user_id,
+                content=content,
+                metadata=metadata,
+                idempotency_key=idempotency_key,
+                user_message_id=user_message_id,
+            )
+
+        session = await self._support.get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if session is None:
+            return {}
+
+        normalized_content = str(content or "")
+        if not normalized_content.strip():
+            raise ValueError("invalid_query")
+
+        normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
+        existing_message = (
+            await self._support.find_message_by_id_and_sender(
+                db,
+                user_id=user_id,
+                message_id=user_message_id,
+                sender="automation",
+                conversation_id=local_session_id,
+            )
+            if isinstance(user_message_id, UUID)
+            else None
+        )
+        if existing_message is None and normalized_idempotency_key:
+            existing_message = await self._support.find_message_by_idempotency_key(
+                db,
+                user_id=user_id,
+                conversation_id=local_session_id,
+                sender="automation",
+                idempotency_key=normalized_idempotency_key,
+            )
+            if (
+                existing_message is not None
+                and isinstance(user_message_id, UUID)
+                and existing_message.id != user_message_id
+            ):
+                raise ValueError("message_id_conflict")
+
+        message_metadata = dict(metadata or {})
+        if normalized_idempotency_key:
+            message_metadata["invoke_idempotency_key"] = normalized_idempotency_key
+
+        if existing_message is None:
+            try:
+                create_kwargs: dict[str, Any] = {
+                    "user_id": user_id,
+                    "sender": "automation",
+                    "status": "done",
+                    "conversation_id": local_session_id,
+                    "metadata": message_metadata,
+                    "invoke_idempotency_key": normalized_idempotency_key,
+                }
+                if isinstance(user_message_id, UUID):
+                    create_kwargs["id"] = user_message_id
+                message = await message_store.create_agent_message(db, **create_kwargs)
+            except message_store.AgentMessageCreationError as exc:
+                if isinstance(user_message_id, UUID) and is_agent_message_pk_violation(
+                    exc
+                ):
+                    raise ValueError("message_id_conflict") from exc
+                if not normalized_idempotency_key:
+                    raise
+                recovered_message = await self._support.find_message_by_idempotency_key(
+                    db,
+                    user_id=user_id,
+                    conversation_id=local_session_id,
+                    sender="automation",
+                    idempotency_key=normalized_idempotency_key,
+                )
+                if recovered_message is None:
+                    raise
+                if (
+                    isinstance(user_message_id, UUID)
+                    and recovered_message.id != user_message_id
+                ):
+                    raise ValueError("message_id_conflict")
+                message = recovered_message
+        else:
+            message = existing_message
+            if isinstance(user_message_id, UUID) and message.id != user_message_id:
+                raise ValueError("message_id_conflict")
+            if normalized_idempotency_key:
+                setattr(message, "invoke_idempotency_key", normalized_idempotency_key)
+            if message_metadata:
+                merged_metadata = dict(getattr(message, "message_metadata", {}) or {})
+                merged_metadata.update(message_metadata)
+                setattr(message, "message_metadata", merged_metadata)
+                await db.flush()
+
+        await self._support.ensure_idempotent_user_query(
+            db,
+            user_id=user_id,
+            user_message=message,
+            query=normalized_content,
+            idempotency_key=normalized_idempotency_key,
+        )
+        await self._support.upsert_single_text_block(
+            db,
+            user_id=user_id,
+            message_id=cast(UUID, message.id),
+            content=normalized_content,
+            source="automation_input",
+        )
+        setattr(session, "last_active_at", utc_now())
+        return {
+            "conversation_id": local_session_id,
+            "user_message_id": cast(UUID, message.id),
+        }
 
     async def record_interrupt_lifecycle_event_by_local_session_id(
         self,

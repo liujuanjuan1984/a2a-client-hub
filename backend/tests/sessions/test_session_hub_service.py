@@ -1216,6 +1216,7 @@ async def test_record_local_invoke_messages_uses_requested_message_ids(
         idempotency_key="user:msg-canonical:ws",
         user_message_id=requested_user_message_id,
         agent_message_id=requested_agent_message_id,
+        user_sender="automation",
     )
     await async_db_session.flush()
 
@@ -1225,7 +1226,7 @@ async def test_record_local_invoke_messages_uses_requested_message_ids(
     user_message = await async_db_session.get(AgentMessage, requested_user_message_id)
     agent_message = await async_db_session.get(AgentMessage, requested_agent_message_id)
     assert user_message is not None
-    assert user_message.sender in {"user", "automation"}
+    assert user_message.sender == "automation"
     assert user_message.conversation_id == thread.id
     assert agent_message is not None
     assert agent_message.sender == "agent"

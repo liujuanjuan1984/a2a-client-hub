@@ -219,6 +219,8 @@ async def ensure_local_message_headers(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
     session_factory: Any,
     commit_fn: Any,
     session_hub: Any,
@@ -257,10 +259,15 @@ async def ensure_local_message_headers(
                 query=query,
                 context_id=state.context_id,
                 invoke_metadata=state.metadata,
-                extra_metadata={"transport": transport, "stream": stream_enabled},
+                extra_metadata={
+                    "transport": transport,
+                    "stream": stream_enabled,
+                    **dict(extra_persisted_metadata or {}),
+                },
                 idempotency_key=idempotency_key,
                 user_message_id=coerce_uuid(state.user_message_id),
                 agent_message_id=coerce_uuid(state.agent_message_id),
+                user_sender=user_sender,
             )
         )
         await commit_fn(persist_db)
@@ -286,6 +293,8 @@ async def persist_stream_block_update(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
     stream_service: Any,
     session_factory: Any,
     commit_fn: Any,
@@ -307,6 +316,8 @@ async def persist_stream_block_update(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
     )
     if flush_buffer_fn is None:
         flush_buffer_fn = flush_stream_buffer
@@ -382,6 +393,8 @@ async def persist_interrupt_lifecycle_event(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
     stream_service: Any,
     build_interrupt_message_content: Any,
     session_factory: Any,
@@ -405,6 +418,8 @@ async def persist_interrupt_lifecycle_event(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
     )
     if flush_buffer_fn is None:
         flush_buffer_fn = flush_stream_buffer
@@ -506,6 +521,8 @@ async def persist_local_outcome(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    user_sender: Literal["user", "automation"] = "user",
+    extra_persisted_metadata: dict[str, Any] | None = None,
     response_metadata: dict[str, Any] | None = None,
     session_factory: Any,
     commit_fn: Any,
@@ -523,6 +540,8 @@ async def persist_local_outcome(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        user_sender=user_sender,
+        extra_persisted_metadata=extra_persisted_metadata,
     )
     if persist_final_block_fn is None:
         persist_final_block_fn = persist_synthetic_final_block_if_needed
@@ -559,7 +578,11 @@ async def persist_local_outcome(
                 success=outcome.success,
                 context_id=state.context_id,
                 invoke_metadata=state.metadata,
-                extra_metadata={"transport": transport, "stream": stream_enabled},
+                extra_metadata={
+                    "transport": transport,
+                    "stream": stream_enabled,
+                    **dict(extra_persisted_metadata or {}),
+                },
                 response_metadata=metadata_payload,
                 idempotency_key=idempotency_key,
                 agent_status=resolve_agent_status_from_outcome(outcome),
@@ -567,6 +590,7 @@ async def persist_local_outcome(
                 error_code=outcome.error_code,
                 user_message_id=coerce_uuid(state.user_message_id),
                 agent_message_id=coerce_uuid(state.agent_message_id),
+                user_sender=user_sender,
             )
         )
         await commit_fn(persist_db)
