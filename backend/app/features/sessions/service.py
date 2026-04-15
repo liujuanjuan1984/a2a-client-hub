@@ -396,29 +396,6 @@ class SessionHubService:
             user_message_id=user_message_id,
         )
 
-    async def record_actor_message_by_local_session_id(
-        self,
-        db: AsyncSession,
-        *,
-        local_session_id: UUID,
-        user_id: UUID,
-        sender: Literal["user", "automation"],
-        content: str,
-        metadata: dict[str, Any] | None = None,
-        idempotency_key: str | None = None,
-        user_message_id: UUID | None = None,
-    ) -> dict[str, UUID]:
-        return await self._history.record_actor_message_by_local_session_id(
-            db,
-            local_session_id=local_session_id,
-            user_id=user_id,
-            sender=sender,
-            content=content,
-            metadata=metadata,
-            idempotency_key=idempotency_key,
-            user_message_id=user_message_id,
-        )
-
     async def record_interrupt_lifecycle_event_by_local_session_id(
         self,
         db: AsyncSession,
