@@ -15,6 +15,7 @@ from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.auth_audit_event import AuthAuditEvent
 from app.db.models.auth_legacy_refresh_revocation import AuthLegacyRefreshRevocation
 from app.db.models.auth_refresh_session import AuthRefreshSession
+from app.db.models.built_in_follow_up_task import BuiltInFollowUpTask
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
@@ -38,6 +39,7 @@ __all__ = [
     "AuthAuditEvent",
     "AuthLegacyRefreshRevocation",
     "AuthRefreshSession",
+    "BuiltInFollowUpTask",
     "ConversationThread",
     "HubA2AAgentAllowlistEntry",
     "HubA2AUserCredential",

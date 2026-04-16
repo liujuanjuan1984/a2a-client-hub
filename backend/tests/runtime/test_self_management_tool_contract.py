@@ -5,8 +5,11 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_CHECK_HEALTH,
     SELF_AGENTS_CREATE,
     SELF_AGENTS_START_SESSIONS,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_UPDATE_SCHEDULE,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_SEND_MESSAGE,
 )
 from app.features.self_management_shared.self_management_tool_contract import (
@@ -41,8 +44,11 @@ def test_list_self_management_tool_definitions_filters_by_surface() -> None:
     assert "self.jobs.list" in operation_ids
     assert "self.agents.create" in operation_ids
     assert "self.jobs.delete" in operation_ids
+    assert "self.followups.get" in operation_ids
+    assert "self.followups.set_sessions" in operation_ids
     assert "self.sessions.archive" in operation_ids
     assert "self.sessions.get" in operation_ids
+    assert "self.sessions.get_latest_messages" in operation_ids
     assert "self.sessions.send_message" in operation_ids
     assert "self.agents.update_config" in operation_ids
     assert "self.agents.start_sessions" in operation_ids
@@ -79,12 +85,67 @@ def test_build_self_management_tool_definition_supports_session_send_message() -
     assert definition.input_json_schema["properties"]["message"]["type"] == "string"
 
 
+def test_build_self_management_tool_definition_supports_follow_up_tools() -> None:
+    get_definition = build_self_management_tool_definition(SELF_FOLLOWUPS_GET)
+    set_definition = build_self_management_tool_definition(SELF_FOLLOWUPS_SET_SESSIONS)
+
+    assert get_definition.operation_id == "self.followups.get"
+    assert get_definition.tool_name == "self.followups.get"
+    assert get_definition.confirmation_policy.value == "none"
+    assert get_definition.input_json_schema["properties"] == {}
+    assert "auto-tracked delegated targets" in get_definition.description
+
+    assert set_definition.operation_id == "self.followups.set_sessions"
+    assert set_definition.tool_name == "self.followups.set_sessions"
+    assert set_definition.confirmation_policy.value == "none"
+    assert (
+        "Override the current tracked target conversation ids"
+        in set_definition.description
+    )
+    assert (
+        set_definition.input_json_schema["properties"]["conversation_ids"]["type"]
+        == "array"
+    )
+
+
+def test_build_self_management_tool_definition_supports_session_get_latest_messages() -> (
+    None
+):
+    definition = build_self_management_tool_definition(
+        SELF_SESSIONS_GET_LATEST_MESSAGES
+    )
+
+    assert definition.operation_id == "self.sessions.get_latest_messages"
+    assert definition.tool_name == "self.sessions.get_latest_messages"
+    assert definition.confirmation_policy.value == "none"
+    assert definition.input_json_schema["properties"]["conversation_ids"]["type"] == (
+        "array"
+    )
+    assert definition.input_json_schema["properties"]["limit_per_session"]["type"] == (
+        "integer"
+    )
+    assert (
+        definition.input_json_schema["properties"][
+            "after_agent_message_id_by_conversation"
+        ]["anyOf"][0]["type"]
+        == "object"
+    )
+    assert definition.input_json_schema["properties"]["wait_up_to_seconds"]["type"] == (
+        "integer"
+    )
+    assert (
+        definition.input_json_schema["properties"]["poll_interval_seconds"]["type"]
+        == "integer"
+    )
+
+
 def test_build_self_management_tool_definition_supports_agent_start_sessions() -> None:
     definition = build_self_management_tool_definition(SELF_AGENTS_START_SESSIONS)
 
     assert definition.operation_id == "self.agents.start_sessions"
     assert definition.tool_name == "self.agents.start_sessions"
     assert definition.confirmation_policy.value == "required"
+    assert "automatically added to durable follow-up tracking" in definition.description
     assert definition.input_json_schema["properties"]["agent_ids"]["type"] == "array"
     assert definition.input_json_schema["properties"]["message"]["type"] == "string"
 

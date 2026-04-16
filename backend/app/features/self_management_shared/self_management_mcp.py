@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import (
     get_self_management_allowed_operations,
+    get_self_management_conversation_id,
     verify_jwt_token_claims,
 )
 from app.db.session import AsyncSessionLocal
@@ -25,7 +26,6 @@ from app.features.auth.service import UserNotFoundError, get_active_user
 from app.features.personal_agents.service import A2AAgentError
 from app.features.schedules.common import A2AScheduleError
 from app.features.self_management_shared.actor_context import (
-    SelfManagementAction,
     SelfManagementAuthorizationError,
 )
 from app.features.self_management_shared.capability_catalog import (
@@ -37,6 +37,8 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_LIST,
     SELF_AGENTS_START_SESSIONS,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_DELETE,
     SELF_JOBS_GET,
@@ -48,6 +50,7 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_JOBS_UPDATE_SCHEDULE,
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_SEND_MESSAGE,
     SELF_SESSIONS_UNARCHIVE,
@@ -64,7 +67,10 @@ from app.features.self_management_shared.self_management_toolkit import (
 from app.features.self_management_shared.self_management_web_agent import (
     build_self_management_web_agent_runtime,
 )
-from app.features.self_management_shared.tool_gateway import SelfManagementSurface
+from app.features.self_management_shared.tool_gateway import (
+    SelfManagementConfirmationPolicy,
+    SelfManagementSurface,
+)
 
 logger = get_logger(__name__)
 
@@ -72,6 +78,9 @@ SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH = "/mcp"
 SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH = "/mcp-write"
 _MCP_USER_ID_STATE_KEY = "self_management_mcp_user_id"
 _MCP_ALLOWED_OPERATION_IDS_STATE_KEY = "self_management_mcp_allowed_operation_ids"
+_MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY = (
+    "self_management_mcp_web_agent_conversation_id"
+)
 SELF_MANAGEMENT_MCP_OPERATION_IDS = list_self_management_operation_ids(
     surface=SelfManagementSurface.WEB_AGENT,
     require_tool_name=True,
@@ -79,7 +88,7 @@ SELF_MANAGEMENT_MCP_OPERATION_IDS = list_self_management_operation_ids(
 SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS = frozenset(
     list_self_management_operation_ids(
         surface=SelfManagementSurface.WEB_AGENT,
-        action=SelfManagementAction.READ,
+        confirmation_policy=SelfManagementConfirmationPolicy.NONE,
         require_tool_name=True,
     )
 )
@@ -158,6 +167,11 @@ class SelfManagementMcpAuthMiddleware:
         scope.setdefault("state", {})[
             _MCP_ALLOWED_OPERATION_IDS_STATE_KEY
         ] = allowed_operation_ids
+        conversation_id = get_self_management_conversation_id(claims)
+        if conversation_id is not None:
+            scope.setdefault("state", {})[
+                _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY
+            ] = conversation_id
         await self.app(scope, receive, send)
 
 
@@ -192,12 +206,29 @@ def _require_request_allowed_operation_ids(ctx: Context) -> frozenset[str]:
     return allowed_operation_ids
 
 
+def _optional_request_web_agent_conversation_id(ctx: Context) -> str | None:
+    request_context = ctx.request_context
+    if request_context is None or request_context.request is None:
+        raise RuntimeError("HTTP request context is required for MCP tools.")
+
+    raw_conversation_id = getattr(
+        request_context.request.state,
+        _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY,
+        None,
+    )
+    if not isinstance(raw_conversation_id, str):
+        return None
+    conversation_id = raw_conversation_id.strip()
+    return conversation_id or None
+
+
 async def execute_self_management_mcp_operation(
     *,
     user_id: UUID,
     operation_id: str,
     arguments: Mapping[str, Any] | None = None,
     allowed_operation_ids: frozenset[str] | None = None,
+    web_agent_conversation_id: str | None = None,
     db: AsyncSession | None = None,
 ) -> dict[str, Any]:
     """Execute one self-management operation and return a swival-friendly envelope."""
@@ -223,6 +254,7 @@ async def execute_self_management_mcp_operation(
             runtime = build_self_management_web_agent_runtime(
                 db=session,
                 current_user=current_user,
+                web_agent_conversation_id=web_agent_conversation_id,
             )
             result = await runtime.toolkit.execute(
                 operation_id=operation_id,
@@ -477,6 +509,9 @@ def build_self_management_mcp_server(
                 operation_id=SELF_AGENTS_START_SESSIONS.operation_id,
                 arguments={"agent_ids": agent_ids, "message": message},
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
             )
 
     if _exposed(SELF_JOBS_LIST.operation_id):
@@ -744,6 +779,80 @@ def build_self_management_mcp_server(
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
             )
 
+    if _exposed(SELF_FOLLOWUPS_GET.operation_id):
+
+        @mcp.tool(
+            name=SELF_FOLLOWUPS_GET.tool_name,
+            description=SELF_FOLLOWUPS_GET.description,
+        )
+        async def self_followups_get(
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            if ctx is None:
+                raise RuntimeError("FastMCP context is required.")
+            return await execute_self_management_mcp_operation(
+                user_id=_require_request_user_id(ctx),
+                operation_id=SELF_FOLLOWUPS_GET.operation_id,
+                arguments={},
+                allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
+            )
+
+    if _exposed(SELF_FOLLOWUPS_SET_SESSIONS.operation_id):
+
+        @mcp.tool(
+            name=SELF_FOLLOWUPS_SET_SESSIONS.tool_name,
+            description=SELF_FOLLOWUPS_SET_SESSIONS.description,
+        )
+        async def self_followups_set_sessions(
+            conversation_ids: list[str],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            if ctx is None:
+                raise RuntimeError("FastMCP context is required.")
+            return await execute_self_management_mcp_operation(
+                user_id=_require_request_user_id(ctx),
+                operation_id=SELF_FOLLOWUPS_SET_SESSIONS.operation_id,
+                arguments={"conversation_ids": conversation_ids},
+                allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
+            )
+
+    if _exposed(SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id):
+
+        @mcp.tool(
+            name=SELF_SESSIONS_GET_LATEST_MESSAGES.tool_name,
+            description=SELF_SESSIONS_GET_LATEST_MESSAGES.description,
+        )
+        async def self_sessions_get_latest_messages(
+            conversation_ids: list[str],
+            limit_per_session: int = 1,
+            after_agent_message_id_by_conversation: dict[str, str] | None = None,
+            wait_up_to_seconds: int = 0,
+            poll_interval_seconds: int = 1,
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            if ctx is None:
+                raise RuntimeError("FastMCP context is required.")
+            return await execute_self_management_mcp_operation(
+                user_id=_require_request_user_id(ctx),
+                operation_id=SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id,
+                arguments={
+                    "conversation_ids": conversation_ids,
+                    "limit_per_session": limit_per_session,
+                    "after_agent_message_id_by_conversation": (
+                        after_agent_message_id_by_conversation
+                    ),
+                    "wait_up_to_seconds": wait_up_to_seconds,
+                    "poll_interval_seconds": poll_interval_seconds,
+                },
+                allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+            )
+
     if _exposed(SELF_SESSIONS_UPDATE.operation_id):
 
         @mcp.tool(
@@ -823,6 +932,9 @@ def build_self_management_mcp_server(
                     "message": message,
                 },
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
             )
 
     return mcp

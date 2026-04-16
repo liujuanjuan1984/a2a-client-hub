@@ -47,7 +47,7 @@ type SelfManagementBuiltInAgentRecoveredInterruptResponse = {
 };
 
 type SelfManagementBuiltInAgentRunResponse = {
-  status: "completed" | "interrupted";
+  status: "accepted" | "completed" | "interrupted";
   answer: string | null;
   exhausted: boolean;
   runtime: string;
@@ -55,6 +55,10 @@ type SelfManagementBuiltInAgentRunResponse = {
   tools: string[];
   write_tools_enabled: boolean;
   interrupt?: SelfManagementBuiltInAgentInterruptResponse | null;
+  continuation?: {
+    phase: "running";
+    agentMessageId: string;
+  } | null;
 };
 
 export const getSelfManagementBuiltInAgentProfile = () =>

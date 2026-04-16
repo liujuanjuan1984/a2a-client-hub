@@ -904,6 +904,21 @@ class Settings(BaseSettings):
         alias="SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS",
         description="Maximum idle lifetime in seconds for one built-in self-management swival conversation session.",
     )
+    self_management_follow_up_poll_interval_seconds: int = Field(
+        default=10,
+        alias="SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS",
+        description="Seconds between durable built-in follow-up scheduler scans.",
+    )
+    self_management_follow_up_batch_size: int = Field(
+        default=20,
+        alias="SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE",
+        description="Maximum built-in follow-up tasks scanned per scheduler cycle.",
+    )
+    self_management_follow_up_running_timeout_seconds: int = Field(
+        default=10 * 60,
+        alias="SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS",
+        description="Seconds before one running built-in follow-up task is considered stale and recoverable.",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -974,6 +989,45 @@ class Settings(BaseSettings):
         if value > 86400:
             raise ValueError(
                 "SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS must not exceed 86400"
+            )
+        return value
+
+    @field_validator("self_management_follow_up_poll_interval_seconds")
+    @classmethod
+    def validate_self_management_follow_up_poll_interval_seconds(
+        cls, value: int
+    ) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS must be positive"
+            )
+        if value > 300:
+            raise ValueError(
+                "SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS must not exceed 300"
+            )
+        return value
+
+    @field_validator("self_management_follow_up_batch_size")
+    @classmethod
+    def validate_self_management_follow_up_batch_size(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE must be positive")
+        if value > 500:
+            raise ValueError("SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE must not exceed 500")
+        return value
+
+    @field_validator("self_management_follow_up_running_timeout_seconds")
+    @classmethod
+    def validate_self_management_follow_up_running_timeout_seconds(
+        cls, value: int
+    ) -> int:
+        if value <= 0:
+            raise ValueError(
+                "SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS must be positive"
+            )
+        if value > 86400:
+            raise ValueError(
+                "SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS must not exceed 86400"
             )
         return value
 

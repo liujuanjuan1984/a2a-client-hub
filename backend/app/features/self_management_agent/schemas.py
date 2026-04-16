@@ -62,10 +62,19 @@ class SelfManagementBuiltInAgentInterrupt(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
+class SelfManagementBuiltInAgentContinuation(BaseModel):
+    """One accepted built-in continuation scheduled after an interrupt reply."""
+
+    phase: Literal["running"]
+    agent_message_id: UUID = Field(alias="agentMessageId")
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 class SelfManagementBuiltInAgentRunResponse(BaseModel):
     """One completed or interrupted built-in self-management agent run."""
 
-    status: Literal["completed", "interrupted"]
+    status: Literal["accepted", "completed", "interrupted"]
     answer: str | None
     exhausted: bool
     runtime: str
@@ -73,6 +82,7 @@ class SelfManagementBuiltInAgentRunResponse(BaseModel):
     tools: list[str]
     write_tools_enabled: bool
     interrupt: SelfManagementBuiltInAgentInterrupt | None = None
+    continuation: SelfManagementBuiltInAgentContinuation | None = None
 
     model_config = ConfigDict(extra="forbid")
 

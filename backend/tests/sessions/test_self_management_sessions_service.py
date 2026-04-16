@@ -10,6 +10,9 @@ from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
 )
+from app.features.sessions import (
+    self_management_sessions_service as self_management_sessions_service_module,
+)
 from app.features.sessions.self_management_sessions_service import (
     self_management_sessions_service,
 )
@@ -157,3 +160,167 @@ async def test_self_management_sessions_service_update_archive_and_unarchive(
     assert archived_extra["pagination"]["total"] == 1
     assert archived_items[0]["conversationId"] == str(thread.id)
     assert restored["status"] == "active"
+
+
+async def test_self_management_sessions_service_observes_new_agent_text_result(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Observed Session",
+    )
+    gateway = _build_gateway(user)
+    snapshots = [
+        [
+            {
+                "message_id": "user-msg-1",
+                "role": "user",
+                "content": "Please keep following up",
+                "created_at": thread.created_at,
+                "status": "done",
+            },
+            {
+                "message_id": "agent-msg-1",
+                "role": "agent",
+                "content": "Initial target answer",
+                "created_at": thread.created_at,
+                "status": "done",
+            },
+        ],
+        [
+            {
+                "message_id": "user-msg-2",
+                "role": "user",
+                "content": "Follow-up question sent",
+                "created_at": thread.created_at,
+                "status": "done",
+            },
+            {
+                "message_id": "agent-msg-1",
+                "role": "agent",
+                "content": "Initial target answer",
+                "created_at": thread.created_at,
+                "status": "done",
+            },
+        ],
+        [
+            {
+                "message_id": "user-msg-2",
+                "role": "user",
+                "content": "Follow-up question sent",
+                "created_at": thread.created_at,
+                "status": "done",
+            },
+            {
+                "message_id": "agent-msg-2",
+                "role": "agent",
+                "content": "No public exposure detected",
+                "created_at": thread.created_at,
+                "status": "done",
+            },
+        ],
+    ]
+    sleep_calls: list[float] = []
+
+    async def _fake_list_latest_text_messages(**_kwargs):
+        if len(snapshots) > 1:
+            return snapshots.pop(0)
+        return snapshots[0]
+
+    async def _fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(
+        self_management_sessions_service_module.self_management_sessions_service,
+        "_list_latest_text_messages",
+        _fake_list_latest_text_messages,
+    )
+    monkeypatch.setattr(
+        self_management_sessions_service_module.asyncio,
+        "sleep",
+        _fake_sleep,
+    )
+
+    result = await self_management_sessions_service.get_latest_messages(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        conversation_ids=[str(thread.id)],
+        limit_per_session=2,
+        after_agent_message_id_by_conversation={str(thread.id): "agent-msg-1"},
+        wait_up_to_seconds=4,
+        poll_interval_seconds=1,
+    )
+
+    item = result["items"][0]
+    assert item["status"] == "available"
+    assert item["observation_status"] == "updated"
+    assert item["after_agent_message_id"] == "agent-msg-1"
+    assert item["latest_agent_message_id"] == "agent-msg-2"
+    assert [message["content"] for message in item["messages"]] == [
+        "Follow-up question sent",
+        "No public exposure detected",
+    ]
+    assert sleep_calls == [1, 1]
+
+
+async def test_self_management_sessions_service_does_not_treat_new_user_text_as_new_result(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Unchanged Session",
+    )
+    gateway = _build_gateway(user)
+    snapshot = [
+        {
+            "message_id": "user-msg-2",
+            "role": "user",
+            "content": "Another follow-up question sent",
+            "created_at": thread.created_at,
+            "status": "done",
+        },
+        {
+            "message_id": "agent-msg-1",
+            "role": "agent",
+            "content": "Initial target answer",
+            "created_at": thread.created_at,
+            "status": "done",
+        },
+    ]
+
+    async def _fake_list_latest_text_messages(**_kwargs):
+        return snapshot
+
+    monkeypatch.setattr(
+        self_management_sessions_service_module.self_management_sessions_service,
+        "_list_latest_text_messages",
+        _fake_list_latest_text_messages,
+    )
+
+    result = await self_management_sessions_service.get_latest_messages(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        conversation_ids=[str(thread.id)],
+        limit_per_session=2,
+        after_agent_message_id_by_conversation={str(thread.id): "agent-msg-1"},
+        wait_up_to_seconds=0,
+        poll_interval_seconds=1,
+    )
+
+    item = result["items"][0]
+    assert item["status"] == "available"
+    assert item["observation_status"] == "unchanged"
+    assert item["after_agent_message_id"] == "agent-msg-1"
+    assert item["latest_agent_message_id"] == "agent-msg-1"
+    assert [message["content"] for message in item["messages"]] == [
+        "Another follow-up question sent",
+        "Initial target answer",
+    ]

@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.security import (
     SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
     create_self_management_access_token,
@@ -30,7 +31,10 @@ from app.core.security import (
     verify_jwt_token_claims,
 )
 from app.db.models.agent_message import AgentMessage
+from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
+from app.db.session import AsyncSessionLocal
+from app.db.transaction import commit_safely
 from app.features.self_management_shared.actor_context import SelfManagementAction
 from app.features.self_management_shared.capability_catalog import (
     list_self_management_operation_ids,
@@ -38,6 +42,9 @@ from app.features.self_management_shared.capability_catalog import (
 from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
     SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+)
+from app.features.self_management_shared.follow_up_service import (
+    BuiltInFollowUpWakeRequest,
 )
 from app.features.self_management_shared.self_management_mcp import (
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
@@ -70,11 +77,38 @@ _DEFAULT_AGENT_DESCRIPTION = (
     "user's own a2a-client-hub resources through constrained self-management tools."
 )
 _DEFAULT_SYSTEM_PROMPT = (
-    "You are the built-in a2a-client-hub self-management assistant. "
-    "Help the authenticated user inspect or manage their own resources using the "
-    "provided MCP tools. Never invent resource ids. For write operations, explain "
-    "the intended change briefly before using the tool. If the request is missing "
-    "required identifiers, ask one concise follow-up question."
+    "You are the built-in a2a-client-hub self-management assistant. Help the "
+    "authenticated user inspect or manage their own agents, scheduled jobs, "
+    "sessions, and related resources using the provided MCP tools. Never invent "
+    "resource ids. For write operations, explain the intended change briefly "
+    "before using the tool. If the request is missing required identifiers, ask "
+    "one concise follow-up question. When you use `self.agents.start_sessions` "
+    "or `self.sessions.send_message`, treat them as handoff operations: once a "
+    "handoff is accepted, do not invent downstream outcomes, and explain that "
+    "the request was handed off to the target conversation. You do not need to "
+    "wait inline for the target side's live transport or final reply; when new "
+    "persisted text results arrive later, the host will resume you so you can "
+    "read and continue processing those results."
+)
+_FOLLOW_UP_RESUME_MESSAGE_TEMPLATE = (
+    "System follow-up wakeup: newer persisted target-session text results were "
+    "detected for this built-in conversation.\n\n"
+    "Tracked target conversation ids: {tracked_conversation_ids}\n"
+    "Changed target conversation ids: {changed_conversation_ids}\n"
+    "Previously acknowledged target-agent anchors by conversation: "
+    "{previous_target_agent_message_anchors}\n"
+    "Previously acknowledged target-agent text message ids by conversation: "
+    "{previous_target_agent_message_ids}\n"
+    "Currently observed latest target-agent anchors by conversation: "
+    "{observed_target_agent_message_anchors}\n\n"
+    "Use `self.followups.get` to inspect the durable follow-up state, then use "
+    "`self.sessions.get_latest_messages` with "
+    "`after_agent_message_id_by_conversation` set to the previous message-id "
+    "map above so you only read newly persisted target-agent text results. "
+    "Summarize meaningful progress or conclusions to the user. If you need to "
+    "adjust future tracking scope, call `self.followups.set_sessions` with the "
+    "exact target conversation ids that should remain tracked. Pass an empty "
+    "list when tracking should stop. Do not wait on downstream live transport."
 )
 _WRITE_APPROVAL_SENTINEL = "[[SELF_MANAGEMENT_WRITE_APPROVAL_REQUIRED]]"
 _WRITE_APPROVAL_OPERATIONS_PREFIX = "[[SELF_MANAGEMENT_WRITE_OPERATIONS:"
@@ -102,6 +136,7 @@ _WRITE_ENABLED_APPENDIX = (
     "change was applied, append the approval sentinel, and append the exact "
     "operation ids that still require approval."
 )
+logger = get_logger(__name__)
 
 
 class SelfManagementBuiltInAgentError(RuntimeError):
@@ -119,6 +154,7 @@ class SelfManagementBuiltInAgentUnavailableError(SelfManagementBuiltInAgentError
 class SelfManagementBuiltInAgentRunStatus(str, Enum):
     """High-level outcome for one built-in self-management agent run."""
 
+    ACCEPTED = "accepted"
     COMPLETED = "completed"
     INTERRUPTED = "interrupted"
 
@@ -158,6 +194,23 @@ class SelfManagementBuiltInAgentRunResult:
     tool_names: tuple[str, ...]
     write_tools_enabled: bool
     interrupt: SelfManagementBuiltInAgentInterrupt | None = None
+    continuation: "SelfManagementBuiltInAgentContinuation" | None = None
+
+
+@dataclass(frozen=True)
+class SelfManagementBuiltInAgentContinuation:
+    """Accepted continuation details returned immediately to the caller."""
+
+    phase: str
+    agent_message_id: UUID
+
+
+@dataclass(frozen=True)
+class SelfManagementBuiltInAgentReplyOutcome:
+    """Immediate reply result plus optional async continuation request."""
+
+    result: SelfManagementBuiltInAgentRunResult
+    continuation_request: "_PermissionReplyContinuationRequest" | None = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +232,18 @@ class _ExecutedBuiltInRun:
     local_session: Any
     local_session_id: str
     local_source: SessionSource
+
+
+@dataclass(frozen=True)
+class _PermissionReplyContinuationRequest:
+    """All state required to continue one accepted permission reply in background."""
+
+    current_user_id: UUID
+    conversation_id: str
+    message: str
+    request_id: str
+    agent_message_id: UUID
+    approved_operation_ids: frozenset[str]
 
 
 @dataclass
@@ -205,6 +270,7 @@ class SelfManagementBuiltInAgentService:
         self._conversation_registry: dict[
             tuple[str, str], _ConversationRuntimeState
         ] = {}
+        self._continuation_tasks: set[asyncio.Task[None]] = set()
         self._registry_lock = threading.Lock()
         self._session_support = SessionHubSupport()
 
@@ -327,12 +393,28 @@ class SelfManagementBuiltInAgentService:
         conversation_id: str,
     ) -> list[SelfManagementBuiltInAgentRecoveredInterrupt]:
         resolved_conversation_id = parse_conversation_id(conversation_id)
-        local_session = await self._session_support.get_local_session_by_id(
-            db,
-            user_id=cast(Any, current_user.id),
-            local_session_id=resolved_conversation_id,
+        recoverable_conversation = cast(
+            ConversationThread | None,
+            await db.scalar(
+                select(ConversationThread).where(
+                    ConversationThread.id == resolved_conversation_id,
+                    ConversationThread.user_id == cast(Any, current_user.id),
+                    ConversationThread.status.in_(
+                        [
+                            ConversationThread.STATUS_ACTIVE,
+                            ConversationThread.STATUS_ARCHIVED,
+                        ]
+                    ),
+                    ConversationThread.source.in_(
+                        [
+                            ConversationThread.SOURCE_MANUAL,
+                            ConversationThread.SOURCE_SCHEDULED,
+                        ]
+                    ),
+                )
+            ),
         )
-        if local_session is None:
+        if recoverable_conversation is None:
             return []
 
         rows = list(
@@ -597,7 +679,7 @@ class SelfManagementBuiltInAgentService:
         request_id: str,
         reply: str,
         agent_message_id: UUID | None = None,
-    ) -> SelfManagementBuiltInAgentRunResult:
+    ) -> SelfManagementBuiltInAgentReplyOutcome:
         claims = verify_jwt_token_claims(
             request_id,
             expected_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
@@ -661,7 +743,7 @@ class SelfManagementBuiltInAgentService:
                 status="done",
                 finish_reason="interrupt_rejected",
             )
-            return result
+            return SelfManagementBuiltInAgentReplyOutcome(result=result)
 
         if reply == "always":
             runtime_state = await self._get_conversation_runtime_state(
@@ -689,14 +771,6 @@ class SelfManagementBuiltInAgentService:
                 )
                 runtime_state.last_accessed_monotonic = time.monotonic()
 
-        executed = await self._execute_run(
-            db=db,
-            current_user=current_user,
-            conversation_id=conversation_id,
-            message=interrupt_message,
-            allow_write_tools=True,
-            allowed_write_operation_ids=approved_operation_ids,
-        )
         await self._persist_interrupt_resolution(
             db=db,
             current_user=current_user,
@@ -704,41 +778,294 @@ class SelfManagementBuiltInAgentService:
             request_id=request_id,
             resolution="replied",
         )
+        continuation_agent_message_id = agent_message_id or uuid4()
         await self._persist_follow_up_agent_message(
             db=db,
             current_user=current_user,
             conversation_id=conversation_id,
-            answer=executed.result.answer,
-            agent_message_id=agent_message_id,
+            answer=None,
+            agent_message_id=continuation_agent_message_id,
             metadata={
                 "built_in_agent": True,
-                "runtime": executed.result.runtime,
+                "runtime": "swival",
                 "reply_resolution": "replied",
                 "interrupt_request_id": request_id,
-                "tools": list(executed.result.tool_names),
-                "write_tools_enabled": executed.result.write_tools_enabled,
+                "tools": list(get_self_management_interrupt_tool_names(claims)),
+                "write_tools_enabled": True,
+                "continuation_phase": "running",
             },
-            status=(
-                "interrupted"
-                if executed.result.status
-                == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
-                else "done"
-            ),
-            finish_reason=(
-                "interrupt"
-                if executed.result.status
-                == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
-                else "completed"
+            status="streaming",
+            finish_reason=None,
+        )
+        result = SelfManagementBuiltInAgentRunResult(
+            status=SelfManagementBuiltInAgentRunStatus.ACCEPTED,
+            answer=None,
+            exhausted=False,
+            runtime="swival",
+            resources=self.get_profile().resources,
+            tool_names=tuple(get_self_management_interrupt_tool_names(claims)),
+            write_tools_enabled=True,
+            continuation=SelfManagementBuiltInAgentContinuation(
+                phase="running",
+                agent_message_id=continuation_agent_message_id,
             ),
         )
-        if executed.result.interrupt is not None:
-            await self._persist_permission_interrupt(
+        return SelfManagementBuiltInAgentReplyOutcome(
+            result=result,
+            continuation_request=_PermissionReplyContinuationRequest(
+                current_user_id=cast(Any, current_user.id),
+                conversation_id=conversation_id,
+                message=interrupt_message,
+                request_id=request_id,
+                agent_message_id=continuation_agent_message_id,
+                approved_operation_ids=frozenset(approved_operation_ids),
+            ),
+        )
+
+    def schedule_permission_reply_continuation(
+        self,
+        request: _PermissionReplyContinuationRequest,
+    ) -> None:
+        task = asyncio.create_task(
+            self._run_permission_reply_continuation(request),
+            name=f"self-management-permission-reply:{request.request_id}",
+        )
+        self._continuation_tasks.add(task)
+        task.add_done_callback(self._continuation_tasks.discard)
+
+    async def drain_pending_tasks(self) -> None:
+        tasks = list(self._continuation_tasks)
+        self._continuation_tasks.clear()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def run_durable_follow_up(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        request: BuiltInFollowUpWakeRequest,
+        agent_message_id: UUID | None = None,
+    ) -> SelfManagementBuiltInAgentRunResult:
+        follow_up_agent_message_id = agent_message_id or uuid4()
+        follow_up_message = self._build_follow_up_resume_message(request)
+        try:
+            executed = await self._execute_run(
                 db=db,
                 current_user=current_user,
-                local_session_id=executed.local_session_id,
-                interrupt=executed.result.interrupt,
+                conversation_id=request.built_in_conversation_id,
+                message=follow_up_message,
+                allow_write_tools=False,
             )
-        return executed.result
+            await self._persist_follow_up_agent_message(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.built_in_conversation_id,
+                answer=executed.result.answer,
+                agent_message_id=follow_up_agent_message_id,
+                metadata={
+                    "built_in_agent": True,
+                    "runtime": executed.result.runtime,
+                    "message_kind": "durable_follow_up_summary",
+                    "follow_up_task_id": str(request.task_id),
+                    "tracked_conversation_ids": list(request.tracked_conversation_ids),
+                    "changed_conversation_ids": list(request.changed_conversation_ids),
+                    "write_tools_enabled": executed.result.write_tools_enabled,
+                    "tools": list(executed.result.tool_names),
+                    "follow_up": {
+                        "built_in_conversation_id": request.built_in_conversation_id,
+                        "tracked_conversation_ids": list(
+                            request.tracked_conversation_ids
+                        ),
+                        "changed_conversation_ids": list(
+                            request.changed_conversation_ids
+                        ),
+                        "previous_target_agent_message_anchors": dict(
+                            request.previous_target_agent_message_anchors
+                        ),
+                        "observed_target_agent_message_anchors": dict(
+                            request.observed_target_agent_message_anchors
+                        ),
+                    },
+                },
+                status=(
+                    "interrupted"
+                    if executed.result.status
+                    == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                    else "done"
+                ),
+                finish_reason=(
+                    "interrupt"
+                    if executed.result.status
+                    == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                    else "completed"
+                ),
+            )
+            if executed.result.interrupt is not None:
+                await self._persist_permission_interrupt(
+                    db=db,
+                    current_user=current_user,
+                    local_session_id=executed.local_session_id,
+                    interrupt=executed.result.interrupt,
+                )
+            return executed.result
+        except Exception as exc:
+            await self._persist_follow_up_agent_message(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.built_in_conversation_id,
+                answer=str(exc),
+                agent_message_id=follow_up_agent_message_id,
+                metadata={
+                    "built_in_agent": True,
+                    "runtime": "swival",
+                    "message_kind": "durable_follow_up_summary",
+                    "follow_up_task_id": str(request.task_id),
+                    "tracked_conversation_ids": list(request.tracked_conversation_ids),
+                    "changed_conversation_ids": list(request.changed_conversation_ids),
+                    "write_tools_enabled": False,
+                    "tools": [],
+                    "follow_up": {
+                        "built_in_conversation_id": request.built_in_conversation_id,
+                        "tracked_conversation_ids": list(
+                            request.tracked_conversation_ids
+                        ),
+                        "changed_conversation_ids": list(
+                            request.changed_conversation_ids
+                        ),
+                        "previous_target_agent_message_anchors": dict(
+                            request.previous_target_agent_message_anchors
+                        ),
+                        "observed_target_agent_message_anchors": dict(
+                            request.observed_target_agent_message_anchors
+                        ),
+                    },
+                    "follow_up_phase": "failed",
+                },
+                status="error",
+                finish_reason="failed",
+            )
+            raise
+
+    async def _run_permission_reply_continuation(
+        self,
+        request: _PermissionReplyContinuationRequest,
+    ) -> None:
+        extra = {
+            "user_id": str(request.current_user_id),
+            "conversation_id": request.conversation_id,
+            "request_id": request.request_id,
+            "agent_message_id": str(request.agent_message_id),
+        }
+        try:
+            async with AsyncSessionLocal() as db:
+                user = await db.get(User, request.current_user_id)
+                if user is None:
+                    logger.warning(
+                        "Built-in self-management continuation skipped because the user no longer exists",
+                        extra=extra,
+                    )
+                    return
+                try:
+                    executed = await self._execute_run(
+                        db=db,
+                        current_user=user,
+                        conversation_id=request.conversation_id,
+                        message=request.message,
+                        allow_write_tools=True,
+                        allowed_write_operation_ids=request.approved_operation_ids,
+                    )
+                    await self._persist_follow_up_agent_message(
+                        db=db,
+                        current_user=user,
+                        conversation_id=request.conversation_id,
+                        answer=executed.result.answer,
+                        agent_message_id=request.agent_message_id,
+                        metadata={
+                            "built_in_agent": True,
+                            "runtime": executed.result.runtime,
+                            "reply_resolution": "replied",
+                            "interrupt_request_id": request.request_id,
+                            "tools": list(executed.result.tool_names),
+                            "write_tools_enabled": executed.result.write_tools_enabled,
+                            "continuation_phase": (
+                                "interrupted"
+                                if executed.result.status
+                                == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                                else "completed"
+                            ),
+                        },
+                        status=(
+                            "interrupted"
+                            if executed.result.status
+                            == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                            else "done"
+                        ),
+                        finish_reason=(
+                            "interrupt"
+                            if executed.result.status
+                            == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                            else "completed"
+                        ),
+                    )
+                    if executed.result.interrupt is not None:
+                        await self._persist_permission_interrupt(
+                            db=db,
+                            current_user=user,
+                            local_session_id=executed.local_session_id,
+                            interrupt=executed.result.interrupt,
+                        )
+                except Exception as exc:
+                    logger.exception(
+                        "Built-in self-management continuation failed",
+                        extra=extra,
+                    )
+                    await self._persist_follow_up_agent_message(
+                        db=db,
+                        current_user=user,
+                        conversation_id=request.conversation_id,
+                        answer=str(exc),
+                        agent_message_id=request.agent_message_id,
+                        metadata={
+                            "built_in_agent": True,
+                            "runtime": "swival",
+                            "reply_resolution": "replied",
+                            "interrupt_request_id": request.request_id,
+                            "tools": [],
+                            "write_tools_enabled": True,
+                            "continuation_phase": "failed",
+                        },
+                        status="error",
+                        finish_reason="failed",
+                    )
+                await commit_safely(db)
+        except Exception:
+            logger.exception(
+                "Built-in self-management continuation crashed before persistence could finish",
+                extra=extra,
+            )
+
+    def _build_follow_up_resume_message(
+        self,
+        request: BuiltInFollowUpWakeRequest,
+    ) -> str:
+        return _FOLLOW_UP_RESUME_MESSAGE_TEMPLATE.format(
+            tracked_conversation_ids=", ".join(request.tracked_conversation_ids)
+            or "(none)",
+            changed_conversation_ids=", ".join(request.changed_conversation_ids)
+            or "(none)",
+            previous_target_agent_message_anchors=dict(
+                request.previous_target_agent_message_anchors
+            ),
+            previous_target_agent_message_ids={
+                conversation_id: anchor.get("message_id")
+                for conversation_id, anchor in request.previous_target_agent_message_anchors.items()
+                if anchor.get("message_id")
+            },
+            observed_target_agent_message_anchors=dict(
+                request.observed_target_agent_message_anchors
+            ),
+        )
 
     def _build_mcp_url(self, *, allow_write_tools: bool) -> str:
         base = cast(str, settings.self_management_swival_mcp_base_url).rstrip("/")
@@ -1022,20 +1349,39 @@ class SelfManagementBuiltInAgentService:
             conversation_id=conversation_id,
         )
         setattr(local_session, "last_active_at", utc_now())
-        create_kwargs: dict[str, Any] = {
-            "user_id": cast(Any, current_user.id),
-            "sender": "agent",
-            "conversation_id": cast(Any, local_session.id),
-            "status": status,
-            "finish_reason": finish_reason,
-            "metadata": metadata,
-        }
+        agent_message: AgentMessage | None = None
         if agent_message_id is not None:
-            create_kwargs["id"] = agent_message_id
-        agent_message = await message_store.create_agent_message(
-            db,
-            **create_kwargs,
-        )
+            agent_message = await db.scalar(
+                select(AgentMessage).where(
+                    AgentMessage.id == agent_message_id,
+                    AgentMessage.user_id == cast(Any, current_user.id),
+                    AgentMessage.conversation_id == cast(Any, local_session.id),
+                    AgentMessage.sender == "agent",
+                )
+            )
+        if agent_message is None:
+            create_kwargs: dict[str, Any] = {
+                "user_id": cast(Any, current_user.id),
+                "sender": "agent",
+                "conversation_id": cast(Any, local_session.id),
+                "status": status,
+                "finish_reason": finish_reason,
+                "metadata": metadata,
+            }
+            if agent_message_id is not None:
+                create_kwargs["id"] = agent_message_id
+            agent_message = await message_store.create_agent_message(
+                db,
+                **create_kwargs,
+            )
+        else:
+            await message_store.update_agent_message(
+                db,
+                message=agent_message,
+                status=status,
+                finish_reason=finish_reason,
+                metadata=metadata,
+            )
         await self._session_support.upsert_single_text_block(
             db,
             user_id=cast(Any, current_user.id),
@@ -1098,6 +1444,7 @@ class SelfManagementBuiltInAgentService:
         new_session = await asyncio.to_thread(
             self._create_swival_session,
             current_user=current_user,
+            conversation_id=conversation_id,
             delegated_write_operation_ids=delegated_write_operation_ids,
         )
         if previous_session is not None:
@@ -1258,6 +1605,7 @@ class SelfManagementBuiltInAgentService:
         self,
         *,
         current_user: User,
+        conversation_id: str,
         delegated_write_operation_ids: frozenset[str],
     ) -> Any:
         write_tools_enabled = bool(delegated_write_operation_ids)
@@ -1273,6 +1621,7 @@ class SelfManagementBuiltInAgentService:
                 definition.operation_id for definition in tool_definitions
             ],
             delegated_by="self_management_built_in_agent",
+            conversation_id=conversation_id,
         )
         session = session_cls(
             base_dir=self._resolve_swival_base_dir(current_user),
@@ -1558,9 +1907,11 @@ self_management_built_in_agent_service = SelfManagementBuiltInAgentService()
 
 
 __all__ = [
+    "SelfManagementBuiltInAgentContinuation",
     "SelfManagementBuiltInAgentConfigError",
     "SelfManagementBuiltInAgentError",
     "SelfManagementBuiltInAgentProfile",
+    "SelfManagementBuiltInAgentReplyOutcome",
     "SelfManagementBuiltInAgentRunResult",
     "SelfManagementBuiltInAgentService",
     "SelfManagementBuiltInAgentUnavailableError",

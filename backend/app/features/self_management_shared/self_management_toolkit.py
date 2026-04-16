@@ -26,6 +26,8 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_LIST,
     SELF_AGENTS_START_SESSIONS,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_DELETE,
     SELF_JOBS_GET,
@@ -37,6 +39,7 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_JOBS_UPDATE_SCHEDULE,
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_SEND_MESSAGE,
     SELF_SESSIONS_UNARCHIVE,
@@ -45,6 +48,9 @@ from app.features.self_management_shared.capability_catalog import (
 )
 from app.features.self_management_shared.delegated_conversation_service import (
     self_management_delegated_conversation_service,
+)
+from app.features.self_management_shared.follow_up_service import (
+    built_in_follow_up_service,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
@@ -109,6 +115,12 @@ class SelfManagementToolkit:
             payload = await self._list_sessions(args)
         elif operation.operation_id == SELF_SESSIONS_GET.operation_id:
             payload = await self._get_session(args)
+        elif operation.operation_id == SELF_FOLLOWUPS_GET.operation_id:
+            payload = await self._get_follow_up_state(args)
+        elif operation.operation_id == SELF_FOLLOWUPS_SET_SESSIONS.operation_id:
+            payload = await self._set_follow_up_sessions(args)
+        elif operation.operation_id == SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id:
+            payload = await self._get_latest_session_messages(args)
         elif operation.operation_id == SELF_SESSIONS_UPDATE.operation_id:
             payload = await self._update_session(args)
         elif operation.operation_id == SELF_SESSIONS_ARCHIVE.operation_id:
@@ -327,6 +339,79 @@ class SelfManagementToolkit:
             conversation_id=conversation_id,
         )
         return {"session": self._serialize_session(session_item)}
+
+    async def _get_follow_up_state(self, _args: dict[str, Any]) -> dict[str, Any]:
+        return await built_in_follow_up_service.get_follow_up_state(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+        )
+
+    async def _set_follow_up_sessions(self, args: dict[str, Any]) -> dict[str, Any]:
+        return await built_in_follow_up_service.set_tracked_sessions(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            conversation_ids=self._as_optional_str_list(
+                args.get("conversation_ids"),
+                field_name="conversation_ids",
+            )
+            or [],
+        )
+
+    async def _get_latest_session_messages(
+        self, args: dict[str, Any]
+    ) -> dict[str, Any]:
+        limit_per_session = self._as_int(
+            args.get("limit_per_session", 1),
+            field_name="limit_per_session",
+            minimum=1,
+        )
+        if limit_per_session > 5:
+            raise SelfManagementToolInputError(
+                "`limit_per_session` must be less than or equal to 5."
+            )
+        wait_up_to_seconds = self._as_int(
+            args.get("wait_up_to_seconds", 0),
+            field_name="wait_up_to_seconds",
+            minimum=0,
+        )
+        if wait_up_to_seconds > 20:
+            raise SelfManagementToolInputError(
+                "`wait_up_to_seconds` must be less than or equal to 20."
+            )
+        poll_interval_seconds = self._as_int(
+            args.get("poll_interval_seconds", 1),
+            field_name="poll_interval_seconds",
+            minimum=1,
+        )
+        if poll_interval_seconds > 5:
+            raise SelfManagementToolInputError(
+                "`poll_interval_seconds` must be less than or equal to 5."
+            )
+        payload = await self_management_sessions_service.get_latest_messages(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            conversation_ids=self._as_str_list(
+                args.get("conversation_ids"),
+                field_name="conversation_ids",
+            ),
+            limit_per_session=limit_per_session,
+            after_agent_message_id_by_conversation=self._as_optional_str_dict(
+                args.get("after_agent_message_id_by_conversation"),
+                field_name="after_agent_message_id_by_conversation",
+            ),
+            wait_up_to_seconds=wait_up_to_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+        return {
+            "summary": payload["summary"],
+            "items": [
+                self._serialize_latest_session_messages_item(item)
+                for item in payload["items"]
+            ],
+        }
 
     async def _update_session(self, args: dict[str, Any]) -> dict[str, Any]:
         session_item = await self_management_sessions_service.update_session(
@@ -585,6 +670,18 @@ class SelfManagementToolkit:
             )
         return [self._as_uuid(item, field_name=field_name) for item in raw_values]
 
+    def _as_str_list(self, value: Any, *, field_name: str) -> list[str]:
+        raw_values = self._as_optional_str_list(value, field_name=field_name)
+        if not raw_values:
+            raise SelfManagementToolInputError(
+                f"`{field_name}` must contain at least one string."
+            )
+        if any(not item.strip() for item in raw_values):
+            raise SelfManagementToolInputError(
+                f"`{field_name}` must contain only non-empty strings."
+            )
+        return raw_values
+
     @staticmethod
     def _as_optional_bool(value: Any, *, field_name: str) -> bool | None:
         if value is None:
@@ -713,6 +810,45 @@ class SelfManagementToolkit:
                 else None
             ),
         }
+
+    @classmethod
+    def _serialize_latest_session_messages_item(
+        cls, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        serialized = {
+            "conversation_id": str(item["conversation_id"]),
+            "status": item.get("status"),
+        }
+        if item.get("observation_status") is not None:
+            serialized["observation_status"] = item.get("observation_status")
+        if item.get("after_agent_message_id") is not None:
+            serialized["after_agent_message_id"] = item.get("after_agent_message_id")
+        if item.get("latest_agent_message_id") is not None:
+            serialized["latest_agent_message_id"] = item.get("latest_agent_message_id")
+        if item.get("session") is not None:
+            serialized["session"] = cls._serialize_session(
+                cast(dict[str, Any], item["session"])
+            )
+        if item.get("messages") is not None:
+            serialized["messages"] = [
+                {
+                    "message_id": str(message["message_id"]),
+                    "role": message.get("role"),
+                    "content": message.get("content"),
+                    "created_at": (
+                        message["created_at"].isoformat()
+                        if message.get("created_at") is not None
+                        else None
+                    ),
+                    "status": message.get("status"),
+                }
+                for message in cast(list[dict[str, Any]], item["messages"])
+            ]
+        if item.get("error") is not None:
+            serialized["error"] = item.get("error")
+        if item.get("error_code") is not None:
+            serialized["error_code"] = item.get("error_code")
+        return serialized
 
     @staticmethod
     def _serialize_agent(record: A2AAgentRecord) -> dict[str, Any]:

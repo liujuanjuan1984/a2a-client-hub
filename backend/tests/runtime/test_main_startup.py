@@ -63,6 +63,11 @@ async def test_app_lifespan_cleans_up_when_startup_fails(
     )
     monkeypatch.setattr(
         main_module,
+        "ensure_self_management_follow_up_job",
+        lambda: called.append("self_management_follow_up_job"),
+    )
+    monkeypatch.setattr(
+        main_module,
         "ensure_ws_ticket_cleanup_job",
         lambda: called.append("ws_cleanup_job"),
     )
@@ -104,5 +109,6 @@ async def test_app_lifespan_cleans_up_when_startup_fails(
 
     assert "auth_cleanup_job" in called
     assert "schedule_cleanup_job" in called
+    assert "self_management_follow_up_job" in called
     assert "shutdown_scheduler" in called
     assert "close_http" in called

@@ -11,6 +11,7 @@ const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
 const mockReplyElicitation = jest.fn();
 const mockAppendSessionMessage = jest.fn();
+const mockListSessionMessagesPage = jest.fn();
 const mockRunSessionCommand = jest.fn();
 const mockRecoverInterrupts = jest.fn();
 const mockInvokeAgent = jest.fn();
@@ -20,7 +21,9 @@ const mockRunSelfManagementBuiltInAgent = jest.fn();
 const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
 const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
+const mockMergeConversationMessages = jest.fn();
 const mockRemoveConversationMessage = jest.fn();
+const mockSetConversationMessages = jest.fn();
 const mockUpdateConversationMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
@@ -241,7 +244,7 @@ type MockAgentSession = {
   pendingInterrupts: unknown[];
   pendingInterrupt: unknown;
   lastResolvedInterrupt: unknown;
-  streamState: "idle" | "streaming" | "recoverable" | "error";
+  streamState: "idle" | "streaming" | "continuing" | "recoverable" | "error";
   lastStreamError: string | null;
   transport: string;
   inputModes: string[];
@@ -440,6 +443,8 @@ jest.mock("@/lib/api/sessions", () => ({
   appendSessionMessage: (...args: unknown[]) =>
     mockAppendSessionMessage(...args),
   continueSession: (...args: unknown[]) => mockContinueSession(...args),
+  listSessionMessagesPage: (...args: unknown[]) =>
+    mockListSessionMessagesPage(...args),
   querySessionMessageBlocks: jest.fn(async () => ({ items: [] })),
   runSessionCommand: (...args: unknown[]) => mockRunSessionCommand(...args),
 }));
@@ -471,8 +476,12 @@ jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
 jest.mock("@/lib/chatHistoryCache", () => ({
   addConversationMessage: (...args: unknown[]) =>
     mockAddConversationMessage(...args),
+  mergeConversationMessages: (...args: unknown[]) =>
+    mockMergeConversationMessages(...args),
   removeConversationMessage: (...args: unknown[]) =>
     mockRemoveConversationMessage(...args),
+  setConversationMessages: (...args: unknown[]) =>
+    mockSetConversationMessages(...args),
   updateConversationMessage: (...args: unknown[]) =>
     mockUpdateConversationMessage(...args),
 }));
@@ -518,6 +527,8 @@ jest.mock("@/lib/toast", () => ({
   },
 }));
 
+let renderedTree: ReactTestRenderer | null = null;
+
 const renderChatScreen = (
   conversationId: string,
   agentId: string = "agent-1",
@@ -528,6 +539,14 @@ const renderChatScreen = (
       <ChatScreen agentId={agentId} conversationId={conversationId} />,
     );
   });
+  const originalUnmount = tree.unmount.bind(tree);
+  tree.unmount = () => {
+    originalUnmount();
+    if (renderedTree === tree) {
+      renderedTree = null;
+    }
+  };
+  renderedTree = tree;
   return tree;
 };
 
@@ -545,12 +564,21 @@ describe("ChatScreen interrupt handling", () => {
     mockRejectQuestion.mockReset();
     mockReplyElicitation.mockReset();
     mockAddConversationMessage.mockReset();
+    mockMergeConversationMessages.mockReset();
     mockRemoveConversationMessage.mockReset();
+    mockSetConversationMessages.mockReset();
     mockUpdateConversationMessage.mockReset();
     mockToastInfo.mockReset();
     mockToastSuccess.mockReset();
     mockToastError.mockReset();
     mockContinueSession.mockReset();
+    mockListSessionMessagesPage.mockReset().mockResolvedValue({
+      items: [],
+      pageInfo: {
+        hasMoreBefore: false,
+        nextBefore: null,
+      },
+    });
     mockChatState.ensureSession.mockReset();
     mockChatState.generateConversationId
       .mockReset()
@@ -579,7 +607,7 @@ describe("ChatScreen interrupt handling", () => {
       description: "Built-in self-management assistant",
       runtime: "swival",
       configured: true,
-      resources: ["agents", "jobs", "sessions"],
+      resources: ["agents", "followups", "jobs", "sessions"],
       tools: [],
     });
     mockRunSelfManagementBuiltInAgent.mockReset().mockResolvedValue({
@@ -587,7 +615,7 @@ describe("ChatScreen interrupt handling", () => {
       answer: "Built-in agent reply",
       exhausted: false,
       runtime: "swival",
-      resources: ["agents", "jobs", "sessions"],
+      resources: ["agents", "followups", "jobs", "sessions"],
       tools: ["self.jobs.list"],
       write_tools_enabled: false,
       interrupt: null,
@@ -602,7 +630,7 @@ describe("ChatScreen interrupt handling", () => {
         answer: "Write approval was handled.",
         exhausted: false,
         runtime: "swival",
-        resources: ["agents", "jobs", "sessions"],
+        resources: ["agents", "followups", "jobs", "sessions"],
         tools: ["self.jobs.pause"],
         write_tools_enabled: true,
         interrupt: null,
@@ -658,6 +686,16 @@ describe("ChatScreen interrupt handling", () => {
       callback(0);
       return 0;
     }) as unknown as (callback: FrameRequestCallback) => number;
+  });
+
+  afterEach(() => {
+    if (renderedTree) {
+      act(() => {
+        renderedTree?.unmount();
+      });
+      renderedTree = null;
+    }
+    jest.useRealTimers();
   });
 
   it("recovers pending interrupts for a bound upstream session", async () => {
@@ -1741,6 +1779,306 @@ describe("ChatScreen interrupt handling", () => {
       });
     },
   );
+
+  it("closes the built-in authorization card on fast-ack and enters continuation state", async () => {
+    mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockImplementationOnce(
+      async (payload: { agentMessageId: string }) => {
+        return {
+          status: "accepted",
+          answer: null,
+          exhausted: false,
+          runtime: "swival",
+          resources: ["agents", "jobs", "sessions"],
+          tools: ["self.jobs.pause"],
+          write_tools_enabled: true,
+          interrupt: null,
+          continuation: {
+            phase: "running",
+            agentMessageId: payload.agentMessageId,
+          },
+        };
+      },
+    );
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      agentId: SELF_MANAGEMENT_AGENT_ID,
+      pendingInterrupt: {
+        requestId: "builtin-perm-async-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "self-management-write",
+          patterns: ["self.jobs.pause"],
+          displayMessage: "Approve write access to continue.",
+        },
+      },
+      pendingInterrupts: [
+        {
+          requestId: "builtin-perm-async-1",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve write access to continue.",
+          },
+        },
+      ],
+    };
+
+    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const root = tree.root;
+    const permissionButton = root.findByProps({
+      testID: "interrupt-permission-once",
+    });
+
+    await act(async () => {
+      await permissionButton.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(
+      mockReplySelfManagementBuiltInAgentPermissionInterrupt,
+    ).toHaveBeenCalledWith({
+      requestId: "builtin-perm-async-1",
+      reply: "once",
+      agentMessageId: expect.any(String),
+    });
+    expect(mockChatState.sessions[conversationId]?.pendingInterrupt).toBeNull();
+    expect(mockChatState.sessions[conversationId]?.streamState).toBe(
+      "continuing",
+    );
+    expect(
+      mockChatState.sessions[conversationId]?.lastResolvedInterrupt,
+    ).toMatchObject({
+      requestId: "builtin-perm-async-1",
+      type: "permission",
+      phase: "resolved",
+      resolution: "replied",
+    });
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Action submitted",
+      "Authorization request handled.",
+    );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("keeps waiting for persisted continuation state instead of forcing a timeout error", async () => {
+    jest.useFakeTimers();
+    try {
+      mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockImplementationOnce(
+        async (payload: { agentMessageId: string }) => {
+          return {
+            status: "accepted",
+            answer: null,
+            exhausted: false,
+            runtime: "swival",
+            resources: ["agents", "jobs", "sessions"],
+            tools: ["self.jobs.pause"],
+            write_tools_enabled: true,
+            interrupt: null,
+            continuation: {
+              phase: "running",
+              agentMessageId: payload.agentMessageId,
+            },
+          };
+        },
+      );
+      mockChatState.sessions[conversationId] = {
+        ...baseSession(),
+        agentId: SELF_MANAGEMENT_AGENT_ID,
+        pendingInterrupt: {
+          requestId: "builtin-perm-async-2",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve write access to continue.",
+          },
+        },
+        pendingInterrupts: [
+          {
+            requestId: "builtin-perm-async-2",
+            type: "permission",
+            phase: "asked",
+            details: {
+              permission: "self-management-write",
+              patterns: ["self.jobs.pause"],
+              displayMessage: "Approve write access to continue.",
+            },
+          },
+        ],
+      };
+
+      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+      const root = tree.root;
+      const permissionButton = root.findByProps({
+        testID: "interrupt-permission-once",
+      });
+
+      await act(async () => {
+        await permissionButton.props.onPress();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      mockUpdateConversationMessage.mockClear();
+
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockChatState.sessions[conversationId]?.streamState).toBe(
+        "continuing",
+      );
+      expect(mockUpdateConversationMessage).not.toHaveBeenCalledWith(
+        conversationId,
+        expect.any(String),
+        expect.objectContaining({
+          content:
+            "Built-in assistant continuation timed out while waiting for persisted output.",
+          status: "error",
+        }),
+      );
+
+      act(() => {
+        tree.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("refreshes an idle built-in chat so proactive follow-up replies become visible", async () => {
+    jest.useFakeTimers();
+    try {
+      mockChatState.sessions[conversationId] = {
+        ...baseSession(),
+        agentId: SELF_MANAGEMENT_AGENT_ID,
+        streamState: "idle",
+      };
+      mockListSessionMessagesPage.mockResolvedValue({
+        items: [
+          {
+            id: "auto-follow-up-1",
+            role: "agent",
+            kind: "message",
+            content: "I checked and here is the result.",
+            created_at: "2026-04-16T05:00:00.000Z",
+            status: "done",
+            operationId: null,
+            blocks: [],
+          },
+        ],
+        pageInfo: {
+          hasMoreBefore: false,
+          nextBefore: null,
+        },
+      });
+
+      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockListSessionMessagesPage).toHaveBeenCalledWith(conversationId, {
+        before: null,
+        limit: 8,
+      });
+      expect(mockMergeConversationMessages).toHaveBeenCalledWith(
+        conversationId,
+        [
+          expect.objectContaining({
+            id: "auto-follow-up-1",
+            role: "agent",
+            content: "I checked and here is the result.",
+            status: "done",
+          }),
+        ],
+      );
+
+      act(() => {
+        tree.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("does not re-run built-in interrupt recovery when only historical agent messages are interrupted", async () => {
+    jest.useFakeTimers();
+    try {
+      mockChatState.sessions[conversationId] = {
+        ...baseSession(),
+        agentId: SELF_MANAGEMENT_AGENT_ID,
+        streamState: "idle",
+      };
+      mockListSessionMessagesPage.mockResolvedValue({
+        items: [
+          {
+            id: "agent-done-latest",
+            role: "agent",
+            kind: "message",
+            content: "Both delegated reviews have completed.",
+            created_at: "2026-04-16T10:04:06.930Z",
+            status: "done",
+            operationId: null,
+            blocks: [],
+          },
+          {
+            id: "agent-old-interrupted",
+            role: "agent",
+            kind: "message",
+            content: "Waiting for approval.",
+            created_at: "2026-04-16T10:03:44.421Z",
+            status: "interrupted",
+            operationId: null,
+            blocks: [],
+          },
+        ],
+        pageInfo: {
+          hasMoreBefore: false,
+          nextBefore: null,
+        },
+      });
+
+      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      mockRecoverSelfManagementBuiltInAgentInterrupts.mockClear();
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockListSessionMessagesPage).toHaveBeenCalledWith(conversationId, {
+        before: null,
+        limit: 8,
+      });
+      expect(
+        mockRecoverSelfManagementBuiltInAgentInterrupts,
+      ).not.toHaveBeenCalled();
+
+      act(() => {
+        tree.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
   it("clears stale built-in permission interrupts when the reply request expired", async () => {
     mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(

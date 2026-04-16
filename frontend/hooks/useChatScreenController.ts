@@ -17,6 +17,7 @@ import { useChatBlockDetailController } from "@/hooks/useChatBlockDetailControll
 import { useChatComposerController } from "@/hooks/useChatComposerController";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useChatInterruptController } from "@/hooks/useChatInterruptController";
+import type { PermissionReplyActionMode } from "@/hooks/useChatInterruptController";
 import {
   type GenericCapabilityStatus,
   useExtensionCapabilitiesQuery,
@@ -43,6 +44,7 @@ import {
 import {
   appendSessionMessage,
   continueSession,
+  listSessionMessagesPage,
   runSessionCommand,
   type SessionMessageItem,
 } from "@/lib/api/sessions";
@@ -57,6 +59,7 @@ import {
 } from "@/lib/chat-utils";
 import {
   addConversationMessage,
+  mergeConversationMessages,
   removeConversationMessage,
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
@@ -80,6 +83,9 @@ import { useChatStore } from "@/store/chat";
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const INTERRUPT_RECOVERY_THROTTLE_MS = 5_000;
+const BUILT_IN_CONTINUATION_POLL_INTERVAL_MS = 800;
+const BUILT_IN_CONTINUATION_POLL_MAX_INTERVAL_MS = 5_000;
+const BUILT_IN_IDLE_REFRESH_INTERVAL_MS = 5_000;
 
 export function useChatScreenController({
   routeAgentId,
@@ -150,6 +156,10 @@ export function useChatScreenController({
   const lastInterruptRecoveryRef = useRef<{
     key: string;
     triggeredAt: number;
+  } | null>(null);
+  const builtInContinuationMonitorRef = useRef<{
+    key: string;
+    cancelled: boolean;
   } | null>(null);
   const loadingEarlierRef = useRef(false);
   const isInitialLoadRef = useRef(true);
@@ -477,9 +487,15 @@ export function useChatScreenController({
     }: {
       requestId: string;
       reply: "once" | "always" | "reject";
-    }) => {
+    }): Promise<{
+      mode: PermissionReplyActionMode;
+      resolvedRequestId?: string;
+    }> => {
       if (!conversationId || !activeAgentId) {
-        return;
+        return {
+          mode: "transactional",
+          resolvedRequestId: requestId,
+        };
       }
 
       const nextAgentMessageId = generateUuid();
@@ -519,6 +535,31 @@ export function useChatScreenController({
           ? toPendingRuntimeInterrupt(result.interrupt)
           : null;
 
+        if (result.status === "accepted") {
+          applyBuiltInAgentSessionUpdate(
+            conversationId,
+            activeAgentId,
+            (current) => ({
+              ...current,
+              agentId: activeAgentId,
+              lastActiveAt: new Date().toISOString(),
+              streamState: "continuing",
+              lastStreamError: null,
+              lastAgentMessageId:
+                result.continuation?.agentMessageId ?? nextAgentMessageId,
+              lastResolvedInterrupt: buildBuiltInResolvedInterruptRecord(
+                requestId,
+                resolution,
+              ),
+              ...buildPendingInterruptState([]),
+            }),
+          );
+          return {
+            mode: "ack-fast",
+            resolvedRequestId: requestId,
+          };
+        }
+
         updateConversationMessage(conversationId, nextAgentMessageId, {
           content: result.answer ?? "",
           status: result.status === "interrupted" ? "interrupted" : "done",
@@ -539,6 +580,10 @@ export function useChatScreenController({
             ...buildPendingInterruptState(nextInterrupt ? [nextInterrupt] : []),
           }),
         );
+        return {
+          mode: "transactional",
+          resolvedRequestId: requestId,
+        };
       } catch (error) {
         removeConversationMessage(conversationId, nextAgentMessageId);
         applyBuiltInAgentSessionUpdate(
@@ -807,7 +852,9 @@ export function useChatScreenController({
       const effectiveContent = parsedInput.text;
       const currentSession =
         useChatStore.getState().sessions[nextConversationId];
-      const isActivelyStreaming = currentSession?.streamState === "streaming";
+      const isActivelyStreaming =
+        currentSession?.streamState === "streaming" ||
+        currentSession?.streamState === "continuing";
 
       if (isSelfManagementBuiltInAgent(nextAgentId)) {
         if (isActivelyStreaming) {
@@ -1012,7 +1059,17 @@ export function useChatScreenController({
   }, [isAppendAvailableForSession, session]);
 
   const streamSendHint = useMemo(() => {
-    if (session?.streamState !== "streaming" || pendingInterrupt) {
+    if (pendingInterrupt) {
+      return null;
+    }
+    if (session?.streamState === "continuing") {
+      return {
+        tone: "interrupt" as const,
+        message:
+          "The assistant is still finishing the approved action. Wait for it to complete before sending a new message.",
+      };
+    }
+    if (session?.streamState !== "streaming") {
       return null;
     }
     if (canAppendToRunningStream) {
@@ -1223,6 +1280,201 @@ export function useChatScreenController({
   ]);
 
   useEffect(() => {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      !isBuiltInSelfManagementAgent ||
+      session?.streamState !== "continuing" ||
+      !session.lastAgentMessageId
+    ) {
+      return;
+    }
+
+    const targetAgentMessageId = session.lastAgentMessageId;
+    const monitorKey = `${conversationId}:${targetAgentMessageId}`;
+    const previousMonitor = builtInContinuationMonitorRef.current;
+    if (previousMonitor?.key === monitorKey && !previousMonitor.cancelled) {
+      return;
+    }
+    if (previousMonitor) {
+      previousMonitor.cancelled = true;
+    }
+
+    const monitor = {
+      key: monitorKey,
+      cancelled: false,
+    };
+    builtInContinuationMonitorRef.current = monitor;
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, ms);
+      });
+
+    const monitorContinuation = async () => {
+      let pollDelayMs = BUILT_IN_CONTINUATION_POLL_INTERVAL_MS;
+      while (!monitor.cancelled) {
+        try {
+          const page = await listSessionMessagesPage(conversationId, {
+            before: null,
+            limit: 8,
+          });
+          const mappedMessages = mapSessionMessagesToChatMessages(
+            Array.isArray(page?.items) ? page.items : [],
+            {
+              keepEmptyMessages: true,
+            },
+          );
+          mergeConversationMessages(conversationId, mappedMessages);
+
+          const currentAgentMessage = mappedMessages.find(
+            (message) =>
+              message.id === targetAgentMessageId && message.role === "agent",
+          );
+          if (
+            currentAgentMessage &&
+            currentAgentMessage.status &&
+            currentAgentMessage.status !== "streaming"
+          ) {
+            if (currentAgentMessage.status === "interrupted") {
+              await recoverBuiltInPendingInterrupts({
+                nextConversationId: conversationId,
+              });
+            }
+            applyBuiltInAgentSessionUpdate(
+              conversationId,
+              activeAgentId,
+              (current) => ({
+                ...current,
+                agentId: activeAgentId,
+                lastActiveAt: new Date().toISOString(),
+                streamState:
+                  currentAgentMessage.status === "error" ? "error" : "idle",
+                lastStreamError:
+                  currentAgentMessage.status === "error"
+                    ? currentAgentMessage.content.trim() ||
+                      "Built-in assistant continuation failed."
+                    : null,
+              }),
+            );
+            return;
+          }
+        } catch (error) {
+          console.warn("[Chat] built-in continuation refresh failed", {
+            conversationId,
+            agentId: activeAgentId,
+            agentMessageId: targetAgentMessageId,
+            error:
+              error instanceof Error
+                ? error.message
+                : "built_in_continuation_refresh_failed",
+          });
+        }
+        await sleep(pollDelayMs);
+        pollDelayMs = Math.min(
+          BUILT_IN_CONTINUATION_POLL_MAX_INTERVAL_MS,
+          Math.round(pollDelayMs * 1.5),
+        );
+      }
+    };
+
+    const continuationPromise = monitorContinuation();
+    continuationPromise.catch(() => undefined);
+
+    return () => {
+      monitor.cancelled = true;
+      if (builtInContinuationMonitorRef.current === monitor) {
+        builtInContinuationMonitorRef.current = null;
+      }
+    };
+  }, [
+    activeAgentId,
+    applyBuiltInAgentSessionUpdate,
+    conversationId,
+    isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
+    session?.lastAgentMessageId,
+    session?.streamState,
+  ]);
+
+  useEffect(() => {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      !isBuiltInSelfManagementAgent ||
+      session?.streamState === "streaming" ||
+      session?.streamState === "continuing"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = () => {
+      if (cancelled) {
+        return;
+      }
+      refreshTimeout = setTimeout(() => {
+        runRefresh().catch(() => undefined);
+      }, BUILT_IN_IDLE_REFRESH_INTERVAL_MS);
+    };
+
+    const runRefresh = async () => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        const page = await listSessionMessagesPage(conversationId, {
+          before: null,
+          limit: 8,
+        });
+        const mappedMessages = mapSessionMessagesToChatMessages(
+          Array.isArray(page?.items) ? page.items : [],
+          {
+            keepEmptyMessages: true,
+          },
+        );
+        mergeConversationMessages(conversationId, mappedMessages);
+        const latestAgentMessage = [...mappedMessages]
+          .reverse()
+          .find((message) => message.role === "agent");
+        if (latestAgentMessage?.status === "interrupted") {
+          await recoverBuiltInPendingInterrupts({
+            nextConversationId: conversationId,
+          });
+        }
+      } catch (error) {
+        console.warn("[Chat] built-in idle refresh failed", {
+          conversationId,
+          agentId: activeAgentId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "built_in_idle_refresh_failed",
+        });
+      } finally {
+        scheduleRefresh();
+      }
+    };
+
+    scheduleRefresh();
+
+    return () => {
+      cancelled = true;
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+    };
+  }, [
+    activeAgentId,
+    conversationId,
+    isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
+    session?.streamState,
+  ]);
+
+  useEffect(() => {
     if (!pendingInterrupt) {
       return;
     }
@@ -1332,6 +1584,7 @@ export function useChatScreenController({
       contentHeightRef.current = h;
       if (
         session?.streamState === "streaming" ||
+        session?.streamState === "continuing" ||
         forceScrollToBottomRef.current
       ) {
         scheduleStickToBottom(false);
@@ -1471,7 +1724,8 @@ export function useChatScreenController({
     if (
       !conversationId ||
       !activeAgentId ||
-      session?.streamState === "streaming"
+      session?.streamState === "streaming" ||
+      session?.streamState === "continuing"
     ) {
       return;
     }

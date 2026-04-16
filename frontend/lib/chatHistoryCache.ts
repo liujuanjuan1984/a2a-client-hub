@@ -76,6 +76,14 @@ export const setConversationMessages = (
   writeMessages(conversationId, messages);
 };
 
+export const mergeConversationMessages = (
+  conversationId: string,
+  messages: ChatMessage[],
+) => {
+  const current = getConversationMessages(conversationId);
+  writeMessages(conversationId, [...current, ...messages]);
+};
+
 export const addConversationMessage = (
   conversationId: string,
   message: ChatMessage,

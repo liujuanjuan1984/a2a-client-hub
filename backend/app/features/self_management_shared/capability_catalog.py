@@ -21,6 +21,7 @@ _SELF_ENTRY_SURFACES = frozenset(
         SelfManagementSurface.WEB_AGENT,
     }
 )
+_WEB_AGENT_ONLY_SURFACES = frozenset({SelfManagementSurface.WEB_AGENT})
 
 SELF_AGENTS_LIST = SelfManagementOperation(
     operation_id="self.agents.list",
@@ -123,7 +124,43 @@ SELF_AGENTS_START_SESSIONS = SelfManagementOperation(
     surfaces=_SELF_ENTRY_SURFACES,
     description=(
         "Start one or more new conversations for the current user's agents, "
-        "send a delegated message, and wait for each reply."
+        "send a delegated message, and hand each conversation off to the "
+        "platform-managed target session without waiting for replies. In the "
+        "built-in self-management conversation, accepted target conversations "
+        "are automatically added to durable follow-up tracking."
+    ),
+)
+
+SELF_FOLLOWUPS_GET = SelfManagementOperation(
+    operation_id="self.followups.get",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.FOLLOWUPS,
+    action=SelfManagementAction.READ,
+    event_name="self_followup.get.requested",
+    tool_name="self.followups.get",
+    first_wave_exposed=True,
+    surfaces=_WEB_AGENT_ONLY_SURFACES,
+    description=(
+        "Read the current durable follow-up tracking state for the active "
+        "built-in self-management conversation, including host-managed "
+        "auto-tracked delegated targets."
+    ),
+)
+
+SELF_FOLLOWUPS_SET_SESSIONS = SelfManagementOperation(
+    operation_id="self.followups.set_sessions",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.FOLLOWUPS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_followup.set_sessions.requested",
+    tool_name="self.followups.set_sessions",
+    confirmation_policy=SelfManagementConfirmationPolicy.NONE,
+    first_wave_exposed=True,
+    surfaces=_WEB_AGENT_ONLY_SURFACES,
+    description=(
+        "Override the current tracked target conversation ids for the active "
+        "built-in self-management conversation. Use this to narrow, extend, "
+        "replace, or stop future follow-up wakeups by passing an empty list."
     ),
 )
 
@@ -149,6 +186,23 @@ SELF_SESSIONS_GET = SelfManagementOperation(
     first_wave_exposed=True,
     surfaces=_SELF_ENTRY_SURFACES,
     description="Read one current-user session in detail.",
+)
+
+SELF_SESSIONS_GET_LATEST_MESSAGES = SelfManagementOperation(
+    operation_id="self.sessions.get_latest_messages",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.SESSIONS,
+    action=SelfManagementAction.READ,
+    event_name="self_session.get_latest_messages.requested",
+    tool_name="self.sessions.get_latest_messages",
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Read the latest persisted text messages for one or more current-user "
+        "sessions, optionally wait within a bounded budget for new target-agent "
+        "text results, and ignore reasoning, tool-call, and interrupt lifecycle "
+        "details."
+    ),
 )
 
 SELF_SESSIONS_UPDATE = SelfManagementOperation(
@@ -202,7 +256,10 @@ SELF_SESSIONS_SEND_MESSAGE = SelfManagementOperation(
     surfaces=_SELF_ENTRY_SURFACES,
     description=(
         "Send one delegated message to one or more current-user conversations "
-        "and wait for each target agent reply."
+        "and hand each conversation off to the platform-managed target session "
+        "without waiting for replies. In the built-in self-management "
+        "conversation, accepted target conversations are automatically added "
+        "to durable follow-up tracking."
     ),
 )
 
@@ -417,8 +474,11 @@ FIRST_WAVE_EXPOSED_OPERATIONS = (
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_AGENTS_DELETE,
     SELF_AGENTS_START_SESSIONS,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_UPDATE,
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_UNARCHIVE,
@@ -579,6 +639,7 @@ __all__ = [
     "SELF_JOBS_UPDATE_SCHEDULE",
     "SELF_SESSIONS_ARCHIVE",
     "SELF_SESSIONS_GET",
+    "SELF_SESSIONS_GET_LATEST_MESSAGES",
     "SELF_SESSIONS_LIST",
     "SELF_SESSIONS_SEND_MESSAGE",
     "SELF_SESSIONS_UNARCHIVE",

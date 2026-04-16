@@ -133,6 +133,51 @@ describe("useChatInterruptController", () => {
     );
   });
 
+  it("supports ack-fast permission reply overrides through the shared controller", async () => {
+    const onPermissionReplyOverride = jest.fn().mockResolvedValue({
+      mode: "ack-fast" as const,
+      resolvedRequestId: "perm-override-1",
+    });
+
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "self-management-assistant",
+        agentSource: null,
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "perm-override-1",
+          type: "permission",
+          phase: "asked",
+          details: { permission: "write", patterns: ["self.jobs.pause"] },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 0,
+        clearPendingInterrupt,
+        onPermissionReplyOverride,
+        permissionReplySuccessMessage: "Authorization request handled.",
+      }),
+    );
+
+    await act(async () => {
+      result.current.handlePermissionReply("once");
+      await Promise.resolve();
+    });
+
+    expect(onPermissionReplyOverride).toHaveBeenCalledWith({
+      requestId: "perm-override-1",
+      reply: "once",
+    });
+    expect(mockedReplyPermissionInterrupt).not.toHaveBeenCalled();
+    expect(clearPendingInterrupt).toHaveBeenCalledWith(
+      "conv-1",
+      "perm-override-1",
+    );
+    expect(mockedToast.success).toHaveBeenCalledWith(
+      "Action submitted",
+      "Authorization request handled.",
+    );
+  });
+
   it("forwards working directory with question answers", async () => {
     const { result } = renderHook(() =>
       useChatInterruptController({

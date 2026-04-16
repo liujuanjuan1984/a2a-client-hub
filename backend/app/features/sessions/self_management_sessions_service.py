@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any, cast
 from uuid import UUID
 
@@ -14,12 +16,14 @@ from app.db.transaction import commit_safely
 from app.features.self_management_shared.capability_catalog import (
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_UNARCHIVE,
     SELF_SESSIONS_UPDATE,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
+from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now
 
 
@@ -151,6 +155,143 @@ class SelfManagementSessionsService:
             ),
         )
         return result.result
+
+    async def get_latest_messages(
+        self,
+        *,
+        db: AsyncSession,
+        gateway: SelfManagementToolGateway,
+        current_user: User,
+        conversation_ids: list[str],
+        limit_per_session: int = 1,
+        after_agent_message_id_by_conversation: dict[str, str] | None = None,
+        wait_up_to_seconds: int = 0,
+        poll_interval_seconds: int = 1,
+    ) -> dict[str, Any]:
+        user_id = self._user_id(current_user)
+        items: list[dict[str, Any]] = []
+        observation_anchors = after_agent_message_id_by_conversation or {}
+        for conversation_id in self._dedupe_ids(conversation_ids):
+            gateway.authorize(
+                operation=SELF_SESSIONS_GET_LATEST_MESSAGES,
+                resource_id=conversation_id,
+            )
+            try:
+                resolved_conversation_id = UUID(conversation_id)
+            except ValueError:
+                items.append(
+                    {
+                        "conversation_id": conversation_id,
+                        "status": "failed",
+                        "error": "invalid_conversation_id",
+                        "error_code": "invalid_conversation_id",
+                    }
+                )
+                continue
+            try:
+                session_item = await self._get_thread_query(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=resolved_conversation_id,
+                    allowed_statuses=(
+                        ConversationThread.STATUS_ACTIVE,
+                        ConversationThread.STATUS_ARCHIVED,
+                    ),
+                )
+                observation = await self._observe_latest_text_messages(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    limit_per_session=limit_per_session,
+                    after_agent_message_id=observation_anchors.get(conversation_id),
+                    wait_up_to_seconds=wait_up_to_seconds,
+                    poll_interval_seconds=poll_interval_seconds,
+                )
+            except ValueError as exc:
+                error_code = str(exc)
+                items.append(
+                    {
+                        "conversation_id": conversation_id,
+                        "status": "failed",
+                        "error": error_code,
+                        "error_code": error_code,
+                    }
+                )
+                continue
+            items.append(
+                {
+                    "conversation_id": conversation_id,
+                    "status": "available",
+                    "session": session_item,
+                    "messages": observation["messages"],
+                    "observation_status": observation["observation_status"],
+                    "after_agent_message_id": observation["after_agent_message_id"],
+                    "latest_agent_message_id": observation["latest_agent_message_id"],
+                }
+            )
+        available = sum(1 for item in items if item.get("status") == "available")
+        failed = sum(1 for item in items if item.get("status") == "failed")
+        return {
+            "summary": {
+                "requested": len(items),
+                "available": available,
+                "failed": failed,
+            },
+            "items": items,
+        }
+
+    async def _observe_latest_text_messages(
+        self,
+        *,
+        db: AsyncSession,
+        user_id: UUID,
+        conversation_id: str,
+        limit_per_session: int,
+        after_agent_message_id: str | None,
+        wait_up_to_seconds: int,
+        poll_interval_seconds: int,
+    ) -> dict[str, Any]:
+        observe_updates = bool(after_agent_message_id)
+        deadline = time.monotonic() + max(wait_up_to_seconds, 0)
+
+        while True:
+            messages = await self._list_latest_text_messages(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                limit_per_session=limit_per_session,
+            )
+            latest_agent_message_id = self._latest_agent_message_id(messages)
+            if not observe_updates:
+                return {
+                    "messages": messages,
+                    "observation_status": "snapshot",
+                    "after_agent_message_id": None,
+                    "latest_agent_message_id": latest_agent_message_id,
+                }
+            if (
+                latest_agent_message_id is not None
+                and latest_agent_message_id != after_agent_message_id
+            ):
+                return {
+                    "messages": messages,
+                    "observation_status": "updated",
+                    "after_agent_message_id": after_agent_message_id,
+                    "latest_agent_message_id": latest_agent_message_id,
+                }
+            if time.monotonic() >= deadline:
+                return {
+                    "messages": messages,
+                    "observation_status": "unchanged",
+                    "after_agent_message_id": after_agent_message_id,
+                    "latest_agent_message_id": latest_agent_message_id,
+                }
+            await asyncio.sleep(
+                min(
+                    poll_interval_seconds,
+                    max(deadline - time.monotonic(), 0),
+                )
+            )
 
     async def update_session(
         self,
@@ -341,6 +482,70 @@ class SelfManagementSessionsService:
         await commit_safely(db)
         await db.refresh(thread)
         return self._serialize_thread_summary(thread)
+
+    async def _list_latest_text_messages(
+        self,
+        *,
+        db: AsyncSession,
+        user_id: UUID,
+        conversation_id: str,
+        limit_per_session: int,
+    ) -> list[dict[str, Any]]:
+        before: str | None = None
+        collected: list[dict[str, Any]] = []
+        page_limit = max(limit_per_session * 4, 10)
+
+        for _ in range(5):
+            items, extra, _db_mutated = await session_hub_service.list_messages(
+                db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                before=before,
+                limit=page_limit,
+            )
+            if not items:
+                break
+            for item in reversed(items):
+                role = str(item.get("role") or "")
+                content = str(item.get("content") or "").strip()
+                if role not in {"user", "agent"} or not content:
+                    continue
+                collected.append(
+                    {
+                        "message_id": str(item["id"]),
+                        "role": role,
+                        "content": content,
+                        "created_at": item.get("created_at"),
+                        "status": item.get("status"),
+                    }
+                )
+                if len(collected) >= limit_per_session:
+                    return list(reversed(collected))
+            before = cast(dict[str, Any], extra.get("pageInfo") or {}).get("nextBefore")
+            if not isinstance(before, str) or not before:
+                break
+        return list(reversed(collected))
+
+    @staticmethod
+    def _latest_agent_message_id(messages: list[dict[str, Any]]) -> str | None:
+        for message in reversed(messages):
+            if str(message.get("role") or "") == "agent":
+                message_id = message.get("message_id")
+                if isinstance(message_id, str) and message_id:
+                    return message_id
+        return None
+
+    @staticmethod
+    def _dedupe_ids(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for value in values:
+            normalized = value.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+        return deduped
 
 
 self_management_sessions_service = SelfManagementSessionsService()
