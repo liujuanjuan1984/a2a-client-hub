@@ -527,6 +527,8 @@ jest.mock("@/lib/toast", () => ({
   },
 }));
 
+let renderedTree: ReactTestRenderer | null = null;
+
 const renderChatScreen = (
   conversationId: string,
   agentId: string = "agent-1",
@@ -537,6 +539,14 @@ const renderChatScreen = (
       <ChatScreen agentId={agentId} conversationId={conversationId} />,
     );
   });
+  const originalUnmount = tree.unmount.bind(tree);
+  tree.unmount = () => {
+    originalUnmount();
+    if (renderedTree === tree) {
+      renderedTree = null;
+    }
+  };
+  renderedTree = tree;
   return tree;
 };
 
@@ -676,6 +686,16 @@ describe("ChatScreen interrupt handling", () => {
       callback(0);
       return 0;
     }) as unknown as (callback: FrameRequestCallback) => number;
+  });
+
+  afterEach(() => {
+    if (renderedTree) {
+      act(() => {
+        renderedTree?.unmount();
+      });
+      renderedTree = null;
+    }
+    jest.useRealTimers();
   });
 
   it("recovers pending interrupts for a bound upstream session", async () => {
