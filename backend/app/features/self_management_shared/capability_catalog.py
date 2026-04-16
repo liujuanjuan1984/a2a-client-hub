@@ -123,7 +123,8 @@ SELF_AGENTS_START_SESSIONS = SelfManagementOperation(
     surfaces=_SELF_ENTRY_SURFACES,
     description=(
         "Start one or more new conversations for the current user's agents, "
-        "send a delegated message, and wait for each reply."
+        "send a delegated message, and hand each conversation off to the "
+        "platform-managed target session without waiting for replies."
     ),
 )
 
@@ -202,7 +203,8 @@ SELF_SESSIONS_SEND_MESSAGE = SelfManagementOperation(
     surfaces=_SELF_ENTRY_SURFACES,
     description=(
         "Send one delegated message to one or more current-user conversations "
-        "and wait for each target agent reply."
+        "and hand each conversation off to the platform-managed target session "
+        "without waiting for replies."
     ),
 )
 

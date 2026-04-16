@@ -228,8 +228,8 @@ async def test_self_management_toolkit_sends_session_message(
         assert kwargs["conversation_ids"] == [thread.id]
         assert kwargs["message"] == "ping"
         return {
-            "summary": {"requested": 1, "completed": 1, "failed": 0},
-            "items": [{"conversation_id": str(thread.id), "status": "completed"}],
+            "summary": {"requested": 1, "accepted": 1, "failed": 0},
+            "items": [{"conversation_id": str(thread.id), "status": "accepted"}],
         }
 
     monkeypatch.setattr(
@@ -246,9 +246,9 @@ async def test_self_management_toolkit_sends_session_message(
         },
     )
 
-    assert result.payload["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert result.payload["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result.payload["items"] == [
-        {"conversation_id": str(thread.id), "status": "completed"}
+        {"conversation_id": str(thread.id), "status": "accepted"}
     ]
 
 
@@ -270,8 +270,8 @@ async def test_self_management_toolkit_starts_agent_sessions(
         assert kwargs["agent_ids"] == [agent.id]
         assert kwargs["message"] == "hello"
         return {
-            "summary": {"requested": 1, "completed": 1, "failed": 0},
-            "items": [{"agent_id": str(agent.id), "status": "completed"}],
+            "summary": {"requested": 1, "accepted": 1, "failed": 0},
+            "items": [{"agent_id": str(agent.id), "status": "accepted"}],
         }
 
     monkeypatch.setattr(
@@ -288,7 +288,7 @@ async def test_self_management_toolkit_starts_agent_sessions(
         },
     )
 
-    assert result.payload["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert result.payload["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result.payload["items"] == [
-        {"agent_id": str(agent.id), "status": "completed"}
+        {"agent_id": str(agent.id), "status": "accepted"}
     ]

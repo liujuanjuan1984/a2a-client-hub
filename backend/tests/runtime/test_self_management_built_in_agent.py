@@ -344,6 +344,10 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
         str,
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
+    assert "treat them as handoff operations" in cast(
+        str,
+        _FakeSwivalSession.last_init_kwargs["system_prompt"],
+    )
     mcp_servers = cast(
         dict[str, dict[str, Any]],
         _FakeSwivalSession.last_init_kwargs["mcp_servers"],

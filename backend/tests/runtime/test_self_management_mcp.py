@@ -434,12 +434,12 @@ async def test_execute_self_management_mcp_operation_supports_session_send_messa
         assert kwargs["conversation_ids"] == [thread.id]
         assert kwargs["message"] == "ping"
         return {
-            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "summary": {"requested": 1, "accepted": 1, "failed": 0},
             "items": [
                 {
                     "target_type": "session",
                     "conversation_id": str(thread.id),
-                    "status": "completed",
+                    "status": "accepted",
                 }
             ],
         }
@@ -463,12 +463,12 @@ async def test_execute_self_management_mcp_operation_supports_session_send_messa
     assert result == {
         "ok": True,
         "result": {
-            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "summary": {"requested": 1, "accepted": 1, "failed": 0},
             "items": [
                 {
                     "target_type": "session",
                     "conversation_id": str(thread.id),
-                    "status": "completed",
+                    "status": "accepted",
                 }
             ],
         },
@@ -492,12 +492,12 @@ async def test_execute_self_management_mcp_operation_supports_agent_start_sessio
         assert kwargs["agent_ids"] == [agent.id]
         assert kwargs["message"] == "hello"
         return {
-            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "summary": {"requested": 1, "accepted": 1, "failed": 0},
             "items": [
                 {
                     "target_type": "agent",
                     "agent_id": str(agent.id),
-                    "status": "completed",
+                    "status": "accepted",
                 }
             ],
         }
@@ -521,12 +521,12 @@ async def test_execute_self_management_mcp_operation_supports_agent_start_sessio
     assert result == {
         "ok": True,
         "result": {
-            "summary": {"requested": 1, "completed": 1, "failed": 0},
+            "summary": {"requested": 1, "accepted": 1, "failed": 0},
             "items": [
                 {
                     "target_type": "agent",
                     "agent_id": str(agent.id),
-                    "status": "completed",
+                    "status": "accepted",
                 }
             ],
         },
@@ -637,8 +637,9 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
     )
 
     assert result["ok"] is True
-    assert result["result"]["summary"] == {"requested": 1, "completed": 1, "failed": 0}
-    assert result["result"]["items"][0]["status"] == "completed"
+    assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
+    assert result["result"]["items"][0]["status"] == "accepted"
+    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
 
     automation_message = await async_db_session.scalar(
         select(AgentMessage).where(
@@ -771,7 +772,9 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
     )
 
     assert result["ok"] is True
-    assert result["result"]["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
+    assert result["result"]["items"][0]["status"] == "accepted"
+    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
 
     automation_message = await async_db_session.scalar(
         select(AgentMessage).where(

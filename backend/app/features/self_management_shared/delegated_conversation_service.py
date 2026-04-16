@@ -1,7 +1,8 @@
-"""Delegated conversation actions for the self-management built-in agent."""
+"""Delegated conversation handoff actions for the self-management built-in agent."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
@@ -39,10 +40,11 @@ _DELEGATED_BY = "self_management_built_in_agent"
 
 
 class SelfManagementDelegatedConversationService:
-    """Execute delegated session and agent messaging for the built-in agent."""
+    """Dispatch delegated session and agent handoffs for the built-in agent."""
 
     def __init__(self) -> None:
         self._session_support = SessionHubSupport()
+        self._dispatch_tasks: set[asyncio.Task[None]] = set()
 
     async def send_messages_to_sessions(
         self,
@@ -102,6 +104,12 @@ class SelfManagementDelegatedConversationService:
             )
         return self._serialize_batch_payload(items=items)
 
+    async def drain_pending_tasks(self) -> None:
+        tasks = list(self._dispatch_tasks)
+        self._dispatch_tasks.clear()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def _send_one_session_message(
         self,
         *,
@@ -142,7 +150,7 @@ class SelfManagementDelegatedConversationService:
                 "error_code": runtime_info["error_code"],
             }
 
-        invoke_result = await self._run_delegated_invoke(
+        self._schedule_delegated_invoke(
             runtime=runtime_info["runtime"],
             user_id=user_id,
             agent_id=cast(UUID, runtime_info["agent_uuid"]),
@@ -156,14 +164,12 @@ class SelfManagementDelegatedConversationService:
         )
         return {
             "target_type": "session",
-            "conversation_id": str(
-                invoke_result.get("conversation_id") or conversation_id
-            ),
+            "conversation_id": str(conversation_id),
             "agent_id": runtime_info["agent_id"],
             "agent_source": runtime_info["agent_source"],
             "agent_name": runtime_info["agent_name"],
             "title": cast(str, thread.title),
-            **self._serialize_invoke_result(invoke_result),
+            "status": "accepted",
         }
 
     async def _start_one_agent_session(
@@ -190,7 +196,7 @@ class SelfManagementDelegatedConversationService:
                 "error_code": runtime_info["error_code"],
             }
 
-        invoke_result = await self._run_delegated_invoke(
+        self._schedule_delegated_invoke(
             runtime=runtime_info["runtime"],
             user_id=cast(UUID, current_user.id),
             agent_id=agent_id,
@@ -205,12 +211,8 @@ class SelfManagementDelegatedConversationService:
             "agent_id": str(agent_id),
             "agent_source": "personal",
             "agent_name": runtime_info["agent_name"],
-            "conversation_id": (
-                str(invoke_result.get("conversation_id"))
-                if invoke_result.get("conversation_id") is not None
-                else local_conversation_id
-            ),
-            **self._serialize_invoke_result(invoke_result),
+            "conversation_id": local_conversation_id,
+            "status": "accepted",
         }
 
     async def _resolve_runtime_for_thread(
@@ -382,36 +384,89 @@ class SelfManagementDelegatedConversationService:
             },
         )
 
-    @staticmethod
-    def _serialize_invoke_result(result: dict[str, Any]) -> dict[str, Any]:
-        success = bool(result.get("success"))
-        return {
-            "status": "completed" if success else "failed",
-            "response_content": cast(str | None, result.get("response_content")),
-            "error": cast(str | None, result.get("error")),
-            "error_code": cast(str | None, result.get("error_code")),
-            "user_message_id": (
-                str(result["message_refs"]["user_message_id"])
-                if isinstance(result.get("message_refs"), dict)
-                and result["message_refs"].get("user_message_id") is not None
-                else None
+    def _schedule_delegated_invoke(
+        self,
+        *,
+        runtime: Any,
+        user_id: UUID,
+        agent_id: UUID,
+        agent_source: Literal["personal", "shared"],
+        message: str,
+        conversation_id: str | None,
+        target_kind: Literal["session", "agent"],
+        target_id: str,
+    ) -> None:
+        task = asyncio.create_task(
+            self._run_delegated_invoke_task(
+                runtime=runtime,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                message=message,
+                conversation_id=conversation_id,
+                target_kind=target_kind,
+                target_id=target_id,
             ),
-            "agent_message_id": (
-                str(result["message_refs"]["agent_message_id"])
-                if isinstance(result.get("message_refs"), dict)
-                and result["message_refs"].get("agent_message_id") is not None
-                else None
-            ),
+            name=f"self-management-delegated-handoff:{target_kind}:{target_id}",
+        )
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
+
+    async def _run_delegated_invoke_task(
+        self,
+        *,
+        runtime: Any,
+        user_id: UUID,
+        agent_id: UUID,
+        agent_source: Literal["personal", "shared"],
+        message: str,
+        conversation_id: str | None,
+        target_kind: Literal["session", "agent"],
+        target_id: str,
+    ) -> None:
+        extra = {
+            "user_id": str(user_id),
+            "agent_id": str(agent_id),
+            "agent_source": agent_source,
+            "conversation_id": conversation_id,
+            "delegated_by": _DELEGATED_BY,
+            "delegated_target_kind": target_kind,
+            "delegated_target_id": target_id,
         }
+        try:
+            result = await self._run_delegated_invoke(
+                runtime=runtime,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                message=message,
+                conversation_id=conversation_id,
+                target_kind=target_kind,
+                target_id=target_id,
+            )
+        except Exception:
+            logger.exception(
+                "Delegated self-management handoff execution failed",
+                extra=extra,
+            )
+            return
+        if not bool(result.get("success")):
+            logger.warning(
+                "Delegated self-management handoff finished with a failed target outcome",
+                extra={
+                    **extra,
+                    "error_code": cast(str | None, result.get("error_code")),
+                },
+            )
 
     @staticmethod
     def _serialize_batch_payload(items: list[dict[str, Any]]) -> dict[str, Any]:
-        completed = sum(1 for item in items if item.get("status") == "completed")
+        accepted = sum(1 for item in items if item.get("status") == "accepted")
         failed = sum(1 for item in items if item.get("status") == "failed")
         return {
             "summary": {
                 "requested": len(items),
-                "completed": completed,
+                "accepted": accepted,
                 "failed": failed,
             },
             "items": items,

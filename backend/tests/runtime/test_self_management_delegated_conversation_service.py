@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import ANY
 from uuid import uuid4
 
 import pytest
@@ -54,6 +54,7 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
     )
 
     runtime = SimpleNamespace(resolved=SimpleNamespace(name="Delegated Session Agent"))
+    release_dispatch = asyncio.Event()
 
     async def _fake_load_for_external_call(_db, _loader):
         return runtime
@@ -72,6 +73,7 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
             "delegated_target_id": str(thread.id),
             "message_kind": "delegated_session_message",
         }
+        await release_dispatch.wait()
         return {
             "success": True,
             "response_content": "pong",
@@ -100,15 +102,18 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
         lambda: SimpleNamespace(gateway=object()),
     )
 
-    result = await delegated_conversation_service_module.self_management_delegated_conversation_service.send_messages_to_sessions(
-        db=async_db_session,
-        gateway=_build_gateway(user),
-        current_user=user,
-        conversation_ids=[thread.id],
-        message="ping",
+    result = await asyncio.wait_for(
+        delegated_conversation_service_module.self_management_delegated_conversation_service.send_messages_to_sessions(
+            db=async_db_session,
+            gateway=_build_gateway(user),
+            current_user=user,
+            conversation_ids=[thread.id],
+            message="ping",
+        ),
+        timeout=0.1,
     )
 
-    assert result["summary"] == {"requested": 1, "completed": 1, "failed": 0}
+    assert result["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result["items"] == [
         {
             "target_type": "session",
@@ -117,14 +122,11 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
             "agent_source": "personal",
             "agent_name": "Delegated Session Agent",
             "title": "Delegated Session Thread",
-            "status": "completed",
-            "response_content": "pong",
-            "error": None,
-            "error_code": None,
-            "user_message_id": ANY,
-            "agent_message_id": ANY,
+            "status": "accepted",
         }
     ]
+    release_dispatch.set()
+    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
 
 
 async def test_start_sessions_for_agents_uses_automation_invoke_path(
@@ -141,6 +143,7 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
 
     runtime = SimpleNamespace(resolved=SimpleNamespace(name="Delegated Agent"))
     captured_conversation_id: str | None = None
+    release_dispatch = asyncio.Event()
 
     async def _fake_load_for_external_call(_db, _loader):
         return runtime
@@ -162,6 +165,7 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
             "delegated_target_id": str(agent.id),
             "message_kind": "delegated_agent_message",
         }
+        await release_dispatch.wait()
         return {
             "success": True,
             "response_content": "agent pong",
@@ -190,28 +194,31 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
         lambda: SimpleNamespace(gateway=object()),
     )
 
-    result = await delegated_conversation_service_module.self_management_delegated_conversation_service.start_sessions_for_agents(
-        db=async_db_session,
-        gateway=_build_gateway(user),
-        current_user=user,
-        agent_ids=[agent.id],
-        message="hello",
+    result = await asyncio.wait_for(
+        delegated_conversation_service_module.self_management_delegated_conversation_service.start_sessions_for_agents(
+            db=async_db_session,
+            gateway=_build_gateway(user),
+            current_user=user,
+            agent_ids=[agent.id],
+            message="hello",
+        ),
+        timeout=0.1,
     )
 
-    assert result["summary"] == {"requested": 1, "completed": 1, "failed": 0}
-    assert captured_conversation_id is not None
+    assert result["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
+    returned_conversation_id = result["items"][0]["conversation_id"]
+    assert isinstance(returned_conversation_id, str)
+    assert returned_conversation_id
     assert result["items"] == [
         {
             "target_type": "agent",
             "agent_id": str(agent.id),
             "agent_source": "personal",
             "agent_name": "Delegated Agent",
-            "conversation_id": captured_conversation_id,
-            "status": "completed",
-            "response_content": "agent pong",
-            "error": None,
-            "error_code": None,
-            "user_message_id": ANY,
-            "agent_message_id": ANY,
+            "conversation_id": returned_conversation_id,
+            "status": "accepted",
         }
     ]
+    release_dispatch.set()
+    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
+    assert captured_conversation_id == returned_conversation_id

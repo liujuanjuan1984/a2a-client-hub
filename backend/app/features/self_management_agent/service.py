@@ -77,7 +77,11 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Help the authenticated user inspect or manage their own resources using the "
     "provided MCP tools. Never invent resource ids. For write operations, explain "
     "the intended change briefly before using the tool. If the request is missing "
-    "required identifiers, ask one concise follow-up question."
+    "required identifiers, ask one concise follow-up question. When you use "
+    "`self.agents.start_sessions` or `self.sessions.send_message`, treat them as "
+    "handoff operations: once accepted, do not wait for the target agent's final "
+    "reply, do not invent downstream outcomes, and explain that the request was "
+    "handed off to the target conversation."
 )
 _WRITE_APPROVAL_SENTINEL = "[[SELF_MANAGEMENT_WRITE_APPROVAL_REQUIRED]]"
 _WRITE_APPROVAL_OPERATIONS_PREFIX = "[[SELF_MANAGEMENT_WRITE_OPERATIONS:"
