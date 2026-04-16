@@ -31,6 +31,7 @@ from app.core.security import (
     verify_jwt_token_claims,
 )
 from app.db.models.agent_message import AgentMessage
+from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
@@ -397,12 +398,28 @@ class SelfManagementBuiltInAgentService:
         conversation_id: str,
     ) -> list[SelfManagementBuiltInAgentRecoveredInterrupt]:
         resolved_conversation_id = parse_conversation_id(conversation_id)
-        local_session = await self._session_support.get_local_session_by_id(
-            db,
-            user_id=cast(Any, current_user.id),
-            local_session_id=resolved_conversation_id,
+        recoverable_conversation = cast(
+            ConversationThread | None,
+            await db.scalar(
+                select(ConversationThread).where(
+                    ConversationThread.id == resolved_conversation_id,
+                    ConversationThread.user_id == cast(Any, current_user.id),
+                    ConversationThread.status.in_(
+                        [
+                            ConversationThread.STATUS_ACTIVE,
+                            ConversationThread.STATUS_ARCHIVED,
+                        ]
+                    ),
+                    ConversationThread.source.in_(
+                        [
+                            ConversationThread.SOURCE_MANUAL,
+                            ConversationThread.SOURCE_SCHEDULED,
+                        ]
+                    ),
+                )
+            ),
         )
-        if local_session is None:
+        if recoverable_conversation is None:
             return []
 
         rows = list(

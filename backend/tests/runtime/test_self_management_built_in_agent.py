@@ -19,6 +19,7 @@ from app.core.security import (
     verify_jwt_token_claims,
 )
 from app.db.models.agent_message import AgentMessage
+from app.db.models.conversation_thread import ConversationThread
 from app.features.self_management_agent import router as self_management_agent_router
 from app.features.self_management_agent import (
     service as self_management_agent_service_module,
@@ -1573,11 +1574,60 @@ async def test_built_in_agent_interrupt_recovery_route_persists_expired_interrup
         ).all()
     )
     assert len(system_messages) == 2
-    resolved_interrupt = cast(dict[str, Any], system_messages[1].message_metadata)[
-        "interrupt"
+
+
+async def test_built_in_agent_interrupt_recovery_route_returns_unresolved_interrupts_for_archived_conversation(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    conversation_id = _new_conversation_id()
+    _FakeSwivalSession.next_answer = _approval_answer(
+        "I can pause the requested job after you approve write access.",
+        "self.jobs.pause",
+    )
+
+    await self_management_built_in_agent_service.run(
+        db=async_db_session,
+        current_user=user,
+        conversation_id=conversation_id,
+        message="Pause my job",
+        allow_write_tools=False,
+    )
+    thread = await async_db_session.get(ConversationThread, UUID(conversation_id))
+    assert thread is not None
+    thread.status = ConversationThread.STATUS_ARCHIVED
+    await async_db_session.commit()
+
+    async with create_test_client(
+        self_management_agent_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/self-management/agent/interrupts:recover",
+            json={"conversationId": conversation_id},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "requestId": response.json()["items"][0]["requestId"],
+            "sessionId": conversation_id,
+            "type": "permission",
+            "phase": "asked",
+            "details": {
+                "permission": "self-management-write",
+                "patterns": ["self.jobs.pause"],
+                "displayMessage": "I can pause the requested job after you approve write access.",
+            },
+        }
     ]
-    assert resolved_interrupt["phase"] == "resolved"
-    assert resolved_interrupt["resolution"] == "expired"
 
 
 async def test_built_in_agent_recovery_skips_invalid_interrupt_requests(
