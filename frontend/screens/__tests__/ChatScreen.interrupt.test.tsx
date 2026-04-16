@@ -1846,6 +1846,95 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
+  it("keeps waiting for persisted continuation state instead of forcing a timeout error", async () => {
+    jest.useFakeTimers();
+    try {
+      mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockImplementationOnce(
+        async (payload: { agentMessageId: string }) => {
+          return {
+            status: "accepted",
+            answer: null,
+            exhausted: false,
+            runtime: "swival",
+            resources: ["agents", "jobs", "sessions"],
+            tools: ["self.jobs.pause"],
+            write_tools_enabled: true,
+            interrupt: null,
+            continuation: {
+              phase: "running",
+              agentMessageId: payload.agentMessageId,
+            },
+          };
+        },
+      );
+      mockChatState.sessions[conversationId] = {
+        ...baseSession(),
+        agentId: SELF_MANAGEMENT_AGENT_ID,
+        pendingInterrupt: {
+          requestId: "builtin-perm-async-2",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "self-management-write",
+            patterns: ["self.jobs.pause"],
+            displayMessage: "Approve write access to continue.",
+          },
+        },
+        pendingInterrupts: [
+          {
+            requestId: "builtin-perm-async-2",
+            type: "permission",
+            phase: "asked",
+            details: {
+              permission: "self-management-write",
+              patterns: ["self.jobs.pause"],
+              displayMessage: "Approve write access to continue.",
+            },
+          },
+        ],
+      };
+
+      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+      const root = tree.root;
+      const permissionButton = root.findByProps({
+        testID: "interrupt-permission-once",
+      });
+
+      await act(async () => {
+        await permissionButton.props.onPress();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      mockUpdateConversationMessage.mockClear();
+
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockChatState.sessions[conversationId]?.streamState).toBe(
+        "continuing",
+      );
+      expect(mockUpdateConversationMessage).not.toHaveBeenCalledWith(
+        conversationId,
+        expect.any(String),
+        expect.objectContaining({
+          content:
+            "Built-in assistant continuation timed out while waiting for persisted output.",
+          status: "error",
+        }),
+      );
+
+      act(() => {
+        tree.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("clears stale built-in permission interrupts when the reply request expired", async () => {
     mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(
       new ApiRequestError("Bad Request", 400, {

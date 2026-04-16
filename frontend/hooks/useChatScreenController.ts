@@ -84,7 +84,7 @@ const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const INTERRUPT_RECOVERY_THROTTLE_MS = 5_000;
 const BUILT_IN_CONTINUATION_POLL_INTERVAL_MS = 800;
-const BUILT_IN_CONTINUATION_TIMEOUT_MS = 45_000;
+const BUILT_IN_CONTINUATION_POLL_MAX_INTERVAL_MS = 5_000;
 
 export function useChatScreenController({
   routeAgentId,
@@ -1311,7 +1311,7 @@ export function useChatScreenController({
       });
 
     const monitorContinuation = async () => {
-      const startedAt = Date.now();
+      let pollDelayMs = BUILT_IN_CONTINUATION_POLL_INTERVAL_MS;
       while (!monitor.cancelled) {
         try {
           const page = await listSessionMessagesPage(conversationId, {
@@ -1366,29 +1366,11 @@ export function useChatScreenController({
                 : "built_in_continuation_refresh_failed",
           });
         }
-
-        if (Date.now() - startedAt >= BUILT_IN_CONTINUATION_TIMEOUT_MS) {
-          const timeoutMessage =
-            "Built-in assistant continuation timed out while waiting for persisted output.";
-          updateConversationMessage(conversationId, targetAgentMessageId, {
-            content: timeoutMessage,
-            status: "error",
-          });
-          applyBuiltInAgentSessionUpdate(
-            conversationId,
-            activeAgentId,
-            (current) => ({
-              ...current,
-              agentId: activeAgentId,
-              lastActiveAt: new Date().toISOString(),
-              streamState: "error",
-              lastStreamError: timeoutMessage,
-            }),
-          );
-          return;
-        }
-
-        await sleep(BUILT_IN_CONTINUATION_POLL_INTERVAL_MS);
+        await sleep(pollDelayMs);
+        pollDelayMs = Math.min(
+          BUILT_IN_CONTINUATION_POLL_MAX_INTERVAL_MS,
+          Math.round(pollDelayMs * 1.5),
+        );
       }
     };
 
