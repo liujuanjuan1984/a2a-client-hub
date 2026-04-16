@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any, cast
 from uuid import UUID
 
@@ -162,9 +164,13 @@ class SelfManagementSessionsService:
         current_user: User,
         conversation_ids: list[str],
         limit_per_session: int = 1,
+        after_agent_message_id_by_conversation: dict[str, str] | None = None,
+        wait_up_to_seconds: int = 0,
+        poll_interval_seconds: int = 1,
     ) -> dict[str, Any]:
         user_id = self._user_id(current_user)
         items: list[dict[str, Any]] = []
+        observation_anchors = after_agent_message_id_by_conversation or {}
         for conversation_id in self._dedupe_ids(conversation_ids):
             gateway.authorize(
                 operation=SELF_SESSIONS_GET_LATEST_MESSAGES,
@@ -192,11 +198,14 @@ class SelfManagementSessionsService:
                         ConversationThread.STATUS_ARCHIVED,
                     ),
                 )
-                messages = await self._list_latest_text_messages(
+                observation = await self._observe_latest_text_messages(
                     db=db,
                     user_id=user_id,
                     conversation_id=conversation_id,
                     limit_per_session=limit_per_session,
+                    after_agent_message_id=observation_anchors.get(conversation_id),
+                    wait_up_to_seconds=wait_up_to_seconds,
+                    poll_interval_seconds=poll_interval_seconds,
                 )
             except ValueError as exc:
                 error_code = str(exc)
@@ -214,7 +223,10 @@ class SelfManagementSessionsService:
                     "conversation_id": conversation_id,
                     "status": "available",
                     "session": session_item,
-                    "messages": messages,
+                    "messages": observation["messages"],
+                    "observation_status": observation["observation_status"],
+                    "after_agent_message_id": observation["after_agent_message_id"],
+                    "latest_agent_message_id": observation["latest_agent_message_id"],
                 }
             )
         available = sum(1 for item in items if item.get("status") == "available")
@@ -227,6 +239,59 @@ class SelfManagementSessionsService:
             },
             "items": items,
         }
+
+    async def _observe_latest_text_messages(
+        self,
+        *,
+        db: AsyncSession,
+        user_id: UUID,
+        conversation_id: str,
+        limit_per_session: int,
+        after_agent_message_id: str | None,
+        wait_up_to_seconds: int,
+        poll_interval_seconds: int,
+    ) -> dict[str, Any]:
+        observe_updates = bool(after_agent_message_id)
+        deadline = time.monotonic() + max(wait_up_to_seconds, 0)
+
+        while True:
+            messages = await self._list_latest_text_messages(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                limit_per_session=limit_per_session,
+            )
+            latest_agent_message_id = self._latest_agent_message_id(messages)
+            if not observe_updates:
+                return {
+                    "messages": messages,
+                    "observation_status": "snapshot",
+                    "after_agent_message_id": None,
+                    "latest_agent_message_id": latest_agent_message_id,
+                }
+            if (
+                latest_agent_message_id is not None
+                and latest_agent_message_id != after_agent_message_id
+            ):
+                return {
+                    "messages": messages,
+                    "observation_status": "updated",
+                    "after_agent_message_id": after_agent_message_id,
+                    "latest_agent_message_id": latest_agent_message_id,
+                }
+            if time.monotonic() >= deadline:
+                return {
+                    "messages": messages,
+                    "observation_status": "unchanged",
+                    "after_agent_message_id": after_agent_message_id,
+                    "latest_agent_message_id": latest_agent_message_id,
+                }
+            await asyncio.sleep(
+                min(
+                    poll_interval_seconds,
+                    max(deadline - time.monotonic(), 0),
+                )
+            )
 
     async def update_session(
         self,
@@ -460,6 +525,15 @@ class SelfManagementSessionsService:
             if not isinstance(before, str) or not before:
                 break
         return list(reversed(collected))
+
+    @staticmethod
+    def _latest_agent_message_id(messages: list[dict[str, Any]]) -> str | None:
+        for message in reversed(messages):
+            if str(message.get("role") or "") == "agent":
+                message_id = message.get("message_id")
+                if isinstance(message_id, str) and message_id:
+                    return message_id
+        return None
 
     @staticmethod
     def _dedupe_ids(values: list[str]) -> list[str]:

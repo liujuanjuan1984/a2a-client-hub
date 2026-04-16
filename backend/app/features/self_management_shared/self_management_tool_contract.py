@@ -96,6 +96,32 @@ class _SessionGetInput(_StrictBaseModel):
 class _SessionsGetLatestMessagesInput(_StrictBaseModel):
     conversation_ids: list[str] = Field(min_length=1, max_length=10)
     limit_per_session: int = Field(default=1, ge=1, le=5)
+    after_agent_message_id_by_conversation: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Optional map from conversation id to the last seen target agent text "
+            "message id. When provided together with a positive wait budget, the "
+            "tool waits for a newer persisted target agent text message."
+        ),
+    )
+    wait_up_to_seconds: int = Field(
+        default=0,
+        ge=0,
+        le=20,
+        description=(
+            "Maximum bounded observation time in seconds. Use 0 for an immediate "
+            "snapshot read."
+        ),
+    )
+    poll_interval_seconds: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description=(
+            "Polling interval in seconds while observing persisted target-session "
+            "results."
+        ),
+    )
 
 
 class _SessionUpdateInput(_SessionGetInput):

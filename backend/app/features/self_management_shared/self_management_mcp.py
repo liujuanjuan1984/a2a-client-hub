@@ -784,6 +784,9 @@ def build_self_management_mcp_server(
         async def self_sessions_get_latest_messages(
             conversation_ids: list[str],
             limit_per_session: int = 1,
+            after_agent_message_id_by_conversation: dict[str, str] | None = None,
+            wait_up_to_seconds: int = 0,
+            poll_interval_seconds: int = 1,
             ctx: Context | None = None,
         ) -> dict[str, Any]:
             if ctx is None:
@@ -794,6 +797,11 @@ def build_self_management_mcp_server(
                 arguments={
                     "conversation_ids": conversation_ids,
                     "limit_per_session": limit_per_session,
+                    "after_agent_message_id_by_conversation": (
+                        after_agent_message_id_by_conversation
+                    ),
+                    "wait_up_to_seconds": wait_up_to_seconds,
+                    "poll_interval_seconds": poll_interval_seconds,
                 },
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
             )

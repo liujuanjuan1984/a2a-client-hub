@@ -97,6 +97,19 @@ def test_build_self_management_tool_definition_supports_session_get_latest_messa
     assert definition.input_json_schema["properties"]["limit_per_session"]["type"] == (
         "integer"
     )
+    assert (
+        definition.input_json_schema["properties"][
+            "after_agent_message_id_by_conversation"
+        ]["anyOf"][0]["type"]
+        == "object"
+    )
+    assert definition.input_json_schema["properties"]["wait_up_to_seconds"]["type"] == (
+        "integer"
+    )
+    assert (
+        definition.input_json_schema["properties"]["poll_interval_seconds"]["type"]
+        == "integer"
+    )
 
 
 def test_build_self_management_tool_definition_supports_agent_start_sessions() -> None:

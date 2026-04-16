@@ -163,7 +163,9 @@ SELF_SESSIONS_GET_LATEST_MESSAGES = SelfManagementOperation(
     surfaces=_SELF_ENTRY_SURFACES,
     description=(
         "Read the latest persisted text messages for one or more current-user "
-        "sessions, ignoring reasoning, tool-call, and interrupt lifecycle details."
+        "sessions, optionally wait within a bounded budget for new target-agent "
+        "text results, and ignore reasoning, tool-call, and interrupt lifecycle "
+        "details."
     ),
 )
 

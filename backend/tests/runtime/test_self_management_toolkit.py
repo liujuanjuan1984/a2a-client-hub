@@ -273,12 +273,20 @@ async def test_self_management_toolkit_gets_latest_session_messages(
         assert kwargs["current_user"].id == user.id
         assert kwargs["conversation_ids"] == [str(thread.id)]
         assert kwargs["limit_per_session"] == 2
+        assert kwargs["after_agent_message_id_by_conversation"] == {
+            str(thread.id): "agent-msg-1"
+        }
+        assert kwargs["wait_up_to_seconds"] == 8
+        assert kwargs["poll_interval_seconds"] == 2
         return {
             "summary": {"requested": 1, "available": 1, "failed": 0},
             "items": [
                 {
                     "conversation_id": str(thread.id),
                     "status": "available",
+                    "observation_status": "updated",
+                    "after_agent_message_id": "agent-msg-1",
+                    "latest_agent_message_id": "agent-msg-2",
                     "session": {
                         "conversationId": thread.id,
                         "source": "manual",
@@ -315,12 +323,18 @@ async def test_self_management_toolkit_gets_latest_session_messages(
         arguments={
             "conversation_ids": [str(thread.id)],
             "limit_per_session": 2,
+            "after_agent_message_id_by_conversation": {str(thread.id): "agent-msg-1"},
+            "wait_up_to_seconds": 8,
+            "poll_interval_seconds": 2,
         },
     )
 
     assert result.payload["summary"] == {"requested": 1, "available": 1, "failed": 0}
     assert result.payload["items"][0]["conversation_id"] == str(thread.id)
     assert result.payload["items"][0]["status"] == "available"
+    assert result.payload["items"][0]["observation_status"] == "updated"
+    assert result.payload["items"][0]["after_agent_message_id"] == "agent-msg-1"
+    assert result.payload["items"][0]["latest_agent_message_id"] == "agent-msg-2"
     assert result.payload["items"][0]["messages"][0]["content"] == "latest reply"
 
 

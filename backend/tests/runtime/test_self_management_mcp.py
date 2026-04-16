@@ -237,6 +237,8 @@ async def test_execute_self_management_mcp_operation_supports_session_latest_mes
     item = result["result"]["items"][0]
     assert item["conversation_id"] == str(thread.id)
     assert item["status"] == "available"
+    assert item["observation_status"] == "snapshot"
+    assert item["latest_agent_message_id"] == str(agent_message.id)
     assert item["session"]["title"] == "Latest Messages Session"
     assert [message["content"] for message in item["messages"]] == [
         "follow up on the target session",

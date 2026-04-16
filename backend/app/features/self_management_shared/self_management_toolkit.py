@@ -343,6 +343,24 @@ class SelfManagementToolkit:
             raise SelfManagementToolInputError(
                 "`limit_per_session` must be less than or equal to 5."
             )
+        wait_up_to_seconds = self._as_int(
+            args.get("wait_up_to_seconds", 0),
+            field_name="wait_up_to_seconds",
+            minimum=0,
+        )
+        if wait_up_to_seconds > 20:
+            raise SelfManagementToolInputError(
+                "`wait_up_to_seconds` must be less than or equal to 20."
+            )
+        poll_interval_seconds = self._as_int(
+            args.get("poll_interval_seconds", 1),
+            field_name="poll_interval_seconds",
+            minimum=1,
+        )
+        if poll_interval_seconds > 5:
+            raise SelfManagementToolInputError(
+                "`poll_interval_seconds` must be less than or equal to 5."
+            )
         payload = await self_management_sessions_service.get_latest_messages(
             db=self.db,
             gateway=self.gateway,
@@ -352,6 +370,12 @@ class SelfManagementToolkit:
                 field_name="conversation_ids",
             ),
             limit_per_session=limit_per_session,
+            after_agent_message_id_by_conversation=self._as_optional_str_dict(
+                args.get("after_agent_message_id_by_conversation"),
+                field_name="after_agent_message_id_by_conversation",
+            ),
+            wait_up_to_seconds=wait_up_to_seconds,
+            poll_interval_seconds=poll_interval_seconds,
         )
         return {
             "summary": payload["summary"],
@@ -767,6 +791,12 @@ class SelfManagementToolkit:
             "conversation_id": str(item["conversation_id"]),
             "status": item.get("status"),
         }
+        if item.get("observation_status") is not None:
+            serialized["observation_status"] = item.get("observation_status")
+        if item.get("after_agent_message_id") is not None:
+            serialized["after_agent_message_id"] = item.get("after_agent_message_id")
+        if item.get("latest_agent_message_id") is not None:
+            serialized["latest_agent_message_id"] = item.get("latest_agent_message_id")
         if item.get("session") is not None:
             serialized["session"] = cls._serialize_session(
                 cast(dict[str, Any], item["session"])
