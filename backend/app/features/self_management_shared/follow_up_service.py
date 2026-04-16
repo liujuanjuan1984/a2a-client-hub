@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.built_in_follow_up_task import BuiltInFollowUpTask
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
@@ -18,8 +20,15 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_FOLLOWUPS_SET_SESSIONS,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
-from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now
+
+
+class TargetAgentMessageAnchor(TypedDict):
+    """Persisted follow-up anchor for one target conversation."""
+
+    message_id: str
+    updated_at: str
+    status: str
 
 
 @dataclass(frozen=True)
@@ -30,8 +39,8 @@ class BuiltInFollowUpWakeRequest:
     user_id: UUID
     built_in_conversation_id: str
     tracked_conversation_ids: tuple[str, ...]
-    previous_target_agent_message_anchors: dict[str, str]
-    observed_target_agent_message_anchors: dict[str, str]
+    previous_target_agent_message_anchors: dict[str, TargetAgentMessageAnchor]
+    observed_target_agent_message_anchors: dict[str, TargetAgentMessageAnchor]
     changed_conversation_ids: tuple[str, ...]
 
 
@@ -149,28 +158,32 @@ class BuiltInFollowUpService:
             return await self._serialize_task(db=db, user_id=user_id, task=task)
 
         tracked_items: list[dict[str, Any]] = []
-        anchors: dict[str, str] = {}
+        anchors: dict[str, TargetAgentMessageAnchor] = {}
         for conversation_id in deduped_ids:
             thread = await self._get_trackable_thread(
                 db=db,
                 user_id=user_id,
                 conversation_id=conversation_id,
             )
-            latest_agent_message_id = await self._find_latest_agent_text_message_id(
-                db=db,
-                user_id=user_id,
-                conversation_id=conversation_id,
+            latest_agent_message_anchor = (
+                await self._find_latest_agent_text_message_anchor(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                )
             )
             tracked_items.append(
                 {
                     "conversation_id": conversation_id,
                     "title": cast(str, thread.title),
                     "status": cast(str, thread.status),
-                    "latest_agent_message_id": latest_agent_message_id,
+                    "latest_agent_message_id": self._anchor_message_id(
+                        latest_agent_message_anchor
+                    ),
                 }
             )
-            if latest_agent_message_id is not None:
-                anchors[conversation_id] = latest_agent_message_id
+            if latest_agent_message_anchor is not None:
+                anchors[conversation_id] = latest_agent_message_anchor
         setattr(task, "status", BuiltInFollowUpTask.STATUS_WAITING)
         setattr(
             task,
@@ -244,22 +257,27 @@ class BuiltInFollowUpService:
             if not tracked_conversation_ids:
                 setattr(task, "status", BuiltInFollowUpTask.STATUS_COMPLETED)
                 continue
-            latest_anchors: dict[str, str] = {}
+            latest_anchors: dict[str, TargetAgentMessageAnchor] = {}
             changed = False
             changed_conversation_ids: list[str] = []
-            existing_anchors = cast(
-                dict[str, str], task.target_agent_message_anchors or {}
+            existing_anchors = self._normalize_anchor_map(
+                task.target_agent_message_anchors or {}
             )
             for conversation_id in tracked_conversation_ids:
-                latest_agent_message_id = await self._find_latest_agent_text_message_id(
-                    db=db,
-                    user_id=user_id,
-                    conversation_id=conversation_id,
+                latest_agent_message_anchor = (
+                    await self._find_latest_agent_text_message_anchor(
+                        db=db,
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                    )
                 )
-                if latest_agent_message_id is None:
+                if latest_agent_message_anchor is None:
                     continue
-                latest_anchors[conversation_id] = latest_agent_message_id
-                if latest_agent_message_id != existing_anchors.get(conversation_id):
+                latest_anchors[conversation_id] = latest_agent_message_anchor
+                if self._anchor_changed(
+                    previous_anchor=existing_anchors.get(conversation_id),
+                    observed_anchor=latest_agent_message_anchor,
+                ):
                     changed = True
                     changed_conversation_ids.append(conversation_id)
             if not changed:
@@ -291,7 +309,7 @@ class BuiltInFollowUpService:
         *,
         db: AsyncSession,
         task_id: UUID,
-        next_target_agent_message_anchors: dict[str, str],
+        next_target_agent_message_anchors: dict[str, TargetAgentMessageAnchor],
     ) -> None:
         task = await db.get(BuiltInFollowUpTask, task_id)
         if task is None:
@@ -301,13 +319,17 @@ class BuiltInFollowUpService:
         tracked_conversation_ids = (
             cast(list[str] | None, task.tracked_conversation_ids) or []
         )
+        normalized_anchors = self._normalize_anchor_map(
+            next_target_agent_message_anchors
+        )
         setattr(
             task,
             "target_agent_message_anchors",
             {
-                conversation_id: message_id
-                for conversation_id, message_id in next_target_agent_message_anchors.items()
-                if conversation_id in tracked_conversation_ids and message_id
+                conversation_id: anchor
+                for conversation_id, anchor in normalized_anchors.items()
+                if conversation_id in tracked_conversation_ids
+                and self._anchor_message_id(anchor) is not None
             },
         )
         setattr(
@@ -346,6 +368,9 @@ class BuiltInFollowUpService:
         task: BuiltInFollowUpTask,
     ) -> dict[str, Any]:
         tracked_items: list[dict[str, Any]] = []
+        anchor_by_conversation = self._normalize_anchor_map(
+            task.target_agent_message_anchors or {}
+        )
         for conversation_id in self._dedupe_ids(
             cast(list[str] | None, task.tracked_conversation_ids) or []
         ):
@@ -367,9 +392,9 @@ class BuiltInFollowUpService:
                     "conversation_id": conversation_id,
                     "title": title,
                     "status": status,
-                    "latest_agent_message_id": cast(
-                        dict[str, str], task.target_agent_message_anchors or {}
-                    ).get(conversation_id),
+                    "latest_agent_message_id": self._anchor_message_id(
+                        anchor_by_conversation.get(conversation_id)
+                    ),
                 }
             )
         return {
@@ -431,37 +456,41 @@ class BuiltInFollowUpService:
             raise ValueError("session_not_found")
         return thread
 
-    async def _find_latest_agent_text_message_id(
+    async def _find_latest_agent_text_message_anchor(
         self,
         *,
         db: AsyncSession,
         user_id: UUID,
         conversation_id: str,
-    ) -> str | None:
-        before: str | None = None
-        for _ in range(5):
-            items, extra, _db_mutated = await session_hub_service.list_messages(
-                db,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                before=before,
-                limit=20,
-            )
-            if not items:
-                return None
-            for item in reversed(items):
-                if str(item.get("role") or "") != "agent":
-                    continue
-                content = str(item.get("content") or "").strip()
-                if not content:
-                    continue
-                message_id = item.get("id")
-                if isinstance(message_id, str) and message_id:
-                    return message_id
-            before = cast(dict[str, Any], extra.get("pageInfo") or {}).get("nextBefore")
-            if not isinstance(before, str) or not before:
-                return None
-        return None
+    ) -> TargetAgentMessageAnchor | None:
+        message = cast(
+            AgentMessage | None,
+            await db.scalar(
+                select(AgentMessage)
+                .where(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == UUID(conversation_id),
+                    AgentMessage.sender == "agent",
+                    exists(
+                        select(1).where(
+                            AgentMessageBlock.user_id == user_id,
+                            AgentMessageBlock.message_id == AgentMessage.id,
+                            AgentMessageBlock.block_type == "text",
+                            func.length(func.btrim(AgentMessageBlock.content)) > 0,
+                        )
+                    ),
+                )
+                .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+                .limit(1)
+            ),
+        )
+        if message is None:
+            return None
+        return self._build_anchor(
+            message_id=str(cast(UUID, message.id)),
+            updated_at=cast(Any, message.updated_at),
+            status=cast(str, message.status),
+        )
 
     @staticmethod
     def _require_built_in_conversation_id(gateway: SelfManagementToolGateway) -> str:
@@ -488,6 +517,70 @@ class BuiltInFollowUpService:
             deduped.append(normalized)
         return deduped
 
+    @staticmethod
+    def _build_anchor(
+        *, message_id: str, updated_at: Any, status: str | None
+    ) -> TargetAgentMessageAnchor:
+        return {
+            "message_id": message_id.strip(),
+            "updated_at": (
+                updated_at.isoformat()
+                if hasattr(updated_at, "isoformat")
+                else str(updated_at or "").strip()
+            ),
+            "status": (status or "").strip(),
+        }
+
+    @staticmethod
+    def _anchor_message_id(anchor: TargetAgentMessageAnchor | None) -> str | None:
+        if anchor is None:
+            return None
+        message_id = str(anchor.get("message_id") or "").strip()
+        return message_id or None
+
+    @classmethod
+    def _normalize_anchor_map(
+        cls,
+        raw_anchors: Any,
+    ) -> dict[str, TargetAgentMessageAnchor]:
+        if not isinstance(raw_anchors, dict):
+            return {}
+        normalized: dict[str, TargetAgentMessageAnchor] = {}
+        for raw_conversation_id, raw_anchor in raw_anchors.items():
+            conversation_id = str(raw_conversation_id or "").strip()
+            if not conversation_id:
+                continue
+            anchor = cls._normalize_anchor(raw_anchor)
+            if anchor is None:
+                continue
+            normalized[conversation_id] = anchor
+        return normalized
+
+    @classmethod
+    def _normalize_anchor(cls, raw_anchor: Any) -> TargetAgentMessageAnchor | None:
+        if isinstance(raw_anchor, str):
+            message_id = raw_anchor.strip()
+            if not message_id:
+                return None
+            return cls._build_anchor(message_id=message_id, updated_at="", status="")
+        if not isinstance(raw_anchor, dict):
+            return None
+        message_id = str(raw_anchor.get("message_id") or "").strip()
+        if not message_id:
+            return None
+        return cls._build_anchor(
+            message_id=message_id,
+            updated_at=raw_anchor.get("updated_at"),
+            status=cast(str | None, raw_anchor.get("status")),
+        )
+
+    @staticmethod
+    def _anchor_changed(
+        previous_anchor: TargetAgentMessageAnchor | None,
+        observed_anchor: TargetAgentMessageAnchor,
+    ) -> bool:
+        return previous_anchor != observed_anchor
+
 
 built_in_follow_up_service = BuiltInFollowUpService()
 
@@ -495,5 +588,6 @@ built_in_follow_up_service = BuiltInFollowUpService()
 __all__ = [
     "BuiltInFollowUpWakeRequest",
     "BuiltInFollowUpService",
+    "TargetAgentMessageAnchor",
     "built_in_follow_up_service",
 ]

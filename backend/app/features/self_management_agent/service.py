@@ -101,19 +101,21 @@ _FOLLOW_UP_RESUME_MESSAGE_TEMPLATE = (
     "detected for this built-in conversation.\n\n"
     "Tracked target conversation ids: {tracked_conversation_ids}\n"
     "Changed target conversation ids: {changed_conversation_ids}\n"
-    "Previously acknowledged target-agent text message ids by conversation: "
+    "Previously acknowledged target-agent anchors by conversation: "
     "{previous_target_agent_message_anchors}\n"
-    "Currently observed latest target-agent text message ids by conversation: "
+    "Previously acknowledged target-agent text message ids by conversation: "
+    "{previous_target_agent_message_ids}\n"
+    "Currently observed latest target-agent anchors by conversation: "
     "{observed_target_agent_message_anchors}\n\n"
     "Use `self.followups.get` to inspect the durable follow-up state, then use "
     "`self.sessions.get_latest_messages` with "
-    "`after_agent_message_id_by_conversation` set to the previously "
-    "acknowledged agent message ids above so you only read newly persisted "
-    "target-agent text results. Summarize meaningful progress or conclusions "
-    "to the user. Before you finish, call `self.followups.set_sessions` with "
-    "the exact next target conversation ids that should remain tracked. Use an "
-    "empty list when no further automatic follow-up is needed. Do not wait on "
-    "downstream live transport."
+    "`after_agent_message_id_by_conversation` set to the previous message-id "
+    "map above so you only read newly persisted target-agent text results. "
+    "Summarize meaningful progress or conclusions to the user. Before you "
+    "finish, call `self.followups.set_sessions` with the exact next target "
+    "conversation ids that should remain tracked. Use an empty list when no "
+    "further automatic follow-up is needed. Do not wait on downstream live "
+    "transport."
 )
 _WRITE_APPROVAL_SENTINEL = "[[SELF_MANAGEMENT_WRITE_APPROVAL_REQUIRED]]"
 _WRITE_APPROVAL_OPERATIONS_PREFIX = "[[SELF_MANAGEMENT_WRITE_OPERATIONS:"
@@ -1062,6 +1064,11 @@ class SelfManagementBuiltInAgentService:
             previous_target_agent_message_anchors=dict(
                 request.previous_target_agent_message_anchors
             ),
+            previous_target_agent_message_ids={
+                conversation_id: anchor.get("message_id")
+                for conversation_id, anchor in request.previous_target_agent_message_anchors.items()
+                if anchor.get("message_id")
+            },
             observed_target_agent_message_anchors=dict(
                 request.observed_target_agent_message_anchors
             ),

@@ -37,13 +37,21 @@ def _build_web_agent_gateway(user, built_in_conversation_id: str):
     )
 
 
+def _build_anchor(message: AgentMessage) -> dict[str, str]:
+    return {
+        "message_id": str(message.id),
+        "updated_at": message.updated_at.isoformat(),
+        "status": message.status,
+    }
+
+
 async def _append_agent_text_message(
     async_db_session,
     *,
     user_id: UUID,
     conversation_id: UUID,
     content: str,
-) -> str:
+) -> AgentMessage:
     message = AgentMessage(
         user_id=user_id,
         conversation_id=conversation_id,
@@ -64,7 +72,8 @@ async def _append_agent_text_message(
         )
     )
     await async_db_session.commit()
-    return str(message.id)
+    await async_db_session.refresh(message)
+    return message
 
 
 async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
@@ -83,7 +92,7 @@ async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
         user_id=user.id,
         title="Tracked Target Conversation",
     )
-    first_agent_message_id = await _append_agent_text_message(
+    first_agent_message = await _append_agent_text_message(
         async_db_session,
         user_id=user_id,
         conversation_id=target_thread.id,
@@ -96,12 +105,13 @@ async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
         current_user=user,
         conversation_ids=[str(target_thread.id)],
     )
-    second_agent_message_id = await _append_agent_text_message(
+    second_agent_message = await _append_agent_text_message(
         async_db_session,
         user_id=user_id,
         conversation_id=target_thread.id,
         content="Updated target result",
     )
+    second_agent_message_id = str(second_agent_message.id)
 
     recorded_requests: list[BuiltInFollowUpWakeRequest] = []
 
@@ -134,10 +144,10 @@ async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
     assert len(recorded_requests) == 1
     request = recorded_requests[0]
     assert request.previous_target_agent_message_anchors == {
-        str(target_thread.id): first_agent_message_id
+        str(target_thread.id): _build_anchor(first_agent_message)
     }
     assert request.observed_target_agent_message_anchors == {
-        str(target_thread.id): second_agent_message_id
+        str(target_thread.id): _build_anchor(second_agent_message)
     }
 
     async_db_session.expire_all()

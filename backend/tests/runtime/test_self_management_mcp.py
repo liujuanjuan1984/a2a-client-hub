@@ -45,6 +45,14 @@ from tests.support.utils import (
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
+def _build_anchor(message: AgentMessage) -> dict[str, str]:
+    return {
+        "message_id": str(message.id),
+        "updated_at": message.updated_at.isoformat(),
+        "status": message.status,
+    }
+
+
 @asynccontextmanager
 async def _app_lifespan(_app: FastAPI):
     yield
@@ -859,7 +867,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
     assert requests[0].changed_conversation_ids == (str(thread.id),)
     assert requests[0].previous_target_agent_message_anchors == {}
     assert requests[0].observed_target_agent_message_anchors == {
-        str(thread.id): str(agent_message.id)
+        str(thread.id): _build_anchor(agent_message)
     }
 
     built_in_messages = list(
@@ -1065,7 +1073,9 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
     )
     assert requests[0].previous_target_agent_message_anchors == {}
     assert requests[0].observed_target_agent_message_anchors == {
-        result["result"]["items"][0]["conversation_id"]: str(target_agent_message.id)
+        result["result"]["items"][0]["conversation_id"]: _build_anchor(
+            target_agent_message
+        )
     }
 
     built_in_messages = list(

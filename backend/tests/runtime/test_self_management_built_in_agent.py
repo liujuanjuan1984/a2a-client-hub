@@ -398,11 +398,23 @@ async def test_built_in_agent_can_resume_one_durable_follow_up_run(
         built_in_conversation_id=_new_conversation_id(),
         tracked_conversation_ids=("tracked-session-1", "tracked-session-2"),
         previous_target_agent_message_anchors={
-            "tracked-session-1": "agent-msg-1",
+            "tracked-session-1": {
+                "message_id": "agent-msg-1",
+                "updated_at": "2026-04-16T12:00:00+00:00",
+                "status": "done",
+            },
         },
         observed_target_agent_message_anchors={
-            "tracked-session-1": "agent-msg-2",
-            "tracked-session-2": "agent-msg-9",
+            "tracked-session-1": {
+                "message_id": "agent-msg-2",
+                "updated_at": "2026-04-16T12:05:00+00:00",
+                "status": "done",
+            },
+            "tracked-session-2": {
+                "message_id": "agent-msg-9",
+                "updated_at": "2026-04-16T12:06:00+00:00",
+                "status": "streaming",
+            },
         },
         changed_conversation_ids=("tracked-session-1",),
     )
