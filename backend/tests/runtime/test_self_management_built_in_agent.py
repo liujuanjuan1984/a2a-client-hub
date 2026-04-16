@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.security import (
     get_self_management_allowed_operations,
+    get_self_management_conversation_id,
     get_self_management_interrupt_message,
     get_self_management_interrupt_tool_names,
     verify_jwt_token_claims,
@@ -362,6 +363,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     claims = verify_jwt_token_claims(raw_token, expected_type="access")
     assert claims is not None
     assert claims.subject == str(user.id)
+    assert get_self_management_conversation_id(claims) == conversation_id
     assert get_self_management_allowed_operations(claims) == frozenset(
         result.tool_names
     )

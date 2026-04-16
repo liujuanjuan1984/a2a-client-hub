@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import (
     get_self_management_allowed_operations,
+    get_self_management_conversation_id,
     verify_jwt_token_claims,
 )
 from app.db.session import AsyncSessionLocal
@@ -73,6 +74,9 @@ SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH = "/mcp"
 SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH = "/mcp-write"
 _MCP_USER_ID_STATE_KEY = "self_management_mcp_user_id"
 _MCP_ALLOWED_OPERATION_IDS_STATE_KEY = "self_management_mcp_allowed_operation_ids"
+_MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY = (
+    "self_management_mcp_web_agent_conversation_id"
+)
 SELF_MANAGEMENT_MCP_OPERATION_IDS = list_self_management_operation_ids(
     surface=SelfManagementSurface.WEB_AGENT,
     require_tool_name=True,
@@ -159,6 +163,11 @@ class SelfManagementMcpAuthMiddleware:
         scope.setdefault("state", {})[
             _MCP_ALLOWED_OPERATION_IDS_STATE_KEY
         ] = allowed_operation_ids
+        conversation_id = get_self_management_conversation_id(claims)
+        if conversation_id is not None:
+            scope.setdefault("state", {})[
+                _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY
+            ] = conversation_id
         await self.app(scope, receive, send)
 
 
@@ -193,12 +202,29 @@ def _require_request_allowed_operation_ids(ctx: Context) -> frozenset[str]:
     return allowed_operation_ids
 
 
+def _optional_request_web_agent_conversation_id(ctx: Context) -> str | None:
+    request_context = ctx.request_context
+    if request_context is None or request_context.request is None:
+        raise RuntimeError("HTTP request context is required for MCP tools.")
+
+    raw_conversation_id = getattr(
+        request_context.request.state,
+        _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY,
+        None,
+    )
+    if not isinstance(raw_conversation_id, str):
+        return None
+    conversation_id = raw_conversation_id.strip()
+    return conversation_id or None
+
+
 async def execute_self_management_mcp_operation(
     *,
     user_id: UUID,
     operation_id: str,
     arguments: Mapping[str, Any] | None = None,
     allowed_operation_ids: frozenset[str] | None = None,
+    web_agent_conversation_id: str | None = None,
     db: AsyncSession | None = None,
 ) -> dict[str, Any]:
     """Execute one self-management operation and return a swival-friendly envelope."""
@@ -224,6 +250,7 @@ async def execute_self_management_mcp_operation(
             runtime = build_self_management_web_agent_runtime(
                 db=session,
                 current_user=current_user,
+                web_agent_conversation_id=web_agent_conversation_id,
             )
             result = await runtime.toolkit.execute(
                 operation_id=operation_id,
@@ -478,6 +505,9 @@ def build_self_management_mcp_server(
                 operation_id=SELF_AGENTS_START_SESSIONS.operation_id,
                 arguments={"agent_ids": agent_ids, "message": message},
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
             )
 
     if _exposed(SELF_JOBS_LIST.operation_id):
@@ -847,6 +877,9 @@ def build_self_management_mcp_server(
                     "message": message,
                 },
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
             )
 
     return mcp

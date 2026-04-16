@@ -29,6 +29,7 @@ REFRESH_TOKEN_TYPE = "refresh"
 SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE = "self_management_interrupt"
 SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM = "sm_ops"
 SELF_MANAGEMENT_DELEGATED_BY_CLAIM = "sm_delegate"
+SELF_MANAGEMENT_CONVERSATION_ID_CLAIM = "sm_conversation_id"
 SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM = "sm_interrupt_message"
 SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM = "sm_interrupt_tool_names"
 SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM = "sm_interrupt_conversation_id"
@@ -338,6 +339,7 @@ def create_self_management_access_token(
     *,
     allowed_operations: Sequence[str],
     delegated_by: str,
+    conversation_id: str | None = None,
 ) -> str:
     normalized_operations = sorted(
         {
@@ -346,6 +348,15 @@ def create_self_management_access_token(
             if str(operation_id).strip()
         }
     )
+    normalized_conversation_id = (
+        str(conversation_id).strip() if conversation_id is not None else ""
+    )
+    extra_claims: dict[str, Any] = {
+        SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
+        SELF_MANAGEMENT_DELEGATED_BY_CLAIM: delegated_by,
+    }
+    if normalized_conversation_id:
+        extra_claims[SELF_MANAGEMENT_CONVERSATION_ID_CLAIM] = normalized_conversation_id
     return create_jwt_token(
         subject=str(user_id),
         token_type=ACCESS_TOKEN_TYPE,
@@ -353,10 +364,7 @@ def create_self_management_access_token(
             settings.jwt_access_token_ttl_seconds,
             settings.self_management_swival_delegated_token_ttl_seconds,
         ),
-        extra_claims={
-            SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
-            SELF_MANAGEMENT_DELEGATED_BY_CLAIM: delegated_by,
-        },
+        extra_claims=extra_claims,
     )
 
 
@@ -416,6 +424,14 @@ def get_self_management_allowed_operations(
     if not isinstance(raw_operations, list):
         return frozenset()
     return frozenset(str(item).strip() for item in raw_operations if str(item).strip())
+
+
+def get_self_management_conversation_id(claims: VerifiedJwtClaims) -> str | None:
+    raw_conversation_id = claims.raw_payload.get(SELF_MANAGEMENT_CONVERSATION_ID_CLAIM)
+    if not isinstance(raw_conversation_id, str):
+        return None
+    conversation_id = raw_conversation_id.strip()
+    return conversation_id or None
 
 
 def get_self_management_interrupt_message(claims: VerifiedJwtClaims) -> str | None:

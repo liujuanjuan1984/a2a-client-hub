@@ -68,9 +68,16 @@ class SelfManagementToolGateway:
         actor: SelfManagementActorContext,
         *,
         surface: SelfManagementSurface | None = None,
+        web_agent_conversation_id: str | None = None,
     ) -> None:
         self.actor = actor
         self.surface = surface
+        normalized_conversation_id = (
+            str(web_agent_conversation_id).strip()
+            if web_agent_conversation_id is not None
+            else ""
+        )
+        self.web_agent_conversation_id = normalized_conversation_id or None
 
     def authorize(
         self,

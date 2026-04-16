@@ -39,6 +39,7 @@ def build_self_management_web_agent_runtime(
     *,
     db: AsyncSession,
     current_user: User,
+    web_agent_conversation_id: str | None = None,
 ) -> SelfManagementWebAgentRuntime:
     """Build the shared runtime used by the web built-in agent surface."""
 
@@ -49,6 +50,7 @@ def build_self_management_web_agent_runtime(
     gateway = SelfManagementToolGateway(
         actor,
         surface=SelfManagementSurface.WEB_AGENT,
+        web_agent_conversation_id=web_agent_conversation_id,
     )
     toolkit = SelfManagementToolkit(
         db=db,

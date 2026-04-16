@@ -1273,6 +1273,7 @@ class SelfManagementBuiltInAgentService:
         new_session = await asyncio.to_thread(
             self._create_swival_session,
             current_user=current_user,
+            conversation_id=conversation_id,
             delegated_write_operation_ids=delegated_write_operation_ids,
         )
         if previous_session is not None:
@@ -1433,6 +1434,7 @@ class SelfManagementBuiltInAgentService:
         self,
         *,
         current_user: User,
+        conversation_id: str,
         delegated_write_operation_ids: frozenset[str],
     ) -> Any:
         write_tools_enabled = bool(delegated_write_operation_ids)
@@ -1448,6 +1450,7 @@ class SelfManagementBuiltInAgentService:
                 definition.operation_id for definition in tool_definitions
             ],
             delegated_by="self_management_built_in_agent",
+            conversation_id=conversation_id,
         )
         session = session_cls(
             base_dir=self._resolve_swival_base_dir(current_user),

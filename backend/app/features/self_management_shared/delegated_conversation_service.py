@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
-from app.db.transaction import load_for_external_call
+from app.db.transaction import commit_safely, load_for_external_call
 from app.features.hub_agents.runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
@@ -29,6 +29,8 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_SESSIONS_SEND_MESSAGE,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
+from app.features.sessions import message_store
+from app.features.sessions.common import parse_conversation_id
 from app.features.sessions.support import SessionHubSupport
 from app.integrations.a2a_client.service import get_a2a_service
 from app.integrations.a2a_client.validators import validate_message
@@ -37,6 +39,7 @@ from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 logger = get_logger(__name__)
 
 _DELEGATED_BY = "self_management_built_in_agent"
+_HANDOFF_MESSAGE_KIND = "delegation_handoff"
 
 
 class SelfManagementDelegatedConversationService:
@@ -60,6 +63,7 @@ class SelfManagementDelegatedConversationService:
             raise ValueError("message is required")
 
         items: list[dict[str, Any]] = []
+        operation_id = str(uuid4())
         for conversation_id in self._dedupe_uuids(conversation_ids):
             gateway.authorize(
                 operation=SELF_SESSIONS_SEND_MESSAGE,
@@ -69,6 +73,8 @@ class SelfManagementDelegatedConversationService:
                 await self._send_one_session_message(
                     db=db,
                     current_user=current_user,
+                    built_in_conversation_id=gateway.web_agent_conversation_id,
+                    operation_id=operation_id,
                     conversation_id=conversation_id,
                     message=normalized_message,
                 )
@@ -89,6 +95,7 @@ class SelfManagementDelegatedConversationService:
             raise ValueError("message is required")
 
         items: list[dict[str, Any]] = []
+        operation_id = str(uuid4())
         for agent_id in self._dedupe_uuids(agent_ids):
             gateway.authorize(
                 operation=SELF_AGENTS_START_SESSIONS,
@@ -98,6 +105,8 @@ class SelfManagementDelegatedConversationService:
                 await self._start_one_agent_session(
                     db=db,
                     current_user=current_user,
+                    built_in_conversation_id=gateway.web_agent_conversation_id,
+                    operation_id=operation_id,
                     agent_id=agent_id,
                     message=normalized_message,
                 )
@@ -115,6 +124,8 @@ class SelfManagementDelegatedConversationService:
         *,
         db: AsyncSession,
         current_user: User,
+        built_in_conversation_id: str | None,
+        operation_id: str,
         conversation_id: UUID,
         message: str,
     ) -> dict[str, Any]:
@@ -150,6 +161,19 @@ class SelfManagementDelegatedConversationService:
                 "error_code": runtime_info["error_code"],
             }
 
+        await self._record_builtin_handoff_message(
+            db=db,
+            current_user=current_user,
+            built_in_conversation_id=built_in_conversation_id,
+            operation_id=operation_id,
+            target_type="session",
+            target_conversation_id=str(conversation_id),
+            target_agent_id=cast(str | None, runtime_info["agent_id"]),
+            target_agent_source=cast(str | None, runtime_info["agent_source"]),
+            target_agent_name=cast(str | None, runtime_info["agent_name"]),
+            target_session_title=cast(str, thread.title),
+            delegated_message=message,
+        )
         self._schedule_delegated_invoke(
             runtime=runtime_info["runtime"],
             user_id=user_id,
@@ -177,6 +201,8 @@ class SelfManagementDelegatedConversationService:
         *,
         db: AsyncSession,
         current_user: User,
+        built_in_conversation_id: str | None,
+        operation_id: str,
         agent_id: UUID,
         message: str,
     ) -> dict[str, Any]:
@@ -196,6 +222,19 @@ class SelfManagementDelegatedConversationService:
                 "error_code": runtime_info["error_code"],
             }
 
+        await self._record_builtin_handoff_message(
+            db=db,
+            current_user=current_user,
+            built_in_conversation_id=built_in_conversation_id,
+            operation_id=operation_id,
+            target_type="agent",
+            target_conversation_id=local_conversation_id,
+            target_agent_id=str(agent_id),
+            target_agent_source="personal",
+            target_agent_name=cast(str | None, runtime_info["agent_name"]),
+            target_session_title=None,
+            delegated_message=message,
+        )
         self._schedule_delegated_invoke(
             runtime=runtime_info["runtime"],
             user_id=cast(UUID, current_user.id),
@@ -471,6 +510,93 @@ class SelfManagementDelegatedConversationService:
             },
             "items": items,
         }
+
+    async def _record_builtin_handoff_message(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        built_in_conversation_id: str | None,
+        operation_id: str,
+        target_type: Literal["session", "agent"],
+        target_conversation_id: str,
+        target_agent_id: str | None,
+        target_agent_source: str | None,
+        target_agent_name: str | None,
+        target_session_title: str | None,
+        delegated_message: str,
+    ) -> None:
+        if not built_in_conversation_id:
+            return
+        local_session = await self._session_support.get_local_session_by_id(
+            db,
+            user_id=cast(UUID, current_user.id),
+            local_session_id=parse_conversation_id(built_in_conversation_id),
+        )
+        if local_session is None:
+            raise ValueError("built_in_session_not_found")
+        agent_message = await message_store.create_agent_message(
+            db,
+            user_id=cast(UUID, current_user.id),
+            sender="agent",
+            conversation_id=cast(UUID, local_session.id),
+            status="done",
+            finish_reason="completed",
+            metadata={
+                "message_kind": _HANDOFF_MESSAGE_KIND,
+                "operation_id": operation_id,
+                "delegation": {
+                    "status": "accepted",
+                    "target_type": target_type,
+                    "target_conversation_id": target_conversation_id,
+                    "target_agent_id": target_agent_id,
+                    "target_agent_source": target_agent_source,
+                    "target_agent_name": target_agent_name,
+                    "target_session_title": target_session_title,
+                    "delegated_message": delegated_message,
+                },
+            },
+        )
+        await self._session_support.upsert_single_text_block(
+            db,
+            user_id=cast(UUID, current_user.id),
+            message_id=cast(UUID, agent_message.id),
+            content=self._build_handoff_record_content(
+                target_type=target_type,
+                target_conversation_id=target_conversation_id,
+                target_agent_id=target_agent_id,
+                target_agent_name=target_agent_name,
+                target_session_title=target_session_title,
+                delegated_message=delegated_message,
+            ),
+            source=_HANDOFF_MESSAGE_KIND,
+        )
+        await commit_safely(db)
+
+    @staticmethod
+    def _build_handoff_record_content(
+        *,
+        target_type: Literal["session", "agent"],
+        target_conversation_id: str,
+        target_agent_id: str | None,
+        target_agent_name: str | None,
+        target_session_title: str | None,
+        delegated_message: str,
+    ) -> str:
+        agent_label = target_agent_name or target_agent_id or "target agent"
+        if target_type == "session":
+            title = (target_session_title or "").strip()
+            title_suffix = f' "{title}"' if title else ""
+            return (
+                f"Delegated to {agent_label} in target session "
+                f"{target_conversation_id}{title_suffix}.\n"
+                f"Sent message: {delegated_message}"
+            )
+        return (
+            f"Started delegated session {target_conversation_id} with "
+            f"{agent_label}.\n"
+            f"Sent message: {delegated_message}"
+        )
 
     @staticmethod
     def _dedupe_uuids(values: list[UUID]) -> list[UUID]:

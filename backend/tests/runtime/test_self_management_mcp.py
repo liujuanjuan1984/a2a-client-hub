@@ -21,6 +21,7 @@ from app.features.self_management_shared import (
 from app.features.self_management_shared.self_management_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
     _MCP_USER_ID_STATE_KEY,
+    _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY,
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS,
     SelfManagementMcpAuthMiddleware,
@@ -641,6 +642,11 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
         suffix="mcp-delegated-session-e2e",
         name="Delegated Session Agent",
     )
+    built_in_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Built-in Session",
+    )
     thread = await create_conversation_thread(
         async_db_session,
         user_id=user.id,
@@ -730,6 +736,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
             "conversation_ids": [str(thread.id)],
             "message": "ping",
         },
+        web_agent_conversation_id=str(built_in_thread.id),
         db=async_db_session,
     )
 
@@ -762,6 +769,43 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
     )
     assert agent_message.message_metadata["message_kind"] == "delegated_session_message"
 
+    built_in_messages = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessage).where(
+                    AgentMessage.conversation_id == built_in_thread.id,
+                    AgentMessage.sender == "agent",
+                )
+            )
+        ).all()
+    )
+    handoff_message = next(
+        (
+            message
+            for message in built_in_messages
+            if isinstance(message.message_metadata, dict)
+            and message.message_metadata.get("message_kind") == "delegation_handoff"
+        ),
+        None,
+    )
+    assert handoff_message is not None
+    assert handoff_message.message_metadata["delegation"]["status"] == "accepted"
+    assert handoff_message.message_metadata["delegation"]["target_type"] == "session"
+    assert handoff_message.message_metadata["delegation"][
+        "target_conversation_id"
+    ] == str(thread.id)
+    assert handoff_message.message_metadata["delegation"]["target_agent_id"] == str(
+        agent.id
+    )
+    handoff_block = await async_db_session.scalar(
+        select(AgentMessageBlock).where(
+            AgentMessageBlock.message_id == handoff_message.id,
+        )
+    )
+    assert handoff_block is not None
+    assert str(thread.id) in handoff_block.content
+    assert "ping" in handoff_block.content
+
     persisted_user_block = await async_db_session.scalar(
         select(AgentMessageBlock).where(
             AgentMessageBlock.message_id == automation_message.id,
@@ -777,6 +821,11 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = await create_user(async_db_session)
+    built_in_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Built-in Session",
+    )
     agent = await create_a2a_agent(
         async_db_session,
         user_id=user.id,
@@ -865,6 +914,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
             "agent_ids": [str(agent.id)],
             "message": "hello",
         },
+        web_agent_conversation_id=str(built_in_thread.id),
         db=async_db_session,
     )
 
@@ -885,6 +935,44 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
     assert automation_message.message_metadata["message_kind"] == (
         "delegated_agent_message"
     )
+
+    built_in_messages = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessage).where(
+                    AgentMessage.conversation_id == built_in_thread.id,
+                    AgentMessage.sender == "agent",
+                )
+            )
+        ).all()
+    )
+    handoff_message = next(
+        (
+            message
+            for message in built_in_messages
+            if isinstance(message.message_metadata, dict)
+            and message.message_metadata.get("message_kind") == "delegation_handoff"
+        ),
+        None,
+    )
+    assert handoff_message is not None
+    assert handoff_message.message_metadata["delegation"]["status"] == "accepted"
+    assert handoff_message.message_metadata["delegation"]["target_type"] == "agent"
+    assert handoff_message.message_metadata["delegation"]["target_agent_id"] == str(
+        agent.id
+    )
+    assert (
+        handoff_message.message_metadata["delegation"]["target_conversation_id"]
+        == result["result"]["items"][0]["conversation_id"]
+    )
+    handoff_block = await async_db_session.scalar(
+        select(AgentMessageBlock).where(
+            AgentMessageBlock.message_id == handoff_message.id,
+        )
+    )
+    assert handoff_block is not None
+    assert result["result"]["items"][0]["conversation_id"] in handoff_block.content
+    assert "hello" in handoff_block.content
 
 
 async def test_self_management_mcp_http_app_requires_bearer_auth(
@@ -922,6 +1010,7 @@ async def test_self_management_mcp_auth_middleware_accepts_valid_bearer_auth(
         user.id,
         allowed_operations=sorted(SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS),
         delegated_by="test",
+        conversation_id="builtin-conv-1",
     )
     app = FastAPI()
     app.add_middleware(
@@ -942,6 +1031,9 @@ async def test_self_management_mcp_auth_middleware_accepts_valid_bearer_auth(
                         request.state, _MCP_ALLOWED_OPERATION_IDS_STATE_KEY, frozenset()
                     )
                 ),
+                "conversation_id": getattr(
+                    request.state, _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY, None
+                ),
             }
         )
 
@@ -957,6 +1049,7 @@ async def test_self_management_mcp_auth_middleware_accepts_valid_bearer_auth(
 
     assert response.status_code == 200
     assert response.json()["user_id"] == str(user.id)
+    assert response.json()["conversation_id"] == "builtin-conv-1"
     assert response.json()["allowed_operation_ids"] == sorted(
         SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS
     )
