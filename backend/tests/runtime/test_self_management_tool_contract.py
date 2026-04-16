@@ -7,6 +7,7 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_START_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_UPDATE_SCHEDULE,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_SEND_MESSAGE,
 )
 from app.features.self_management_shared.self_management_tool_contract import (
@@ -43,6 +44,7 @@ def test_list_self_management_tool_definitions_filters_by_surface() -> None:
     assert "self.jobs.delete" in operation_ids
     assert "self.sessions.archive" in operation_ids
     assert "self.sessions.get" in operation_ids
+    assert "self.sessions.get_latest_messages" in operation_ids
     assert "self.sessions.send_message" in operation_ids
     assert "self.agents.update_config" in operation_ids
     assert "self.agents.start_sessions" in operation_ids
@@ -77,6 +79,24 @@ def test_build_self_management_tool_definition_supports_session_send_message() -
         "array"
     )
     assert definition.input_json_schema["properties"]["message"]["type"] == "string"
+
+
+def test_build_self_management_tool_definition_supports_session_get_latest_messages() -> (
+    None
+):
+    definition = build_self_management_tool_definition(
+        SELF_SESSIONS_GET_LATEST_MESSAGES
+    )
+
+    assert definition.operation_id == "self.sessions.get_latest_messages"
+    assert definition.tool_name == "self.sessions.get_latest_messages"
+    assert definition.confirmation_policy.value == "none"
+    assert definition.input_json_schema["properties"]["conversation_ids"]["type"] == (
+        "array"
+    )
+    assert definition.input_json_schema["properties"]["limit_per_session"]["type"] == (
+        "integer"
+    )
 
 
 def test_build_self_management_tool_definition_supports_agent_start_sessions() -> None:

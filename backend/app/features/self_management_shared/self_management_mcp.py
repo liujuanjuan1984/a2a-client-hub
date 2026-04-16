@@ -48,6 +48,7 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_JOBS_UPDATE_SCHEDULE,
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_SEND_MESSAGE,
     SELF_SESSIONS_UNARCHIVE,
@@ -741,6 +742,29 @@ def build_self_management_mcp_server(
                 user_id=_require_request_user_id(ctx),
                 operation_id=SELF_SESSIONS_GET.operation_id,
                 arguments={"conversation_id": conversation_id},
+                allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+            )
+
+    if _exposed(SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id):
+
+        @mcp.tool(
+            name=SELF_SESSIONS_GET_LATEST_MESSAGES.tool_name,
+            description=SELF_SESSIONS_GET_LATEST_MESSAGES.description,
+        )
+        async def self_sessions_get_latest_messages(
+            conversation_ids: list[str],
+            limit_per_session: int = 1,
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            if ctx is None:
+                raise RuntimeError("FastMCP context is required.")
+            return await execute_self_management_mcp_operation(
+                user_id=_require_request_user_id(ctx),
+                operation_id=SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id,
+                arguments={
+                    "conversation_ids": conversation_ids,
+                    "limit_per_session": limit_per_session,
+                },
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
             )
 

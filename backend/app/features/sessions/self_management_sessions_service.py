@@ -14,12 +14,14 @@ from app.db.transaction import commit_safely
 from app.features.self_management_shared.capability_catalog import (
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_UNARCHIVE,
     SELF_SESSIONS_UPDATE,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
+from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now
 
 
@@ -151,6 +153,80 @@ class SelfManagementSessionsService:
             ),
         )
         return result.result
+
+    async def get_latest_messages(
+        self,
+        *,
+        db: AsyncSession,
+        gateway: SelfManagementToolGateway,
+        current_user: User,
+        conversation_ids: list[str],
+        limit_per_session: int = 1,
+    ) -> dict[str, Any]:
+        user_id = self._user_id(current_user)
+        items: list[dict[str, Any]] = []
+        for conversation_id in self._dedupe_ids(conversation_ids):
+            gateway.authorize(
+                operation=SELF_SESSIONS_GET_LATEST_MESSAGES,
+                resource_id=conversation_id,
+            )
+            try:
+                resolved_conversation_id = UUID(conversation_id)
+            except ValueError:
+                items.append(
+                    {
+                        "conversation_id": conversation_id,
+                        "status": "failed",
+                        "error": "invalid_conversation_id",
+                        "error_code": "invalid_conversation_id",
+                    }
+                )
+                continue
+            try:
+                session_item = await self._get_thread_query(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=resolved_conversation_id,
+                    allowed_statuses=(
+                        ConversationThread.STATUS_ACTIVE,
+                        ConversationThread.STATUS_ARCHIVED,
+                    ),
+                )
+                messages = await self._list_latest_text_messages(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    limit_per_session=limit_per_session,
+                )
+            except ValueError as exc:
+                error_code = str(exc)
+                items.append(
+                    {
+                        "conversation_id": conversation_id,
+                        "status": "failed",
+                        "error": error_code,
+                        "error_code": error_code,
+                    }
+                )
+                continue
+            items.append(
+                {
+                    "conversation_id": conversation_id,
+                    "status": "available",
+                    "session": session_item,
+                    "messages": messages,
+                }
+            )
+        available = sum(1 for item in items if item.get("status") == "available")
+        failed = sum(1 for item in items if item.get("status") == "failed")
+        return {
+            "summary": {
+                "requested": len(items),
+                "available": available,
+                "failed": failed,
+            },
+            "items": items,
+        }
 
     async def update_session(
         self,
@@ -341,6 +417,61 @@ class SelfManagementSessionsService:
         await commit_safely(db)
         await db.refresh(thread)
         return self._serialize_thread_summary(thread)
+
+    async def _list_latest_text_messages(
+        self,
+        *,
+        db: AsyncSession,
+        user_id: UUID,
+        conversation_id: str,
+        limit_per_session: int,
+    ) -> list[dict[str, Any]]:
+        before: str | None = None
+        collected: list[dict[str, Any]] = []
+        page_limit = max(limit_per_session * 4, 10)
+
+        for _ in range(5):
+            items, extra, _db_mutated = await session_hub_service.list_messages(
+                db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                before=before,
+                limit=page_limit,
+            )
+            if not items:
+                break
+            for item in reversed(items):
+                role = str(item.get("role") or "")
+                content = str(item.get("content") or "").strip()
+                if role not in {"user", "agent"} or not content:
+                    continue
+                collected.append(
+                    {
+                        "message_id": str(item["id"]),
+                        "role": role,
+                        "content": content,
+                        "created_at": item.get("created_at"),
+                        "status": item.get("status"),
+                    }
+                )
+                if len(collected) >= limit_per_session:
+                    return list(reversed(collected))
+            before = cast(dict[str, Any], extra.get("pageInfo") or {}).get("nextBefore")
+            if not isinstance(before, str) or not before:
+                break
+        return list(reversed(collected))
+
+    @staticmethod
+    def _dedupe_ids(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for value in values:
+            normalized = value.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+        return deduped
 
 
 self_management_sessions_service = SelfManagementSessionsService()

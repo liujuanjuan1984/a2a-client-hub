@@ -152,6 +152,21 @@ SELF_SESSIONS_GET = SelfManagementOperation(
     description="Read one current-user session in detail.",
 )
 
+SELF_SESSIONS_GET_LATEST_MESSAGES = SelfManagementOperation(
+    operation_id="self.sessions.get_latest_messages",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.SESSIONS,
+    action=SelfManagementAction.READ,
+    event_name="self_session.get_latest_messages.requested",
+    tool_name="self.sessions.get_latest_messages",
+    first_wave_exposed=True,
+    surfaces=_SELF_ENTRY_SURFACES,
+    description=(
+        "Read the latest persisted text messages for one or more current-user "
+        "sessions, ignoring reasoning, tool-call, and interrupt lifecycle details."
+    ),
+)
+
 SELF_SESSIONS_UPDATE = SelfManagementOperation(
     operation_id="self.sessions.update",
     scope=SelfManagementScope.SELF,
@@ -421,6 +436,7 @@ FIRST_WAVE_EXPOSED_OPERATIONS = (
     SELF_AGENTS_START_SESSIONS,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_GET,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_UPDATE,
     SELF_SESSIONS_ARCHIVE,
     SELF_SESSIONS_UNARCHIVE,
@@ -581,6 +597,7 @@ __all__ = [
     "SELF_JOBS_UPDATE_SCHEDULE",
     "SELF_SESSIONS_ARCHIVE",
     "SELF_SESSIONS_GET",
+    "SELF_SESSIONS_GET_LATEST_MESSAGES",
     "SELF_SESSIONS_LIST",
     "SELF_SESSIONS_SEND_MESSAGE",
     "SELF_SESSIONS_UNARCHIVE",

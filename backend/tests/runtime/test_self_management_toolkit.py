@@ -18,6 +18,7 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_UPDATE_SCHEDULE,
+    SELF_SESSIONS_GET_LATEST_MESSAGES,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_SEND_MESSAGE,
 )
@@ -28,6 +29,9 @@ from app.features.self_management_shared.self_management_toolkit import (
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
+)
+from app.features.sessions import (
+    self_management_sessions_service as self_management_sessions_service_module,
 )
 from tests.support.utils import (
     create_a2a_agent,
@@ -250,6 +254,74 @@ async def test_self_management_toolkit_sends_session_message(
     assert result.payload["items"] == [
         {"conversation_id": str(thread.id), "status": "accepted"}
     ]
+
+
+async def test_self_management_toolkit_gets_latest_session_messages(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Toolkit Latest Session Messages",
+    )
+    toolkit = _build_toolkit(async_db_session, user)
+
+    async def _fake_get_latest_messages(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["conversation_ids"] == [str(thread.id)]
+        assert kwargs["limit_per_session"] == 2
+        return {
+            "summary": {"requested": 1, "available": 1, "failed": 0},
+            "items": [
+                {
+                    "conversation_id": str(thread.id),
+                    "status": "available",
+                    "session": {
+                        "conversationId": thread.id,
+                        "source": "manual",
+                        "external_provider": None,
+                        "external_session_id": None,
+                        "agent_id": None,
+                        "agent_source": "personal",
+                        "title": "Toolkit Latest Session Messages",
+                        "status": "active",
+                        "last_active_at": thread.last_active_at,
+                        "created_at": thread.created_at,
+                    },
+                    "messages": [
+                        {
+                            "message_id": "m1",
+                            "role": "agent",
+                            "content": "latest reply",
+                            "created_at": thread.created_at,
+                            "status": "done",
+                        }
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        self_management_sessions_service_module.self_management_sessions_service,
+        "get_latest_messages",
+        _fake_get_latest_messages,
+    )
+
+    result = await toolkit.execute(
+        operation_id=SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id,
+        arguments={
+            "conversation_ids": [str(thread.id)],
+            "limit_per_session": 2,
+        },
+    )
+
+    assert result.payload["summary"] == {"requested": 1, "available": 1, "failed": 0}
+    assert result.payload["items"][0]["conversation_id"] == str(thread.id)
+    assert result.payload["items"][0]["status"] == "available"
+    assert result.payload["items"][0]["messages"][0]["content"] == "latest reply"
 
 
 async def test_self_management_toolkit_starts_agent_sessions(

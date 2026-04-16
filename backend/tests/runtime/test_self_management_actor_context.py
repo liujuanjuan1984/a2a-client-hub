@@ -309,6 +309,7 @@ def test_first_wave_capability_catalog_contains_expected_surfaces() -> None:
     assert "self.agents.check_health" in exposed_ids
     assert "self.jobs.create" in exposed_ids
     assert "self.sessions.get" in exposed_ids
+    assert "self.sessions.get_latest_messages" in exposed_ids
     assert "self.sessions.archive" in exposed_ids
     assert "self.sessions.send_message" in exposed_ids
     assert "self.agents.create" in exposed_ids

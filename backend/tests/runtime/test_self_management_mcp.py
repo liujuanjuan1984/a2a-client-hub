@@ -55,6 +55,7 @@ async def test_self_management_mcp_server_lists_first_wave_tools() -> None:
     assert "self.jobs.get" in tool_names
     assert "self.sessions.list" in tool_names
     assert "self.sessions.get" in tool_names
+    assert "self.sessions.get_latest_messages" in tool_names
 
 
 async def test_self_management_write_mcp_server_lists_write_tools() -> None:
@@ -145,6 +146,102 @@ async def test_execute_self_management_mcp_operation_supports_sessions(
     assert get_result["result"]["session"]["conversation_id"] == str(thread.id)
     assert get_result["result"]["session"]["title"] == "MCP Session"
     assert get_result["result"]["session"]["status"] == "active"
+
+
+async def test_execute_self_management_mcp_operation_supports_session_latest_messages(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Latest Messages Session",
+    )
+
+    user_message = AgentMessage(
+        user_id=user.id,
+        conversation_id=thread.id,
+        sender="automation",
+        status="done",
+        message_metadata={"message_kind": "delegated_agent_message"},
+    )
+    agent_message = AgentMessage(
+        user_id=user.id,
+        conversation_id=thread.id,
+        sender="agent",
+        status="done",
+    )
+    reasoning_only_message = AgentMessage(
+        user_id=user.id,
+        conversation_id=thread.id,
+        sender="agent",
+        status="done",
+    )
+    async_db_session.add_all([user_message, agent_message, reasoning_only_message])
+    await async_db_session.flush()
+    async_db_session.add_all(
+        [
+            AgentMessageBlock(
+                user_id=user.id,
+                message_id=user_message.id,
+                block_seq=1,
+                block_type="text",
+                content="follow up on the target session",
+                is_finished=True,
+                source="automation_input",
+            ),
+            AgentMessageBlock(
+                user_id=user.id,
+                message_id=agent_message.id,
+                block_seq=1,
+                block_type="reasoning",
+                content="hidden reasoning",
+                is_finished=True,
+                source="stream",
+            ),
+            AgentMessageBlock(
+                user_id=user.id,
+                message_id=agent_message.id,
+                block_seq=2,
+                block_type="text",
+                content="target agent final reply",
+                is_finished=True,
+                source="final_snapshot",
+            ),
+            AgentMessageBlock(
+                user_id=user.id,
+                message_id=reasoning_only_message.id,
+                block_seq=1,
+                block_type="tool_call",
+                content='{"name":"lookup"}',
+                is_finished=True,
+                source="stream",
+            ),
+        ]
+    )
+    await async_db_session.commit()
+
+    result = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.sessions.get_latest_messages",
+        arguments={
+            "conversation_ids": [str(thread.id)],
+            "limit_per_session": 2,
+        },
+        db=async_db_session,
+    )
+
+    assert result["ok"] is True
+    assert result["result"]["summary"] == {"requested": 1, "available": 1, "failed": 0}
+    item = result["result"]["items"][0]
+    assert item["conversation_id"] == str(thread.id)
+    assert item["status"] == "available"
+    assert item["session"]["title"] == "Latest Messages Session"
+    assert [message["content"] for message in item["messages"]] == [
+        "follow up on the target session",
+        "target agent final reply",
+    ]
+    assert all("toolCall" not in message for message in item["messages"])
 
 
 async def test_execute_self_management_mcp_operation_supports_agents(
