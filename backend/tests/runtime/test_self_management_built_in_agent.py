@@ -359,15 +359,18 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
         str,
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
-    assert "host automatically adds accepted delegated target conversations" in cast(
+    assert "inspect or manage their own agents, scheduled jobs, sessions" in cast(
         str,
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
-    assert "Do not ask the user whether you should keep following up" in cast(
-        str,
-        _FakeSwivalSession.last_init_kwargs["system_prompt"],
+    assert (
+        "You do not need to wait inline for the target side's live transport"
+        in cast(
+            str,
+            _FakeSwivalSession.last_init_kwargs["system_prompt"],
+        )
     )
-    assert "Use `self.followups.set_sessions` only when you need to override" in cast(
+    assert "the host will resume you so you can read and continue processing" in cast(
         str,
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
@@ -436,10 +439,7 @@ async def test_built_in_agent_can_resume_one_durable_follow_up_run(
     assert _FakeSwivalSession.last_message is not None
     assert "System follow-up wakeup" in _FakeSwivalSession.last_message
     assert "tracked-session-1" in _FakeSwivalSession.last_message
-    assert "self.followups.get" in cast(
-        str,
-        _FakeSwivalSession.last_init_kwargs["system_prompt"],
-    )
+    assert "self.followups.get" in _FakeSwivalSession.last_message
 
     persisted = await async_db_session.scalar(
         select(AgentMessage).where(
