@@ -93,10 +93,15 @@ def test_build_self_management_tool_definition_supports_follow_up_tools() -> Non
     assert get_definition.tool_name == "self.followups.get"
     assert get_definition.confirmation_policy.value == "none"
     assert get_definition.input_json_schema["properties"] == {}
+    assert "auto-tracked delegated targets" in get_definition.description
 
     assert set_definition.operation_id == "self.followups.set_sessions"
     assert set_definition.tool_name == "self.followups.set_sessions"
     assert set_definition.confirmation_policy.value == "none"
+    assert (
+        "Override the current tracked target conversation ids"
+        in set_definition.description
+    )
     assert (
         set_definition.input_json_schema["properties"]["conversation_ids"]["type"]
         == "array"
@@ -140,6 +145,7 @@ def test_build_self_management_tool_definition_supports_agent_start_sessions() -
     assert definition.operation_id == "self.agents.start_sessions"
     assert definition.tool_name == "self.agents.start_sessions"
     assert definition.confirmation_policy.value == "required"
+    assert "automatically added to durable follow-up tracking" in definition.description
     assert definition.input_json_schema["properties"]["agent_ids"]["type"] == "array"
     assert definition.input_json_schema["properties"]["message"]["type"] == "string"
 

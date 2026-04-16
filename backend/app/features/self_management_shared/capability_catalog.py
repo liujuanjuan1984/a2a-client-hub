@@ -125,7 +125,9 @@ SELF_AGENTS_START_SESSIONS = SelfManagementOperation(
     description=(
         "Start one or more new conversations for the current user's agents, "
         "send a delegated message, and hand each conversation off to the "
-        "platform-managed target session without waiting for replies."
+        "platform-managed target session without waiting for replies. In the "
+        "built-in self-management conversation, accepted target conversations "
+        "are automatically added to durable follow-up tracking."
     ),
 )
 
@@ -140,7 +142,8 @@ SELF_FOLLOWUPS_GET = SelfManagementOperation(
     surfaces=_WEB_AGENT_ONLY_SURFACES,
     description=(
         "Read the current durable follow-up tracking state for the active "
-        "built-in self-management conversation."
+        "built-in self-management conversation, including host-managed "
+        "auto-tracked delegated targets."
     ),
 )
 
@@ -155,9 +158,9 @@ SELF_FOLLOWUPS_SET_SESSIONS = SelfManagementOperation(
     first_wave_exposed=True,
     surfaces=_WEB_AGENT_ONLY_SURFACES,
     description=(
-        "Declare the exact target conversation ids that the active built-in "
-        "self-management conversation should keep tracking for future "
-        "follow-up wakeups. Pass an empty list to stop tracking."
+        "Override the current tracked target conversation ids for the active "
+        "built-in self-management conversation. Use this to narrow, extend, "
+        "replace, or stop future follow-up wakeups by passing an empty list."
     ),
 )
 
@@ -254,7 +257,9 @@ SELF_SESSIONS_SEND_MESSAGE = SelfManagementOperation(
     description=(
         "Send one delegated message to one or more current-user conversations "
         "and hand each conversation off to the platform-managed target session "
-        "without waiting for replies."
+        "without waiting for replies. In the built-in self-management "
+        "conversation, accepted target conversations are automatically added "
+        "to durable follow-up tracking."
     ),
 )
 

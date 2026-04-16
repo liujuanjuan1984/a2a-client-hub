@@ -359,12 +359,17 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
         str,
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
-    assert (
-        "use `self.followups.set_sessions` to declare the exact target conversation ids"
-        in cast(
-            str,
-            _FakeSwivalSession.last_init_kwargs["system_prompt"],
-        )
+    assert "host automatically adds accepted delegated target conversations" in cast(
+        str,
+        _FakeSwivalSession.last_init_kwargs["system_prompt"],
+    )
+    assert "Do not ask the user whether you should keep following up" in cast(
+        str,
+        _FakeSwivalSession.last_init_kwargs["system_prompt"],
+    )
+    assert "Use `self.followups.set_sessions` only when you need to override" in cast(
+        str,
+        _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
     mcp_servers = cast(
         dict[str, dict[str, Any]],
