@@ -1436,12 +1436,10 @@ export function useChatScreenController({
           },
         );
         mergeConversationMessages(conversationId, mappedMessages);
-        if (
-          mappedMessages.some(
-            (message) =>
-              message.role === "agent" && message.status === "interrupted",
-          )
-        ) {
+        const latestAgentMessage = [...mappedMessages]
+          .reverse()
+          .find((message) => message.role === "agent");
+        if (latestAgentMessage?.status === "interrupted") {
           await recoverBuiltInPendingInterrupts({
             nextConversationId: conversationId,
           });

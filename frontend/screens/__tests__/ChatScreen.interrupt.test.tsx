@@ -1994,6 +1994,72 @@ describe("ChatScreen interrupt handling", () => {
     }
   });
 
+  it("does not re-run built-in interrupt recovery when only historical agent messages are interrupted", async () => {
+    jest.useFakeTimers();
+    try {
+      mockChatState.sessions[conversationId] = {
+        ...baseSession(),
+        agentId: SELF_MANAGEMENT_AGENT_ID,
+        streamState: "idle",
+      };
+      mockListSessionMessagesPage.mockResolvedValue({
+        items: [
+          {
+            id: "agent-done-latest",
+            role: "agent",
+            kind: "message",
+            content: "Both delegated reviews have completed.",
+            created_at: "2026-04-16T10:04:06.930Z",
+            status: "done",
+            operationId: null,
+            blocks: [],
+          },
+          {
+            id: "agent-old-interrupted",
+            role: "agent",
+            kind: "message",
+            content: "Waiting for approval.",
+            created_at: "2026-04-16T10:03:44.421Z",
+            status: "interrupted",
+            operationId: null,
+            blocks: [],
+          },
+        ],
+        pageInfo: {
+          hasMoreBefore: false,
+          nextBefore: null,
+        },
+      });
+
+      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      mockRecoverSelfManagementBuiltInAgentInterrupts.mockClear();
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockListSessionMessagesPage).toHaveBeenCalledWith(conversationId, {
+        before: null,
+        limit: 8,
+      });
+      expect(
+        mockRecoverSelfManagementBuiltInAgentInterrupts,
+      ).not.toHaveBeenCalled();
+
+      act(() => {
+        tree.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("clears stale built-in permission interrupts when the reply request expired", async () => {
     mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(
       new ApiRequestError("Bad Request", 400, {
