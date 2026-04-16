@@ -21,6 +21,7 @@ const mockRunSelfManagementBuiltInAgent = jest.fn();
 const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
 const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
+const mockMergeConversationMessages = jest.fn();
 const mockRemoveConversationMessage = jest.fn();
 const mockSetConversationMessages = jest.fn();
 const mockUpdateConversationMessage = jest.fn();
@@ -475,6 +476,8 @@ jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
 jest.mock("@/lib/chatHistoryCache", () => ({
   addConversationMessage: (...args: unknown[]) =>
     mockAddConversationMessage(...args),
+  mergeConversationMessages: (...args: unknown[]) =>
+    mockMergeConversationMessages(...args),
   removeConversationMessage: (...args: unknown[]) =>
     mockRemoveConversationMessage(...args),
   setConversationMessages: (...args: unknown[]) =>
@@ -551,6 +554,7 @@ describe("ChatScreen interrupt handling", () => {
     mockRejectQuestion.mockReset();
     mockReplyElicitation.mockReset();
     mockAddConversationMessage.mockReset();
+    mockMergeConversationMessages.mockReset();
     mockRemoveConversationMessage.mockReset();
     mockSetConversationMessages.mockReset();
     mockUpdateConversationMessage.mockReset();

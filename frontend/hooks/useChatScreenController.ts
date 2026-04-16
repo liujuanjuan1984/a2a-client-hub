@@ -59,8 +59,8 @@ import {
 } from "@/lib/chat-utils";
 import {
   addConversationMessage,
+  mergeConversationMessages,
   removeConversationMessage,
-  setConversationMessages,
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
 import {
@@ -1321,7 +1321,7 @@ export function useChatScreenController({
           const mappedMessages = mapSessionMessagesToChatMessages(page.items, {
             keepEmptyMessages: true,
           });
-          setConversationMessages(conversationId, mappedMessages);
+          mergeConversationMessages(conversationId, mappedMessages);
 
           const currentAgentMessage = mappedMessages.find(
             (message) =>
