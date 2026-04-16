@@ -28,6 +28,9 @@ from app.features.self_management_agent.service import (
     SelfManagementBuiltInAgentUnavailableError,
     self_management_built_in_agent_service,
 )
+from app.features.self_management_shared.follow_up_service import (
+    BuiltInFollowUpWakeRequest,
+)
 from app.features.sessions.service import session_hub_service
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
@@ -200,7 +203,7 @@ async def test_built_in_agent_profile_exposes_full_available_tool_surface(
     profile = self_management_built_in_agent_service.get_profile()
 
     assert profile.configured is True
-    assert profile.resources == ("agents", "jobs", "sessions")
+    assert profile.resources == ("agents", "followups", "jobs", "sessions")
     assert [item.operation_id for item in profile.tool_definitions] == [
         "self.agents.check_health",
         "self.agents.check_health_all",
@@ -210,6 +213,8 @@ async def test_built_in_agent_profile_exposes_full_available_tool_surface(
         "self.agents.list",
         "self.agents.start_sessions",
         "self.agents.update_config",
+        "self.followups.get",
+        "self.followups.set_sessions",
         "self.jobs.create",
         "self.jobs.delete",
         "self.jobs.get",
@@ -309,10 +314,12 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert result.status == "completed"
     assert result.exhausted is False
     assert result.runtime == "swival"
-    assert result.resources == ("agents", "jobs", "sessions")
+    assert result.resources == ("agents", "followups", "jobs", "sessions")
     assert result.tool_names == (
         "self.agents.get",
         "self.agents.list",
+        "self.followups.get",
+        "self.followups.set_sessions",
         "self.jobs.get",
         "self.jobs.list",
         "self.sessions.get",
@@ -352,7 +359,7 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
         _FakeSwivalSession.last_init_kwargs["system_prompt"],
     )
     assert (
-        "observe persisted target-session text results with a bounded wait budget"
+        "use `self.followups.set_sessions` to declare the exact target conversation ids"
         in cast(
             str,
             _FakeSwivalSession.last_init_kwargs["system_prompt"],
@@ -374,6 +381,58 @@ async def test_built_in_agent_run_uses_swival_with_authenticated_mcp_server(
     assert get_self_management_allowed_operations(claims) == frozenset(
         result.tool_names
     )
+
+
+async def test_built_in_agent_can_resume_one_durable_follow_up_run(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_built_in_agent_runtime()
+    _configure_swival_settings(monkeypatch)
+    _install_fake_swival(monkeypatch)
+    user = await create_user(async_db_session)
+    request = BuiltInFollowUpWakeRequest(
+        task_id=uuid4(),
+        user_id=cast(UUID, user.id),
+        built_in_conversation_id=_new_conversation_id(),
+        tracked_conversation_ids=("tracked-session-1", "tracked-session-2"),
+        previous_target_agent_message_anchors={
+            "tracked-session-1": "agent-msg-1",
+        },
+        observed_target_agent_message_anchors={
+            "tracked-session-1": "agent-msg-2",
+            "tracked-session-2": "agent-msg-9",
+        },
+        changed_conversation_ids=("tracked-session-1",),
+    )
+
+    result = await self_management_built_in_agent_service.run_durable_follow_up(
+        db=async_db_session,
+        current_user=user,
+        request=request,
+    )
+    await async_db_session.commit()
+
+    assert result.status == "completed"
+    assert result.write_tools_enabled is False
+    assert _FakeSwivalSession.last_message is not None
+    assert "System follow-up wakeup" in _FakeSwivalSession.last_message
+    assert "tracked-session-1" in _FakeSwivalSession.last_message
+    assert "self.followups.get" in cast(
+        str,
+        _FakeSwivalSession.last_init_kwargs["system_prompt"],
+    )
+
+    persisted = await async_db_session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.user_id == user.id,
+            AgentMessage.sender == "agent",
+            AgentMessage.message_metadata["message_kind"].astext
+            == "durable_follow_up_summary",
+        )
+    )
+    assert persisted is not None
+    assert persisted.status == "done"
 
 
 async def test_built_in_agent_rebuilds_session_when_delegated_token_expires(
@@ -548,6 +607,8 @@ async def test_built_in_agent_write_approved_run_uses_write_enabled_mcp_surface(
         "self.agents.list",
         "self.agents.start_sessions",
         "self.agents.update_config",
+        "self.followups.get",
+        "self.followups.set_sessions",
         "self.jobs.create",
         "self.jobs.delete",
         "self.jobs.get",
@@ -617,7 +678,12 @@ async def test_built_in_agent_run_route_returns_swival_result(
         )
 
     assert profile_response.status_code == 200
-    assert profile_response.json()["resources"] == ["agents", "jobs", "sessions"]
+    assert profile_response.json()["resources"] == [
+        "agents",
+        "followups",
+        "jobs",
+        "sessions",
+    ]
     assert [item["operation_id"] for item in profile_response.json()["tools"]] == [
         "self.agents.check_health",
         "self.agents.check_health_all",
@@ -627,6 +693,8 @@ async def test_built_in_agent_run_route_returns_swival_result(
         "self.agents.list",
         "self.agents.start_sessions",
         "self.agents.update_config",
+        "self.followups.get",
+        "self.followups.set_sessions",
         "self.jobs.create",
         "self.jobs.delete",
         "self.jobs.get",
@@ -650,10 +718,12 @@ async def test_built_in_agent_run_route_returns_swival_result(
         "answer": "Built-in agent reply",
         "exhausted": False,
         "runtime": "swival",
-        "resources": ["agents", "jobs", "sessions"],
+        "resources": ["agents", "followups", "jobs", "sessions"],
         "tools": [
             "self.agents.get",
             "self.agents.list",
+            "self.followups.get",
+            "self.followups.set_sessions",
             "self.jobs.get",
             "self.jobs.list",
             "self.sessions.get",

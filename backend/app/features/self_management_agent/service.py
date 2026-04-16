@@ -42,6 +42,9 @@ from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
     SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
 )
+from app.features.self_management_shared.follow_up_service import (
+    BuiltInFollowUpWakeRequest,
+)
 from app.features.self_management_shared.self_management_mcp import (
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
@@ -82,11 +85,34 @@ _DEFAULT_SYSTEM_PROMPT = (
     "handoff operations: once accepted, do not wait inline for the target "
     "agent's live transport or final reply, do not invent downstream outcomes, "
     "and explain that the request was handed off to the target conversation. "
-    "When the user asks you to keep following up, you may use the available "
-    "session read tools to observe persisted target-session text results with "
-    "a bounded wait budget. Reuse the last seen target agent text message id as "
-    "your anchor, wait only within the tool's configured limits, and report "
-    "back honestly if no new persisted result appears before that budget ends."
+    "When the user asks you to keep following up over time, use "
+    "`self.followups.set_sessions` to declare the exact target conversation ids "
+    "that this built-in conversation should keep tracking. Pass an empty list "
+    "when you are done tracking. The host may later resume you after new "
+    "persisted target-session text results arrive. During user-visible or "
+    "host-resumed follow-up work, use `self.followups.get` to inspect the "
+    "current durable tracking state and use the session read tools to consume "
+    "persisted target-session text results. Never wait on downstream live "
+    "transport or invent downstream outcomes."
+)
+_FOLLOW_UP_RESUME_MESSAGE_TEMPLATE = (
+    "System follow-up wakeup: newer persisted target-session text results were "
+    "detected for this built-in conversation.\n\n"
+    "Tracked target conversation ids: {tracked_conversation_ids}\n"
+    "Changed target conversation ids: {changed_conversation_ids}\n"
+    "Previously acknowledged target-agent text message ids by conversation: "
+    "{previous_target_agent_message_anchors}\n"
+    "Currently observed latest target-agent text message ids by conversation: "
+    "{observed_target_agent_message_anchors}\n\n"
+    "Use `self.followups.get` to inspect the durable follow-up state, then use "
+    "`self.sessions.get_latest_messages` with "
+    "`after_agent_message_id_by_conversation` set to the previously "
+    "acknowledged agent message ids above so you only read newly persisted "
+    "target-agent text results. Summarize meaningful progress or conclusions "
+    "to the user. Before you finish, call `self.followups.set_sessions` with "
+    "the exact next target conversation ids that should remain tracked. Use an "
+    "empty list when no further automatic follow-up is needed. Do not wait on "
+    "downstream live transport."
 )
 _WRITE_APPROVAL_SENTINEL = "[[SELF_MANAGEMENT_WRITE_APPROVAL_REQUIRED]]"
 _WRITE_APPROVAL_OPERATIONS_PREFIX = "[[SELF_MANAGEMENT_WRITE_OPERATIONS:"
@@ -801,6 +827,114 @@ class SelfManagementBuiltInAgentService:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def run_durable_follow_up(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        request: BuiltInFollowUpWakeRequest,
+        agent_message_id: UUID | None = None,
+    ) -> SelfManagementBuiltInAgentRunResult:
+        follow_up_agent_message_id = agent_message_id or uuid4()
+        follow_up_message = self._build_follow_up_resume_message(request)
+        try:
+            executed = await self._execute_run(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.built_in_conversation_id,
+                message=follow_up_message,
+                allow_write_tools=False,
+            )
+            await self._persist_follow_up_agent_message(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.built_in_conversation_id,
+                answer=executed.result.answer,
+                agent_message_id=follow_up_agent_message_id,
+                metadata={
+                    "built_in_agent": True,
+                    "runtime": executed.result.runtime,
+                    "message_kind": "durable_follow_up_summary",
+                    "follow_up_task_id": str(request.task_id),
+                    "tracked_conversation_ids": list(request.tracked_conversation_ids),
+                    "changed_conversation_ids": list(request.changed_conversation_ids),
+                    "write_tools_enabled": executed.result.write_tools_enabled,
+                    "tools": list(executed.result.tool_names),
+                    "follow_up": {
+                        "built_in_conversation_id": request.built_in_conversation_id,
+                        "tracked_conversation_ids": list(
+                            request.tracked_conversation_ids
+                        ),
+                        "changed_conversation_ids": list(
+                            request.changed_conversation_ids
+                        ),
+                        "previous_target_agent_message_anchors": dict(
+                            request.previous_target_agent_message_anchors
+                        ),
+                        "observed_target_agent_message_anchors": dict(
+                            request.observed_target_agent_message_anchors
+                        ),
+                    },
+                },
+                status=(
+                    "interrupted"
+                    if executed.result.status
+                    == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                    else "done"
+                ),
+                finish_reason=(
+                    "interrupt"
+                    if executed.result.status
+                    == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                    else "completed"
+                ),
+            )
+            if executed.result.interrupt is not None:
+                await self._persist_permission_interrupt(
+                    db=db,
+                    current_user=current_user,
+                    local_session_id=executed.local_session_id,
+                    interrupt=executed.result.interrupt,
+                )
+            return executed.result
+        except Exception as exc:
+            await self._persist_follow_up_agent_message(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.built_in_conversation_id,
+                answer=str(exc),
+                agent_message_id=follow_up_agent_message_id,
+                metadata={
+                    "built_in_agent": True,
+                    "runtime": "swival",
+                    "message_kind": "durable_follow_up_summary",
+                    "follow_up_task_id": str(request.task_id),
+                    "tracked_conversation_ids": list(request.tracked_conversation_ids),
+                    "changed_conversation_ids": list(request.changed_conversation_ids),
+                    "write_tools_enabled": False,
+                    "tools": [],
+                    "follow_up": {
+                        "built_in_conversation_id": request.built_in_conversation_id,
+                        "tracked_conversation_ids": list(
+                            request.tracked_conversation_ids
+                        ),
+                        "changed_conversation_ids": list(
+                            request.changed_conversation_ids
+                        ),
+                        "previous_target_agent_message_anchors": dict(
+                            request.previous_target_agent_message_anchors
+                        ),
+                        "observed_target_agent_message_anchors": dict(
+                            request.observed_target_agent_message_anchors
+                        ),
+                    },
+                    "follow_up_phase": "failed",
+                },
+                status="error",
+                finish_reason="failed",
+            )
+            raise
+
     async def _run_permission_reply_continuation(
         self,
         request: _PermissionReplyContinuationRequest,
@@ -898,6 +1032,23 @@ class SelfManagementBuiltInAgentService:
                 "Built-in self-management continuation crashed before persistence could finish",
                 extra=extra,
             )
+
+    def _build_follow_up_resume_message(
+        self,
+        request: BuiltInFollowUpWakeRequest,
+    ) -> str:
+        return _FOLLOW_UP_RESUME_MESSAGE_TEMPLATE.format(
+            tracked_conversation_ids=", ".join(request.tracked_conversation_ids)
+            or "(none)",
+            changed_conversation_ids=", ".join(request.changed_conversation_ids)
+            or "(none)",
+            previous_target_agent_message_anchors=dict(
+                request.previous_target_agent_message_anchors
+            ),
+            observed_target_agent_message_anchors=dict(
+                request.observed_target_agent_message_anchors
+            ),
+        )
 
     def _build_mcp_url(self, *, allow_write_tools: bool) -> str:
         base = cast(str, settings.self_management_swival_mcp_base_url).rstrip("/")

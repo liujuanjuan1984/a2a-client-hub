@@ -597,7 +597,7 @@ describe("ChatScreen interrupt handling", () => {
       description: "Built-in self-management assistant",
       runtime: "swival",
       configured: true,
-      resources: ["agents", "jobs", "sessions"],
+      resources: ["agents", "followups", "jobs", "sessions"],
       tools: [],
     });
     mockRunSelfManagementBuiltInAgent.mockReset().mockResolvedValue({
@@ -605,7 +605,7 @@ describe("ChatScreen interrupt handling", () => {
       answer: "Built-in agent reply",
       exhausted: false,
       runtime: "swival",
-      resources: ["agents", "jobs", "sessions"],
+      resources: ["agents", "followups", "jobs", "sessions"],
       tools: ["self.jobs.list"],
       write_tools_enabled: false,
       interrupt: null,
@@ -620,7 +620,7 @@ describe("ChatScreen interrupt handling", () => {
         answer: "Write approval was handled.",
         exhausted: false,
         runtime: "swival",
-        resources: ["agents", "jobs", "sessions"],
+        resources: ["agents", "followups", "jobs", "sessions"],
         tools: ["self.jobs.pause"],
         write_tools_enabled: true,
         interrupt: null,
@@ -1925,6 +1925,65 @@ describe("ChatScreen interrupt handling", () => {
             "Built-in assistant continuation timed out while waiting for persisted output.",
           status: "error",
         }),
+      );
+
+      act(() => {
+        tree.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("refreshes an idle built-in chat so proactive follow-up replies become visible", async () => {
+    jest.useFakeTimers();
+    try {
+      mockChatState.sessions[conversationId] = {
+        ...baseSession(),
+        agentId: SELF_MANAGEMENT_AGENT_ID,
+        streamState: "idle",
+      };
+      mockListSessionMessagesPage.mockResolvedValue({
+        items: [
+          {
+            id: "auto-follow-up-1",
+            role: "agent",
+            kind: "message",
+            content: "I checked and here is the result.",
+            created_at: "2026-04-16T05:00:00.000Z",
+            status: "done",
+            operationId: null,
+            blocks: [],
+          },
+        ],
+        pageInfo: {
+          hasMoreBefore: false,
+          nextBefore: null,
+        },
+      });
+
+      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockListSessionMessagesPage).toHaveBeenCalledWith(conversationId, {
+        before: null,
+        limit: 8,
+      });
+      expect(mockMergeConversationMessages).toHaveBeenCalledWith(
+        conversationId,
+        [
+          expect.objectContaining({
+            id: "auto-follow-up-1",
+            role: "agent",
+            content: "I checked and here is the result.",
+            status: "done",
+          }),
+        ],
       );
 
       act(() => {

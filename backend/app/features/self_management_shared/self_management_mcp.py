@@ -26,7 +26,6 @@ from app.features.auth.service import UserNotFoundError, get_active_user
 from app.features.personal_agents.service import A2AAgentError
 from app.features.schedules.common import A2AScheduleError
 from app.features.self_management_shared.actor_context import (
-    SelfManagementAction,
     SelfManagementAuthorizationError,
 )
 from app.features.self_management_shared.capability_catalog import (
@@ -38,6 +37,8 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_LIST,
     SELF_AGENTS_START_SESSIONS,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_DELETE,
     SELF_JOBS_GET,
@@ -66,7 +67,10 @@ from app.features.self_management_shared.self_management_toolkit import (
 from app.features.self_management_shared.self_management_web_agent import (
     build_self_management_web_agent_runtime,
 )
-from app.features.self_management_shared.tool_gateway import SelfManagementSurface
+from app.features.self_management_shared.tool_gateway import (
+    SelfManagementConfirmationPolicy,
+    SelfManagementSurface,
+)
 
 logger = get_logger(__name__)
 
@@ -84,7 +88,7 @@ SELF_MANAGEMENT_MCP_OPERATION_IDS = list_self_management_operation_ids(
 SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS = frozenset(
     list_self_management_operation_ids(
         surface=SelfManagementSurface.WEB_AGENT,
-        action=SelfManagementAction.READ,
+        confirmation_policy=SelfManagementConfirmationPolicy.NONE,
         require_tool_name=True,
     )
 )
@@ -773,6 +777,49 @@ def build_self_management_mcp_server(
                 operation_id=SELF_SESSIONS_GET.operation_id,
                 arguments={"conversation_id": conversation_id},
                 allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+            )
+
+    if _exposed(SELF_FOLLOWUPS_GET.operation_id):
+
+        @mcp.tool(
+            name=SELF_FOLLOWUPS_GET.tool_name,
+            description=SELF_FOLLOWUPS_GET.description,
+        )
+        async def self_followups_get(
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            if ctx is None:
+                raise RuntimeError("FastMCP context is required.")
+            return await execute_self_management_mcp_operation(
+                user_id=_require_request_user_id(ctx),
+                operation_id=SELF_FOLLOWUPS_GET.operation_id,
+                arguments={},
+                allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
+            )
+
+    if _exposed(SELF_FOLLOWUPS_SET_SESSIONS.operation_id):
+
+        @mcp.tool(
+            name=SELF_FOLLOWUPS_SET_SESSIONS.tool_name,
+            description=SELF_FOLLOWUPS_SET_SESSIONS.description,
+        )
+        async def self_followups_set_sessions(
+            conversation_ids: list[str],
+            ctx: Context | None = None,
+        ) -> dict[str, Any]:
+            if ctx is None:
+                raise RuntimeError("FastMCP context is required.")
+            return await execute_self_management_mcp_operation(
+                user_id=_require_request_user_id(ctx),
+                operation_id=SELF_FOLLOWUPS_SET_SESSIONS.operation_id,
+                arguments={"conversation_ids": conversation_ids},
+                allowed_operation_ids=_require_request_allowed_operation_ids(ctx),
+                web_agent_conversation_id=_optional_request_web_agent_conversation_id(
+                    ctx
+                ),
             )
 
     if _exposed(SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id):

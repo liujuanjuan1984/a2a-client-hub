@@ -85,6 +85,7 @@ const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const INTERRUPT_RECOVERY_THROTTLE_MS = 5_000;
 const BUILT_IN_CONTINUATION_POLL_INTERVAL_MS = 800;
 const BUILT_IN_CONTINUATION_POLL_MAX_INTERVAL_MS = 5_000;
+const BUILT_IN_IDLE_REFRESH_INTERVAL_MS = 5_000;
 
 export function useChatScreenController({
   routeAgentId,
@@ -1318,9 +1319,12 @@ export function useChatScreenController({
             before: null,
             limit: 8,
           });
-          const mappedMessages = mapSessionMessagesToChatMessages(page.items, {
-            keepEmptyMessages: true,
-          });
+          const mappedMessages = mapSessionMessagesToChatMessages(
+            Array.isArray(page?.items) ? page.items : [],
+            {
+              keepEmptyMessages: true,
+            },
+          );
           mergeConversationMessages(conversationId, mappedMessages);
 
           const currentAgentMessage = mappedMessages.find(
@@ -1390,6 +1394,85 @@ export function useChatScreenController({
     isBuiltInSelfManagementAgent,
     recoverBuiltInPendingInterrupts,
     session?.lastAgentMessageId,
+    session?.streamState,
+  ]);
+
+  useEffect(() => {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      !isBuiltInSelfManagementAgent ||
+      session?.streamState === "streaming" ||
+      session?.streamState === "continuing"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = () => {
+      if (cancelled) {
+        return;
+      }
+      refreshTimeout = setTimeout(() => {
+        runRefresh().catch(() => undefined);
+      }, BUILT_IN_IDLE_REFRESH_INTERVAL_MS);
+    };
+
+    const runRefresh = async () => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        const page = await listSessionMessagesPage(conversationId, {
+          before: null,
+          limit: 8,
+        });
+        const mappedMessages = mapSessionMessagesToChatMessages(
+          Array.isArray(page?.items) ? page.items : [],
+          {
+            keepEmptyMessages: true,
+          },
+        );
+        mergeConversationMessages(conversationId, mappedMessages);
+        if (
+          mappedMessages.some(
+            (message) =>
+              message.role === "agent" && message.status === "interrupted",
+          )
+        ) {
+          await recoverBuiltInPendingInterrupts({
+            nextConversationId: conversationId,
+          });
+        }
+      } catch (error) {
+        console.warn("[Chat] built-in idle refresh failed", {
+          conversationId,
+          agentId: activeAgentId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "built_in_idle_refresh_failed",
+        });
+      } finally {
+        scheduleRefresh();
+      }
+    };
+
+    scheduleRefresh();
+
+    return () => {
+      cancelled = true;
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+    };
+  }, [
+    activeAgentId,
+    conversationId,
+    isBuiltInSelfManagementAgent,
+    recoverBuiltInPendingInterrupts,
     session?.streamState,
   ]);
 

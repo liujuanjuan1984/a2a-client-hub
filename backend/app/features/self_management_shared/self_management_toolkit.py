@@ -26,6 +26,8 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_LIST,
     SELF_AGENTS_START_SESSIONS,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_DELETE,
     SELF_JOBS_GET,
@@ -46,6 +48,9 @@ from app.features.self_management_shared.capability_catalog import (
 )
 from app.features.self_management_shared.delegated_conversation_service import (
     self_management_delegated_conversation_service,
+)
+from app.features.self_management_shared.follow_up_service import (
+    built_in_follow_up_service,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
@@ -110,6 +115,10 @@ class SelfManagementToolkit:
             payload = await self._list_sessions(args)
         elif operation.operation_id == SELF_SESSIONS_GET.operation_id:
             payload = await self._get_session(args)
+        elif operation.operation_id == SELF_FOLLOWUPS_GET.operation_id:
+            payload = await self._get_follow_up_state(args)
+        elif operation.operation_id == SELF_FOLLOWUPS_SET_SESSIONS.operation_id:
+            payload = await self._set_follow_up_sessions(args)
         elif operation.operation_id == SELF_SESSIONS_GET_LATEST_MESSAGES.operation_id:
             payload = await self._get_latest_session_messages(args)
         elif operation.operation_id == SELF_SESSIONS_UPDATE.operation_id:
@@ -330,6 +339,25 @@ class SelfManagementToolkit:
             conversation_id=conversation_id,
         )
         return {"session": self._serialize_session(session_item)}
+
+    async def _get_follow_up_state(self, _args: dict[str, Any]) -> dict[str, Any]:
+        return await built_in_follow_up_service.get_follow_up_state(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+        )
+
+    async def _set_follow_up_sessions(self, args: dict[str, Any]) -> dict[str, Any]:
+        return await built_in_follow_up_service.set_tracked_sessions(
+            db=self.db,
+            gateway=self.gateway,
+            current_user=self.current_user,
+            conversation_ids=self._as_optional_str_list(
+                args.get("conversation_ids"),
+                field_name="conversation_ids",
+            )
+            or [],
+        )
 
     async def _get_latest_session_messages(
         self, args: dict[str, Any]

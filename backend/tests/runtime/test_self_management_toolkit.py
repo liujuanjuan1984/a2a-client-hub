@@ -6,6 +6,9 @@ from app.features.personal_agents import service as personal_agent_service_modul
 from app.features.self_management_shared import (
     delegated_conversation_service as delegated_conversation_service_module,
 )
+from app.features.self_management_shared import (
+    follow_up_service as follow_up_service_module,
+)
 from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
@@ -15,6 +18,8 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_CHECK_HEALTH_ALL,
     SELF_AGENTS_START_SESSIONS,
     SELF_AGENTS_UPDATE_CONFIG,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_JOBS_GET,
     SELF_JOBS_LIST,
     SELF_JOBS_UPDATE_SCHEDULE,
@@ -49,6 +54,23 @@ def _build_toolkit(async_db_session, user):
         actor_type=SelfManagementActorType.HUMAN_API,
     )
     gateway = SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
+    return SelfManagementToolkit(
+        db=async_db_session,
+        current_user=user,
+        gateway=gateway,
+    )
+
+
+def _build_web_agent_toolkit(async_db_session, user, conversation_id: str):
+    actor = build_self_management_actor_context(
+        user=user,
+        actor_type=SelfManagementActorType.WEB_AGENT,
+    )
+    gateway = SelfManagementToolGateway(
+        actor,
+        surface=SelfManagementSurface.WEB_AGENT,
+        web_agent_conversation_id=conversation_id,
+    )
     return SelfManagementToolkit(
         db=async_db_session,
         current_user=user,
@@ -336,6 +358,85 @@ async def test_self_management_toolkit_gets_latest_session_messages(
     assert result.payload["items"][0]["after_agent_message_id"] == "agent-msg-1"
     assert result.payload["items"][0]["latest_agent_message_id"] == "agent-msg-2"
     assert result.payload["items"][0]["messages"][0]["content"] == "latest reply"
+
+
+async def test_self_management_toolkit_reads_and_updates_follow_up_state(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await create_user(async_db_session)
+    built_in_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Built-in Conversation",
+    )
+    target_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Tracked Target Session",
+    )
+    toolkit = _build_web_agent_toolkit(
+        async_db_session,
+        user,
+        str(built_in_thread.id),
+    )
+
+    async def _fake_get_follow_up_state(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        return {
+            "status": "waiting",
+            "built_in_conversation_id": str(built_in_thread.id),
+            "tracked_sessions": [],
+        }
+
+    async def _fake_set_tracked_sessions(**kwargs):
+        assert kwargs["db"] is async_db_session
+        assert kwargs["current_user"].id == user.id
+        assert kwargs["conversation_ids"] == [str(target_thread.id)]
+        return {
+            "status": "waiting",
+            "built_in_conversation_id": str(built_in_thread.id),
+            "tracked_sessions": [
+                {
+                    "conversation_id": str(target_thread.id),
+                    "title": "Tracked Target Session",
+                    "status": "active",
+                    "latest_agent_message_id": None,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        follow_up_service_module.built_in_follow_up_service,
+        "get_follow_up_state",
+        _fake_get_follow_up_state,
+    )
+    monkeypatch.setattr(
+        follow_up_service_module.built_in_follow_up_service,
+        "set_tracked_sessions",
+        _fake_set_tracked_sessions,
+    )
+
+    get_result = await toolkit.execute(
+        operation_id=SELF_FOLLOWUPS_GET.operation_id,
+        arguments={},
+    )
+    set_result = await toolkit.execute(
+        operation_id=SELF_FOLLOWUPS_SET_SESSIONS.operation_id,
+        arguments={"conversation_ids": [str(target_thread.id)]},
+    )
+
+    assert get_result.payload["status"] == "waiting"
+    assert get_result.payload["built_in_conversation_id"] == str(built_in_thread.id)
+    assert set_result.payload["tracked_sessions"] == [
+        {
+            "conversation_id": str(target_thread.id),
+            "title": "Tracked Target Session",
+            "status": "active",
+            "latest_agent_message_id": None,
+        }
+    ]
 
 
 async def test_self_management_toolkit_starts_agent_sessions(

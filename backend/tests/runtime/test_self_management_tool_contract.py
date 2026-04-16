@@ -5,6 +5,8 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_CHECK_HEALTH,
     SELF_AGENTS_CREATE,
     SELF_AGENTS_START_SESSIONS,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_JOBS_CREATE,
     SELF_JOBS_UPDATE_SCHEDULE,
     SELF_SESSIONS_GET_LATEST_MESSAGES,
@@ -42,6 +44,8 @@ def test_list_self_management_tool_definitions_filters_by_surface() -> None:
     assert "self.jobs.list" in operation_ids
     assert "self.agents.create" in operation_ids
     assert "self.jobs.delete" in operation_ids
+    assert "self.followups.get" in operation_ids
+    assert "self.followups.set_sessions" in operation_ids
     assert "self.sessions.archive" in operation_ids
     assert "self.sessions.get" in operation_ids
     assert "self.sessions.get_latest_messages" in operation_ids
@@ -79,6 +83,24 @@ def test_build_self_management_tool_definition_supports_session_send_message() -
         "array"
     )
     assert definition.input_json_schema["properties"]["message"]["type"] == "string"
+
+
+def test_build_self_management_tool_definition_supports_follow_up_tools() -> None:
+    get_definition = build_self_management_tool_definition(SELF_FOLLOWUPS_GET)
+    set_definition = build_self_management_tool_definition(SELF_FOLLOWUPS_SET_SESSIONS)
+
+    assert get_definition.operation_id == "self.followups.get"
+    assert get_definition.tool_name == "self.followups.get"
+    assert get_definition.confirmation_policy.value == "none"
+    assert get_definition.input_json_schema["properties"] == {}
+
+    assert set_definition.operation_id == "self.followups.set_sessions"
+    assert set_definition.tool_name == "self.followups.set_sessions"
+    assert set_definition.confirmation_policy.value == "none"
+    assert (
+        set_definition.input_json_schema["properties"]["conversation_ids"]["type"]
+        == "array"
+    )
 
 
 def test_build_self_management_tool_definition_supports_session_get_latest_messages() -> (

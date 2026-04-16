@@ -54,6 +54,8 @@ async def test_self_management_mcp_server_lists_first_wave_tools() -> None:
     assert "self.agents.get" in tool_names
     assert "self.jobs.list" in tool_names
     assert "self.jobs.get" in tool_names
+    assert "self.followups.get" in tool_names
+    assert "self.followups.set_sessions" in tool_names
     assert "self.sessions.list" in tool_names
     assert "self.sessions.get" in tool_names
     assert "self.sessions.get_latest_messages" in tool_names
@@ -74,6 +76,8 @@ async def test_self_management_write_mcp_server_lists_write_tools() -> None:
     assert "self.jobs.resume" in tool_names
     assert "self.jobs.update" in tool_names
     assert "self.jobs.delete" in tool_names
+    assert "self.followups.get" in tool_names
+    assert "self.followups.set_sessions" in tool_names
     assert "self.sessions.update" in tool_names
     assert "self.sessions.archive" in tool_names
     assert "self.sessions.send_message" in tool_names
@@ -245,6 +249,61 @@ async def test_execute_self_management_mcp_operation_supports_session_latest_mes
         "target agent final reply",
     ]
     assert all("toolCall" not in message for message in item["messages"])
+
+
+async def test_execute_self_management_mcp_operation_supports_follow_up_state(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    user_id = user.id
+    built_in_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Built-in MCP Conversation",
+    )
+    target_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Tracked MCP Session",
+    )
+
+    set_result = await execute_self_management_mcp_operation(
+        user_id=user_id,
+        operation_id="self.followups.set_sessions",
+        arguments={"conversation_ids": [str(target_thread.id)]},
+        web_agent_conversation_id=str(built_in_thread.id),
+        db=async_db_session,
+    )
+    get_result = await execute_self_management_mcp_operation(
+        user_id=user_id,
+        operation_id="self.followups.get",
+        arguments={},
+        web_agent_conversation_id=str(built_in_thread.id),
+        db=async_db_session,
+    )
+
+    assert set_result["ok"] is True
+    assert set_result["result"]["status"] == "waiting"
+    assert set_result["result"]["built_in_conversation_id"] == str(built_in_thread.id)
+    assert set_result["result"]["tracked_sessions"] == [
+        {
+            "conversation_id": str(target_thread.id),
+            "title": "Tracked MCP Session",
+            "status": "active",
+            "latest_agent_message_id": None,
+        }
+    ]
+    assert get_result["ok"] is True
+    assert get_result["result"]["status"] == "waiting"
+    assert get_result["result"]["built_in_conversation_id"] == str(built_in_thread.id)
+    assert get_result["result"]["tracked_sessions"] == [
+        {
+            "conversation_id": str(target_thread.id),
+            "title": "Tracked MCP Session",
+            "status": "active",
+            "latest_agent_message_id": None,
+        }
+    ]
 
 
 async def test_execute_self_management_mcp_operation_supports_agents(

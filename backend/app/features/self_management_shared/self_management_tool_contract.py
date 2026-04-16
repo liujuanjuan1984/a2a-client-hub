@@ -93,6 +93,14 @@ class _SessionGetInput(_StrictBaseModel):
     conversation_id: str = Field(min_length=1)
 
 
+class _FollowUpsGetInput(_StrictBaseModel):
+    pass
+
+
+class _FollowUpsSetSessionsInput(_StrictBaseModel):
+    conversation_ids: list[str] = Field(default_factory=list, max_length=10)
+
+
 class _SessionsGetLatestMessagesInput(_StrictBaseModel):
     conversation_ids: list[str] = Field(min_length=1, max_length=10)
     limit_per_session: int = Field(default=1, ge=1, le=5)
@@ -201,6 +209,8 @@ _INPUT_MODELS_BY_OPERATION_ID: dict[str, type[BaseModel]] = {
     "self.jobs.delete": _JobGetInput,
     "self.sessions.list": _SessionsListInput,
     "self.sessions.get": _SessionGetInput,
+    "self.followups.get": _FollowUpsGetInput,
+    "self.followups.set_sessions": _FollowUpsSetSessionsInput,
     "self.sessions.get_latest_messages": _SessionsGetLatestMessagesInput,
     "self.sessions.update": _SessionUpdateInput,
     "self.sessions.archive": _SessionGetInput,

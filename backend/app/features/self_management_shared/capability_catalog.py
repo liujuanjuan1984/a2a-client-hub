@@ -21,6 +21,7 @@ _SELF_ENTRY_SURFACES = frozenset(
         SelfManagementSurface.WEB_AGENT,
     }
 )
+_WEB_AGENT_ONLY_SURFACES = frozenset({SelfManagementSurface.WEB_AGENT})
 
 SELF_AGENTS_LIST = SelfManagementOperation(
     operation_id="self.agents.list",
@@ -125,6 +126,38 @@ SELF_AGENTS_START_SESSIONS = SelfManagementOperation(
         "Start one or more new conversations for the current user's agents, "
         "send a delegated message, and hand each conversation off to the "
         "platform-managed target session without waiting for replies."
+    ),
+)
+
+SELF_FOLLOWUPS_GET = SelfManagementOperation(
+    operation_id="self.followups.get",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.FOLLOWUPS,
+    action=SelfManagementAction.READ,
+    event_name="self_followup.get.requested",
+    tool_name="self.followups.get",
+    first_wave_exposed=True,
+    surfaces=_WEB_AGENT_ONLY_SURFACES,
+    description=(
+        "Read the current durable follow-up tracking state for the active "
+        "built-in self-management conversation."
+    ),
+)
+
+SELF_FOLLOWUPS_SET_SESSIONS = SelfManagementOperation(
+    operation_id="self.followups.set_sessions",
+    scope=SelfManagementScope.SELF,
+    resource=SelfManagementResource.FOLLOWUPS,
+    action=SelfManagementAction.WRITE,
+    event_name="self_followup.set_sessions.requested",
+    tool_name="self.followups.set_sessions",
+    confirmation_policy=SelfManagementConfirmationPolicy.NONE,
+    first_wave_exposed=True,
+    surfaces=_WEB_AGENT_ONLY_SURFACES,
+    description=(
+        "Declare the exact target conversation ids that the active built-in "
+        "self-management conversation should keep tracking for future "
+        "follow-up wakeups. Pass an empty list to stop tracking."
     ),
 )
 
@@ -436,6 +469,8 @@ FIRST_WAVE_EXPOSED_OPERATIONS = (
     SELF_AGENTS_UPDATE_CONFIG,
     SELF_AGENTS_DELETE,
     SELF_AGENTS_START_SESSIONS,
+    SELF_FOLLOWUPS_GET,
+    SELF_FOLLOWUPS_SET_SESSIONS,
     SELF_SESSIONS_LIST,
     SELF_SESSIONS_GET,
     SELF_SESSIONS_GET_LATEST_MESSAGES,

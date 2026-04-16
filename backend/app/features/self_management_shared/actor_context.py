@@ -34,6 +34,7 @@ class SelfManagementResource(str, Enum):
     AGENTS = "agents"
     JOBS = "jobs"
     SESSIONS = "sessions"
+    FOLLOWUPS = "followups"
 
 
 class SelfManagementAction(str, Enum):

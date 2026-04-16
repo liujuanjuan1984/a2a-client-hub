@@ -304,10 +304,22 @@ def test_first_wave_capability_catalog_marks_expected_write_confirmation() -> No
 
 def test_first_wave_capability_catalog_contains_expected_surfaces() -> None:
     exposed_ids = {item.operation_id for item in FIRST_WAVE_EXPOSED_OPERATIONS}
+    rest_exposed_ids = {
+        item.operation_id
+        for item in FIRST_WAVE_EXPOSED_OPERATIONS
+        if SelfManagementSurface.REST in item.surfaces
+    }
+    web_agent_only_ids = {
+        item.operation_id
+        for item in FIRST_WAVE_EXPOSED_OPERATIONS
+        if item.surfaces == {SelfManagementSurface.WEB_AGENT}
+    }
 
     assert "self.jobs.list" in exposed_ids
     assert "self.agents.check_health" in exposed_ids
     assert "self.jobs.create" in exposed_ids
+    assert "self.followups.get" in exposed_ids
+    assert "self.followups.set_sessions" in exposed_ids
     assert "self.sessions.get" in exposed_ids
     assert "self.sessions.get_latest_messages" in exposed_ids
     assert "self.sessions.archive" in exposed_ids
@@ -317,10 +329,12 @@ def test_first_wave_capability_catalog_contains_expected_surfaces() -> None:
     assert "self.agents.update_config" in exposed_ids
     assert all(item.first_wave_exposed for item in FIRST_WAVE_EXPOSED_OPERATIONS)
     assert all(item.surfaces for item in FIRST_WAVE_EXPOSED_OPERATIONS)
-    assert all(
-        SelfManagementSurface.REST in item.surfaces
-        for item in FIRST_WAVE_EXPOSED_OPERATIONS
-    )
+    assert "self.followups.get" not in rest_exposed_ids
+    assert "self.followups.set_sessions" not in rest_exposed_ids
+    assert web_agent_only_ids == {
+        "self.followups.get",
+        "self.followups.set_sessions",
+    }
 
 
 def test_internal_admin_capability_is_not_first_wave_exposed() -> None:
