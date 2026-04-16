@@ -38,6 +38,35 @@ class BuiltInFollowUpWakeRequest:
 class BuiltInFollowUpService:
     """Persist and dispatch durable follow-up substrate state."""
 
+    async def add_tracked_sessions(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        built_in_conversation_id: str,
+        conversation_ids: list[str],
+    ) -> dict[str, Any]:
+        """Host-level helper that merges new tracked sessions into follow-up state."""
+
+        user_id = self._user_id(current_user)
+        task = await self._get_task_by_conversation(
+            db=db,
+            user_id=user_id,
+            built_in_conversation_id=built_in_conversation_id,
+            for_update=True,
+        )
+        existing_ids = self._dedupe_ids(
+            cast(list[str] | None, getattr(task, "tracked_conversation_ids", None))
+            or []
+        )
+        merged_ids = self._dedupe_ids(existing_ids + list(conversation_ids))
+        return await self._set_tracked_sessions(
+            db=db,
+            user_id=user_id,
+            built_in_conversation_id=built_in_conversation_id,
+            conversation_ids=merged_ids,
+        )
+
     async def get_follow_up_state(
         self,
         *,
@@ -80,7 +109,21 @@ class BuiltInFollowUpService:
             operation=SELF_FOLLOWUPS_SET_SESSIONS,
             resource_id=built_in_conversation_id,
         )
-        user_id = self._user_id(current_user)
+        return await self._set_tracked_sessions(
+            db=db,
+            user_id=self._user_id(current_user),
+            built_in_conversation_id=built_in_conversation_id,
+            conversation_ids=conversation_ids,
+        )
+
+    async def _set_tracked_sessions(
+        self,
+        *,
+        db: AsyncSession,
+        user_id: UUID,
+        built_in_conversation_id: str,
+        conversation_ids: list[str],
+    ) -> dict[str, Any]:
         deduped_ids = self._dedupe_ids(conversation_ids)
         task = await self._get_task_by_conversation(
             db=db,

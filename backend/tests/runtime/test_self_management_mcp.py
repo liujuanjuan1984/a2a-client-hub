@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 from fastapi import FastAPI, Request
@@ -17,6 +18,9 @@ from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.features.personal_agents import service as personal_agent_service_module
 from app.features.self_management_shared import (
     delegated_conversation_service as delegated_conversation_service_module,
+)
+from app.features.self_management_shared.follow_up_service import (
+    built_in_follow_up_service,
 )
 from app.features.self_management_shared.self_management_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
@@ -829,6 +833,34 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
         "delegated_session_message"
     )
     assert agent_message.message_metadata["message_kind"] == "delegated_session_message"
+    follow_up_state = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.followups.get",
+        arguments={},
+        web_agent_conversation_id=str(built_in_thread.id),
+        db=async_db_session,
+    )
+    assert follow_up_state["ok"] is True
+    assert follow_up_state["result"]["status"] == "waiting"
+    assert follow_up_state["result"]["tracked_sessions"] == [
+        {
+            "conversation_id": str(thread.id),
+            "title": "Delegated Session Thread",
+            "status": "active",
+            "latest_agent_message_id": None,
+        }
+    ]
+    requests = await built_in_follow_up_service.claim_due_follow_up_tasks(
+        db=async_db_session,
+        batch_size=10,
+    )
+    assert len(requests) == 1
+    assert requests[0].built_in_conversation_id == str(built_in_thread.id)
+    assert requests[0].changed_conversation_ids == (str(thread.id),)
+    assert requests[0].previous_target_agent_message_anchors == {}
+    assert requests[0].observed_target_agent_message_anchors == {
+        str(thread.id): str(agent_message.id)
+    }
 
     built_in_messages = list(
         (
@@ -990,12 +1022,51 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
             AgentMessage.sender == "automation",
         )
     )
+    target_agent_message = await async_db_session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.user_id == user.id,
+            AgentMessage.sender == "agent",
+            AgentMessage.conversation_id
+            == UUID(result["result"]["items"][0]["conversation_id"]),
+        )
+    )
     assert automation_message is not None
+    assert target_agent_message is not None
     assert automation_message.message_metadata["delegated_target_kind"] == "agent"
     assert automation_message.message_metadata["delegated_target_id"] == str(agent.id)
     assert automation_message.message_metadata["message_kind"] == (
         "delegated_agent_message"
     )
+    follow_up_state = await execute_self_management_mcp_operation(
+        user_id=user.id,
+        operation_id="self.followups.get",
+        arguments={},
+        web_agent_conversation_id=str(built_in_thread.id),
+        db=async_db_session,
+    )
+    assert follow_up_state["ok"] is True
+    assert follow_up_state["result"]["status"] == "waiting"
+    assert follow_up_state["result"]["tracked_sessions"] == [
+        {
+            "conversation_id": result["result"]["items"][0]["conversation_id"],
+            "title": "hello",
+            "status": "active",
+            "latest_agent_message_id": None,
+        }
+    ]
+    requests = await built_in_follow_up_service.claim_due_follow_up_tasks(
+        db=async_db_session,
+        batch_size=10,
+    )
+    assert len(requests) == 1
+    assert requests[0].built_in_conversation_id == str(built_in_thread.id)
+    assert requests[0].changed_conversation_ids == (
+        result["result"]["items"][0]["conversation_id"],
+    )
+    assert requests[0].previous_target_agent_message_anchors == {}
+    assert requests[0].observed_target_agent_message_anchors == {
+        result["result"]["items"][0]["conversation_id"]: str(target_agent_message.id)
+    }
 
     built_in_messages = list(
         (

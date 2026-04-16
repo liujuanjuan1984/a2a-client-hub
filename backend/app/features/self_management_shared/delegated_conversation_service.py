@@ -28,6 +28,9 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_START_SESSIONS,
     SELF_SESSIONS_SEND_MESSAGE,
 )
+from app.features.self_management_shared.follow_up_service import (
+    built_in_follow_up_service,
+)
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions import message_store
 from app.features.sessions.common import parse_conversation_id
@@ -63,21 +66,30 @@ class SelfManagementDelegatedConversationService:
             raise ValueError("message is required")
 
         items: list[dict[str, Any]] = []
+        accepted_conversation_ids: list[str] = []
         operation_id = str(uuid4())
         for conversation_id in self._dedupe_uuids(conversation_ids):
             gateway.authorize(
                 operation=SELF_SESSIONS_SEND_MESSAGE,
                 resource_id=str(conversation_id),
             )
-            items.append(
-                await self._send_one_session_message(
-                    db=db,
-                    current_user=current_user,
-                    built_in_conversation_id=gateway.web_agent_conversation_id,
-                    operation_id=operation_id,
-                    conversation_id=conversation_id,
-                    message=normalized_message,
-                )
+            item = await self._send_one_session_message(
+                db=db,
+                current_user=current_user,
+                built_in_conversation_id=gateway.web_agent_conversation_id,
+                operation_id=operation_id,
+                conversation_id=conversation_id,
+                message=normalized_message,
+            )
+            items.append(item)
+            if item.get("status") == "accepted":
+                accepted_conversation_ids.append(str(conversation_id))
+        if accepted_conversation_ids:
+            await self._auto_track_handoff_conversations(
+                db=db,
+                current_user=current_user,
+                built_in_conversation_id=gateway.web_agent_conversation_id,
+                conversation_ids=accepted_conversation_ids,
             )
         return self._serialize_batch_payload(items=items)
 
@@ -95,21 +107,32 @@ class SelfManagementDelegatedConversationService:
             raise ValueError("message is required")
 
         items: list[dict[str, Any]] = []
+        accepted_conversation_ids: list[str] = []
         operation_id = str(uuid4())
         for agent_id in self._dedupe_uuids(agent_ids):
             gateway.authorize(
                 operation=SELF_AGENTS_START_SESSIONS,
                 resource_id=str(agent_id),
             )
-            items.append(
-                await self._start_one_agent_session(
-                    db=db,
-                    current_user=current_user,
-                    built_in_conversation_id=gateway.web_agent_conversation_id,
-                    operation_id=operation_id,
-                    agent_id=agent_id,
-                    message=normalized_message,
-                )
+            item = await self._start_one_agent_session(
+                db=db,
+                current_user=current_user,
+                built_in_conversation_id=gateway.web_agent_conversation_id,
+                operation_id=operation_id,
+                agent_id=agent_id,
+                message=normalized_message,
+            )
+            items.append(item)
+            if item.get("status") == "accepted":
+                conversation_id = item.get("conversation_id")
+                if isinstance(conversation_id, str) and conversation_id.strip():
+                    accepted_conversation_ids.append(conversation_id.strip())
+        if accepted_conversation_ids:
+            await self._auto_track_handoff_conversations(
+                db=db,
+                current_user=current_user,
+                built_in_conversation_id=gateway.web_agent_conversation_id,
+                conversation_ids=accepted_conversation_ids,
             )
         return self._serialize_batch_payload(items=items)
 
@@ -221,6 +244,15 @@ class SelfManagementDelegatedConversationService:
                 "error": runtime_info["error"],
                 "error_code": runtime_info["error_code"],
             }
+        await self._session_support.ensure_local_conversation_thread(
+            db,
+            user_id=cast(UUID, current_user.id),
+            conversation_id=UUID(local_conversation_id),
+            agent_id=agent_id,
+            agent_source="personal",
+            title=message,
+            source="manual",
+        )
 
         await self._record_builtin_handoff_message(
             db=db,
@@ -253,6 +285,23 @@ class SelfManagementDelegatedConversationService:
             "conversation_id": local_conversation_id,
             "status": "accepted",
         }
+
+    async def _auto_track_handoff_conversations(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        built_in_conversation_id: str | None,
+        conversation_ids: list[str],
+    ) -> None:
+        if not built_in_conversation_id:
+            return
+        await built_in_follow_up_service.add_tracked_sessions(
+            db=db,
+            current_user=current_user,
+            built_in_conversation_id=built_in_conversation_id,
+            conversation_ids=conversation_ids,
+        )
 
     async def _resolve_runtime_for_thread(
         self,

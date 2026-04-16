@@ -205,3 +205,66 @@ async def test_follow_up_service_claims_new_results_without_advancing_anchor(
             "latest_agent_message_id": second_agent_message_id,
         }
     ]
+
+
+async def test_follow_up_service_add_tracked_sessions_merges_existing_targets(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session)
+    built_in_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Built-in Follow-up Conversation",
+    )
+    first_target_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="First Tracked Conversation",
+    )
+    second_target_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Second Tracked Conversation",
+    )
+    first_agent_message_id = await _append_agent_text_message(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=first_target_thread.id,
+        content="First target result",
+    )
+    second_agent_message_id = await _append_agent_text_message(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=second_target_thread.id,
+        content="Second target result",
+    )
+    gateway = _build_web_agent_gateway(user, str(built_in_thread.id))
+    await built_in_follow_up_service.set_tracked_sessions(
+        db=async_db_session,
+        gateway=gateway,
+        current_user=user,
+        conversation_ids=[str(first_target_thread.id)],
+    )
+
+    payload = await built_in_follow_up_service.add_tracked_sessions(
+        db=async_db_session,
+        current_user=user,
+        built_in_conversation_id=str(built_in_thread.id),
+        conversation_ids=[str(second_target_thread.id)],
+    )
+
+    assert payload["status"] == "waiting"
+    assert payload["tracked_sessions"] == [
+        {
+            "conversation_id": str(first_target_thread.id),
+            "title": "First Tracked Conversation",
+            "status": "active",
+            "latest_agent_message_id": first_agent_message_id,
+        },
+        {
+            "conversation_id": str(second_target_thread.id),
+            "title": "Second Tracked Conversation",
+            "status": "active",
+            "latest_agent_message_id": second_agent_message_id,
+        },
+    ]
