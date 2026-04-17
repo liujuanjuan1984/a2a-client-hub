@@ -11,20 +11,13 @@ from app.features.personal_agents.runtime import A2ARuntime
 from app.integrations.a2a_extensions import capability_snapshot_builder
 from app.integrations.a2a_extensions.capability_snapshot import (
     CapabilitySnapshotCacheEntry,
-    CompatibilityProfileCapabilitySnapshot,
     DeclaredMethodCapabilitySnapshot,
     DeclaredMethodCollectionCapabilitySnapshot,
-    DeclaredSingleMethodCapabilitySnapshot,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
-    InvokeMetadataCapabilitySnapshot,
-    ModelSelectionCapabilitySnapshot,
     ProviderDiscoveryCapabilitySnapshot,
-    RequestExecutionOptionsCapabilitySnapshot,
     ResolvedCapabilitySnapshot,
-    SessionBindingCapabilitySnapshot,
     SessionQueryCapabilitySnapshot,
-    StreamHintsCapabilitySnapshot,
     WireContractCapabilitySnapshot,
 )
 from app.integrations.a2a_extensions.codex_discovery_service import (
@@ -115,248 +108,6 @@ class A2AExtensionsService:
         headers = tuple(sorted(resolved_headers.items()))
         return runtime.resolved.url, headers
 
-    @staticmethod
-    def _build_session_query_snapshot(card: Any) -> SessionQueryCapabilitySnapshot:
-        return capability_snapshot_builder.build_session_query_snapshot(card)
-
-    @staticmethod
-    def _build_session_binding_snapshot(card: Any) -> SessionBindingCapabilitySnapshot:
-        return capability_snapshot_builder.build_session_binding_snapshot(card)
-
-    @staticmethod
-    def _build_invoke_metadata_snapshot(card: Any) -> InvokeMetadataCapabilitySnapshot:
-        return capability_snapshot_builder.build_invoke_metadata_snapshot(card)
-
-    @staticmethod
-    def _normalize_optional_string_list(
-        value: Any,
-        *,
-        field: str,
-    ) -> tuple[str, ...]:
-        return capability_snapshot_builder.normalize_optional_string_list(
-            value, field=field
-        )
-
-    @classmethod
-    def _build_request_execution_options_snapshot(
-        cls,
-        card: Any,
-    ) -> RequestExecutionOptionsCapabilitySnapshot:
-        return capability_snapshot_builder.build_request_execution_options_snapshot(
-            card
-        )
-
-    def _build_interrupt_callback_snapshot(
-        self, card: Any
-    ) -> InterruptCallbackCapabilitySnapshot:
-        return capability_snapshot_builder.build_interrupt_callback_snapshot(
-            self._support, card
-        )
-
-    def _build_interrupt_recovery_snapshot(
-        self, card: Any
-    ) -> InterruptRecoveryCapabilitySnapshot:
-        return capability_snapshot_builder.build_interrupt_recovery_snapshot(
-            self._support, card
-        )
-
-    def _build_provider_discovery_snapshot(
-        self, card: Any
-    ) -> ProviderDiscoveryCapabilitySnapshot:
-        return capability_snapshot_builder.build_provider_discovery_snapshot(
-            self._support, card
-        )
-
-    @staticmethod
-    def _build_model_selection_snapshot(card: Any) -> ModelSelectionCapabilitySnapshot:
-        return capability_snapshot_builder.build_model_selection_snapshot(card)
-
-    @staticmethod
-    def _build_stream_hints_snapshot(card: Any) -> StreamHintsCapabilitySnapshot:
-        return capability_snapshot_builder.build_stream_hints_snapshot(card)
-
-    @staticmethod
-    def _build_compatibility_profile_snapshot(
-        card: Any,
-    ) -> CompatibilityProfileCapabilitySnapshot:
-        return capability_snapshot_builder.build_compatibility_profile_snapshot(card)
-
-    @staticmethod
-    def _build_wire_contract_snapshot(
-        card: Any,
-    ) -> WireContractCapabilitySnapshot:
-        return capability_snapshot_builder.build_wire_contract_snapshot(card)
-
-    @staticmethod
-    def _declared_wire_contract_methods(
-        snapshot: WireContractCapabilitySnapshot,
-    ) -> frozenset[str]:
-        return capability_snapshot_builder.declared_wire_contract_methods(snapshot)
-
-    @classmethod
-    def _conditional_wire_contract_methods(
-        cls,
-        snapshot: WireContractCapabilitySnapshot,
-    ) -> dict[str, ResolvedConditionalMethodAvailability]:
-        return capability_snapshot_builder.conditional_wire_contract_methods(snapshot)
-
-    @staticmethod
-    def _compatibility_method_retention(
-        snapshot: CompatibilityProfileCapabilitySnapshot,
-    ) -> dict[str, Any]:
-        from app.integrations.a2a_extensions.capability_snapshot_builder import (
-            compatibility_method_retention,
-        )
-
-        return compatibility_method_retention(snapshot)
-
-    @classmethod
-    def _resolve_declared_method_snapshot(
-        cls,
-        *,
-        wire_contract: WireContractCapabilitySnapshot,
-        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-        method_name: str,
-        consumed_by_hub: bool,
-    ) -> DeclaredMethodCapabilitySnapshot:
-        from app.integrations.a2a_extensions.capability_snapshot_builder import (
-            resolve_declared_method_snapshot,
-        )
-
-        return resolve_declared_method_snapshot(
-            wire_contract=wire_contract,
-            compatibility_profile=compatibility_profile,
-            method_name=method_name,
-            consumed_by_hub=consumed_by_hub,
-        )
-
-    @classmethod
-    def _build_declared_method_collection_snapshot(
-        cls,
-        *,
-        wire_contract: WireContractCapabilitySnapshot,
-        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-        method_map: dict[str, str],
-        hub_consumption: dict[str, bool],
-        unsupported_status_when_declared: Literal[
-            "declared_not_consumed", "unsupported_by_design"
-        ],
-        jsonrpc_url: str | None,
-        declaration_source: (
-            Literal[
-                "none",
-                "wire_contract",
-                "wire_contract_fallback",
-                "extension_method_hint",
-                "extension_uri_hint",
-            ]
-            | None
-        ) = None,
-        declaration_confidence: (
-            Literal["none", "fallback", "authoritative"] | None
-        ) = None,
-        negotiation_state: (
-            Literal["supported", "missing", "invalid", "unsupported"] | None
-        ) = None,
-        diagnostic_note: str | None = None,
-    ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return capability_snapshot_builder.build_declared_method_collection_snapshot(
-            wire_contract=wire_contract,
-            compatibility_profile=compatibility_profile,
-            method_map=method_map,
-            hub_consumption=hub_consumption,
-            unsupported_status_when_declared=unsupported_status_when_declared,
-            jsonrpc_url=jsonrpc_url,
-            declaration_source=declaration_source,
-            declaration_confidence=declaration_confidence,
-            negotiation_state=negotiation_state,
-            diagnostic_note=diagnostic_note,
-        )
-
-    @classmethod
-    def _build_codex_discovery_snapshot(
-        cls,
-        card: Any,
-        wire_contract: WireContractCapabilitySnapshot,
-        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-        *,
-        jsonrpc_url: str | None,
-    ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return capability_snapshot_builder.build_codex_discovery_snapshot(
-            card,
-            wire_contract,
-            compatibility_profile,
-            jsonrpc_url=jsonrpc_url,
-        )
-
-    @classmethod
-    def _build_codex_exec_snapshot(
-        cls,
-        wire_contract: WireContractCapabilitySnapshot,
-        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-        *,
-        jsonrpc_url: str | None,
-    ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return capability_snapshot_builder.build_codex_exec_snapshot(
-            wire_contract,
-            compatibility_profile,
-            jsonrpc_url=jsonrpc_url,
-        )
-
-    @classmethod
-    def _build_codex_threads_snapshot(
-        cls,
-        wire_contract: WireContractCapabilitySnapshot,
-        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-        *,
-        jsonrpc_url: str | None,
-    ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return capability_snapshot_builder.build_codex_threads_snapshot(
-            wire_contract,
-            compatibility_profile,
-            jsonrpc_url=jsonrpc_url,
-        )
-
-    @classmethod
-    def _build_codex_turns_snapshot(
-        cls,
-        wire_contract: WireContractCapabilitySnapshot,
-        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-        *,
-        jsonrpc_url: str | None,
-    ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return capability_snapshot_builder.build_codex_turns_snapshot(
-            wire_contract,
-            compatibility_profile,
-            jsonrpc_url=jsonrpc_url,
-        )
-
-    @classmethod
-    def _build_codex_review_snapshot(
-        cls,
-        wire_contract: WireContractCapabilitySnapshot,
-        compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-        *,
-        jsonrpc_url: str | None,
-    ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return capability_snapshot_builder.build_codex_review_snapshot(
-            wire_contract,
-            compatibility_profile,
-            jsonrpc_url=jsonrpc_url,
-        )
-
-    @classmethod
-    def _build_codex_thread_watch_snapshot(
-        cls,
-        wire_contract: WireContractCapabilitySnapshot,
-        *,
-        jsonrpc_url: str | None,
-    ) -> DeclaredSingleMethodCapabilitySnapshot:
-        return capability_snapshot_builder.build_codex_thread_watch_snapshot(
-            wire_contract,
-            jsonrpc_url=jsonrpc_url,
-        )
-
     async def resolve_capability_snapshot(
         self,
         *,
@@ -370,7 +121,7 @@ class A2AExtensionsService:
                 return cached.snapshot
 
         card = await self._support.fetch_card(runtime)
-        wire_contract = self._build_wire_contract_snapshot(card)
+        wire_contract = capability_snapshot_builder.build_wire_contract_snapshot(card)
         jsonrpc_url = None
         try:
             jsonrpc_url = self._support.ensure_outbound_allowed(
@@ -379,46 +130,65 @@ class A2AExtensionsService:
             )
         except (A2AExtensionContractError, A2AExtensionUpstreamError):
             jsonrpc_url = None
-        compatibility_profile = self._build_compatibility_profile_snapshot(card)
+        compatibility_profile = (
+            capability_snapshot_builder.build_compatibility_profile_snapshot(card)
+        )
         snapshot = ResolvedCapabilitySnapshot(
-            session_query=self._build_session_query_snapshot(card),
-            session_binding=self._build_session_binding_snapshot(card),
-            invoke_metadata=self._build_invoke_metadata_snapshot(card),
-            request_execution_options=self._build_request_execution_options_snapshot(
+            session_query=capability_snapshot_builder.build_session_query_snapshot(
                 card
             ),
-            interrupt_callback=self._build_interrupt_callback_snapshot(card),
-            interrupt_recovery=self._build_interrupt_recovery_snapshot(card),
-            model_selection=self._build_model_selection_snapshot(card),
-            provider_discovery=self._build_provider_discovery_snapshot(card),
-            stream_hints=self._build_stream_hints_snapshot(card),
+            session_binding=capability_snapshot_builder.build_session_binding_snapshot(
+                card
+            ),
+            invoke_metadata=capability_snapshot_builder.build_invoke_metadata_snapshot(
+                card
+            ),
+            request_execution_options=capability_snapshot_builder.build_request_execution_options_snapshot(
+                card
+            ),
+            interrupt_callback=capability_snapshot_builder.build_interrupt_callback_snapshot(
+                self._support,
+                card,
+            ),
+            interrupt_recovery=capability_snapshot_builder.build_interrupt_recovery_snapshot(
+                self._support,
+                card,
+            ),
+            model_selection=capability_snapshot_builder.build_model_selection_snapshot(
+                card
+            ),
+            provider_discovery=capability_snapshot_builder.build_provider_discovery_snapshot(
+                self._support,
+                card,
+            ),
+            stream_hints=capability_snapshot_builder.build_stream_hints_snapshot(card),
             wire_contract=wire_contract,
             compatibility_profile=compatibility_profile,
-            codex_discovery=self._build_codex_discovery_snapshot(
+            codex_discovery=capability_snapshot_builder.build_codex_discovery_snapshot(
                 card,
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_threads=self._build_codex_threads_snapshot(
+            codex_threads=capability_snapshot_builder.build_codex_threads_snapshot(
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_turns=self._build_codex_turns_snapshot(
+            codex_turns=capability_snapshot_builder.build_codex_turns_snapshot(
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_review=self._build_codex_review_snapshot(
+            codex_review=capability_snapshot_builder.build_codex_review_snapshot(
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_thread_watch=self._build_codex_thread_watch_snapshot(
+            codex_thread_watch=capability_snapshot_builder.build_codex_thread_watch_snapshot(
                 wire_contract, jsonrpc_url=jsonrpc_url
             ),
-            codex_exec=self._build_codex_exec_snapshot(
+            codex_exec=capability_snapshot_builder.build_codex_exec_snapshot(
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,

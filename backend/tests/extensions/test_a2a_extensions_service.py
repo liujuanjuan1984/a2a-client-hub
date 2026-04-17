@@ -6,14 +6,12 @@ from typing import Any
 import pytest
 from a2a.types import AgentCard
 
-from app.integrations.a2a_extensions.errors import A2AExtensionContractError
-from app.integrations.a2a_extensions.service import (
-    A2AExtensionsService,
+from app.integrations.a2a_extensions import capability_snapshot_builder
+from app.integrations.a2a_extensions.capability_snapshot import (
     CompatibilityProfileCapabilitySnapshot,
     DeclaredMethodCapabilitySnapshot,
     DeclaredMethodCollectionCapabilitySnapshot,
     DeclaredSingleMethodCapabilitySnapshot,
-    ExtensionCallResult,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
     InvokeMetadataCapabilitySnapshot,
@@ -26,6 +24,9 @@ from app.integrations.a2a_extensions.service import (
     StreamHintsCapabilitySnapshot,
     WireContractCapabilitySnapshot,
 )
+from app.integrations.a2a_extensions.errors import A2AExtensionContractError
+from app.integrations.a2a_extensions.service import A2AExtensionsService
+from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
 )
@@ -3500,7 +3501,9 @@ def test_build_interrupt_recovery_snapshot_preserves_scope_metadata() -> None:
     )
 
     service._support.ensure_outbound_allowed = lambda url, *, purpose: url
-    snapshot = service._build_interrupt_recovery_snapshot(card)
+    snapshot = capability_snapshot_builder.build_interrupt_recovery_snapshot(
+        service._support, card
+    )
 
     assert snapshot.status == "supported"
     assert snapshot.ext is not None
@@ -3510,7 +3513,6 @@ def test_build_interrupt_recovery_snapshot_preserves_scope_metadata() -> None:
 
 
 def test_build_compatibility_profile_snapshot_returns_supported_status() -> None:
-    service = A2AExtensionsService()
     card = AgentCard.model_validate(
         {
             "name": "Example Agent",
@@ -3571,7 +3573,7 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
         }
     )
 
-    snapshot = service._build_compatibility_profile_snapshot(card)
+    snapshot = capability_snapshot_builder.build_compatibility_profile_snapshot(card)
 
     assert snapshot.status == "supported"
     assert snapshot.ext is not None
@@ -3593,7 +3595,6 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
 
 
 def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> None:
-    service = A2AExtensionsService()
     card = AgentCard.model_validate(
         {
             "name": "Example Agent",
@@ -3624,7 +3625,7 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
         }
     )
 
-    snapshot = service._build_compatibility_profile_snapshot(card)
+    snapshot = capability_snapshot_builder.build_compatibility_profile_snapshot(card)
 
     assert snapshot.status == "supported"
     assert snapshot.ext is not None
@@ -3633,7 +3634,6 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
 
 
 def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
-    service = A2AExtensionsService()
     card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(
         status="supported",
@@ -3651,32 +3651,32 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     )
 
     compatibility_profile = _compatibility_profile_snapshot()
-    discovery = service._build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
         card,
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    threads = service._build_codex_threads_snapshot(
+    threads = capability_snapshot_builder.build_codex_threads_snapshot(
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    turns = service._build_codex_turns_snapshot(
+    turns = capability_snapshot_builder.build_codex_turns_snapshot(
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    review = service._build_codex_review_snapshot(
+    review = capability_snapshot_builder.build_codex_review_snapshot(
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    thread_watch = service._build_codex_thread_watch_snapshot(
+    thread_watch = capability_snapshot_builder.build_codex_thread_watch_snapshot(
         wire_contract,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    exec_capability = service._build_codex_exec_snapshot(
+    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
@@ -3778,27 +3778,26 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
 def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract() -> (
     None
 ):
-    service = A2AExtensionsService()
     card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
     compatibility_profile = _compatibility_profile_snapshot()
-    discovery = service._build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
         card, wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    threads = service._build_codex_threads_snapshot(
+    threads = capability_snapshot_builder.build_codex_threads_snapshot(
         wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    turns = service._build_codex_turns_snapshot(
+    turns = capability_snapshot_builder.build_codex_turns_snapshot(
         wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    review = service._build_codex_review_snapshot(
+    review = capability_snapshot_builder.build_codex_review_snapshot(
         wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    thread_watch = service._build_codex_thread_watch_snapshot(
+    thread_watch = capability_snapshot_builder.build_codex_thread_watch_snapshot(
         wire_contract, jsonrpc_url=None
     )
-    exec_capability = service._build_codex_exec_snapshot(
+    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
         wire_contract, compatibility_profile, jsonrpc_url=None
     )
 
@@ -3835,7 +3834,6 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
 
 
 def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
-    service = A2AExtensionsService()
     compatibility_profile = _compatibility_profile_snapshot(
         status="supported",
         ext=ResolvedCompatibilityProfileExtension(
@@ -3934,17 +3932,17 @@ def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
         ),
     )
 
-    turns = service._build_codex_turns_snapshot(
+    turns = capability_snapshot_builder.build_codex_turns_snapshot(
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    review = service._build_codex_review_snapshot(
+    review = capability_snapshot_builder.build_codex_review_snapshot(
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    exec_capability = service._build_codex_exec_snapshot(
+    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
@@ -3987,7 +3985,6 @@ def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
 
 
 def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
-    service = A2AExtensionsService()
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -4008,7 +4005,7 @@ def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> N
         error="Extension contract missing/invalid 'params.protocol_version'",
     )
 
-    discovery = service._build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
         card,
         wire_contract,
         _compatibility_profile_snapshot(),
@@ -4037,7 +4034,6 @@ def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> N
 
 
 def test_build_request_execution_options_snapshot_collects_declared_contracts() -> None:
-    service = A2AExtensionsService()
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -4067,7 +4063,9 @@ def test_build_request_execution_options_snapshot_collects_declared_contracts() 
         )
     )
 
-    snapshot = service._build_request_execution_options_snapshot(card)
+    snapshot = capability_snapshot_builder.build_request_execution_options_snapshot(
+        card
+    )
 
     assert snapshot.status == "declared_not_consumed"
     assert snapshot.declared is True
@@ -4083,7 +4081,6 @@ def test_build_request_execution_options_snapshot_collects_declared_contracts() 
 
 
 def test_build_request_execution_options_snapshot_reports_invalid_contract() -> None:
-    service = A2AExtensionsService()
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -4100,7 +4097,9 @@ def test_build_request_execution_options_snapshot_reports_invalid_contract() -> 
         )
     )
 
-    snapshot = service._build_request_execution_options_snapshot(card)
+    snapshot = capability_snapshot_builder.build_request_execution_options_snapshot(
+        card
+    )
 
     assert snapshot.status == "invalid"
     assert snapshot.declared is True
@@ -4112,7 +4111,6 @@ def test_build_request_execution_options_snapshot_reports_invalid_contract() -> 
 
 
 def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
-    service = A2AExtensionsService()
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -4129,7 +4127,7 @@ def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
     )
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
-    discovery = service._build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
         card,
         wire_contract,
         _compatibility_profile_snapshot(),

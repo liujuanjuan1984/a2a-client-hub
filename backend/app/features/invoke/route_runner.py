@@ -45,7 +45,6 @@ from app.features.invoke.route_runner_state import (
     AgentSource,
     InvokeState,
     find_latest_agent_message_id,
-    normalize_optional_message_id,
     prepare_state,
     register_inflight_invoke,
 )
@@ -332,25 +331,6 @@ def _build_invoke_metadata_error_response(
         upstream_error=exc.upstream_error,
         agent_name=getattr(runtime.resolved, "name", None),
         agent_url=getattr(runtime.resolved, "url", None),
-    )
-
-
-def _normalize_optional_message_id(value: str | None) -> str | None:
-    return normalize_optional_message_id(value)
-
-
-def _build_stream_hints_runtime_meta_from_card(
-    *,
-    runtime: Any,
-    card: Any,
-    logger: Any,
-    log_extra: dict[str, Any],
-) -> dict[str, Any]:
-    return route_runner_streaming.build_stream_hints_runtime_meta_from_card(
-        runtime=runtime,
-        card=card,
-        logger=logger,
-        log_extra=log_extra,
     )
 
 

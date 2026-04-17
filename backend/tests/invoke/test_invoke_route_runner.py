@@ -19,6 +19,7 @@ from app.db.locking import (
     RetryableDbQueryTimeoutError,
 )
 from app.features.invoke import route_runner as invoke_route_runner
+from app.features.invoke import route_runner_state, route_runner_streaming
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.features.invoke.stream_persistence import InvokePersistenceRequest
 from app.features.sessions.common import (
@@ -1125,18 +1126,14 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
 
 
 def test_normalize_optional_message_id_validates_uuid_inputs() -> None:
-    normalized = invoke_route_runner._normalize_optional_message_id(  # noqa: SLF001
+    normalized = route_runner_state.normalize_optional_message_id(
         " 550e8400-e29b-41d4-a716-446655440000 "
     )
     assert normalized == "550e8400-e29b-41d4-a716-446655440000"
-    assert (
-        invoke_route_runner._normalize_optional_message_id(None) is None
-    )  # noqa: SLF001
-    assert (
-        invoke_route_runner._normalize_optional_message_id(" ") is None
-    )  # noqa: SLF001
+    assert route_runner_state.normalize_optional_message_id(None) is None
+    assert route_runner_state.normalize_optional_message_id(" ") is None
     with pytest.raises(ValueError, match="invalid_message_id"):
-        invoke_route_runner._normalize_optional_message_id("not-a-uuid")  # noqa: SLF001
+        route_runner_state.normalize_optional_message_id("not-a-uuid")
 
 
 def test_is_interrupt_requested_from_metadata_extensions() -> None:
@@ -3873,7 +3870,7 @@ def test_build_stream_hints_runtime_meta_from_card_warns_once_for_missing_capabi
         }
     )
 
-    meta = invoke_route_runner._build_stream_hints_runtime_meta_from_card(
+    meta = route_runner_streaming.build_stream_hints_runtime_meta_from_card(
         runtime=runtime,
         card=card,
         logger=SimpleNamespace(
@@ -3882,7 +3879,7 @@ def test_build_stream_hints_runtime_meta_from_card_warns_once_for_missing_capabi
         ),
         log_extra={"agent_id": "agent-1"},
     )
-    second = invoke_route_runner._build_stream_hints_runtime_meta_from_card(
+    second = route_runner_streaming.build_stream_hints_runtime_meta_from_card(
         runtime=SimpleNamespace(
             resolved=SimpleNamespace(
                 name="Demo Agent",
