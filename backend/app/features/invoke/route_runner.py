@@ -20,73 +20,41 @@ from app.db.locking import (
 )
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, prepare_for_external_call
+from app.features.invoke import guard as invoke_guard
 from app.features.invoke.guard import (
-    _invoke_inflight_keys as _invoke_inflight_keys_impl,
-)
-from app.features.invoke.guard import build_invoke_guard_key as _build_invoke_guard_key
-from app.features.invoke.guard import guard_inflight_invoke as _guard_inflight_invoke
-from app.features.invoke.guard import release_invoke_guard as _release_invoke_guard_impl
-from app.features.invoke.guard import (
-    try_acquire_invoke_guard as _try_acquire_invoke_guard_impl,
+    build_invoke_guard_key,
+    guard_inflight_invoke,
+    release_invoke_guard,
+    try_acquire_invoke_guard,
 )
 from app.features.invoke.recovery import (
     InvokeMetadataBindingRequiredError,
-)
-from app.features.invoke.recovery import (
-    build_rebound_invoke_payload as _build_rebound_invoke_payload,
-)
-from app.features.invoke.recovery import (
-    finalize_outbound_invoke_payload as _finalize_outbound_invoke_payload_impl,
-)
-from app.features.invoke.recovery import (
-    resolve_session_binding_outbound_mode as _resolve_session_binding_outbound_mode_impl,
-)
-from app.features.invoke.recovery import (
-    validate_provider_aware_continue_session as _validate_provider_aware_continue_session,
+    build_rebound_invoke_payload,
+    finalize_outbound_invoke_payload,
+    resolve_session_binding_outbound_mode,
+    validate_provider_aware_continue_session,
 )
 from app.features.invoke.route_runner_session_control import (
-    build_session_control_error_response as _build_session_control_error_response,
-)
-from app.features.invoke.route_runner_session_control import (
-    build_session_control_response as _build_session_control_response,
-)
-from app.features.invoke.route_runner_session_control import (
-    is_preempt_only_session_control as _is_preempt_only_session_control,
-)
-from app.features.invoke.route_runner_session_control import (
-    run_append_session_control as _run_append_session_control,
+    build_session_control_error_response,
+    build_session_control_response,
+    is_preempt_only_session_control,
+    run_append_session_control,
 )
 from app.features.invoke.route_runner_state import (
     AgentSource,
-)
-from app.features.invoke.route_runner_state import InvokeState as _InvokeState
-from app.features.invoke.route_runner_state import (
-    find_latest_agent_message_id as _find_latest_agent_message_id_impl,
-)
-from app.features.invoke.route_runner_state import (
-    normalize_optional_message_id as _normalize_optional_message_id_impl,
-)
-from app.features.invoke.route_runner_state import prepare_state as _prepare_state
-from app.features.invoke.route_runner_state import (
-    register_inflight_invoke as _register_inflight_invoke,
+    InvokeState,
+    find_latest_agent_message_id,
+    normalize_optional_message_id,
+    prepare_state,
+    register_inflight_invoke,
 )
 from app.features.invoke.route_runner_streaming import (
-    build_invoke_persistence_request as _build_invoke_persistence_request,
-)
-from app.features.invoke.route_runner_streaming import (
-    build_persisted_finalization_ack_event as _build_persisted_finalization_ack_event,
-)
-from app.features.invoke.route_runner_streaming import (
-    build_stream_hints_runtime_meta_from_card as _build_stream_hints_runtime_meta_from_card_impl,
-)
-from app.features.invoke.route_runner_streaming import (
-    build_stream_hints_session_started_callback as _build_stream_hints_session_started_callback,
-)
-from app.features.invoke.route_runner_streaming import (
-    collect_stream_hints as _collect_stream_hints,
-)
-from app.features.invoke.route_runner_streaming import (
-    diagnose_stream_hints_contract_gap as _diagnose_stream_hints_contract_gap,
+    build_invoke_persistence_request,
+    build_persisted_finalization_ack_event,
+    build_stream_hints_runtime_meta_from_card,
+    build_stream_hints_session_started_callback,
+    collect_stream_hints,
+    diagnose_stream_hints_contract_gap,
 )
 from app.features.invoke.service import (
     StreamOutcome,
@@ -101,8 +69,8 @@ from app.features.invoke.session_binding import (
 )
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
+    coerce_uuid,
 )
-from app.features.invoke.stream_persistence import coerce_uuid as _coerce_uuid
 from app.features.invoke.stream_persistence import (
     ensure_local_message_headers as ensure_local_message_headers_impl,
 )
@@ -110,7 +78,7 @@ from app.features.invoke.stream_persistence import (
     flush_stream_buffer as flush_stream_buffer_impl,
 )
 from app.features.invoke.stream_persistence import (
-    is_interrupt_requested as _is_interrupt_requested,
+    is_interrupt_requested,
 )
 from app.features.invoke.stream_persistence import (
     persist_interrupt_lifecycle_event as persist_interrupt_lifecycle_event_impl,
@@ -135,7 +103,14 @@ from app.schemas.a2a_invoke import (
 from app.schemas.ws_ticket import WsTicketResponse
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
 
-_invoke_inflight_keys = _invoke_inflight_keys_impl
+_invoke_inflight_keys = invoke_guard._invoke_inflight_keys
+_InvokeState = InvokeState
+_prepare_state = prepare_state
+_register_inflight_invoke = register_inflight_invoke
+_validate_provider_aware_continue_session = validate_provider_aware_continue_session
+_finalize_outbound_invoke_payload_impl = finalize_outbound_invoke_payload
+_is_interrupt_requested = is_interrupt_requested
+_diagnose_stream_hints_contract_gap = diagnose_stream_hints_contract_gap
 
 _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
@@ -189,7 +164,7 @@ async def _recover_rebound_invoke_payload(
     if validation_result == "failed":
         return None
 
-    return _build_rebound_invoke_payload(
+    return build_rebound_invoke_payload(
         payload=payload,
         continue_payload=continue_binding,
     )
@@ -200,7 +175,7 @@ async def _find_latest_agent_message_id(
     user_id: UUID,
     conversation_id: UUID,
 ) -> str | None:
-    return await _find_latest_agent_message_id_impl(
+    return await find_latest_agent_message_id(
         user_id=user_id,
         conversation_id=conversation_id,
     )
@@ -208,7 +183,7 @@ async def _find_latest_agent_message_id(
 
 async def _record_preempt_history_event(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     user_id: UUID,
     event: dict[str, Any],
 ) -> None:
@@ -226,13 +201,13 @@ async def _record_preempt_history_event(
 
 async def _preempt_previous_invoke_if_requested(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> None:
     if state.local_session_id is None:
         return
-    if not _is_interrupt_requested(payload):
+    if not is_interrupt_requested(payload):
         return
     target_message_id = await _find_latest_agent_message_id(
         user_id=user_id,
@@ -271,7 +246,7 @@ async def _preempt_previous_invoke_if_requested(
 
 async def _bind_inflight_task_if_needed(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     user_id: UUID,
 ) -> None:
     if state.local_session_id is None or state.inflight_token is None:
@@ -302,7 +277,7 @@ async def _bind_inflight_task_if_needed(
 
 async def _unregister_inflight_invoke(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     user_id: UUID,
 ) -> None:
     if state.local_session_id is None or state.inflight_token is None:
@@ -321,7 +296,7 @@ async def _resolve_session_binding_outbound_mode(
     logger: Any,
     log_extra: dict[str, Any],
 ) -> bool:
-    return await _resolve_session_binding_outbound_mode_impl(
+    return await resolve_session_binding_outbound_mode(
         runtime=runtime,
         logger=logger,
         log_extra=log_extra,
@@ -330,11 +305,11 @@ async def _resolve_session_binding_outbound_mode(
 
 
 async def _try_acquire_invoke_guard(guard_key: str) -> bool:
-    return await _try_acquire_invoke_guard_impl(guard_key)
+    return await try_acquire_invoke_guard(guard_key)
 
 
 async def _release_invoke_guard(guard_key: str) -> None:
-    await _release_invoke_guard_impl(guard_key)
+    await release_invoke_guard(guard_key)
 
 
 async def _finalize_outbound_invoke_payload(
@@ -373,7 +348,7 @@ def _build_invoke_metadata_error_response(
 
 
 def _normalize_optional_message_id(value: str | None) -> str | None:
-    return _normalize_optional_message_id_impl(value)
+    return normalize_optional_message_id(value)
 
 
 def _build_stream_hints_runtime_meta_from_card(
@@ -383,7 +358,7 @@ def _build_stream_hints_runtime_meta_from_card(
     logger: Any,
     log_extra: dict[str, Any],
 ) -> dict[str, Any]:
-    return _build_stream_hints_runtime_meta_from_card_impl(
+    return build_stream_hints_runtime_meta_from_card(
         runtime=runtime,
         card=card,
         logger=logger,
@@ -393,7 +368,7 @@ def _build_stream_hints_runtime_meta_from_card(
 
 async def _ensure_local_message_headers(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     request: InvokePersistenceRequest,
 ) -> None:
     await ensure_local_message_headers_impl(
@@ -407,7 +382,7 @@ async def _ensure_local_message_headers(
 
 async def _flush_stream_buffer(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     user_id: UUID,
 ) -> None:
     await flush_stream_buffer_impl(
@@ -421,7 +396,7 @@ async def _flush_stream_buffer(
 
 async def _persist_stream_block_update(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
 ) -> None:
@@ -452,7 +427,7 @@ async def _persist_stream_block_update(
 
 async def _persist_interrupt_lifecycle_event(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
 ) -> None:
@@ -484,7 +459,7 @@ async def _persist_interrupt_lifecycle_event(
 
 async def _persist_synthetic_final_block_if_needed(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     outcome: StreamOutcome,
     user_id: UUID,
 ) -> None:
@@ -500,7 +475,7 @@ async def _persist_synthetic_final_block_if_needed(
 
 async def _persist_local_outcome(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     outcome: StreamOutcome,
     request: InvokePersistenceRequest,
     response_metadata: dict[str, Any] | None = None,
@@ -533,7 +508,7 @@ async def _persist_local_outcome(
 
 def _build_consume_stream_callbacks(
     *,
-    state: _InvokeState,
+    state: InvokeState,
     request: InvokePersistenceRequest,
     logger: Any = None,
     log_extra: dict[str, Any] | None = None,
@@ -544,13 +519,13 @@ def _build_consume_stream_callbacks(
     resolved_log_extra = log_extra if log_extra is not None else {}
 
     async def on_event(event_payload: dict[str, Any]) -> None:
-        _diagnose_stream_hints_contract_gap(
+        diagnose_stream_hints_contract_gap(
             state=state,
             event_payload=event_payload,
             logger=logger,
             log_extra=resolved_log_extra,
         )
-        _collect_stream_hints(state=state, event_payload=event_payload)
+        collect_stream_hints(state=state, event_payload=event_payload)
         await _bind_inflight_task_if_needed(state=state, user_id=request.user_id)
         await _persist_stream_block_update(
             state=state,
@@ -571,7 +546,7 @@ def _build_consume_stream_callbacks(
                 outcome=outcome,
                 request=request,
             )
-            return _build_persisted_finalization_ack_event(
+            return build_persisted_finalization_ack_event(
                 state=state,
                 outcome=outcome,
             )
@@ -587,7 +562,7 @@ async def _run_preempt_session_control(
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> A2AAgentInvokeResponse:
-    local_session_id = _coerce_uuid(payload.conversation_id)
+    local_session_id = coerce_uuid(payload.conversation_id)
     if local_session_id is None:
         return A2AAgentInvokeResponse(
             success=True,
@@ -600,7 +575,7 @@ async def _run_preempt_session_control(
             upstream_error=None,
             agent_name=getattr(runtime.resolved, "name", None),
             agent_url=getattr(runtime.resolved, "url", None),
-            sessionControl=_build_session_control_response(
+            sessionControl=build_session_control_response(
                 intent="preempt",
                 status="no_inflight",
             ),
@@ -633,7 +608,7 @@ async def _run_preempt_session_control(
             upstream_error=None,
             agent_name=getattr(runtime.resolved, "name", None),
             agent_url=getattr(runtime.resolved, "url", None),
-            sessionControl=_build_session_control_response(
+            sessionControl=build_session_control_response(
                 intent="preempt",
                 status="no_inflight",
             ),
@@ -654,7 +629,7 @@ async def _run_preempt_session_control(
         )
         await commit_safely(db)
     if report.status == "failed":
-        return _build_session_control_error_response(
+        return build_session_control_error_response(
             intent="preempt",
             message="Interrupt failed.",
             error_code="invoke_interrupt_failed",
@@ -675,7 +650,7 @@ async def _run_preempt_session_control(
         upstream_error=None,
         agent_name=getattr(runtime.resolved, "name", None),
         agent_url=getattr(runtime.resolved, "url", None),
-        sessionControl=_build_session_control_response(
+        sessionControl=build_session_control_response(
             intent="preempt",
             status=resolved_status,
         ),
@@ -760,8 +735,8 @@ async def run_http_invoke(
     except InvokeMetadataBindingRequiredError as exc:
         return _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
     if resolve_invoke_session_control_intent(payload) == "append":
-        return await _run_append_session_control(runtime=runtime, payload=payload)
-    if _is_preempt_only_session_control(payload):
+        return await run_append_session_control(runtime=runtime, payload=payload)
+    if is_preempt_only_session_control(payload):
         return await _run_preempt_session_control(
             runtime=runtime,
             payload=payload,
@@ -774,7 +749,7 @@ async def run_http_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = _build_stream_hints_session_started_callback(
+    on_session_started = build_stream_hints_session_started_callback(
         runtime=runtime,
         state=state,
         logger=logger,
@@ -792,7 +767,7 @@ async def run_http_invoke(
         gateway=gateway,
         resolved=runtime.resolved,
     )
-    persistence_request = _build_invoke_persistence_request(
+    persistence_request = build_invoke_persistence_request(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -922,7 +897,7 @@ async def run_background_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = _build_stream_hints_session_started_callback(
+    on_session_started = build_stream_hints_session_started_callback(
         runtime=runtime,
         state=state,
         logger=logger,
@@ -940,7 +915,7 @@ async def run_background_invoke(
         gateway=gateway,
         resolved=runtime.resolved,
     )
-    persistence_request = _build_invoke_persistence_request(
+    persistence_request = build_invoke_persistence_request(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -1052,7 +1027,7 @@ async def run_ws_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = _build_stream_hints_session_started_callback(
+    on_session_started = build_stream_hints_session_started_callback(
         runtime=runtime,
         state=state,
         logger=logger,
@@ -1070,7 +1045,7 @@ async def run_ws_invoke(
         gateway=gateway,
         resolved=runtime.resolved,
     )
-    persistence_request = _build_invoke_persistence_request(
+    persistence_request = build_invoke_persistence_request(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -1273,7 +1248,7 @@ async def run_ws_invoke_route(
             invoke_log_message,
             extra=invoke_log_extra_builder(payload, runtime),
         )
-        guard_key = _build_invoke_guard_key(
+        guard_key = build_invoke_guard_key(
             user_id=user_id,
             agent_id=agent_id,
             agent_source=agent_source,
@@ -1281,7 +1256,7 @@ async def run_ws_invoke_route(
         )
 
         try:
-            async with _guard_inflight_invoke(guard_key):
+            async with guard_inflight_invoke(guard_key):
                 await run_ws_invoke_with_session_recovery(
                     websocket=websocket,
                     gateway=gateway,
@@ -1377,7 +1352,7 @@ async def run_http_invoke_route(
         invoke_log_message,
         extra=invoke_log_extra_builder(payload, runtime),
     )
-    guard_key = _build_invoke_guard_key(
+    guard_key = build_invoke_guard_key(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -1448,7 +1423,7 @@ async def run_http_invoke_route(
         return response
 
     try:
-        async with _guard_inflight_invoke(guard_key):
+        async with guard_inflight_invoke(guard_key):
             response = await run_http_invoke_with_session_recovery(
                 gateway=gateway,
                 runtime=runtime,

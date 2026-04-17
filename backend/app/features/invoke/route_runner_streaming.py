@@ -21,8 +21,8 @@ from app.features.invoke.service import (
 from app.features.invoke.shared_metadata import extract_shared_metadata_section
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
+    coerce_uuid,
 )
-from app.features.invoke.stream_persistence import coerce_uuid as _coerce_uuid
 from app.features.invoke.stream_persistence import (
     ensure_local_message_headers as ensure_local_message_headers_impl,
 )
@@ -381,10 +381,10 @@ def build_persisted_finalization_ack_event(
     outcome: StreamOutcome,
 ) -> dict[str, Any] | None:
     agent_message_id = (
-        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        coerce_uuid(state.message_refs.get("agent_message_id"))
         if isinstance(state.message_refs, dict)
         else None
-    ) or _coerce_uuid(state.agent_message_id)
+    ) or coerce_uuid(state.agent_message_id)
     if agent_message_id is None:
         return None
     return {

@@ -14,10 +14,7 @@ from app.db.transaction import commit_safely
 from app.features.invoke.session_binding import (
     normalize_invoke_binding_state,
 )
-from app.features.invoke.stream_persistence import coerce_uuid as _coerce_uuid
-from app.features.invoke.stream_persistence import (
-    is_interrupt_requested as _is_interrupt_requested,
-)
+from app.features.invoke.stream_persistence import coerce_uuid, is_interrupt_requested
 from app.features.sessions.service import session_hub_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.utils.session_identity import normalize_non_empty_text
@@ -57,7 +54,7 @@ def normalize_optional_message_id(value: str | None) -> str | None:
     trimmed = value.strip()
     if not trimmed:
         return None
-    resolved = _coerce_uuid(trimmed)
+    resolved = coerce_uuid(trimmed)
     if resolved is None:
         raise ValueError("invalid_message_id")
     return str(resolved)
@@ -181,7 +178,7 @@ async def preempt_previous_invoke_if_requested(
 ) -> None:
     if state.local_session_id is None:
         return
-    if not _is_interrupt_requested(payload):
+    if not is_interrupt_requested(payload):
         return
     target_message_id = await find_latest_agent_message_id(
         user_id=user_id,

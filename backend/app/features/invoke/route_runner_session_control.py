@@ -15,7 +15,7 @@ from app.features.invoke.session_binding import (
     resolve_invoke_session_binding_hint,
     resolve_invoke_session_control_intent,
 )
-from app.features.invoke.stream_persistence import coerce_uuid as _coerce_uuid
+from app.features.invoke.stream_persistence import coerce_uuid
 from app.features.sessions.service import session_hub_service
 from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.schemas.a2a_invoke import (
@@ -189,7 +189,7 @@ async def run_preempt_session_control(
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> A2AAgentInvokeResponse:
-    local_session_id = _coerce_uuid(payload.conversation_id)
+    local_session_id = coerce_uuid(payload.conversation_id)
     if local_session_id is None:
         return A2AAgentInvokeResponse(
             success=True,
