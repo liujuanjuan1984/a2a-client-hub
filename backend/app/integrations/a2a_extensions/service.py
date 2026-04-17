@@ -8,6 +8,7 @@ from typing import Any, Dict, Literal, Optional
 
 from app.core.logging import get_logger
 from app.features.personal_agents.runtime import A2ARuntime
+from app.integrations.a2a_extensions import capability_snapshot_builder
 from app.integrations.a2a_extensions.capability_snapshot import (
     CapabilitySnapshotCacheEntry,
     CompatibilityProfileCapabilitySnapshot,
@@ -25,26 +26,6 @@ from app.integrations.a2a_extensions.capability_snapshot import (
     SessionQueryCapabilitySnapshot,
     StreamHintsCapabilitySnapshot,
     WireContractCapabilitySnapshot,
-)
-from app.integrations.a2a_extensions.capability_snapshot_builder import (
-    build_codex_discovery_snapshot,
-    build_codex_exec_snapshot,
-    build_codex_review_snapshot,
-    build_codex_thread_watch_snapshot,
-    build_codex_threads_snapshot,
-    build_codex_turns_snapshot,
-    build_compatibility_profile_snapshot,
-    build_declared_method_collection_snapshot,
-    build_interrupt_callback_snapshot,
-    build_interrupt_recovery_snapshot,
-    build_invoke_metadata_snapshot,
-    build_model_selection_snapshot,
-    build_provider_discovery_snapshot,
-    build_request_execution_options_snapshot,
-    build_session_binding_snapshot,
-    build_session_query_snapshot,
-    build_stream_hints_snapshot,
-    build_wire_contract_snapshot,
 )
 from app.integrations.a2a_extensions.codex_discovery_service import (
     CodexDiscoveryService,
@@ -136,15 +117,15 @@ class A2AExtensionsService:
 
     @staticmethod
     def _build_session_query_snapshot(card: Any) -> SessionQueryCapabilitySnapshot:
-        return build_session_query_snapshot(card)
+        return capability_snapshot_builder.build_session_query_snapshot(card)
 
     @staticmethod
     def _build_session_binding_snapshot(card: Any) -> SessionBindingCapabilitySnapshot:
-        return build_session_binding_snapshot(card)
+        return capability_snapshot_builder.build_session_binding_snapshot(card)
 
     @staticmethod
     def _build_invoke_metadata_snapshot(card: Any) -> InvokeMetadataCapabilitySnapshot:
-        return build_invoke_metadata_snapshot(card)
+        return capability_snapshot_builder.build_invoke_metadata_snapshot(card)
 
     @staticmethod
     def _normalize_optional_string_list(
@@ -152,74 +133,72 @@ class A2AExtensionsService:
         *,
         field: str,
     ) -> tuple[str, ...]:
-        from app.integrations.a2a_extensions.capability_snapshot_builder import (
-            normalize_optional_string_list,
+        return capability_snapshot_builder.normalize_optional_string_list(
+            value, field=field
         )
-
-        return normalize_optional_string_list(value, field=field)
 
     @classmethod
     def _build_request_execution_options_snapshot(
         cls,
         card: Any,
     ) -> RequestExecutionOptionsCapabilitySnapshot:
-        return build_request_execution_options_snapshot(card)
+        return capability_snapshot_builder.build_request_execution_options_snapshot(
+            card
+        )
 
     def _build_interrupt_callback_snapshot(
         self, card: Any
     ) -> InterruptCallbackCapabilitySnapshot:
-        return build_interrupt_callback_snapshot(self._support, card)
+        return capability_snapshot_builder.build_interrupt_callback_snapshot(
+            self._support, card
+        )
 
     def _build_interrupt_recovery_snapshot(
         self, card: Any
     ) -> InterruptRecoveryCapabilitySnapshot:
-        return build_interrupt_recovery_snapshot(self._support, card)
+        return capability_snapshot_builder.build_interrupt_recovery_snapshot(
+            self._support, card
+        )
 
     def _build_provider_discovery_snapshot(
         self, card: Any
     ) -> ProviderDiscoveryCapabilitySnapshot:
-        return build_provider_discovery_snapshot(self._support, card)
+        return capability_snapshot_builder.build_provider_discovery_snapshot(
+            self._support, card
+        )
 
     @staticmethod
     def _build_model_selection_snapshot(card: Any) -> ModelSelectionCapabilitySnapshot:
-        return build_model_selection_snapshot(card)
+        return capability_snapshot_builder.build_model_selection_snapshot(card)
 
     @staticmethod
     def _build_stream_hints_snapshot(card: Any) -> StreamHintsCapabilitySnapshot:
-        return build_stream_hints_snapshot(card)
+        return capability_snapshot_builder.build_stream_hints_snapshot(card)
 
     @staticmethod
     def _build_compatibility_profile_snapshot(
         card: Any,
     ) -> CompatibilityProfileCapabilitySnapshot:
-        return build_compatibility_profile_snapshot(card)
+        return capability_snapshot_builder.build_compatibility_profile_snapshot(card)
 
     @staticmethod
     def _build_wire_contract_snapshot(
         card: Any,
     ) -> WireContractCapabilitySnapshot:
-        return build_wire_contract_snapshot(card)
+        return capability_snapshot_builder.build_wire_contract_snapshot(card)
 
     @staticmethod
     def _declared_wire_contract_methods(
         snapshot: WireContractCapabilitySnapshot,
     ) -> frozenset[str]:
-        from app.integrations.a2a_extensions.capability_snapshot_builder import (
-            declared_wire_contract_methods,
-        )
-
-        return declared_wire_contract_methods(snapshot)
+        return capability_snapshot_builder.declared_wire_contract_methods(snapshot)
 
     @classmethod
     def _conditional_wire_contract_methods(
         cls,
         snapshot: WireContractCapabilitySnapshot,
     ) -> dict[str, ResolvedConditionalMethodAvailability]:
-        from app.integrations.a2a_extensions.capability_snapshot_builder import (
-            conditional_wire_contract_methods,
-        )
-
-        return conditional_wire_contract_methods(snapshot)
+        return capability_snapshot_builder.conditional_wire_contract_methods(snapshot)
 
     @staticmethod
     def _compatibility_method_retention(
@@ -281,7 +260,7 @@ class A2AExtensionsService:
         ) = None,
         diagnostic_note: str | None = None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return build_declared_method_collection_snapshot(
+        return capability_snapshot_builder.build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
             compatibility_profile=compatibility_profile,
             method_map=method_map,
@@ -303,7 +282,7 @@ class A2AExtensionsService:
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return build_codex_discovery_snapshot(
+        return capability_snapshot_builder.build_codex_discovery_snapshot(
             card,
             wire_contract,
             compatibility_profile,
@@ -318,7 +297,7 @@ class A2AExtensionsService:
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return build_codex_exec_snapshot(
+        return capability_snapshot_builder.build_codex_exec_snapshot(
             wire_contract,
             compatibility_profile,
             jsonrpc_url=jsonrpc_url,
@@ -332,7 +311,7 @@ class A2AExtensionsService:
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return build_codex_threads_snapshot(
+        return capability_snapshot_builder.build_codex_threads_snapshot(
             wire_contract,
             compatibility_profile,
             jsonrpc_url=jsonrpc_url,
@@ -346,7 +325,7 @@ class A2AExtensionsService:
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return build_codex_turns_snapshot(
+        return capability_snapshot_builder.build_codex_turns_snapshot(
             wire_contract,
             compatibility_profile,
             jsonrpc_url=jsonrpc_url,
@@ -360,7 +339,7 @@ class A2AExtensionsService:
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return build_codex_review_snapshot(
+        return capability_snapshot_builder.build_codex_review_snapshot(
             wire_contract,
             compatibility_profile,
             jsonrpc_url=jsonrpc_url,
@@ -373,7 +352,7 @@ class A2AExtensionsService:
         *,
         jsonrpc_url: str | None,
     ) -> DeclaredSingleMethodCapabilitySnapshot:
-        return build_codex_thread_watch_snapshot(
+        return capability_snapshot_builder.build_codex_thread_watch_snapshot(
             wire_contract,
             jsonrpc_url=jsonrpc_url,
         )

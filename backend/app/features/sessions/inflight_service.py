@@ -8,17 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.features.sessions.common import (
-    INFLIGHT_CANCEL_TERMINAL_ERROR_CODES,
-    BindInflightTaskReport,
-    InflightInvokeEntry,
-    PreemptedInvokeReport,
-    inflight_invokes,
-    inflight_invokes_lock,
-    normalize_non_empty_text,
-    normalize_preempt_event,
-    parse_conversation_id,
-)
+from app.features.sessions import common as session_common
 from app.features.sessions.support import SessionHubSupport
 
 logger = get_logger(__name__)
@@ -35,8 +25,10 @@ class SessionInflightService:
         return (str(user_id), str(conversation_id))
 
     @staticmethod
-    def _copy_inflight_entry(entry: InflightInvokeEntry) -> InflightInvokeEntry:
-        return InflightInvokeEntry(
+    def _copy_inflight_entry(
+        entry: session_common.InflightInvokeEntry,
+    ) -> session_common.InflightInvokeEntry:
+        return session_common.InflightInvokeEntry(
             token=entry.token,
             task_id=entry.task_id,
             gateway=entry.gateway,
@@ -52,7 +44,7 @@ class SessionInflightService:
     def _copy_preempt_event(
         event: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
-        normalized_event = normalize_preempt_event(event)
+        normalized_event = session_common.normalize_preempt_event(event)
         if normalized_event is None:
             return None
         normalized_event["target_task_ids"] = list(
@@ -106,9 +98,9 @@ class SessionInflightService:
     ) -> str:
         token = str(uuid4())
         key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
-        async with inflight_invokes_lock:
-            bucket = inflight_invokes.setdefault(key, {})
-            bucket[token] = InflightInvokeEntry(
+        async with session_common.inflight_invokes_lock:
+            bucket = session_common.inflight_invokes.setdefault(key, {})
+            bucket[token] = session_common.InflightInvokeEntry(
                 token=token,
                 task_id=None,
                 gateway=gateway,
@@ -123,17 +115,17 @@ class SessionInflightService:
         conversation_id: UUID,
         token: str,
         task_id: str,
-    ) -> BindInflightTaskReport:
-        normalized_task_id = normalize_non_empty_text(task_id)
+    ) -> session_common.BindInflightTaskReport:
+        normalized_task_id = session_common.normalize_non_empty_text(task_id)
         if not normalized_task_id:
-            return BindInflightTaskReport(bound=False)
+            return session_common.BindInflightTaskReport(bound=False)
         key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
-        pending_cancel_snapshot: InflightInvokeEntry | None = None
-        async with inflight_invokes_lock:
-            bucket = inflight_invokes.get(key)
+        pending_cancel_snapshot: session_common.InflightInvokeEntry | None = None
+        async with session_common.inflight_invokes_lock:
+            bucket = session_common.inflight_invokes.get(key)
             current = bucket.get(token) if bucket is not None else None
             if current is None or current.token != token:
-                return BindInflightTaskReport(bound=False)
+                return session_common.BindInflightTaskReport(bound=False)
             current.task_id = normalized_task_id
             if current.cancel_requested:
                 pending_cancel_snapshot = self._copy_inflight_entry(current)
@@ -180,7 +172,7 @@ class SessionInflightService:
                         "task_id": pending_cancel_snapshot.task_id,
                     },
                 )
-        return BindInflightTaskReport(
+        return session_common.BindInflightTaskReport(
             bound=True,
             preempt_event=deferred_preempt_event,
         )
@@ -209,13 +201,13 @@ class SessionInflightService:
         token: str,
     ) -> bool:
         key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
-        async with inflight_invokes_lock:
-            bucket = inflight_invokes.get(key)
+        async with session_common.inflight_invokes_lock:
+            bucket = session_common.inflight_invokes.get(key)
             if not bucket or token not in bucket:
                 return False
             bucket.pop(token, None)
             if not bucket:
-                inflight_invokes.pop(key, None)
+                session_common.inflight_invokes.pop(key, None)
             return True
 
     async def _list_inflight_invoke_snapshots(
@@ -223,10 +215,10 @@ class SessionInflightService:
         *,
         user_id: UUID,
         conversation_id: UUID,
-    ) -> list[InflightInvokeEntry]:
+    ) -> list[session_common.InflightInvokeEntry]:
         key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
-        async with inflight_invokes_lock:
-            bucket = inflight_invokes.get(key) or {}
+        async with session_common.inflight_invokes_lock:
+            bucket = session_common.inflight_invokes.get(key) or {}
             return [self._copy_inflight_entry(entry) for entry in bucket.values()]
 
     async def _mark_inflight_cancel_requested(
@@ -237,11 +229,13 @@ class SessionInflightService:
         token: str,
         reason: str,
         pending_preempt_event: dict[str, Any] | None = None,
-    ) -> InflightInvokeEntry | None:
-        normalized_reason = normalize_non_empty_text(reason) or "hub_user_cancel"
+    ) -> session_common.InflightInvokeEntry | None:
+        normalized_reason = (
+            session_common.normalize_non_empty_text(reason) or "hub_user_cancel"
+        )
         key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
-        async with inflight_invokes_lock:
-            bucket = inflight_invokes.get(key)
+        async with session_common.inflight_invokes_lock:
+            bucket = session_common.inflight_invokes.get(key)
             current = bucket.get(token) if bucket is not None else None
             if current is None:
                 return None
@@ -257,7 +251,7 @@ class SessionInflightService:
         *,
         user_id: UUID,
         conversation_id: UUID,
-        snapshot: InflightInvokeEntry,
+        snapshot: session_common.InflightInvokeEntry,
         reason: str,
     ) -> tuple[bool, str | None]:
         if (
@@ -266,17 +260,19 @@ class SessionInflightService:
             or snapshot.resolved is None
         ):
             return False, None
-        normalized_reason = normalize_non_empty_text(reason) or "hub_user_cancel"
+        normalized_reason = (
+            session_common.normalize_non_empty_text(reason) or "hub_user_cancel"
+        )
         cancel_result = await snapshot.gateway.cancel_task(
             resolved=snapshot.resolved,
             task_id=snapshot.task_id,
             metadata={"source": normalized_reason},
         )
         success = bool(cancel_result.get("success"))
-        error_code = normalize_non_empty_text(
+        error_code = session_common.normalize_non_empty_text(
             str(cancel_result.get("error_code") or "")
         )
-        if success or error_code in INFLIGHT_CANCEL_TERMINAL_ERROR_CODES:
+        if success or error_code in session_common.INFLIGHT_CANCEL_TERMINAL_ERROR_CODES:
             await self.unregister_inflight_invoke(
                 user_id=user_id,
                 conversation_id=conversation_id,
@@ -329,13 +325,13 @@ class SessionInflightService:
         conversation_id: UUID,
         reason: str,
         pending_event: dict[str, Any] | None = None,
-    ) -> PreemptedInvokeReport:
+    ) -> session_common.PreemptedInvokeReport:
         snapshots = await self._list_inflight_invoke_snapshots(
             user_id=user_id,
             conversation_id=conversation_id,
         )
         if not snapshots:
-            return PreemptedInvokeReport(attempted=False, status="none")
+            return session_common.PreemptedInvokeReport(attempted=False, status="none")
 
         preempted = False
         pending_requested = False
@@ -386,7 +382,7 @@ class SessionInflightService:
             status: Literal["accepted", "completed"] = (
                 "completed" if completed_task_ids else "accepted"
             )
-            return PreemptedInvokeReport(
+            return session_common.PreemptedInvokeReport(
                 attempted=True,
                 status=status,
                 pending_requested=pending_requested,
@@ -395,7 +391,7 @@ class SessionInflightService:
                 pending_tokens=pending_tokens,
             )
         if failed_error_codes:
-            return PreemptedInvokeReport(
+            return session_common.PreemptedInvokeReport(
                 attempted=True,
                 status="failed",
                 pending_requested=False,
@@ -403,7 +399,7 @@ class SessionInflightService:
                 failed_error_codes=failed_error_codes,
                 pending_tokens=[],
             )
-        return PreemptedInvokeReport(attempted=False, status="none")
+        return session_common.PreemptedInvokeReport(attempted=False, status="none")
 
     async def cancel_session(
         self,
@@ -412,7 +408,7 @@ class SessionInflightService:
         user_id: UUID,
         conversation_id: str,
     ) -> tuple[dict[str, Any], bool]:
-        resolved_conversation_id = parse_conversation_id(conversation_id)
+        resolved_conversation_id = session_common.parse_conversation_id(conversation_id)
         target = await self._support.resolve_conversation_target(
             db,
             user_id=user_id,
@@ -466,11 +462,18 @@ class SessionInflightService:
                 snapshot=snapshot,
                 reason="hub_user_cancel",
             )
-            if success and error_code not in INFLIGHT_CANCEL_TERMINAL_ERROR_CODES:
+            if (
+                success
+                and error_code
+                not in session_common.INFLIGHT_CANCEL_TERMINAL_ERROR_CODES
+            ):
                 if accepted_task_id is None:
                     accepted_task_id = snapshot.task_id
                 continue
-            if success and error_code in INFLIGHT_CANCEL_TERMINAL_ERROR_CODES:
+            if (
+                success
+                and error_code in session_common.INFLIGHT_CANCEL_TERMINAL_ERROR_CODES
+            ):
                 if terminal_task_id is None:
                     terminal_task_id = snapshot.task_id
                 continue

@@ -21,6 +21,7 @@ from a2a.types import Message
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from app.features.invoke import stream_payloads
 from app.features.invoke.payload_analysis import (
     PayloadAnalysis,
 )
@@ -53,15 +54,6 @@ from app.features.invoke.stream_diagnostics import (
     build_validation_errors_log_sample,
     extract_artifact_validation_errors,
     warn_non_contract_artifact_update_once,
-)
-from app.features.invoke.stream_payloads import (
-    analyze_stream_chunk_contract,
-    coerce_message_event_to_artifact_update,
-    extract_interrupt_lifecycle_from_serialized_event,
-    extract_shared_stream_metadata,
-    extract_stream_chunk_from_serialized_event,
-    extract_stream_sequence_from_serialized_event,
-    extract_stream_text_from_parts,
 )
 from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
@@ -349,7 +341,7 @@ class A2AInvokeService:
     def _extract_stream_sequence_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> int | None:
-        return extract_stream_sequence_from_serialized_event(payload)
+        return stream_payloads.extract_stream_sequence_from_serialized_event(payload)
 
     @staticmethod
     def _pick_non_empty_str(
@@ -396,13 +388,15 @@ class A2AInvokeService:
     def extract_interrupt_lifecycle_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        return extract_interrupt_lifecycle_from_serialized_event(payload)
+        return stream_payloads.extract_interrupt_lifecycle_from_serialized_event(
+            payload
+        )
 
     @classmethod
     def extract_stream_chunk_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        return extract_stream_chunk_from_serialized_event(payload)
+        return stream_payloads.extract_stream_chunk_from_serialized_event(payload)
 
     @classmethod
     def extract_binding_hints_from_invoke_result(
@@ -424,7 +418,7 @@ class A2AInvokeService:
 
     @staticmethod
     def _extract_text_from_parts(parts: Any) -> str | None:
-        resolved = extract_stream_text_from_parts(parts)
+        resolved = stream_payloads.extract_stream_text_from_parts(parts)
         return resolved or None
 
     @classmethod
@@ -454,13 +448,13 @@ class A2AInvokeService:
 
         @staticmethod
         def _extract_text_from_parts(parts: Any) -> str:
-            return extract_stream_text_from_parts(parts)
+            return stream_payloads.extract_stream_text_from_parts(parts)
 
         @staticmethod
         def _extract_shared_stream_metadata(
             payload: dict[str, Any], artifact: dict[str, Any]
         ) -> dict[str, Any]:
-            return extract_shared_stream_metadata(payload, artifact)
+            return stream_payloads.extract_shared_stream_metadata(payload, artifact)
 
         def _find_block_index(self, block_id: str) -> int | None:
             for index, block in enumerate(self._blocks):
@@ -735,7 +729,7 @@ class A2AInvokeService:
             payload = dict(resolved)
         else:
             payload = resolved.model_dump(exclude_none=True)
-        coerce_message_event_to_artifact_update(payload)
+        stream_payloads.coerce_message_event_to_artifact_update(payload)
         if settings.debug:
             payload["validation_errors"] = validate_message(payload)
         return payload
@@ -744,7 +738,7 @@ class A2AInvokeService:
     def _analyze_stream_chunk_contract(
         cls, payload: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, str | None]:
-        return analyze_stream_chunk_contract(payload)
+        return stream_payloads.analyze_stream_chunk_contract(payload)
 
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
@@ -758,7 +752,7 @@ class A2AInvokeService:
         event_sequence: int,
     ) -> None:
         payload["seq"] = event_sequence
-        coerce_message_event_to_artifact_update(payload)
+        stream_payloads.coerce_message_event_to_artifact_update(payload)
         if (
             payload.get("kind") != "artifact-update"
             and cls.extract_stream_chunk_from_serialized_event(payload) is not None

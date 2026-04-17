@@ -16,21 +16,7 @@ from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
 )
 from app.features.sessions import block_store
-from app.features.sessions.common import (
-    MessagesBeforeCursor,
-    ResolvedConversationTarget,
-    SessionSource,
-    build_continue_response,
-    dedupe_uuid_list_keep_order,
-    encode_messages_before_cursor,
-    parse_conversation_id,
-    parse_messages_before_cursor,
-    project_message_blocks,
-    render_block_detail_item,
-    resolve_session_source,
-    sender_priority_for_role,
-    sender_to_role,
-)
+from app.features.sessions import common as session_common
 from app.features.sessions.identity import conversation_identity_service
 from app.features.sessions.support import SessionHubSupport
 from app.features.working_directory import extract_working_directory
@@ -51,7 +37,7 @@ class SessionQueryService:
         thread_external_session_id = cast(str | None, thread.external_session_id)
         thread_agent_id = cast(UUID | None, thread.agent_id)
         thread_agent_source = cast(str | None, thread.agent_source)
-        resolved_source = resolve_session_source(
+        resolved_source = session_common.resolve_session_source(
             thread_source=thread_source,
             fallback_source=None,
         )
@@ -87,12 +73,12 @@ class SessionQueryService:
         blocks_by_message_id: dict[UUID, list[AgentMessageBlock]],
     ) -> dict[str, Any]:
         message_id = cast(UUID, message.id)
-        role = sender_to_role(getattr(message, "sender", ""))
+        role = session_common.sender_to_role(getattr(message, "sender", ""))
         raw_metadata = getattr(message, "message_metadata", None)
         metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
         raw_blocks: list[AgentMessageBlock] = blocks_by_message_id.get(message_id, [])
         status = normalize_non_empty_text(getattr(message, "status", None)) or "done"
-        rendered_blocks, content = project_message_blocks(
+        rendered_blocks, content = session_common.project_message_blocks(
             raw_blocks,
             message_status=status,
         )
@@ -150,7 +136,7 @@ class SessionQueryService:
         user_id: UUID,
         page: int,
         size: int,
-        source: SessionSource | None,
+        source: session_common.SessionSource | None,
         agent_id: UUID | None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
         offset = (page - 1) * size if page > 0 else 0
@@ -179,7 +165,7 @@ class SessionQueryService:
         db: AsyncSession,
         *,
         user_id: UUID,
-        source: SessionSource | None,
+        source: session_common.SessionSource | None,
         agent_id: UUID | None,
         limit: int | None = None,
         offset: int | None = None,
@@ -229,7 +215,7 @@ class SessionQueryService:
         user_id: UUID,
         conversation_id: str,
     ) -> tuple[dict[str, Any], bool]:
-        resolved_conversation_id = parse_conversation_id(conversation_id)
+        resolved_conversation_id = session_common.parse_conversation_id(conversation_id)
         thread = await self._support.get_local_session_by_id(
             db,
             user_id=user_id,
@@ -248,10 +234,10 @@ class SessionQueryService:
         before: str | None,
         limit: int,
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
-        resolved_conversation_id = parse_conversation_id(conversation_id)
+        resolved_conversation_id = session_common.parse_conversation_id(conversation_id)
 
-        cursor: MessagesBeforeCursor | None = (
-            parse_messages_before_cursor(before) if before else None
+        cursor: session_common.MessagesBeforeCursor | None = (
+            session_common.parse_messages_before_cursor(before) if before else None
         )
         sender_priority = case(
             (AgentMessage.sender.in_(["user", "automation"]), 0),
@@ -327,11 +313,13 @@ class SessionQueryService:
 
         if has_more_before and items:
             oldest = items[0]
-            role_priority = sender_priority_for_role(str(oldest.get("role") or ""))
+            role_priority = session_common.sender_priority_for_role(
+                str(oldest.get("role") or "")
+            )
             try:
                 oldest_created_at = ensure_utc(oldest["created_at"])
                 oldest_id = UUID(str(oldest["id"]))
-                next_before_cursor = encode_messages_before_cursor(
+                next_before_cursor = session_common.encode_messages_before_cursor(
                     created_at=oldest_created_at,
                     sender_priority=role_priority,
                     message_id=oldest_id,
@@ -353,8 +341,8 @@ class SessionQueryService:
         conversation_id: str,
         message_ids: list[UUID],
     ) -> tuple[list[dict[str, Any]], bool]:
-        resolved_conversation_id = parse_conversation_id(conversation_id)
-        ordered_ids = dedupe_uuid_list_keep_order(message_ids)
+        resolved_conversation_id = session_common.parse_conversation_id(conversation_id)
+        ordered_ids = session_common.dedupe_uuid_list_keep_order(message_ids)
         if not ordered_ids:
             return [], False
 
@@ -397,8 +385,8 @@ class SessionQueryService:
         conversation_id: str,
         block_ids: list[UUID],
     ) -> tuple[list[dict[str, Any]], bool]:
-        resolved_conversation_id = parse_conversation_id(conversation_id)
-        ordered_ids = dedupe_uuid_list_keep_order(block_ids)
+        resolved_conversation_id = session_common.parse_conversation_id(conversation_id)
+        ordered_ids = session_common.dedupe_uuid_list_keep_order(block_ids)
         if not ordered_ids:
             return [], False
 
@@ -426,7 +414,7 @@ class SessionQueryService:
             raise ValueError("block_not_found")
 
         items = [
-            render_block_detail_item(
+            session_common.render_block_detail_item(
                 by_id[block_id][0],
                 message_status=by_id[block_id][1],
             )
@@ -441,8 +429,8 @@ class SessionQueryService:
         user_id: UUID,
         conversation_id: str,
     ) -> tuple[dict[str, Any], bool]:
-        resolved_conversation_id = parse_conversation_id(conversation_id)
-        target: ResolvedConversationTarget | None = (
+        resolved_conversation_id = session_common.parse_conversation_id(conversation_id)
+        target: session_common.ResolvedConversationTarget | None = (
             await self._support.resolve_conversation_target(
                 db,
                 user_id=user_id,
@@ -463,7 +451,7 @@ class SessionQueryService:
 
         if target is None:
             return (
-                build_continue_response(
+                session_common.build_continue_response(
                     conversation_id=resolved_conversation_id,
                     source="manual",
                     metadata=merge_preferred_session_binding_metadata(
@@ -486,7 +474,7 @@ class SessionQueryService:
         session_agent_id = cast(UUID | None, session.agent_id) if session else None
         session_title = cast(str, session.title) if session else "Session"
 
-        resolved_source = resolve_session_source(
+        resolved_source = session_common.resolve_session_source(
             thread_source=session_source,
             fallback_source=target.source,
         )
@@ -522,7 +510,7 @@ class SessionQueryService:
             resolved_conversation = bind_result.conversation_id
             db_mutated = bind_result.mutated
         return (
-            build_continue_response(
+            session_common.build_continue_response(
                 conversation_id=resolved_conversation or resolved_conversation_id,
                 source=resolved_source,
                 metadata=merge_preferred_session_binding_metadata(

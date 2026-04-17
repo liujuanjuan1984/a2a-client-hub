@@ -21,6 +21,8 @@ from app.db.locking import (
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke import guard as invoke_guard
+from app.features.invoke import route_runner_streaming
+from app.features.invoke import session_binding as invoke_session_binding
 from app.features.invoke.guard import (
     build_invoke_guard_key,
     guard_inflight_invoke,
@@ -47,24 +49,9 @@ from app.features.invoke.route_runner_state import (
     prepare_state,
     register_inflight_invoke,
 )
-from app.features.invoke.route_runner_streaming import (
-    build_invoke_persistence_request,
-    build_persisted_finalization_ack_event,
-    build_stream_hints_runtime_meta_from_card,
-    build_stream_hints_session_started_callback,
-    collect_stream_hints,
-    diagnose_stream_hints_contract_gap,
-)
 from app.features.invoke.service import (
     StreamOutcome,
     a2a_invoke_service,
-)
-from app.features.invoke.session_binding import (
-    is_recoverable_invoke_session_error,
-    resolve_invoke_session_control_intent,
-    status_code_for_invoke_session_error,
-    ws_error_code_for_invoke_session_error,
-    ws_error_code_for_recovery_failed,
 )
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
@@ -109,7 +96,9 @@ _register_inflight_invoke = register_inflight_invoke
 _validate_provider_aware_continue_session = validate_provider_aware_continue_session
 _finalize_outbound_invoke_payload_impl = finalize_outbound_invoke_payload
 _is_interrupt_requested = is_interrupt_requested
-_diagnose_stream_hints_contract_gap = diagnose_stream_hints_contract_gap
+_diagnose_stream_hints_contract_gap = (
+    route_runner_streaming.diagnose_stream_hints_contract_gap
+)
 
 _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
@@ -357,7 +346,7 @@ def _build_stream_hints_runtime_meta_from_card(
     logger: Any,
     log_extra: dict[str, Any],
 ) -> dict[str, Any]:
-    return build_stream_hints_runtime_meta_from_card(
+    return route_runner_streaming.build_stream_hints_runtime_meta_from_card(
         runtime=runtime,
         card=card,
         logger=logger,
@@ -518,13 +507,15 @@ def _build_consume_stream_callbacks(
     resolved_log_extra = log_extra if log_extra is not None else {}
 
     async def on_event(event_payload: dict[str, Any]) -> None:
-        diagnose_stream_hints_contract_gap(
+        route_runner_streaming.diagnose_stream_hints_contract_gap(
             state=state,
             event_payload=event_payload,
             logger=logger,
             log_extra=resolved_log_extra,
         )
-        collect_stream_hints(state=state, event_payload=event_payload)
+        route_runner_streaming.collect_stream_hints(
+            state=state, event_payload=event_payload
+        )
         await _bind_inflight_task_if_needed(state=state, user_id=request.user_id)
         await _persist_stream_block_update(
             state=state,
@@ -545,7 +536,7 @@ def _build_consume_stream_callbacks(
                 outcome=outcome,
                 request=request,
             )
-            return build_persisted_finalization_ack_event(
+            return route_runner_streaming.build_persisted_finalization_ack_event(
                 state=state,
                 outcome=outcome,
             )
@@ -690,7 +681,9 @@ async def run_http_invoke_with_session_recovery(
             return response
         if response.success:
             return response
-        if not is_recoverable_invoke_session_error(response.error_code):
+        if not invoke_session_binding.is_recoverable_invoke_session_error(
+            response.error_code
+        ):
             return response
         if remaining_retries <= 0:
             return response
@@ -733,10 +726,14 @@ async def run_http_invoke(
         )
     except InvokeMetadataBindingRequiredError as exc:
         return _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
-    if resolve_invoke_session_control_intent(payload) == "append":
+    if (
+        invoke_session_binding.resolve_invoke_session_control_intent(payload)
+        == "append"
+    ):
         return await run_append_session_control(runtime=runtime, payload=payload)
     if (
-        resolve_invoke_session_control_intent(payload) == "preempt"
+        invoke_session_binding.resolve_invoke_session_control_intent(payload)
+        == "preempt"
         and not payload.query.strip()
     ):
         return await _run_preempt_session_control(
@@ -751,12 +748,14 @@ async def run_http_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = build_stream_hints_session_started_callback(
-        runtime=runtime,
-        state=state,
-        logger=logger,
-        log_extra=log_extra,
-        stream_log_extra=stream_log_extra,
+    on_session_started = (
+        route_runner_streaming.build_stream_hints_session_started_callback(
+            runtime=runtime,
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            stream_log_extra=stream_log_extra,
+        )
     )
     await _preempt_previous_invoke_if_requested(
         state=state,
@@ -769,7 +768,7 @@ async def run_http_invoke(
         gateway=gateway,
         resolved=runtime.resolved,
     )
-    persistence_request = build_invoke_persistence_request(
+    persistence_request = route_runner_streaming.build_invoke_persistence_request(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -899,12 +898,14 @@ async def run_background_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = build_stream_hints_session_started_callback(
-        runtime=runtime,
-        state=state,
-        logger=logger,
-        log_extra=log_extra,
-        stream_log_extra=stream_log_extra,
+    on_session_started = (
+        route_runner_streaming.build_stream_hints_session_started_callback(
+            runtime=runtime,
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            stream_log_extra=stream_log_extra,
+        )
     )
     await _preempt_previous_invoke_if_requested(
         state=state,
@@ -917,7 +918,7 @@ async def run_background_invoke(
         gateway=gateway,
         resolved=runtime.resolved,
     )
-    persistence_request = build_invoke_persistence_request(
+    persistence_request = route_runner_streaming.build_invoke_persistence_request(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -1029,12 +1030,14 @@ async def run_ws_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = build_stream_hints_session_started_callback(
-        runtime=runtime,
-        state=state,
-        logger=logger,
-        log_extra=log_extra,
-        stream_log_extra=stream_log_extra,
+    on_session_started = (
+        route_runner_streaming.build_stream_hints_session_started_callback(
+            runtime=runtime,
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            stream_log_extra=stream_log_extra,
+        )
     )
     await _preempt_previous_invoke_if_requested(
         state=state,
@@ -1047,7 +1050,7 @@ async def run_ws_invoke(
         gateway=gateway,
         resolved=runtime.resolved,
     )
-    persistence_request = build_invoke_persistence_request(
+    persistence_request = route_runner_streaming.build_invoke_persistence_request(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -1120,7 +1123,9 @@ async def run_ws_invoke_with_session_recovery(
                 websocket=websocket,
                 message=stream_error_message
                 or _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE,
-                error_code=ws_error_code_for_recovery_failed(stream_error_code or ""),
+                error_code=invoke_session_binding.ws_error_code_for_recovery_failed(
+                    stream_error_code or ""
+                ),
             )
 
         await run_ws_invoke(
@@ -1141,7 +1146,9 @@ async def run_ws_invoke_with_session_recovery(
             await a2a_invoke_service.send_ws_stream_end(websocket)
             return
 
-        if not is_recoverable_invoke_session_error(stream_error_code):
+        if not invoke_session_binding.is_recoverable_invoke_session_error(
+            stream_error_code
+        ):
             await a2a_invoke_service.send_ws_stream_end(websocket)
             return
         if remaining_retries <= 0:
@@ -1279,7 +1286,9 @@ async def run_ws_invoke_route(
             await a2a_invoke_service.send_ws_error(
                 websocket,
                 message=str(exc),
-                error_code=ws_error_code_for_invoke_session_error(str(exc)),
+                error_code=invoke_session_binding.ws_error_code_for_invoke_session_error(
+                    str(exc)
+                ),
             )
             await await_cancel_safe(
                 websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -1365,7 +1374,9 @@ async def run_http_invoke_route(
         acquired = await _try_acquire_invoke_guard(guard_key)
         if not acquired:
             raise HTTPException(
-                status_code=status_code_for_invoke_session_error("invoke_inflight"),
+                status_code=invoke_session_binding.status_code_for_invoke_session_error(
+                    "invoke_inflight"
+                ),
                 detail="invoke_inflight",
             )
         try:
@@ -1388,7 +1399,9 @@ async def run_http_invoke_route(
         except ValueError as exc:
             await _release_invoke_guard(guard_key)
             raise HTTPException(
-                status_code=status_code_for_invoke_session_error(str(exc)),
+                status_code=invoke_session_binding.status_code_for_invoke_session_error(
+                    str(exc)
+                ),
                 detail=str(exc),
             ) from exc
         except Exception:
@@ -1461,7 +1474,9 @@ async def run_http_invoke_route(
             )
     except ValueError as exc:
         raise HTTPException(
-            status_code=status_code_for_invoke_session_error(str(exc)),
+            status_code=invoke_session_binding.status_code_for_invoke_session_error(
+                str(exc)
+            ),
             detail=str(exc),
         ) from exc
 

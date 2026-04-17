@@ -14,28 +14,9 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.transaction import rollback_safely
-from app.features.sessions import block_store, message_store
-from app.features.sessions.common import (
-    SessionAgentSource,
-    SessionSource,
-    build_interrupt_lifecycle_message_content,
-    build_interrupt_lifecycle_message_id,
-    build_preempt_message_content,
-    build_preempt_message_id,
-    build_query_hash,
-    create_block_with_conflict_recovery,
-    derive_session_title_from_invoke_metadata,
-    derive_session_title_from_query,
-    deserialize_interrupt_event_block_content,
-    is_agent_message_pk_violation,
-    is_idempotency_unique_violation,
-    is_primary_text_snapshot_source,
-    normalize_block_type,
-    normalize_interrupt_lifecycle_event,
-    normalize_preempt_event,
-    read_block_cursor_state,
-    write_block_cursor_state,
-)
+from app.features.sessions import block_store
+from app.features.sessions import common as session_common
+from app.features.sessions import message_store
 from app.features.sessions.identity import conversation_identity_service
 from app.features.sessions.support import SessionHubSupport
 from app.features.working_directory import extract_working_directory
@@ -58,7 +39,7 @@ def _normalize_message_block_specs(
 ) -> list[dict[str, str | None]]:
     normalized_specs: list[dict[str, str | None]] = []
     for index, raw_spec in enumerate(block_specs or []):
-        block_type = normalize_block_type(
+        block_type = session_common.normalize_block_type(
             normalize_non_empty_text(raw_spec.get("block_type"))
             or normalize_non_empty_text(raw_spec.get("type"))
             or "text"
@@ -107,7 +88,9 @@ async def _apply_message_block_specs(
             existing_blocks, block_specs, strict=True
         ):
             if (
-                normalize_block_type(cast(str | None, existing_block.block_type))
+                session_common.normalize_block_type(
+                    cast(str | None, existing_block.block_type)
+                )
                 != expected_spec["block_type"]
                 or (cast(str | None, existing_block.content) or "")
                 != (expected_spec["content"] or "")
@@ -118,7 +101,7 @@ async def _apply_message_block_specs(
         return
 
     for index, block_spec in enumerate(block_specs, start=1):
-        persisted_block = await create_block_with_conflict_recovery(
+        persisted_block = await session_common.create_block_with_conflict_recovery(
             db,
             user_id=user_id,
             message_id=message_id,
@@ -147,7 +130,9 @@ def _should_preserve_existing_interrupt_content(
 ) -> bool:
     if block_type != "interrupt_event" or operation != "replace":
         return False
-    _, interrupt = deserialize_interrupt_event_block_content(incoming_content)
+    _, interrupt = session_common.deserialize_interrupt_event_block_content(
+        incoming_content
+    )
     return bool(interrupt and interrupt.get("phase") == "resolved")
 
 
@@ -160,7 +145,7 @@ def _normalize_block_operation(
     normalized = normalize_non_empty_text(operation)
     if normalized in BLOCK_OPERATION_TYPES:
         return normalized
-    if is_primary_text_snapshot_source(source):
+    if session_common.is_primary_text_snapshot_source(source):
         return "replace"
     return "append" if append else "replace"
 
@@ -209,7 +194,7 @@ def _merge_preempt_event(
     existing_event: dict[str, Any] | None,
     incoming_event: dict[str, Any],
 ) -> dict[str, Any]:
-    normalized_existing = normalize_preempt_event(existing_event)
+    normalized_existing = session_common.normalize_preempt_event(existing_event)
     if normalized_existing is None:
         return incoming_event
     if (
@@ -282,9 +267,9 @@ class SessionHistoryProjectionService:
         *,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: SessionAgentSource,
+        agent_source: session_common.SessionAgentSource,
         conversation_id: str | None,
-    ) -> tuple[ConversationThread | None, SessionSource | None]:
+    ) -> tuple[ConversationThread | None, session_common.SessionSource | None]:
         from app.features.sessions.common import parse_conversation_id
 
         if not conversation_id:
@@ -350,7 +335,7 @@ class SessionHistoryProjectionService:
                 await rollback_safely(db)
                 raise ValueError("invalid_conversation_id") from exc
 
-        local_source: SessionSource
+        local_source: session_common.SessionSource
         if session.source == ConversationThread.SOURCE_MANUAL:
             local_source = "manual"
         elif session.source == ConversationThread.SOURCE_SCHEDULED:
@@ -381,10 +366,10 @@ class SessionHistoryProjectionService:
         db: AsyncSession,
         *,
         session: ConversationThread,
-        source: SessionSource,
+        source: session_common.SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: SessionAgentSource,
+        agent_source: session_common.SessionAgentSource,
         query: str,
         response_content: str,
         success: bool,
@@ -407,7 +392,7 @@ class SessionHistoryProjectionService:
             "conversation_id": str(session.id),
             "success": success,
         }
-        query_hash = build_query_hash(query)
+        query_hash = session_common.build_query_hash(query)
         metadata["query_hash"] = query_hash
         (
             provider_from_invoke,
@@ -430,7 +415,7 @@ class SessionHistoryProjectionService:
         normalized_response_blocks = _normalize_message_block_specs(response_blocks)
         if (
             source == "manual"
-            and (session_title := derive_session_title_from_query(query))
+            and (session_title := session_common.derive_session_title_from_query(query))
             and ConversationThread.is_placeholder_title(cast(str, session.title))
         ):
             setattr(session, "title", session_title)
@@ -447,7 +432,9 @@ class SessionHistoryProjectionService:
                 source="manual",
             )
         if provider_from_invoke and external_session_id:
-            invoke_title = derive_session_title_from_invoke_metadata(invoke_metadata)
+            invoke_title = session_common.derive_session_title_from_invoke_metadata(
+                invoke_metadata
+            )
             bind_title = invoke_title if invoke_title else cast(str, session.title)
             conversation_id = await conversation_identity_service.bind_external_session(
                 db,
@@ -587,13 +574,13 @@ class SessionHistoryProjectionService:
                         invoke_idempotency_key=normalized_idempotency_key,
                     )
             except message_store.AgentMessageCreationError as exc:
-                if isinstance(user_message_id, UUID) and is_agent_message_pk_violation(
-                    exc
-                ):
+                if isinstance(
+                    user_message_id, UUID
+                ) and session_common.is_agent_message_pk_violation(exc):
                     raise ValueError("message_id_conflict") from exc
                 if not (
                     normalized_idempotency_key
-                    and is_idempotency_unique_violation(
+                    and session_common.is_idempotency_unique_violation(
                         exc,
                         index_name="uq_agent_messages_conversation_sender_invoke_idempotency_key",
                     )
@@ -662,13 +649,13 @@ class SessionHistoryProjectionService:
                         invoke_idempotency_key=normalized_idempotency_key,
                     )
             except message_store.AgentMessageCreationError as exc:
-                if isinstance(agent_message_id, UUID) and is_agent_message_pk_violation(
-                    exc
-                ):
+                if isinstance(
+                    agent_message_id, UUID
+                ) and session_common.is_agent_message_pk_violation(exc):
                     raise ValueError("message_id_conflict") from exc
                 if not (
                     normalized_idempotency_key
-                    and is_idempotency_unique_violation(
+                    and session_common.is_idempotency_unique_violation(
                         exc,
                         index_name="uq_agent_messages_conversation_sender_invoke_idempotency_key",
                     )
@@ -746,7 +733,7 @@ class SessionHistoryProjectionService:
             can_upsert_snapshot = not existing_agent_blocks or (
                 len(existing_agent_blocks) == 1
                 and int(existing_agent_blocks[0].block_seq) == 1
-                and normalize_block_type(
+                and session_common.normalize_block_type(
                     cast(str | None, existing_agent_blocks[0].block_type)
                 )
                 == "text"
@@ -784,10 +771,10 @@ class SessionHistoryProjectionService:
         db: AsyncSession,
         *,
         local_session_id: UUID,
-        source: SessionSource,
+        source: session_common.SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: SessionAgentSource,
+        agent_source: session_common.SessionAgentSource,
         query: str,
         response_content: str,
         success: bool,
@@ -907,13 +894,13 @@ class SessionHistoryProjectionService:
                     **create_kwargs,
                 )
             except message_store.AgentMessageCreationError as exc:
-                if isinstance(user_message_id, UUID) and is_agent_message_pk_violation(
-                    exc
-                ):
+                if isinstance(
+                    user_message_id, UUID
+                ) and session_common.is_agent_message_pk_violation(exc):
                     raise ValueError("message_id_conflict") from exc
                 if not (
                     normalized_idempotency_key
-                    and is_idempotency_unique_violation(
+                    and session_common.is_idempotency_unique_violation(
                         exc,
                         index_name="uq_agent_messages_conversation_sender_invoke_idempotency_key",
                     )
@@ -979,10 +966,10 @@ class SessionHistoryProjectionService:
         db: AsyncSession,
         *,
         local_session_id: UUID,
-        source: SessionSource,
+        source: session_common.SessionSource,
         user_id: UUID,
         agent_id: UUID,
-        agent_source: SessionAgentSource,
+        agent_source: session_common.SessionAgentSource,
         query: str,
         context_id: str | None,
         invoke_metadata: dict[str, Any] | None = None,
@@ -1100,11 +1087,11 @@ class SessionHistoryProjectionService:
         user_id: UUID,
         event: dict[str, Any],
     ) -> UUID | None:
-        normalized_event = normalize_interrupt_lifecycle_event(event)
+        normalized_event = session_common.normalize_interrupt_lifecycle_event(event)
         if normalized_event is None:
             return None
 
-        message_id = build_interrupt_lifecycle_message_id(
+        message_id = session_common.build_interrupt_lifecycle_message_id(
             conversation_id=conversation_id,
             request_id=normalized_event["request_id"],
             phase=normalized_event["phase"],
@@ -1142,7 +1129,9 @@ class SessionHistoryProjectionService:
             db,
             user_id=user_id,
             message_id=cast(UUID, system_message.id),
-            content=build_interrupt_lifecycle_message_content(normalized_event),
+            content=session_common.build_interrupt_lifecycle_message_content(
+                normalized_event
+            ),
             source="interrupt_lifecycle",
         )
         return cast(UUID, system_message.id)
@@ -1177,11 +1166,11 @@ class SessionHistoryProjectionService:
         user_id: UUID,
         event: dict[str, Any],
     ) -> UUID | None:
-        normalized_event = normalize_preempt_event(event)
+        normalized_event = session_common.normalize_preempt_event(event)
         if normalized_event is None:
             return None
 
-        message_id = build_preempt_message_id(
+        message_id = session_common.build_preempt_message_id(
             conversation_id=conversation_id,
             replacement_user_message_id=cast(
                 str | None, normalized_event.get("replacement_user_message_id")
@@ -1239,7 +1228,7 @@ class SessionHistoryProjectionService:
             db,
             user_id=user_id,
             message_id=cast(UUID, system_message.id),
-            content=build_preempt_message_content(resolved_event),
+            content=session_common.build_preempt_message_content(resolved_event),
             source="invoke_preempt",
         )
         return cast(UUID, system_message.id)
@@ -1283,11 +1272,11 @@ class SessionHistoryProjectionService:
             return None
 
         message_metadata = dict(getattr(message, "message_metadata", None) or {})
-        cursor_state = read_block_cursor_state(message_metadata)
+        cursor_state = session_common.read_block_cursor_state(message_metadata)
         if seq <= cursor_state["last_event_seq"]:
             return None
 
-        normalized_type = normalize_block_type(block_type)
+        normalized_type = session_common.normalize_block_type(block_type)
         normalized_source = normalize_non_empty_text(source)
         normalized_lane_id = normalize_non_empty_text(lane_id) or _default_lane_id(
             normalized_type
@@ -1334,7 +1323,7 @@ class SessionHistoryProjectionService:
         if not normalized_block_id:
             if (
                 normalized_type == "text"
-                and is_primary_text_snapshot_source(normalized_source)
+                and session_common.is_primary_text_snapshot_source(normalized_source)
                 and latest_text_block is not None
             ):
                 normalized_block_id = str(latest_text_block.block_id)
@@ -1358,7 +1347,7 @@ class SessionHistoryProjectionService:
         if (
             normalized_operation == "replace"
             and normalized_type == "text"
-            and is_primary_text_snapshot_source(normalized_source)
+            and session_common.is_primary_text_snapshot_source(normalized_source)
         ):
             latest_reasoning_block = (
                 await block_store.find_last_block_for_message_and_type(
@@ -1450,7 +1439,7 @@ class SessionHistoryProjectionService:
                 + 1
             )
             normalized_event_id = normalize_non_empty_text(event_id)
-            persisted_block = await create_block_with_conflict_recovery(
+            persisted_block = await session_common.create_block_with_conflict_recovery(
                 db,
                 user_id=user_id,
                 message_id=agent_message_id,
@@ -1490,7 +1479,7 @@ class SessionHistoryProjectionService:
             cursor_state["active_block_seq"] = int(
                 getattr(next_active_block, "block_seq", 0) or 0
             )
-        write_block_cursor_state(message_metadata, cursor_state)
+        session_common.write_block_cursor_state(message_metadata, cursor_state)
         setattr(message, "message_metadata", message_metadata)
         await db.flush()
         return persisted_block
