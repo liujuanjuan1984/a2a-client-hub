@@ -20,52 +20,22 @@ from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.transaction import load_for_external_call
 from app.features.extension_capabilities.common_router_support import (
-    build_compatibility_profile_response as _build_compatibility_profile_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_declared_method_collection_response as _build_declared_method_collection_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_declared_single_method_response as _build_declared_single_method_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_interrupt_recovery_details_response as _build_interrupt_recovery_details_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_invoke_metadata_response as _build_invoke_metadata_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_request_execution_options_response as _build_request_execution_options_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_session_control_response as _build_session_control_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_session_list_filters as _build_session_list_filters,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_stream_hints_response as _build_stream_hints_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    build_wire_contract_response as _build_wire_contract_response,
-)
-from app.features.extension_capabilities.common_router_support import (
-    parse_query_param as _parse_query_param,
-)
-from app.features.extension_capabilities.common_router_support import (
-    run_extension_call as _run_extension_call,
-)
-from app.features.extension_capabilities.common_router_support import (
-    summarize_metadata_keys as _summarize_metadata_keys,
-)
-from app.features.extension_capabilities.common_router_support import (
-    summarize_object_keys as _summarize_object_keys,
-)
-from app.features.extension_capabilities.common_router_support import (
-    summarize_query_object as _summarize_query_object,
-)
-from app.features.extension_capabilities.common_router_support import (
-    summarize_session_list_filters as _summarize_session_list_filters,
+    build_compatibility_profile_response,
+    build_declared_method_collection_response,
+    build_declared_single_method_response,
+    build_interrupt_recovery_details_response,
+    build_invoke_metadata_response,
+    build_request_execution_options_response,
+    build_session_control_response,
+    build_session_list_filters,
+    build_stream_hints_response,
+    build_wire_contract_response,
+    parse_query_param,
+    run_extension_call,
+    summarize_metadata_keys,
+    summarize_object_keys,
+    summarize_query_object,
+    summarize_session_list_filters,
 )
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_runtime_status_contract import (
@@ -160,7 +130,7 @@ def create_extension_capability_router(
         model_selection = snapshot.model_selection.status == "supported"
         provider_discovery = snapshot.provider_discovery.status == "supported"
         interrupt_recovery = snapshot.interrupt_recovery.status == "supported"
-        session_control = _build_session_control_response(snapshot)
+        session_control = build_session_control_response(snapshot)
         session_prompt_async = (
             session_control.prompt_async.declared
             and session_control.prompt_async.consumed_by_hub
@@ -170,32 +140,32 @@ def create_extension_capability_router(
             modelSelection=model_selection,
             providerDiscovery=provider_discovery,
             interruptRecovery=interrupt_recovery,
-            interruptRecoveryDetails=_build_interrupt_recovery_details_response(
+            interruptRecoveryDetails=build_interrupt_recovery_details_response(
                 snapshot
             ),
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
-            invokeMetadata=_build_invoke_metadata_response(snapshot),
-            requestExecutionOptions=_build_request_execution_options_response(snapshot),
-            streamHints=_build_stream_hints_response(snapshot),
-            wireContract=_build_wire_contract_response(snapshot),
-            compatibilityProfile=_build_compatibility_profile_response(snapshot),
-            codexDiscovery=_build_declared_method_collection_response(
+            invokeMetadata=build_invoke_metadata_response(snapshot),
+            requestExecutionOptions=build_request_execution_options_response(snapshot),
+            streamHints=build_stream_hints_response(snapshot),
+            wireContract=build_wire_contract_response(snapshot),
+            compatibilityProfile=build_compatibility_profile_response(snapshot),
+            codexDiscovery=build_declared_method_collection_response(
                 getattr(snapshot, "codex_discovery", None)
             ),
-            codexThreads=_build_declared_method_collection_response(
+            codexThreads=build_declared_method_collection_response(
                 getattr(snapshot, "codex_threads", None)
             ),
-            codexTurns=_build_declared_method_collection_response(
+            codexTurns=build_declared_method_collection_response(
                 getattr(snapshot, "codex_turns", None)
             ),
-            codexReview=_build_declared_method_collection_response(
+            codexReview=build_declared_method_collection_response(
                 getattr(snapshot, "codex_review", None)
             ),
-            codexThreadWatch=_build_declared_single_method_response(
+            codexThreadWatch=build_declared_single_method_response(
                 getattr(snapshot, "codex_thread_watch", None)
             ),
-            codexExec=_build_declared_method_collection_response(
+            codexExec=build_declared_method_collection_response(
                 getattr(snapshot, "codex_exec", None)
             ),
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
@@ -224,12 +194,12 @@ def create_extension_capability_router(
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
-                "session_metadata_keys": _summarize_metadata_keys(
+                "session_metadata_keys": summarize_metadata_keys(
                     payload.session_metadata
                 ),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().list_model_providers(
                 runtime=runtime,
                 session_metadata=payload.session_metadata,
@@ -258,12 +228,12 @@ def create_extension_capability_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "provider_id": payload.provider_id,
-                "session_metadata_keys": _summarize_metadata_keys(
+                "session_metadata_keys": summarize_metadata_keys(
                     payload.session_metadata
                 ),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().list_models(
                 runtime=runtime,
                 provider_id=payload.provider_id,
@@ -293,7 +263,7 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().list_codex_skills(runtime=runtime)
         )
 
@@ -319,7 +289,7 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().list_codex_apps(runtime=runtime)
         )
 
@@ -345,7 +315,7 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().list_codex_plugins(runtime=runtime)
         )
 
@@ -374,7 +344,7 @@ def create_extension_capability_router(
                 "plugin_name": payload.plugin_name,
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().read_codex_plugin(
                 runtime=runtime,
                 marketplace_path=payload.marketplace_path,
@@ -428,8 +398,8 @@ def create_extension_capability_router(
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
-        query_obj = _parse_query_param(query)
-        filter_obj = _build_session_list_filters(
+        query_obj = parse_query_param(query)
+        filter_obj = build_session_list_filters(
             directory=directory,
             roots=roots,
             start=start,
@@ -444,12 +414,12 @@ def create_extension_capability_router(
                 "page": page,
                 "size": size,
                 "include_raw": include_raw,
-                "filter_meta": _summarize_session_list_filters(filter_obj),
-                "query_meta": _summarize_query_object(query_obj),
+                "filter_meta": summarize_session_list_filters(filter_obj),
+                "query_meta": summarize_query_object(query_obj),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().list_sessions(
                 runtime=runtime,
                 page=page,
@@ -486,7 +456,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().continue_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -511,7 +481,7 @@ def create_extension_capability_router(
 
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         request_keys = sorted(payload.request.keys())[:20]
-        metadata_keys = _summarize_metadata_keys(payload.metadata)
+        metadata_keys = summarize_metadata_keys(payload.metadata)
         logger.info(
             _scope_message("Shared extension session prompt_async requested"),
             extra={
@@ -529,7 +499,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().prompt_session_async(
                 runtime=runtime,
                 session_id=session_id,
@@ -556,7 +526,7 @@ def create_extension_capability_router(
 
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         request_keys = sorted(payload.request.keys())[:20]
-        metadata_keys = _summarize_metadata_keys(payload.metadata)
+        metadata_keys = summarize_metadata_keys(payload.metadata)
         logger.info(
             _scope_message("Shared extension session command requested"),
             extra={
@@ -569,7 +539,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().command_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -609,7 +579,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().get_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -648,7 +618,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().get_session_children(
                 runtime=runtime,
                 session_id=session_id,
@@ -687,7 +657,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().get_session_todo(
                 runtime=runtime,
                 session_id=session_id,
@@ -733,7 +703,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().get_session_diff(
                 runtime=runtime,
                 session_id=session_id,
@@ -775,7 +745,7 @@ def create_extension_capability_router(
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().get_session_message(
                 runtime=runtime,
                 session_id=session_id,
@@ -809,11 +779,11 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "session_id": session_id,
                 "request_keys": sorted((payload.request or {}).keys())[:20],
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().fork_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -846,11 +816,11 @@ def create_extension_capability_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "session_id": session_id,
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().share_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -882,11 +852,11 @@ def create_extension_capability_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "session_id": session_id,
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().unshare_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -919,11 +889,11 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "session_id": session_id,
                 "request_keys": sorted((payload.request or {}).keys())[:20],
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().summarize_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -957,11 +927,11 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "session_id": session_id,
                 "request_keys": sorted((payload.request or {}).keys())[:20],
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().revert_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -994,11 +964,11 @@ def create_extension_capability_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "session_id": session_id,
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().unrevert_session(
                 runtime=runtime,
                 session_id=session_id,
@@ -1033,7 +1003,7 @@ def create_extension_capability_router(
             },
         )
 
-        result = await _run_extension_call(
+        result = await run_extension_call(
             _extensions_service().recover_interrupts(
                 runtime=runtime,
                 session_id=payload.session_id,
@@ -1073,10 +1043,10 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "reply": payload.reply,
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().reply_permission_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
@@ -1109,10 +1079,10 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "answers_count": len(payload.answers),
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().reply_question_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
@@ -1144,10 +1114,10 @@ def create_extension_capability_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().reject_question_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
@@ -1179,11 +1149,11 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "scope": payload.scope,
-                "permissions_meta": _summarize_object_keys(payload.permissions),
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "permissions_meta": summarize_object_keys(payload.permissions),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().reply_permissions_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
@@ -1218,10 +1188,10 @@ def create_extension_capability_router(
                 "request_id": payload.request_id,
                 "action": payload.action,
                 "has_content": payload.content is not None,
-                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+                "metadata_keys": summarize_metadata_keys(payload.metadata),
             },
         )
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().reply_elicitation_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
@@ -1262,12 +1232,12 @@ def create_extension_capability_router(
                 "page": payload.page,
                 "size": payload.size,
                 "include_raw": payload.include_raw,
-                "filter_meta": _summarize_session_list_filters(filters),
-                "query_meta": _summarize_query_object(payload.query),
+                "filter_meta": summarize_session_list_filters(filters),
+                "query_meta": summarize_query_object(payload.query),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().list_sessions(
                 runtime=runtime,
                 page=payload.page,
@@ -1314,7 +1284,7 @@ def create_extension_capability_router(
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
-        query_obj = _parse_query_param(query)
+        query_obj = parse_query_param(query)
         logger.info(
             _scope_message("Shared extension session messages requested"),
             extra={
@@ -1326,11 +1296,11 @@ def create_extension_capability_router(
                 "size": size,
                 "before": before,
                 "include_raw": include_raw,
-                "query_meta": _summarize_query_object(query_obj),
+                "query_meta": summarize_query_object(query_obj),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().get_session_messages(
                 runtime=runtime,
                 session_id=session_id,
@@ -1371,11 +1341,11 @@ def create_extension_capability_router(
                 "size": payload.size,
                 "before": payload.before,
                 "include_raw": payload.include_raw,
-                "query_meta": _summarize_query_object(payload.query),
+                "query_meta": summarize_query_object(payload.query),
             },
         )
 
-        return await _run_extension_call(
+        return await run_extension_call(
             _extensions_service().get_session_messages(
                 runtime=runtime,
                 session_id=session_id,

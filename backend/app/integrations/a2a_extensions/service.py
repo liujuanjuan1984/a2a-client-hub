@@ -9,9 +9,7 @@ from typing import Any, Dict, Literal, Optional
 from app.core.logging import get_logger
 from app.features.personal_agents.runtime import A2ARuntime
 from app.integrations.a2a_extensions.capability_snapshot import (
-    CapabilitySnapshotCacheEntry as _CapabilitySnapshotCacheEntry,
-)
-from app.integrations.a2a_extensions.capability_snapshot import (
+    CapabilitySnapshotCacheEntry,
     CompatibilityProfileCapabilitySnapshot,
     DeclaredMethodCapabilitySnapshot,
     DeclaredMethodCollectionCapabilitySnapshot,
@@ -120,7 +118,7 @@ class A2AExtensionsService:
         self._capability_snapshot_cache_lock = asyncio.Lock()
         self._capability_snapshot_cache: dict[
             tuple[str, tuple[tuple[str, str], ...]],
-            _CapabilitySnapshotCacheEntry,
+            CapabilitySnapshotCacheEntry,
         ] = {}
 
     async def shutdown(self) -> None:
@@ -448,7 +446,7 @@ class A2AExtensionsService:
             ),
         )
         async with self._capability_snapshot_cache_lock:
-            self._capability_snapshot_cache[cache_key] = _CapabilitySnapshotCacheEntry(
+            self._capability_snapshot_cache[cache_key] = CapabilitySnapshotCacheEntry(
                 snapshot=snapshot,
                 expires_at=now + _CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS,
             )
