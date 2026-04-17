@@ -7,8 +7,7 @@ This module centralises the route implementations to avoid drift.
 
 from __future__ import annotations
 
-import json
-from typing import Any, Awaitable, Callable, Dict, Literal, Optional, Type, cast
+from typing import Any, Awaitable, Callable, Optional, Type, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
@@ -16,24 +15,61 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
-from app.api.error_codes import status_code_for_extension_error_code
-from app.api.error_handlers import build_error_detail, build_error_response
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.transaction import load_for_external_call
-from app.integrations.a2a_extensions import get_a2a_extensions_service
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
-    A2AExtensionNotSupportedError,
-    A2AExtensionUpstreamError,
+from app.features.extension_capabilities.common_router_support import (
+    build_compatibility_profile_response as _build_compatibility_profile_response,
 )
+from app.features.extension_capabilities.common_router_support import (
+    build_declared_method_collection_response as _build_declared_method_collection_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_declared_single_method_response as _build_declared_single_method_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_interrupt_recovery_details_response as _build_interrupt_recovery_details_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_invoke_metadata_response as _build_invoke_metadata_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_request_execution_options_response as _build_request_execution_options_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_session_control_response as _build_session_control_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_session_list_filters as _build_session_list_filters,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_stream_hints_response as _build_stream_hints_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    build_wire_contract_response as _build_wire_contract_response,
+)
+from app.features.extension_capabilities.common_router_support import (
+    parse_query_param as _parse_query_param,
+)
+from app.features.extension_capabilities.common_router_support import (
+    run_extension_call as _run_extension_call,
+)
+from app.features.extension_capabilities.common_router_support import (
+    summarize_metadata_keys as _summarize_metadata_keys,
+)
+from app.features.extension_capabilities.common_router_support import (
+    summarize_object_keys as _summarize_object_keys,
+)
+from app.features.extension_capabilities.common_router_support import (
+    summarize_query_object as _summarize_query_object,
+)
+from app.features.extension_capabilities.common_router_support import (
+    summarize_session_list_filters as _summarize_session_list_filters,
+)
+from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_runtime_status_contract import (
     runtime_status_contract_payload,
-)
-from app.schemas.a2a_compatibility_profile import (
-    A2ACompatibilityProfileDiagnostic,
-    A2ACompatibilityProfileEntry,
 )
 from app.schemas.a2a_extension import (
     A2ACodexDiscoveryAppsListResponse,
@@ -41,9 +77,6 @@ from app.schemas.a2a_extension import (
     A2ACodexDiscoveryPluginReadResponse,
     A2ACodexDiscoveryPluginsListResponse,
     A2ACodexDiscoverySkillsListResponse,
-    A2ADeclaredMethodCapabilityResponse,
-    A2ADeclaredMethodCollectionCapabilitiesResponse,
-    A2ADeclaredSingleMethodCapabilitiesResponse,
     A2AExtensionCapabilitiesResponse,
     A2AExtensionElicitationReplyRequest,
     A2AExtensionInterruptRecoveryRequest,
@@ -58,492 +91,15 @@ from app.schemas.a2a_extension import (
     A2AExtensionSessionListQueryRequest,
     A2AExtensionSessionMessagesQueryRequest,
     A2AExtensionSessionMutationRequest,
-    A2AInterruptRecoveryCapabilitiesResponse,
     A2AInterruptRecoveryResponse,
-    A2AInvokeMetadataCapabilitiesResponse,
-    A2AInvokeMetadataFieldResponse,
     A2AModelDiscoveryRequest,
-    A2ARequestExecutionOptionsCapabilitiesResponse,
     A2ARuntimeStatusContractResponse,
-    A2ASessionAppendCapabilitiesResponse,
-    A2ASessionControlCapabilitiesResponse,
-    A2ASessionControlMethodResponse,
-    A2AStreamHintsCapabilitiesResponse,
-    A2AWireContractCapabilitiesResponse,
-    A2AWireContractConditionalMethodResponse,
-    A2AWireContractUnsupportedMethodErrorResponse,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
 logger = get_logger(__name__)
 
 BuildRuntimeFn = Callable[..., Awaitable[Any]]
-
-
-def _parse_query_param(value: Optional[str]) -> Optional[Dict[str, Any]]:
-    if value is None:
-        return None
-    trimmed = value.strip()
-    if not trimmed:
-        return None
-    try:
-        parsed = json.loads(trimmed)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="query must be valid JSON") from exc
-    if parsed is None:
-        return None
-    if not isinstance(parsed, dict):
-        raise HTTPException(status_code=400, detail="query must be a JSON object")
-    return dict(parsed)
-
-
-def _summarize_query_object(query: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not query:
-        return {"keys": [], "size": 0}
-    keys = sorted(str(k) for k in query.keys())[:20]
-    return {"keys": keys, "size": len(query)}
-
-
-def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
-    if not metadata:
-        return []
-    return sorted(str(k) for k in metadata.keys())[:20]
-
-
-def _summarize_object_keys(value: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not value:
-        return {"keys": [], "size": 0}
-    return {
-        "keys": sorted(str(key) for key in value.keys())[:20],
-        "size": len(value),
-    }
-
-
-def _build_session_list_filters(
-    *,
-    directory: Optional[str] = None,
-    roots: Optional[bool] = None,
-    start: Optional[int] = None,
-    search: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    filters: Dict[str, Any] = {}
-    if directory is not None:
-        filters["directory"] = directory
-    if roots is not None:
-        filters["roots"] = roots
-    if start is not None:
-        filters["start"] = start
-    if search is not None:
-        filters["search"] = search
-    return filters or None
-
-
-def _summarize_session_list_filters(
-    filters: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
-    if not filters:
-        return {"keys": [], "size": 0}
-    return {
-        "keys": sorted(str(key) for key in filters.keys())[:20],
-        "size": len(filters),
-    }
-
-
-_SESSION_CONTROL_HUB_CONSUMPTION = {
-    "prompt_async": True,
-    "command": True,
-    "shell": False,
-}
-
-
-def _is_session_control_method_supported(
-    method: A2ASessionControlMethodResponse,
-) -> bool:
-    return (
-        method.declared
-        and method.consumed_by_hub
-        and method.availability != "unsupported"
-    )
-
-
-def _build_session_append_response(
-    snapshot: Any,
-    prompt_async: A2ASessionControlMethodResponse,
-) -> A2ASessionAppendCapabilitiesResponse:
-    codex_turns = getattr(snapshot, "codex_turns", None)
-    turn_methods = dict(getattr(codex_turns, "methods", {}) or {})
-    steer = turn_methods.get("steer")
-    steer_declared = bool(getattr(steer, "declared", False))
-    steer_consumed = bool(getattr(steer, "consumed_by_hub", False))
-    raw_steer_availability = getattr(steer, "availability", None)
-    steer_availability = cast(
-        Literal["always", "enabled", "disabled", "unsupported"],
-        (
-            raw_steer_availability
-            if raw_steer_availability is not None
-            else ("always" if steer_declared else "unsupported")
-        ),
-    )
-    turn_steer_supported = (
-        steer_declared
-        and steer_consumed
-        and steer_availability not in {"disabled", "unsupported"}
-    )
-    prompt_async_supported = _is_session_control_method_supported(prompt_async)
-
-    if prompt_async_supported and turn_steer_supported:
-        return A2ASessionAppendCapabilitiesResponse(
-            declared=True,
-            consumedByHub=True,
-            status="supported",
-            routeMode="hybrid",
-            requiresStreamIdentity=False,
-        )
-    if prompt_async_supported:
-        return A2ASessionAppendCapabilitiesResponse(
-            declared=True,
-            consumedByHub=True,
-            status="supported",
-            routeMode="prompt_async",
-            requiresStreamIdentity=False,
-        )
-    if turn_steer_supported:
-        return A2ASessionAppendCapabilitiesResponse(
-            declared=True,
-            consumedByHub=True,
-            status="supported",
-            routeMode="turn_steer",
-            requiresStreamIdentity=True,
-        )
-    return A2ASessionAppendCapabilitiesResponse(
-        declared=bool(prompt_async.declared or steer_declared),
-        consumedByHub=bool(prompt_async.consumed_by_hub or steer_consumed),
-        status="unsupported",
-        routeMode="unsupported",
-        requiresStreamIdentity=False,
-    )
-
-
-def _build_session_control_response(
-    snapshot: Any,
-) -> A2ASessionControlCapabilitiesResponse:
-    resolved_methods = {}
-    capability = getattr(snapshot.session_query, "capability", None)
-    if capability is not None:
-        resolved_methods = dict(getattr(capability, "control_methods", {}) or {})
-
-    def _build_method(method_key: str) -> A2ASessionControlMethodResponse:
-        resolved = resolved_methods.get(method_key)
-        availability: Literal["always", "conditional", "unsupported"] = cast(
-            Literal["always", "conditional", "unsupported"],
-            getattr(resolved, "availability", "unsupported"),
-        )
-        return A2ASessionControlMethodResponse(
-            declared=bool(getattr(resolved, "declared", False)),
-            consumedByHub=_SESSION_CONTROL_HUB_CONSUMPTION[method_key],
-            availability=availability,
-            method=getattr(resolved, "method", None),
-            enabledByDefault=getattr(resolved, "enabled_by_default", None),
-            configKey=getattr(resolved, "config_key", None),
-        )
-
-    prompt_async = _build_method("prompt_async")
-    command = _build_method("command")
-    shell = _build_method("shell")
-    return A2ASessionControlCapabilitiesResponse(
-        promptAsync=prompt_async,
-        command=command,
-        shell=shell,
-        append=_build_session_append_response(snapshot, prompt_async),
-    )
-
-
-def _build_compatibility_profile_response(
-    snapshot: Any,
-) -> A2ACompatibilityProfileDiagnostic:
-    compatibility_snapshot = getattr(snapshot, "compatibility_profile", None)
-    status = cast(
-        Literal["supported", "unsupported", "invalid"],
-        getattr(compatibility_snapshot, "status", "unsupported"),
-    )
-    error = getattr(compatibility_snapshot, "error", None)
-    ext = getattr(compatibility_snapshot, "ext", None)
-    if ext is None:
-        return A2ACompatibilityProfileDiagnostic(
-            declared=status != "unsupported",
-            status=status,
-            error=error,
-        )
-
-    return A2ACompatibilityProfileDiagnostic(
-        declared=True,
-        status=status,
-        uri=getattr(ext, "uri", None),
-        extensionRetention={
-            name: A2ACompatibilityProfileEntry.model_validate(entry)
-            for name, entry in dict(getattr(ext, "extension_retention", {})).items()
-        },
-        methodRetention={
-            name: A2ACompatibilityProfileEntry.model_validate(entry)
-            for name, entry in dict(getattr(ext, "method_retention", {})).items()
-        },
-        serviceBehaviors=dict(getattr(ext, "service_behaviors", {}) or {}),
-        consumerGuidance=list(getattr(ext, "consumer_guidance", ()) or ()),
-        error=error,
-    )
-
-
-def _build_invoke_metadata_response(
-    snapshot: Any,
-) -> A2AInvokeMetadataCapabilitiesResponse:
-    invoke_snapshot = getattr(snapshot, "invoke_metadata", None)
-    ext = getattr(invoke_snapshot, "ext", None)
-    fields = list(getattr(ext, "fields", ()) or ())
-    return A2AInvokeMetadataCapabilitiesResponse(
-        declared=bool(
-            getattr(
-                invoke_snapshot,
-                "meta",
-                {},
-            ).get("invoke_metadata_declared", ext is not None)
-        ),
-        consumedByHub=True,
-        status=cast(
-            Literal["supported", "unsupported", "invalid"],
-            getattr(invoke_snapshot, "status", "unsupported"),
-        ),
-        metadataField=getattr(ext, "metadata_field", None),
-        appliesToMethods=list(getattr(ext, "applies_to_methods", ()) or ()),
-        fields=[
-            A2AInvokeMetadataFieldResponse(
-                name=item.name,
-                required=item.required,
-                description=item.description,
-            )
-            for item in fields
-        ],
-        error=getattr(invoke_snapshot, "error", None),
-    )
-
-
-def _build_request_execution_options_response(
-    snapshot: Any,
-) -> A2ARequestExecutionOptionsCapabilitiesResponse:
-    capability = getattr(snapshot, "request_execution_options", None)
-    return A2ARequestExecutionOptionsCapabilitiesResponse(
-        declared=bool(getattr(capability, "declared", False)),
-        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
-        status=cast(
-            Literal["unsupported", "declared_not_consumed", "invalid"],
-            getattr(capability, "status", "unsupported"),
-        ),
-        metadataField=getattr(capability, "metadata_field", None),
-        fields=list(getattr(capability, "fields", ()) or ()),
-        persistsForThread=getattr(capability, "persists_for_thread", None),
-        sourceExtensions=list(getattr(capability, "source_extensions", ()) or ()),
-        notes=list(getattr(capability, "notes", ()) or ()),
-        error=getattr(capability, "error", None),
-    )
-
-
-def _build_stream_hints_response(
-    snapshot: Any,
-) -> A2AStreamHintsCapabilitiesResponse:
-    capability = getattr(snapshot, "stream_hints", None)
-    ext = getattr(capability, "ext", None)
-    meta = dict(getattr(capability, "meta", {}) or {})
-    return A2AStreamHintsCapabilitiesResponse(
-        declared=bool(meta.get("stream_hints_declared", ext is not None)),
-        consumedByHub=ext is not None,
-        status=cast(
-            Literal["supported", "unsupported", "invalid"],
-            getattr(capability, "status", "unsupported"),
-        ),
-        streamField=getattr(ext, "stream_field", None),
-        usageField=getattr(ext, "usage_field", None),
-        interruptField=getattr(ext, "interrupt_field", None),
-        sessionField=getattr(ext, "session_field", None),
-        mode=cast(Optional[str], meta.get("stream_hints_mode")),
-        fallbackUsed=cast(Optional[bool], meta.get("stream_hints_fallback_used")),
-        error=getattr(capability, "error", None),
-    )
-
-
-def _build_interrupt_recovery_details_response(
-    snapshot: Any,
-) -> A2AInterruptRecoveryCapabilitiesResponse:
-    capability = getattr(snapshot, "interrupt_recovery", None)
-    ext = getattr(capability, "ext", None)
-    compatibility = getattr(
-        getattr(snapshot, "compatibility_profile", None), "ext", None
-    )
-
-    extension_entry = None
-    if compatibility is not None:
-        extension_entry = dict(
-            getattr(compatibility, "extension_retention", {}) or {}
-        ).get(getattr(ext, "uri", None))
-
-    methods = dict(getattr(ext, "methods", {}) or {})
-    non_null_methods = {
-        key: value for key, value in methods.items() if isinstance(value, str) and value
-    }
-    method_entries = []
-    if compatibility is not None:
-        retention_map = dict(getattr(compatibility, "method_retention", {}) or {})
-        method_entries = [
-            retention_map.get(method_name)
-            for method_name in non_null_methods.values()
-            if retention_map.get(method_name) is not None
-        ]
-
-    implementation_scope = getattr(ext, "implementation_scope", None) or getattr(
-        extension_entry, "implementation_scope", None
-    )
-    identity_scope = getattr(ext, "identity_scope", None) or getattr(
-        extension_entry, "identity_scope", None
-    )
-    if identity_scope is None:
-        for entry in method_entries:
-            if getattr(entry, "identity_scope", None):
-                identity_scope = getattr(entry, "identity_scope", None)
-                break
-    if implementation_scope is None:
-        for entry in method_entries:
-            if getattr(entry, "implementation_scope", None):
-                implementation_scope = getattr(entry, "implementation_scope", None)
-                break
-
-    return A2AInterruptRecoveryCapabilitiesResponse(
-        declared=ext is not None,
-        consumedByHub=ext is not None,
-        status=cast(
-            Literal["supported", "unsupported", "invalid"],
-            getattr(capability, "status", "unsupported"),
-        ),
-        provider=getattr(ext, "provider", None),
-        methods=non_null_methods,
-        recoveryDataSource=getattr(ext, "recovery_data_source", None),
-        identityScope=identity_scope,
-        implementationScope=implementation_scope,
-        emptyResultWhenIdentityUnavailable=getattr(
-            ext, "empty_result_when_identity_unavailable", None
-        ),
-        error=getattr(capability, "error", None),
-    )
-
-
-def _build_wire_contract_response(
-    snapshot: Any,
-) -> A2AWireContractCapabilitiesResponse:
-    wire_snapshot = getattr(snapshot, "wire_contract", None)
-    ext = getattr(wire_snapshot, "ext", None)
-    status = cast(
-        Literal["supported", "unsupported", "invalid"],
-        getattr(wire_snapshot, "status", "unsupported"),
-    )
-    error = getattr(wire_snapshot, "error", None)
-    if ext is None:
-        return A2AWireContractCapabilitiesResponse(
-            declared=status != "unsupported",
-            consumedByHub=True,
-            status=status,
-            error=error,
-        )
-
-    return A2AWireContractCapabilitiesResponse(
-        declared=True,
-        consumedByHub=True,
-        status=status,
-        protocolVersion=ext.protocol_version,
-        preferredTransport=ext.preferred_transport,
-        additionalTransports=list(ext.additional_transports),
-        allJsonrpcMethods=list(ext.all_jsonrpc_methods),
-        extensionUris=list(ext.extension_uris),
-        conditionalMethods={
-            name: A2AWireContractConditionalMethodResponse(
-                reason=item.reason,
-                toggle=item.toggle,
-            )
-            for name, item in dict(ext.conditionally_available_methods).items()
-        },
-        unsupportedMethodError=A2AWireContractUnsupportedMethodErrorResponse(
-            code=ext.unsupported_method_error.code,
-            type=ext.unsupported_method_error.type,
-            dataFields=list(ext.unsupported_method_error.data_fields),
-        ),
-        error=error,
-    )
-
-
-def _build_declared_method_capability_response(
-    capability: Any,
-) -> A2ADeclaredMethodCapabilityResponse:
-    raw_availability = getattr(capability, "availability", None)
-    return A2ADeclaredMethodCapabilityResponse(
-        declared=bool(getattr(capability, "declared", False)),
-        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
-        method=getattr(capability, "method", None),
-        availability=cast(
-            Literal["always", "enabled", "disabled", "unsupported"],
-            (
-                raw_availability
-                if raw_availability is not None
-                else (
-                    "always"
-                    if bool(getattr(capability, "declared", False))
-                    else "unsupported"
-                )
-            ),
-        ),
-        configKey=getattr(capability, "config_key", None),
-        reason=getattr(capability, "reason", None),
-        retention=getattr(capability, "retention", None),
-    )
-
-
-def _build_declared_method_collection_response(
-    capability: Any,
-) -> A2ADeclaredMethodCollectionCapabilitiesResponse:
-    methods = dict(getattr(capability, "methods", {}) or {})
-    status = cast(
-        Literal[
-            "unsupported",
-            "declared_not_consumed",
-            "partially_consumed",
-            "supported",
-            "unsupported_by_design",
-        ],
-        getattr(capability, "status", "unsupported"),
-    )
-    return A2ADeclaredMethodCollectionCapabilitiesResponse(
-        declared=bool(getattr(capability, "declared", False)),
-        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
-        status=status,
-        methods={
-            name: _build_declared_method_capability_response(item)
-            for name, item in methods.items()
-        },
-        declarationSource=getattr(capability, "declaration_source", None),
-        declarationConfidence=getattr(capability, "declaration_confidence", None),
-        negotiationState=getattr(capability, "negotiation_state", None),
-        diagnosticNote=getattr(capability, "diagnostic_note", None),
-    )
-
-
-def _build_declared_single_method_response(
-    capability: Any,
-) -> A2ADeclaredSingleMethodCapabilitiesResponse:
-    status = cast(
-        Literal["unsupported", "unsupported_by_design"],
-        getattr(capability, "status", "unsupported"),
-    )
-    return A2ADeclaredSingleMethodCapabilitiesResponse(
-        declared=bool(getattr(capability, "declared", False)),
-        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
-        status=status,
-        method=getattr(capability, "method", None),
-    )
 
 
 def create_extension_capability_router(
@@ -579,45 +135,6 @@ def create_extension_capability_router(
         return await load_for_external_call(
             db,
             lambda session: _get_runtime(session, current_user, agent_id),
-        )
-
-    def _to_extension_response(result: Any) -> A2AExtensionResponse:
-        return A2AExtensionResponse(
-            success=result.success,
-            result=result.result,
-            error_code=result.error_code,
-            source=result.source,
-            jsonrpc_code=result.jsonrpc_code,
-            missing_params=result.missing_params,
-            upstream_error=result.upstream_error,
-            meta=result.meta or {},
-        )
-
-    def _to_extension_error_response(
-        *,
-        error_code: str,
-        message: str,
-        source: Optional[str] = None,
-        jsonrpc_code: Optional[int] = None,
-        missing_params: Optional[list[dict[str, Any]]] = None,
-        upstream_error: Optional[Dict[str, Any]] = None,
-        meta: Optional[Dict[str, Any]] = None,
-    ) -> JSONResponse:
-        return build_error_response(
-            status_code=status_code_for_extension_error_code(error_code),
-            detail=build_error_detail(
-                message=message,
-                error_code=error_code,
-                source=source,
-                jsonrpc_code=jsonrpc_code,
-                missing_params=missing_params,
-                upstream_error=(
-                    upstream_error
-                    if upstream_error is not None
-                    else {"message": message}
-                ),
-                meta=meta or {},
-            ),
         )
 
     def _extensions_service() -> Any:
@@ -863,77 +380,6 @@ def create_extension_capability_router(
                 marketplace_path=payload.marketplace_path,
                 plugin_name=payload.plugin_name,
             )
-        )
-
-    async def _run_extension_call(
-        call: Awaitable[Any],
-    ) -> A2AExtensionResponse | JSONResponse:
-        try:
-            result = await call
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except (A2AExtensionNotSupportedError, A2AExtensionContractError) as exc:
-            error_code = (
-                "not_supported"
-                if isinstance(exc, A2AExtensionNotSupportedError)
-                else "extension_contract_error"
-            )
-            return _to_extension_error_response(
-                error_code=error_code,
-                message=str(exc),
-            )
-        except A2AExtensionUpstreamError as exc:
-            response = A2AExtensionResponse(
-                success=False,
-                error_code=exc.error_code,
-                source=exc.source,
-                jsonrpc_code=exc.jsonrpc_code,
-                missing_params=exc.missing_params,
-                upstream_error=exc.upstream_error,
-                meta={},
-            )
-            status_code = status_code_for_extension_error_code(response.error_code)
-            if status_code == status.HTTP_200_OK:
-                return response
-            detail_message = (
-                str(response.upstream_error.get("message"))
-                if isinstance(response.upstream_error, dict)
-                and isinstance(response.upstream_error.get("message"), str)
-                else str(exc)
-            )
-            return build_error_response(
-                status_code=status_code,
-                detail=build_error_detail(
-                    message=detail_message,
-                    error_code=response.error_code,
-                    source=response.source,
-                    jsonrpc_code=response.jsonrpc_code,
-                    missing_params=response.missing_params,
-                    upstream_error=response.upstream_error,
-                    meta=response.meta or {},
-                ),
-            )
-        response = _to_extension_response(result)
-        status_code = status_code_for_extension_error_code(response.error_code)
-        if response.success or status_code == status.HTTP_200_OK:
-            return response
-        detail_message = (
-            str(response.upstream_error.get("message"))
-            if isinstance(response.upstream_error, dict)
-            and isinstance(response.upstream_error.get("message"), str)
-            else str(response.error_code or "Extension call failed")
-        )
-        return build_error_response(
-            status_code=status_code,
-            detail=build_error_detail(
-                message=detail_message,
-                error_code=response.error_code,
-                source=response.source,
-                jsonrpc_code=response.jsonrpc_code,
-                missing_params=response.missing_params,
-                upstream_error=response.upstream_error,
-                meta=response.meta or {},
-            ),
         )
 
     @router.get(
