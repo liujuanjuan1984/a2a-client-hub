@@ -13,7 +13,6 @@ from app.features.invoke.route_runner_state import (
 )
 from app.features.invoke.session_binding import (
     resolve_invoke_session_binding_hint,
-    resolve_invoke_session_control_intent,
 )
 from app.features.invoke.stream_persistence import coerce_uuid
 from app.features.sessions.service import session_hub_service
@@ -173,13 +172,6 @@ async def run_append_session_control(
             status="accepted",
             session_id=resolved_session_id,
         ),
-    )
-
-
-def is_preempt_only_session_control(payload: A2AAgentInvokeRequest) -> bool:
-    return (
-        resolve_invoke_session_control_intent(payload) == "preempt"
-        and not payload.query.strip()
     )
 
 

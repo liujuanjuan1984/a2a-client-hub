@@ -17,7 +17,7 @@ from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, run_with_new_session
-from app.features.schedules import common as schedule_common
+from app.features.schedules.common import ClaimedA2AScheduleTask
 from app.features.schedules.crud import A2AScheduleCrudService
 from app.features.schedules.dispatch import A2AScheduleDispatchService
 from app.features.schedules.projection import A2AScheduleProjectionService
@@ -27,15 +27,6 @@ from app.runtime.scheduler import get_scheduler
 from app.utils.timezone_util import ensure_utc, utc_now
 
 logger = get_logger(__name__)
-
-A2A_SCHEDULE_SOURCE = schedule_common.A2A_SCHEDULE_SOURCE
-A2AScheduleError = schedule_common.A2AScheduleError
-A2AScheduleValidationError = schedule_common.A2AScheduleValidationError
-A2AScheduleConflictError = schedule_common.A2AScheduleConflictError
-A2AScheduleQuotaError = schedule_common.A2AScheduleQuotaError
-A2AScheduleNotFoundError = schedule_common.A2AScheduleNotFoundError
-A2AScheduleServiceBusyError = schedule_common.A2AScheduleServiceBusyError
-ClaimedA2AScheduleTask = schedule_common.ClaimedA2AScheduleTask
 
 _A2A_SCHEDULE_EXECUTION_CLEANUP_JOB_ID = "a2a-schedule-execution-cleanup-daily"
 _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE = 500

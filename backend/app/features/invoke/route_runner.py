@@ -37,7 +37,6 @@ from app.features.invoke.recovery import (
 from app.features.invoke.route_runner_session_control import (
     build_session_control_error_response,
     build_session_control_response,
-    is_preempt_only_session_control,
     run_append_session_control,
 )
 from app.features.invoke.route_runner_state import (
@@ -736,7 +735,10 @@ async def run_http_invoke(
         return _build_invoke_metadata_error_response(runtime=runtime, exc=exc)
     if resolve_invoke_session_control_intent(payload) == "append":
         return await run_append_session_control(runtime=runtime, payload=payload)
-    if is_preempt_only_session_control(payload):
+    if (
+        resolve_invoke_session_control_intent(payload) == "preempt"
+        and not payload.query.strip()
+    ):
         return await _run_preempt_session_control(
             runtime=runtime,
             payload=payload,

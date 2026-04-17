@@ -11,14 +11,14 @@ from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.features.schedules import router as a2a_schedules
+from app.features.schedules.common import (
+    A2AScheduleConflictError,
+    A2AScheduleServiceBusyError,
+)
 from app.features.schedules.self_management_jobs_service import (
     self_management_jobs_service,
 )
-from app.features.schedules.service import (
-    A2AScheduleConflictError,
-    A2AScheduleServiceBusyError,
-    a2a_schedule_service,
-)
+from app.features.schedules.service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_a2a_agent, create_user
