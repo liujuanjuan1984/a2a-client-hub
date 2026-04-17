@@ -86,40 +86,6 @@ def extract_preferred_usage_metadata(
     return _as_dict(metadata.get(SHARED_USAGE_KEY))
 
 
-def extract_preferred_session_metadata(
-    payload_or_metadata: Mapping[str, Any],
-) -> dict[str, Any]:
-    metadata = coerce_metadata_mapping(payload_or_metadata)
-    session = extract_shared_metadata_section(
-        payload_or_metadata,
-        section=SHARED_SESSION_KEY,
-    )
-    if session:
-        merged = dict(session)
-        if "id" not in merged:
-            external_session_id = _pick_first_non_empty_str(
-                metadata, (CANONICAL_EXTERNAL_SESSION_ID_KEY,)
-            )
-            if external_session_id:
-                merged["id"] = external_session_id
-        if CANONICAL_PROVIDER_KEY not in merged:
-            provider = _pick_first_non_empty_str(metadata, (CANONICAL_PROVIDER_KEY,))
-            if provider:
-                merged[CANONICAL_PROVIDER_KEY] = provider
-        return merged
-
-    legacy: dict[str, Any] = {}
-    external_session_id = _pick_first_non_empty_str(
-        metadata, (CANONICAL_EXTERNAL_SESSION_ID_KEY,)
-    )
-    provider = _pick_first_non_empty_str(metadata, (CANONICAL_PROVIDER_KEY,))
-    if external_session_id:
-        legacy["id"] = external_session_id
-    if provider:
-        legacy[CANONICAL_PROVIDER_KEY] = provider
-    return legacy
-
-
 def merge_preferred_session_binding_metadata(
     metadata: Mapping[str, Any] | None,
     *,

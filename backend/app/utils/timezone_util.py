@@ -58,12 +58,6 @@ def utc_now_iso() -> str:
     return utc_now().isoformat().replace("+00:00", "Z")
 
 
-def utc_today() -> date:
-    """Return current UTC calendar day."""
-
-    return utc_now().date()
-
-
 def ensure_utc(datetime_obj: datetime) -> datetime:
     """Force a datetime into UTC (assumes naive datetimes are UTC)."""
 
@@ -112,22 +106,6 @@ def get_day_window(timezone_str: str, reference: LocalDateInput) -> DayWindow:
 
     tz = _load_timezone(timezone_str)
     local_date = _coerce_to_local_date(reference, tz)
-    return _build_day_window(tz, timezone_str, local_date)
-
-
-def get_previous_day_window(timezone_str: str, reference: LocalDateInput) -> DayWindow:
-    """Return the window for the day preceding ``reference`` in ``timezone_str``."""
-
-    tz = _load_timezone(timezone_str)
-    local_date = _coerce_to_local_date(reference, tz) - timedelta(days=1)
-    return _build_day_window(tz, timezone_str, local_date)
-
-
-def get_next_day_window(timezone_str: str, reference: LocalDateInput) -> DayWindow:
-    """Return the window for the day following ``reference`` in ``timezone_str``."""
-
-    tz = _load_timezone(timezone_str)
-    local_date = _coerce_to_local_date(reference, tz) + timedelta(days=1)
     return _build_day_window(tz, timezone_str, local_date)
 
 

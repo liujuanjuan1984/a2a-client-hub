@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from app.features.self_management_shared.actor_context import (
     SelfManagementAction,
     SelfManagementResource,
@@ -582,26 +580,5 @@ def list_self_management_operation_ids(
             confirmation_policy=confirmation_policy,
             action=action,
             require_tool_name=require_tool_name,
-        )
-    )
-
-
-def list_self_management_tool_names(
-    *,
-    surface: SelfManagementSurface | None = None,
-    first_wave_only: bool = True,
-    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
-    action: SelfManagementAction | None = None,
-) -> tuple[str, ...]:
-    """List filtered tool names in stable order."""
-
-    return tuple(
-        cast(str, operation.tool_name)
-        for operation in list_self_management_operations(
-            surface=surface,
-            first_wave_only=first_wave_only,
-            confirmation_policy=confirmation_policy,
-            action=action,
-            require_tool_name=True,
         )
     )
