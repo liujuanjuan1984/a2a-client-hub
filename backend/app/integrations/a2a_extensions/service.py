@@ -1762,19 +1762,3 @@ async def shutdown_a2a_extensions_service() -> None:
         return
     await _service_instance.shutdown()
     _service_instance = None
-
-
-__all__ = [
-    "A2AExtensionsService",
-    "ExtensionCallResult",
-    "InterruptCallbackCapabilitySnapshot",
-    "InterruptRecoveryCapabilitySnapshot",
-    "ModelSelectionCapabilitySnapshot",
-    "ProviderDiscoveryCapabilitySnapshot",
-    "ResolvedCapabilitySnapshot",
-    "SessionBindingCapabilitySnapshot",
-    "SessionQueryCapabilitySnapshot",
-    "get_a2a_extensions_service",
-    "shutdown_a2a_extensions_service",
-    "A2AExtensionUpstreamError",
-]

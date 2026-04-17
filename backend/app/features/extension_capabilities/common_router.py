@@ -1358,6 +1358,3 @@ def create_extension_capability_router(
         )
 
     return router
-
-
-__all__ = ["create_extension_capability_router"]
