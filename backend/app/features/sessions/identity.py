@@ -218,6 +218,3 @@ def _normalize_conversation_source(
     if source == ConversationThread.SOURCE_SCHEDULED:
         return ConversationThread.SOURCE_SCHEDULED
     return ConversationThread.SOURCE_MANUAL
-
-
-__all__ = ["ConversationIdentityService", "conversation_identity_service"]

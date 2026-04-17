@@ -46,6 +46,3 @@ class WsTicket(Base, TimestampMixin, UserOwnedMixin):
         nullable=True,
         comment="Timestamp when the ticket was consumed",
     )
-
-
-__all__ = ["WsTicket"]

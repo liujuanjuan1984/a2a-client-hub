@@ -137,6 +137,3 @@ class Invitation(Base, TimestampMixin, SoftDeleteMixin):
 
         setattr(self, "status", InvitationStatus.EXPIRED)
         setattr(self, "revoked_at", timestamp or func.now())
-
-
-__all__ = ["Invitation", "InvitationStatus"]

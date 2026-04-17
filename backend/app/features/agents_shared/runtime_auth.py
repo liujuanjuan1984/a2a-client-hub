@@ -108,6 +108,3 @@ def build_resolved_runtime_agent(
         headers=headers,
     )
     return resolved, token_last4
-
-
-__all__ = ["build_resolved_runtime_agent", "resolve_runtime_auth_headers"]

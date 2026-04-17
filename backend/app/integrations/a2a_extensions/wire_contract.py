@@ -177,6 +177,3 @@ def resolve_wire_contract(card: AgentCard) -> ResolvedWireContractExtension:
             params.get("unsupported_method_error")
         ),
     )
-
-
-__all__ = ["resolve_wire_contract"]

@@ -97,6 +97,3 @@ def resolve_model_selection(card: AgentCard) -> ResolvedModelSelectionExtension:
             field="params.provider_private_metadata",
         ),
     )
-
-
-__all__ = ["resolve_model_selection"]

@@ -114,6 +114,3 @@ class JsonRpcClient:
             return JsonRpcResponse(ok=True, result={"raw": result})
 
         raise ValueError("Invalid JSON-RPC response (missing result/error)")
-
-
-__all__ = ["JsonRpcClient", "JsonRpcResponse"]

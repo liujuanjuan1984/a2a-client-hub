@@ -143,6 +143,3 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=True,
         comment="Timestamp when user requested deletion while run is still in progress",
     )
-
-
-__all__ = ["A2AScheduleTask"]

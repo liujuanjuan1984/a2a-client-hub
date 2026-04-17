@@ -37,6 +37,3 @@ class DialectCache:
 
 
 global_dialect_cache = DialectCache()
-
-
-__all__ = ["DialectCache", "global_dialect_cache"]

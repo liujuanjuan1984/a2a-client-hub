@@ -649,5 +649,3 @@ class OpencodeSessionDirectoryService:
 
 
 opencode_session_directory_service = OpencodeSessionDirectoryService()
-
-__all__ = ["opencode_session_directory_service", "OpencodeSessionDirectoryService"]

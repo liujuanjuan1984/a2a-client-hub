@@ -61,6 +61,3 @@ class Shortcut(Base, TimestampMixin, UserOwnedMixin):
             f"<Shortcut(id={self.id}, user_id={self.user_id}, agent_id={self.agent_id}, title={self.title}, "
             f"is_default={self.is_default}, sort_order={self.sort_order})>"
         )
-
-
-__all__ = ["Shortcut"]

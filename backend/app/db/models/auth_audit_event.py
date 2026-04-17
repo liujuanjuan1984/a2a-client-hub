@@ -77,6 +77,3 @@ class AuthAuditEvent(Base, TimestampMixin):
         nullable=False,
         comment="Semantic occurrence timestamp for the auth event.",
     )
-
-
-__all__ = ["AuthAuditEvent"]

@@ -278,10 +278,3 @@ def list_self_management_tool_definitions(
             require_tool_name=True,
         )
     )
-
-
-__all__ = [
-    "SelfManagementToolDefinition",
-    "build_self_management_tool_definition",
-    "list_self_management_tool_definitions",
-]

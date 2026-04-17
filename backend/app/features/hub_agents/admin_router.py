@@ -487,6 +487,3 @@ async def remove_hub_agent_allowlist_admin(
     except HubA2AAgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-__all__ = ["router"]

@@ -137,12 +137,3 @@ class SelfManagementToolGateway:
         )
         result = await handler()
         return AuthorizedExecution(result=result, audit_fields=audit_fields)
-
-
-__all__ = [
-    "AuthorizedExecution",
-    "SelfManagementConfirmationPolicy",
-    "SelfManagementOperation",
-    "SelfManagementSurface",
-    "SelfManagementToolGateway",
-]

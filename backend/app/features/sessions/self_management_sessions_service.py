@@ -549,9 +549,3 @@ class SelfManagementSessionsService:
 
 
 self_management_sessions_service = SelfManagementSessionsService()
-
-
-__all__ = [
-    "SelfManagementSessionsService",
-    "self_management_sessions_service",
-]

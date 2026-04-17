@@ -985,18 +985,3 @@ def list_self_management_mcp_tool_definitions() -> (
         )
         if definition.operation_id in SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS
     )
-
-
-__all__ = [
-    "SELF_MANAGEMENT_MCP_OPERATION_IDS",
-    "SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH",
-    "SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS",
-    "SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH",
-    "SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS",
-    "SelfManagementMcpAuthMiddleware",
-    "build_self_management_mcp_http_app",
-    "build_self_management_mcp_server",
-    "execute_self_management_mcp_operation",
-    "list_self_management_mcp_tool_definitions",
-    "self_management_mcp_server",
-]

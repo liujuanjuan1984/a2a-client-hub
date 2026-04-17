@@ -121,6 +121,3 @@ async def fetch_and_validate_agent_card(
         response_kwargs["validation_errors"] = validation_errors
 
     return A2AAgentCardValidationResponse(**response_kwargs)
-
-
-__all__ = ["fetch_and_validate_agent_card"]

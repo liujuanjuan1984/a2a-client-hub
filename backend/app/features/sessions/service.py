@@ -525,8 +525,3 @@ class SessionHubService:
 
 
 session_hub_service = SessionHubService()
-
-__all__ = [
-    "SessionHubService",
-    "session_hub_service",
-]

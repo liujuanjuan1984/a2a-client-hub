@@ -224,6 +224,3 @@ def build_tool_call_detail(
         if candidate_title is not None:
             detail["title"] = candidate_title
     return detail
-
-
-__all__ = ["build_tool_call_detail", "build_tool_call_view"]

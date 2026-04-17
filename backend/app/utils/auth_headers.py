@@ -103,11 +103,3 @@ def build_proxy_auth_headers(
     elif auth_type != "none":
         raise ValueError(f"Unsupported auth_type: {auth_type}")
     return headers
-
-
-__all__ = [
-    "build_auth_header_pair",
-    "build_proxy_auth_headers",
-    "resolve_stored_auth_fields",
-    "DEFAULT_BASIC_AUTH_SCHEME",
-]

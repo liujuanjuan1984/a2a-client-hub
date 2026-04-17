@@ -175,6 +175,3 @@ class _OpsMetricsStore:
 
 
 ops_metrics = _OpsMetricsStore()
-
-
-__all__ = ["ops_metrics"]

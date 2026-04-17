@@ -95,5 +95,3 @@ class StrictAPIRouter(FastAPIRouter):
 
 
 APIRouter = StrictAPIRouter
-
-__all__ = ["StrictAPIRouter", "APIRouter"]

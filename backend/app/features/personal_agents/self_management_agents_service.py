@@ -219,9 +219,3 @@ class SelfManagementAgentsService:
 
 
 self_management_agents_service = SelfManagementAgentsService()
-
-
-__all__ = [
-    "SelfManagementAgentsService",
-    "self_management_agents_service",
-]

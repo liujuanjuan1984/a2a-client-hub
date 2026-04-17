@@ -68,5 +68,3 @@ class _A2AExtensionMetricsStore:
 
 
 a2a_extension_metrics = _A2AExtensionMetricsStore()
-
-__all__ = ["a2a_extension_metrics"]

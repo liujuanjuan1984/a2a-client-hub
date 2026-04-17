@@ -211,15 +211,3 @@ async def has_blocks_for_message(
         .limit(1)
     )
     return (await db.scalar(stmt)) is not None
-
-
-__all__ = [
-    "create_block",
-    "find_block_by_message_and_block_id",
-    "find_block_by_message_and_block_seq",
-    "find_last_block_for_message",
-    "find_last_block_for_message_and_type",
-    "has_blocks_for_message",
-    "list_blocks_by_message_id",
-    "list_blocks_by_message_ids",
-]

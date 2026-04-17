@@ -89,6 +89,3 @@ def diagnose_compatibility_profile(
         serviceBehaviors=dict(resolved.service_behaviors),
         consumerGuidance=list(resolved.consumer_guidance),
     )
-
-
-__all__ = ["diagnose_compatibility_profile"]

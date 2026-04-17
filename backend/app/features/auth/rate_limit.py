@@ -61,6 +61,3 @@ class SlidingWindowRateLimiter:
 
 
 auth_rate_limiter = SlidingWindowRateLimiter()
-
-
-__all__ = ["RateLimitDecision", "SlidingWindowRateLimiter", "auth_rate_limiter"]

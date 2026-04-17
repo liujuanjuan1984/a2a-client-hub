@@ -165,9 +165,3 @@ def diagnose_codex_discovery_fallback(
             else None
         ),
     )
-
-
-__all__ = [
-    "CodexDiscoveryDeclarationFallback",
-    "diagnose_codex_discovery_fallback",
-]

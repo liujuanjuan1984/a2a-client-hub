@@ -48,6 +48,3 @@ def normalize_card_url(
             },
         ) from exc
     return trimmed
-
-
-__all__ = ["normalize_card_url"]

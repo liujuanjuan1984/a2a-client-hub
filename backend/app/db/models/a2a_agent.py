@@ -169,6 +169,3 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
             f"<A2AAgent(id={self.id}, user_id={self.user_id}, name={self.name}, "
             f"card_url={self.card_url}, auth_type={self.auth_type}, enabled={self.enabled})>"
         )
-
-
-__all__ = ["A2AAgent"]

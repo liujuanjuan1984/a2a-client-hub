@@ -31,6 +31,3 @@ class A2AResolutionService:
             source=source,
             card_fetch_timeout=card_fetch_timeout,
         )
-
-
-__all__ = ["A2AResolutionService"]

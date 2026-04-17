@@ -11,10 +11,3 @@ def db_busy_retry_after_headers() -> dict[str, str]:
 
 def append_retry_after_hint(reason: str) -> str:
     return f"{reason} Retry in {DB_BUSY_RETRY_AFTER_SECONDS} seconds."
-
-
-__all__ = [
-    "DB_BUSY_RETRY_AFTER_SECONDS",
-    "append_retry_after_hint",
-    "db_busy_retry_after_headers",
-]

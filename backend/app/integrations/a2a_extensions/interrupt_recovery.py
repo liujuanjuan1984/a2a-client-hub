@@ -123,6 +123,3 @@ def resolve_interrupt_recovery(
             raw_empty_result if isinstance(raw_empty_result, bool) else None
         ),
     )
-
-
-__all__ = ["resolve_interrupt_recovery"]

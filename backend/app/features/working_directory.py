@@ -48,9 +48,3 @@ def merge_working_directory_metadata(
     else:
         next_metadata.pop("opencode", None)
     return next_metadata
-
-
-__all__ = [
-    "extract_working_directory",
-    "merge_working_directory_metadata",
-]

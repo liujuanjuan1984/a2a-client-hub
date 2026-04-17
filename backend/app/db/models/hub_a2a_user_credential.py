@@ -66,6 +66,3 @@ class HubA2AUserCredential(Base, TimestampMixin):
             f"<HubA2AUserCredential(id={self.id}, agent_id={self.agent_id}, "
             f"user_id={self.user_id})>"
         )
-
-
-__all__ = ["HubA2AUserCredential"]
