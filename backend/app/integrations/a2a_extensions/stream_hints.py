@@ -80,6 +80,3 @@ def resolve_stream_hints(card: AgentCard) -> ResolvedStreamHintsExtension:
             default=SHARED_SESSION_FIELD,
         ),
     )
-
-
-__all__ = ["resolve_stream_hints"]

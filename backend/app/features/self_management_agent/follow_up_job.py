@@ -156,9 +156,3 @@ def ensure_self_management_follow_up_job() -> None:
         coalesce=True,
     )
     logger.info("Registered durable built-in follow-up dispatcher job.")
-
-
-__all__ = [
-    "dispatch_due_self_management_follow_ups",
-    "ensure_self_management_follow_up_job",
-]

@@ -370,6 +370,3 @@ async def invoke_hub_agent_ws(
         },
         unexpected_log_message="Hub WS error",
     )
-
-
-__all__ = ["router"]

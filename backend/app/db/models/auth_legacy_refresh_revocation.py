@@ -48,6 +48,3 @@ class AuthLegacyRefreshRevocation(Base, TimestampMixin):
         nullable=True,
         comment="Reason for revoking the legacy refresh token.",
     )
-
-
-__all__ = ["AuthLegacyRefreshRevocation"]

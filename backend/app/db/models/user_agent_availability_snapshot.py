@@ -91,6 +91,3 @@ class UserAgentAvailabilitySnapshot(Base, TimestampMixin):
             f"id={self.id}, user_id={self.user_id}, "
             f"agent_source={self.agent_source}, agent_id={self.agent_id})>"
         )
-
-
-__all__ = ["UserAgentAvailabilitySnapshot"]

@@ -170,6 +170,3 @@ def resolve_compatibility_profile(
             field="params.consumer_guidance",
         ),
     )
-
-
-__all__ = ["resolve_compatibility_profile"]

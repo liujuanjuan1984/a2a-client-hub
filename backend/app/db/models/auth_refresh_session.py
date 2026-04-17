@@ -89,6 +89,3 @@ class AuthRefreshSession(Base, TimestampMixin):
         nullable=True,
         comment="Reason for revocation when the session is no longer active.",
     )
-
-
-__all__ = ["AuthRefreshSession"]

@@ -40,6 +40,3 @@ async def record_auth_event(
             occurred_at=utc_now(),
         )
     )
-
-
-__all__ = ["record_auth_event"]

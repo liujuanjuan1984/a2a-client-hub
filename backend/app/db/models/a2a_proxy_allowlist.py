@@ -35,6 +35,3 @@ class A2AProxyAllowlist(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<A2AProxyAllowlist(id={self.id}, host_pattern={self.host_pattern}, is_enabled={self.is_enabled})>"
-
-
-__all__ = ["A2AProxyAllowlist"]

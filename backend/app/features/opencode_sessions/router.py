@@ -50,6 +50,3 @@ async def list_opencode_sessions_directory(
         pagination=pagination,
         meta=OpencodeSessionDirectoryMeta(**meta),
     )
-
-
-__all__ = ["router"]

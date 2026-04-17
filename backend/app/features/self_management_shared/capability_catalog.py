@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from app.features.self_management_shared.actor_context import (
     SelfManagementAction,
     SelfManagementResource,
@@ -584,69 +582,3 @@ def list_self_management_operation_ids(
             require_tool_name=require_tool_name,
         )
     )
-
-
-def list_self_management_tool_names(
-    *,
-    surface: SelfManagementSurface | None = None,
-    first_wave_only: bool = True,
-    confirmation_policy: SelfManagementConfirmationPolicy | None = None,
-    action: SelfManagementAction | None = None,
-) -> tuple[str, ...]:
-    """List filtered tool names in stable order."""
-
-    return tuple(
-        cast(str, operation.tool_name)
-        for operation in list_self_management_operations(
-            surface=surface,
-            first_wave_only=first_wave_only,
-            confirmation_policy=confirmation_policy,
-            action=action,
-            require_tool_name=True,
-        )
-    )
-
-
-__all__ = [
-    "ADMIN_HUB_AGENTS_CREATE",
-    "ADMIN_HUB_AGENTS_DELETE",
-    "ADMIN_HUB_AGENTS_GET",
-    "ADMIN_HUB_AGENTS_LIST",
-    "ADMIN_HUB_AGENTS_UPDATE",
-    "ADMIN_HUB_AGENT_ALLOWLIST_ADD",
-    "ADMIN_HUB_AGENT_ALLOWLIST_LIST",
-    "ADMIN_HUB_AGENT_ALLOWLIST_REMOVE",
-    "ADMIN_HUB_AGENT_ALLOWLIST_REPLACE",
-    "ALL_SELF_MANAGEMENT_OPERATIONS",
-    "FIRST_WAVE_EXPOSED_OPERATIONS",
-    "INTERNAL_ADMIN_OPERATIONS",
-    "SELF_AGENTS_GET",
-    "SELF_AGENTS_LIST",
-    "SELF_AGENTS_CREATE",
-    "SELF_AGENTS_CHECK_HEALTH",
-    "SELF_AGENTS_CHECK_HEALTH_ALL",
-    "SELF_AGENTS_DELETE",
-    "SELF_AGENTS_START_SESSIONS",
-    "SELF_AGENTS_UPDATE_CONFIG",
-    "SELF_JOBS_CREATE",
-    "SELF_JOBS_DELETE",
-    "SELF_JOBS_GET",
-    "SELF_JOBS_LIST",
-    "SELF_JOBS_PAUSE",
-    "SELF_JOBS_RESUME",
-    "SELF_JOBS_UPDATE",
-    "SELF_JOBS_UPDATE_PROMPT",
-    "SELF_JOBS_UPDATE_SCHEDULE",
-    "SELF_SESSIONS_ARCHIVE",
-    "SELF_SESSIONS_GET",
-    "SELF_SESSIONS_GET_LATEST_MESSAGES",
-    "SELF_SESSIONS_LIST",
-    "SELF_SESSIONS_SEND_MESSAGE",
-    "SELF_SESSIONS_UNARCHIVE",
-    "SELF_SESSIONS_UPDATE",
-    "UNSUPPORTED_FIRST_WAVE_OPERATION_IDS",
-    "get_self_management_operation",
-    "list_self_management_operation_ids",
-    "list_self_management_operations",
-    "list_self_management_tool_names",
-]

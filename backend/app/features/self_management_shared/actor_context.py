@@ -246,17 +246,3 @@ def build_self_management_actor_context(
         is_superuser=bool(user.is_superuser),
         permission_envelope=PermissionEnvelope(grants=tuple(grants)),
     )
-
-
-__all__ = [
-    "PermissionEnvelope",
-    "PermissionGrant",
-    "SelfManagementAction",
-    "SelfManagementActorContext",
-    "SelfManagementActorType",
-    "SelfManagementAuditFields",
-    "SelfManagementAuthorizationError",
-    "SelfManagementResource",
-    "SelfManagementScope",
-    "build_self_management_actor_context",
-]

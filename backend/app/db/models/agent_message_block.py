@@ -104,6 +104,3 @@ class AgentMessageBlock(Base, TimestampMixin, UserOwnedMixin):
         back_populates="blocks",
         foreign_keys=[message_id],
     )
-
-
-__all__ = ["AgentMessageBlock"]

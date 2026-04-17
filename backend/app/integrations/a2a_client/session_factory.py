@@ -92,6 +92,3 @@ class A2AInvokeSessionFactory:
     ) -> None:
         if session.is_shared:
             await self._shared_client_invalidator(resolved)
-
-
-__all__ = ["A2AInvokeSessionFactory"]

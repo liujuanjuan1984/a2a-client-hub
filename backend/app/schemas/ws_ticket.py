@@ -21,6 +21,3 @@ class WsTicketResponse(BaseModel):
             }
         }
     }
-
-
-__all__ = ["WsTicketResponse"]

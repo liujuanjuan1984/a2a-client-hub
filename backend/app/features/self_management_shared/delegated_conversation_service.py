@@ -666,8 +666,3 @@ def normalize_name(value: Any) -> str | None:
 self_management_delegated_conversation_service = (
     SelfManagementDelegatedConversationService()
 )
-
-__all__ = [
-    "SelfManagementDelegatedConversationService",
-    "self_management_delegated_conversation_service",
-]

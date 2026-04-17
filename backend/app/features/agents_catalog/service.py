@@ -636,11 +636,3 @@ class UnifiedAgentCatalogService:
 
 
 unified_agent_catalog_service = UnifiedAgentCatalogService()
-
-
-__all__ = [
-    "UnifiedAgentCatalogService",
-    "UnifiedAgentHealthCheckItemRecord",
-    "UnifiedAgentHealthCheckSummaryRecord",
-    "unified_agent_catalog_service",
-]

@@ -34,11 +34,3 @@ class A2AExtensionUpstreamError(A2AExtensionError):
         self.jsonrpc_code = jsonrpc_code
         self.missing_params = list(missing_params or []) or None
         self.upstream_error = upstream_error or None
-
-
-__all__ = [
-    "A2AExtensionError",
-    "A2AExtensionNotSupportedError",
-    "A2AExtensionContractError",
-    "A2AExtensionUpstreamError",
-]

@@ -80,6 +80,3 @@ class BuiltInFollowUpTask(Base, TimestampMixin, UserOwnedMixin):
         nullable=True,
         comment="Most recent background follow-up execution error, if any.",
     )
-
-
-__all__ = ["BuiltInFollowUpTask"]

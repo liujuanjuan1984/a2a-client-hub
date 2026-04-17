@@ -56,6 +56,3 @@ class A2AAgentCredential(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<A2AAgentCredential(id={self.id}, agent_id={self.agent_id})>"
-
-
-__all__ = ["A2AAgentCredential"]

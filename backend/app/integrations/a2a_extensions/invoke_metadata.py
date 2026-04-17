@@ -140,6 +140,3 @@ def resolve_invoke_metadata(card: AgentCard) -> ResolvedInvokeMetadataExtension:
             field="params.supported_metadata",
         ),
     )
-
-
-__all__ = ["resolve_invoke_metadata"]

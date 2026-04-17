@@ -775,6 +775,3 @@ async def cancel_unified_session(
     if db_mutated:
         await commit_safely(db)
     return SessionCancelResponse.model_validate(payload)
-
-
-__all__ = ["router"]

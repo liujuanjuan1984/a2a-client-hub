@@ -47,6 +47,3 @@ class HubA2AAgentAllowlistEntry(Base, TimestampMixin):
             f"<HubA2AAgentAllowlistEntry(id={self.id}, agent_id={self.agent_id}, "
             f"user_id={self.user_id})>"
         )
-
-
-__all__ = ["HubA2AAgentAllowlistEntry"]

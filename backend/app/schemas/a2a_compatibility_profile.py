@@ -54,9 +54,3 @@ class A2ACompatibilityProfileDiagnostic(BaseModel):
         default=None,
         description="Structured validation error when the contract is invalid",
     )
-
-
-__all__ = [
-    "A2ACompatibilityProfileDiagnostic",
-    "A2ACompatibilityProfileEntry",
-]

@@ -92,12 +92,3 @@ class ShortcutListResponse(ListResponse[ShortcutResponse, ShortcutListMeta]):
     items: List[ShortcutResponse]
     pagination: Pagination
     meta: ShortcutListMeta
-
-
-__all__ = [
-    "ShortcutCreateRequest",
-    "ShortcutListMeta",
-    "ShortcutListResponse",
-    "ShortcutResponse",
-    "ShortcutUpdateRequest",
-]

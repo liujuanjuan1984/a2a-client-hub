@@ -139,6 +139,3 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
         index=True,
         comment="Generated agent-side message ID",
     )
-
-
-__all__ = ["A2AScheduleExecution"]

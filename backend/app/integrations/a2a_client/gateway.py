@@ -872,6 +872,3 @@ class A2AGateway:
         if configured_interval > 0:
             return configured_interval
         return min(max(idle_timeout / 2, 1.0), 60.0)
-
-
-__all__ = ["A2AGateway"]

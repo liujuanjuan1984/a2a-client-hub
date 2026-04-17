@@ -87,6 +87,3 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
 
     def __repr__(self) -> str:
         return f"<AgentMessage(id={self.id}, sender={self.sender})>"
-
-
-__all__ = ["AgentMessage"]

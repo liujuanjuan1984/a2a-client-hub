@@ -15,6 +15,3 @@ def refresh_db_pool_checked_out(pool: Any) -> int | None:
     value = max(int(checkedout() or 0), 0)
     ops_metrics.set_db_pool_checked_out(value)
     return value
-
-
-__all__ = ["refresh_db_pool_checked_out"]

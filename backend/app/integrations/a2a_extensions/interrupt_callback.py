@@ -4,13 +4,7 @@ from __future__ import annotations
 
 from a2a.types import AgentCard
 
-from app.integrations.a2a_extensions.contract_utils import (
-    as_dict,
-    build_business_code_map,
-    normalize_method_name,
-    require_str,
-    resolve_jsonrpc_interface,
-)
+from app.integrations.a2a_extensions import contract_utils
 from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
 from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_CALLBACK_URI,
@@ -40,42 +34,44 @@ def resolve_interrupt_callback(
         )
 
     required = bool(getattr(ext, "required", False))
-    params = as_dict(getattr(ext, "params", None))
+    params = contract_utils.as_dict(getattr(ext, "params", None))
     raw_provider = params.get("provider")
     if raw_provider is None:
         provider = "opencode"
     else:
-        provider = require_str(raw_provider, field="params.provider").lower()
-    methods = as_dict(params.get("methods"))
-    reply_permission_method = normalize_method_name(
+        provider = contract_utils.require_str(
+            raw_provider, field="params.provider"
+        ).lower()
+    methods = contract_utils.as_dict(params.get("methods"))
+    reply_permission_method = contract_utils.normalize_method_name(
         methods.get("reply_permission"),
         field="methods.reply_permission",
     )
-    reply_question_method = normalize_method_name(
+    reply_question_method = contract_utils.normalize_method_name(
         methods.get("reply_question"),
         field="methods.reply_question",
     )
-    reject_question_method = normalize_method_name(
+    reject_question_method = contract_utils.normalize_method_name(
         methods.get("reject_question"),
         field="methods.reject_question",
     )
-    reply_permissions_method = normalize_method_name(
+    reply_permissions_method = contract_utils.normalize_method_name(
         methods.get("reply_permissions"),
         field="methods.reply_permissions",
     )
-    reply_elicitation_method = normalize_method_name(
+    reply_elicitation_method = contract_utils.normalize_method_name(
         methods.get("reply_elicitation"),
         field="methods.reply_elicitation",
     )
 
-    errors = as_dict(params.get("errors"))
-    code_to_error = build_business_code_map(errors.get("business_codes"))
+    errors = contract_utils.as_dict(params.get("errors"))
+    code_to_error = contract_utils.build_business_code_map(errors.get("business_codes"))
 
     return ResolvedInterruptCallbackExtension(
         uri=str(getattr(ext, "uri", SHARED_INTERRUPT_CALLBACK_URI)),
         required=required,
         provider=provider,
-        jsonrpc=resolve_jsonrpc_interface(card),
+        jsonrpc=contract_utils.resolve_jsonrpc_interface(card),
         methods={
             "reply_permission": reply_permission_method,
             "reply_question": reply_question_method,
@@ -85,6 +81,3 @@ def resolve_interrupt_callback(
         },
         business_code_map=code_to_error,
     )
-
-
-__all__ = ["resolve_interrupt_callback"]

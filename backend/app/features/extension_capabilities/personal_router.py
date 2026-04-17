@@ -19,5 +19,3 @@ router = create_extension_capability_router(
     runtime_validation_status_code=400,
     log_scope="",
 )
-
-__all__ = ["router"]

@@ -10,7 +10,6 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_KEY,
     SHARED_METADATA_KEY,
     SHARED_SESSION_KEY,
-    SHARED_STREAM_KEY,
     SHARED_USAGE_KEY,
 )
 
@@ -85,40 +84,6 @@ def extract_preferred_usage_metadata(
         return usage
     metadata = coerce_metadata_mapping(payload_or_metadata)
     return _as_dict(metadata.get(SHARED_USAGE_KEY))
-
-
-def extract_preferred_session_metadata(
-    payload_or_metadata: Mapping[str, Any],
-) -> dict[str, Any]:
-    metadata = coerce_metadata_mapping(payload_or_metadata)
-    session = extract_shared_metadata_section(
-        payload_or_metadata,
-        section=SHARED_SESSION_KEY,
-    )
-    if session:
-        merged = dict(session)
-        if "id" not in merged:
-            external_session_id = _pick_first_non_empty_str(
-                metadata, (CANONICAL_EXTERNAL_SESSION_ID_KEY,)
-            )
-            if external_session_id:
-                merged["id"] = external_session_id
-        if CANONICAL_PROVIDER_KEY not in merged:
-            provider = _pick_first_non_empty_str(metadata, (CANONICAL_PROVIDER_KEY,))
-            if provider:
-                merged[CANONICAL_PROVIDER_KEY] = provider
-        return merged
-
-    legacy: dict[str, Any] = {}
-    external_session_id = _pick_first_non_empty_str(
-        metadata, (CANONICAL_EXTERNAL_SESSION_ID_KEY,)
-    )
-    provider = _pick_first_non_empty_str(metadata, (CANONICAL_PROVIDER_KEY,))
-    if external_session_id:
-        legacy["id"] = external_session_id
-    if provider:
-        legacy[CANONICAL_PROVIDER_KEY] = provider
-    return legacy
 
 
 def merge_preferred_session_binding_metadata(
@@ -203,19 +168,3 @@ def apply_invoke_session_binding_metadata(
     if provider:
         next_metadata[CANONICAL_PROVIDER_KEY] = provider
     return next_metadata
-
-
-__all__ = [
-    "SHARED_INTERRUPT_KEY",
-    "SHARED_SESSION_KEY",
-    "SHARED_STREAM_KEY",
-    "apply_invoke_session_binding_metadata",
-    "coerce_metadata_mapping",
-    "merge_preferred_session_binding_metadata",
-    "extract_preferred_interrupt_metadata",
-    "extract_preferred_session_metadata",
-    "extract_preferred_usage_metadata",
-    "extract_shared_metadata_section",
-    "merge_shared_metadata_sections",
-    "strip_session_binding_metadata",
-]

@@ -155,29 +155,6 @@ async def consume_legacy_refresh_token(
         raise LegacyRefreshTokenRevokedError("Legacy refresh token is revoked")
 
 
-async def ensure_legacy_refresh_token_is_not_revoked(
-    db: AsyncSession,
-    *,
-    user_id: UUID,
-    token_jti: str | None,
-) -> None:
-    """Reject legacy refresh tokens that were previously revoked by jti."""
-
-    if not token_jti:
-        return
-
-    result = await db.execute(
-        select(AuthLegacyRefreshRevocation)
-        .where(
-            AuthLegacyRefreshRevocation.user_id == user_id,
-            AuthLegacyRefreshRevocation.token_jti == token_jti,
-        )
-        .limit(1)
-    )
-    if result.scalar_one_or_none() is not None:
-        raise LegacyRefreshTokenRevokedError("Legacy refresh token is revoked")
-
-
 async def rotate_refresh_session(
     db: AsyncSession,
     *,
@@ -351,21 +328,3 @@ async def revoke_legacy_refresh_token(
     db.add(revocation)
     await db.flush()
     return revocation
-
-
-__all__ = [
-    "consume_legacy_refresh_token",
-    "LegacyRefreshTokenRevokedError",
-    "RefreshSessionError",
-    "RefreshSessionNotFoundError",
-    "RefreshSessionReplayError",
-    "RefreshSessionRevokedError",
-    "RefreshSessionRotation",
-    "bootstrap_legacy_refresh_session",
-    "create_refresh_session",
-    "ensure_legacy_refresh_token_is_not_revoked",
-    "revoke_all_refresh_sessions_for_user",
-    "revoke_legacy_refresh_token",
-    "revoke_refresh_session",
-    "rotate_refresh_session",
-]

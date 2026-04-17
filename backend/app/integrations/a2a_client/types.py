@@ -15,6 +15,3 @@ class ResolvedAgent:
     description: str | None
     metadata: dict[str, Any]
     headers: dict[str, str]
-
-
-__all__ = ["ResolvedAgent"]

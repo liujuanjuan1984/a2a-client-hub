@@ -28,6 +28,3 @@ async def open_schedule_invoke_session(
         card_fetch_timeout=5.0,
     ) as session:
         yield session
-
-
-__all__ = ["open_schedule_invoke_session"]

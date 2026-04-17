@@ -143,6 +143,3 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         uses_legacy_uri=uses_legacy_uri,
         uses_legacy_contract_fields=uses_legacy_contract_fields,
     )
-
-
-__all__ = ["diagnose_session_query"]

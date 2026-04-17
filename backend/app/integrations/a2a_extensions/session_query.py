@@ -6,14 +6,7 @@ from typing import Any, Dict, Literal, Optional
 
 from a2a.types import AgentCard
 
-from app.integrations.a2a_extensions.contract_utils import (
-    as_dict,
-    build_business_code_map,
-    normalize_method_name,
-    require_int,
-    require_str,
-    resolve_jsonrpc_interface,
-)
+from app.integrations.a2a_extensions import contract_utils
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
@@ -51,7 +44,7 @@ def _resolve_pagination_size(
     for key in candidates:
         if key not in pagination:
             continue
-        return require_int(
+        return contract_utils.require_int(
             pagination.get(key),
             field=f"pagination.{key}",
         )
@@ -196,17 +189,17 @@ def _resolve_method_contract_param_names(
     if raw_method_contracts is None:
         return set()
 
-    method_contracts = as_dict(raw_method_contracts)
+    method_contracts = contract_utils.as_dict(raw_method_contracts)
     raw_method_contract = method_contracts.get(method_name)
     if raw_method_contract is None:
         return set()
 
-    method_contract = as_dict(raw_method_contract)
+    method_contract = contract_utils.as_dict(raw_method_contract)
     raw_params_contract = method_contract.get("params")
     if raw_params_contract is None:
         return set()
 
-    params_contract = as_dict(raw_params_contract)
+    params_contract = contract_utils.as_dict(raw_params_contract)
     candidate_fields = {
         "required": ("required", "required_params"),
         "optional": ("optional", "optional_params"),
@@ -404,80 +397,84 @@ def _resolve_extension(
     ext = _find_session_query_extension(card, allow_legacy_uri=allow_legacy_uri)
 
     required = bool(getattr(ext, "required", False))
-    params: Dict[str, Any] = as_dict(getattr(ext, "params", None))
+    params: Dict[str, Any] = contract_utils.as_dict(getattr(ext, "params", None))
     raw_provider = params.get("provider")
     if raw_provider is None:
         provider = "opencode"
     else:
-        provider = require_str(raw_provider, field="params.provider").lower()
+        provider = contract_utils.require_str(
+            raw_provider, field="params.provider"
+        ).lower()
 
-    methods = as_dict(params.get("methods"))
-    list_sessions_method = require_str(
+    methods = contract_utils.as_dict(params.get("methods"))
+    list_sessions_method = contract_utils.require_str(
         methods.get("list_sessions"), field="methods.list_sessions"
     )
-    get_messages_method = require_str(
+    get_messages_method = contract_utils.require_str(
         methods.get("get_session_messages"),
         field="methods.get_session_messages",
     )
-    get_session_method = normalize_method_name(
+    get_session_method = contract_utils.normalize_method_name(
         methods.get("get_session"),
         field="methods.get_session",
     )
-    get_session_children_method = normalize_method_name(
+    get_session_children_method = contract_utils.normalize_method_name(
         methods.get("get_session_children"),
         field="methods.get_session_children",
     )
-    get_session_todo_method = normalize_method_name(
+    get_session_todo_method = contract_utils.normalize_method_name(
         methods.get("get_session_todo"),
         field="methods.get_session_todo",
     )
-    get_session_diff_method = normalize_method_name(
+    get_session_diff_method = contract_utils.normalize_method_name(
         methods.get("get_session_diff"),
         field="methods.get_session_diff",
     )
-    get_session_message_method = normalize_method_name(
+    get_session_message_method = contract_utils.normalize_method_name(
         methods.get("get_session_message"),
         field="methods.get_session_message",
     )
-    prompt_async_method = normalize_method_name(
+    prompt_async_method = contract_utils.normalize_method_name(
         methods.get("prompt_async"),
         field="methods.prompt_async",
     )
-    command_method = normalize_method_name(
+    command_method = contract_utils.normalize_method_name(
         methods.get("command"),
         field="methods.command",
     )
-    fork_method = normalize_method_name(
+    fork_method = contract_utils.normalize_method_name(
         methods.get("fork"),
         field="methods.fork",
     )
-    share_method = normalize_method_name(
+    share_method = contract_utils.normalize_method_name(
         methods.get("share"),
         field="methods.share",
     )
-    unshare_method = normalize_method_name(
+    unshare_method = contract_utils.normalize_method_name(
         methods.get("unshare"),
         field="methods.unshare",
     )
-    summarize_method = normalize_method_name(
+    summarize_method = contract_utils.normalize_method_name(
         methods.get("summarize"),
         field="methods.summarize",
     )
-    revert_method = normalize_method_name(
+    revert_method = contract_utils.normalize_method_name(
         methods.get("revert"),
         field="methods.revert",
     )
-    unrevert_method = normalize_method_name(
+    unrevert_method = contract_utils.normalize_method_name(
         methods.get("unrevert"),
         field="methods.unrevert",
     )
-    shell_method = normalize_method_name(
+    shell_method = contract_utils.normalize_method_name(
         methods.get("shell"),
         field="methods.shell",
     )
 
-    pagination = as_dict(params.get("pagination"))
-    declared_mode = require_str(pagination.get("mode"), field="pagination.mode")
+    pagination = contract_utils.as_dict(params.get("pagination"))
+    declared_mode = contract_utils.require_str(
+        pagination.get("mode"), field="pagination.mode"
+    )
     mode = (
         "limit" if declared_mode == LIMIT_WITH_OPTIONAL_CURSOR_MODE else declared_mode
     )
@@ -542,8 +539,8 @@ def _resolve_extension(
         declared_mode=declared_mode,
     )
 
-    errors = as_dict(params.get("errors"))
-    code_to_error = build_business_code_map(errors.get("business_codes"))
+    errors = contract_utils.as_dict(params.get("errors"))
+    code_to_error = contract_utils.build_business_code_map(errors.get("business_codes"))
 
     envelope_mapping = _resolve_result_envelope(params.get("result_envelope"))
     message_cursor_pagination = _resolve_message_cursor_pagination(
@@ -560,7 +557,7 @@ def _resolve_extension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
         required=required,
         provider=provider,
-        jsonrpc=resolve_jsonrpc_interface(card),
+        jsonrpc=contract_utils.resolve_jsonrpc_interface(card),
         methods={
             "list_sessions": list_sessions_method,
             "get_session": get_session_method,
@@ -652,12 +649,12 @@ def resolve_session_query_control_methods(
     """Resolve per-method session control capability metadata."""
 
     raw_ext = _find_session_query_extension(card, allow_legacy_uri=True)
-    params: Dict[str, Any] = as_dict(getattr(raw_ext, "params", None))
-    raw_flags = as_dict(params.get("control_method_flags"))
+    params: Dict[str, Any] = contract_utils.as_dict(getattr(raw_ext, "params", None))
+    raw_flags = contract_utils.as_dict(params.get("control_method_flags"))
     control_methods: dict[str, ResolvedSessionControlMethodCapability] = {}
 
     for method_key in ("prompt_async", "command", "shell"):
-        method_name = normalize_method_name(
+        method_name = contract_utils.normalize_method_name(
             ext.methods.get(method_key),
             field=f"methods.{method_key}",
         )
@@ -699,7 +696,7 @@ def resolve_session_query_control_methods(
 
             raw_config_key = raw_flag.get("config_key")
             if raw_config_key is not None:
-                config_key = require_str(
+                config_key = contract_utils.require_str(
                     raw_config_key,
                     field=f"control_method_flags.{raw_flag_key}.config_key",
                 )
@@ -715,12 +712,3 @@ def resolve_session_query_control_methods(
         )
 
     return control_methods
-
-
-__all__ = [
-    "resolve_canonical_session_query",
-    "resolve_codex_session_query",
-    "resolve_legacy_session_query",
-    "resolve_session_query_control_methods",
-    "resolve_session_query",
-]

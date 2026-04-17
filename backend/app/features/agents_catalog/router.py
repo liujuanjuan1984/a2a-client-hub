@@ -91,6 +91,3 @@ async def check_current_user_agent_catalog_health(
             for item in items
         ],
     )
-
-
-__all__ = ["router"]

@@ -106,6 +106,3 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
             == LEGACY_SHARED_SESSION_BINDING_URI
         ),
     )
-
-
-__all__ = ["resolve_session_binding"]

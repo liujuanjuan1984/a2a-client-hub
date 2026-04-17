@@ -96,6 +96,3 @@ class ExternalSessionDirectoryCacheEntry(Base, TimestampMixin):
             f"agent_source={self.agent_source}, agent_id={self.agent_id}, "
             f"expires_at={self.expires_at})>"
         )
-
-
-__all__ = ["ExternalSessionDirectoryCacheEntry"]

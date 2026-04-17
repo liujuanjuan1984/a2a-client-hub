@@ -583,11 +583,3 @@ class BuiltInFollowUpService:
 
 
 built_in_follow_up_service = BuiltInFollowUpService()
-
-
-__all__ = [
-    "BuiltInFollowUpWakeRequest",
-    "BuiltInFollowUpService",
-    "TargetAgentMessageAnchor",
-    "built_in_follow_up_service",
-]

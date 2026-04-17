@@ -119,13 +119,3 @@ def _collect_interfaces(card: AgentCard) -> Iterable[A2AInterfaceDescriptor]:
             protocol_version=protocol_version,
             source="additional",
         )
-
-
-__all__ = [
-    "A2AMessageRequest",
-    "A2APeerDescriptor",
-    "build_a2a_message",
-    "build_pascal_message_payload",
-    "build_peer_descriptor",
-    "normalize_transport_label",
-]

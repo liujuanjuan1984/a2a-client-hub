@@ -143,6 +143,3 @@ def validate_outbound_http_url(
     raise OutboundURLNotAllowedError(
         f"{purpose}: URL host is not allowed", code="host_not_allowed"
     )
-
-
-__all__ = ["OutboundURLNotAllowedError", "validate_outbound_http_url"]

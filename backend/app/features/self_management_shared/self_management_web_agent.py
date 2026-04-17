@@ -65,9 +65,3 @@ def build_self_management_web_agent_runtime(
             surface=SelfManagementSurface.WEB_AGENT,
         ),
     )
-
-
-__all__ = [
-    "SelfManagementWebAgentRuntime",
-    "build_self_management_web_agent_runtime",
-]

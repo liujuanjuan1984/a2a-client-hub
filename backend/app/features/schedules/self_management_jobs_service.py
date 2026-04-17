@@ -320,6 +320,3 @@ class SelfManagementJobsService:
 
 
 self_management_jobs_service = SelfManagementJobsService()
-
-
-__all__ = ["SelfManagementJobsService", "self_management_jobs_service"]

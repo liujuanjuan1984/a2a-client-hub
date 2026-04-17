@@ -46,7 +46,7 @@ def _mock_runtime_builder():
 
 
 def _build_claim(task: A2AScheduleTask):
-    from app.features.schedules.service import ClaimedA2AScheduleTask
+    from app.features.schedules.common import ClaimedA2AScheduleTask
 
     return ClaimedA2AScheduleTask(
         task_id=task.id,

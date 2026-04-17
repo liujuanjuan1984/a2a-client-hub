@@ -142,6 +142,3 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
     @validates("title")
     def _validate_title(self, _: str, value: str | None) -> str:
         return self.normalize_title(value)
-
-
-__all__ = ["ConversationThread"]

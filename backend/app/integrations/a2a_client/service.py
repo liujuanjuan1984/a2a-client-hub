@@ -114,11 +114,3 @@ async def shutdown_a2a_service() -> None:
         await _service_instance.gateway.shutdown()
     await close_shared_sdk_transport_http_clients()
     _service_instance = None
-
-
-__all__ = [
-    "A2AService",
-    "ResolvedAgent",
-    "get_a2a_service",
-    "shutdown_a2a_service",
-]

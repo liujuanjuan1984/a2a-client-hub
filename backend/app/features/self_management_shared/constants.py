@@ -9,8 +9,3 @@ SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID: UUID = uuid5(
     NAMESPACE_URL,
     "builtin://self-management-assistant",
 )
-
-__all__ = [
-    "SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID",
-    "SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID",
-]
