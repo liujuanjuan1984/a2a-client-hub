@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
-from app.features.personal_agents.schemas import A2AAuthType
+from app.features.agents.personal.schemas import A2AAuthType
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
 )

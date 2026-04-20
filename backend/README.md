@@ -199,12 +199,12 @@ Current direction:
 Feature-owned areas already organized under `app/features/`:
 
 - `app/features/auth/`
+- `app/features/agents/`
 - `app/features/extension_capabilities/`
+- `app/features/external_sessions/`
 - `app/features/hub_agents/`
 - `app/features/invitations/`
 - `app/features/invoke/`
-- `app/features/opencode_sessions/`
-- `app/features/personal_agents/`
 - `app/features/schedules/`
 - `app/features/sessions/`
 - `app/features/shortcuts/`
@@ -263,7 +263,7 @@ Recent examples:
 
 - `app/features/schedules/job.py` keeps scheduler claim/finalize work in short sessions and releases DB state before remote invoke.
 - `app/features/invoke/route_runner.py` keeps session recovery in short transactions instead of tying invoke lifetime to request-scoped DB state.
-- `app/features/opencode_sessions/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
+- `app/features/external_sessions/opencode/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
 
 ## A2A Outbound Allowlist
 

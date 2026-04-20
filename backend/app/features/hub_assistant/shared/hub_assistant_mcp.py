@@ -22,6 +22,7 @@ from app.core.security import (
     verify_jwt_token_claims,
 )
 from app.db.session import AsyncSessionLocal
+from app.features.agents.personal.service import A2AAgentError
 from app.features.auth.service import UserNotFoundError, get_active_user
 from app.features.hub_access.actor_context import (
     HubAuthorizationError,
@@ -69,7 +70,6 @@ from app.features.hub_assistant.shared.hub_assistant_toolkit import (
 from app.features.hub_assistant.shared.hub_assistant_web_agent import (
     build_hub_assistant_web_agent_runtime,
 )
-from app.features.personal_agents.service import A2AAgentError
 from app.features.schedules.common import A2AScheduleError
 
 logger = get_logger(__name__)

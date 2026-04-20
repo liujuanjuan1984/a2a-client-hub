@@ -5,8 +5,8 @@ from uuid import uuid4
 
 from app.core.secret_vault import hub_a2a_secret_vault
 from app.db.models.a2a_agent import A2AAgent
-from app.features.personal_agents.runtime import a2a_runtime_builder
-from app.features.shared_a2a_agents.runtime import hub_a2a_runtime_builder
+from app.features.agents.personal.runtime import a2a_runtime_builder
+from app.features.agents.shared.runtime import shared_agent_runtime_builder
 
 
 def test_a2a_runtime_builder_build_from_agent_uses_prefetched_fields() -> None:
@@ -45,7 +45,9 @@ def test_hub_runtime_builder_build_from_agent_returns_scalar_runtime_fields() ->
         enabled=False,
     )
 
-    runtime = hub_a2a_runtime_builder.build_from_agent(agent=agent, credential=None)
+    runtime = shared_agent_runtime_builder.build_from_agent(
+        agent=agent, credential=None
+    )
 
     assert runtime.agent_id == agent.id
     assert runtime.agent_name == "Shared Agent"
@@ -63,7 +65,7 @@ def test_hub_runtime_builder_resolve_prefetched_builds_bearer_headers() -> None:
         token_last4=token_last4,
     )
 
-    resolved, resolved_last4 = hub_a2a_runtime_builder.resolve_prefetched(
+    resolved, resolved_last4 = shared_agent_runtime_builder.resolve_prefetched(
         name="Shared Agent",
         card_url="https://shared.example.com",
         extra_headers={"X-Shared": "1"},

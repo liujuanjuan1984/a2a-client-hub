@@ -14,6 +14,7 @@ from app.core.security import create_hub_assistant_access_token
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.hub_assistant_task import HubAssistantTask
+from app.features.agents.personal import service as personal_agent_service_module
 from app.features.hub_assistant.shared import (
     delegated_conversation_service as delegated_conversation_service_module,
 )
@@ -37,7 +38,6 @@ from app.features.hub_assistant.shared.task_service import (
 )
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
-from app.features.personal_agents import service as personal_agent_service_module
 from app.main import combine_lifespans
 from tests.support.utils import (
     create_a2a_agent,

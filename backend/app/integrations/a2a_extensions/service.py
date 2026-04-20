@@ -7,7 +7,7 @@ import time
 from typing import Any, Dict, Literal, Optional
 
 from app.core.logging import get_logger
-from app.features.personal_agents.runtime import A2ARuntime
+from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions import capability_snapshot_builder
 from app.integrations.a2a_extensions.capability_snapshot import (
     CapabilitySnapshotCacheEntry,

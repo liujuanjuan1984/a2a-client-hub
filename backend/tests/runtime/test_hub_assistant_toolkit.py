@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.features.agents.personal import service as personal_agent_service_module
 from app.features.hub_access.actor_context import (
     HubActorType,
     build_hub_actor_context,
@@ -32,7 +33,6 @@ from app.features.hub_assistant.shared.hub_assistant_toolkit import (
     HubAssistantToolInputError,
     HubAssistantToolkit,
 )
-from app.features.personal_agents import service as personal_agent_service_module
 from app.features.sessions import (
     hub_assistant_sessions_service as hub_assistant_sessions_service_module,
 )

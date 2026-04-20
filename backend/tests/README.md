@@ -5,10 +5,10 @@ Backend tests are organized by either feature or shared concern.
 ## Feature Groups
 
 - `api/`
+- `agents/`
 - `auth/`
+- `external_sessions/`
 - `shortcuts/`
-- `personal_agents/`
-- `shared_a2a_agents/`
 - `invoke/`
 - `schedules/`
 - `sessions/`

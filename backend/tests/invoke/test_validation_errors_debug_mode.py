@@ -1,7 +1,7 @@
 import pytest
 
 from app.core.config import settings
-from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
+from app.features.agents.common.card_validation import fetch_and_validate_agent_card
 from app.features.invoke.service import A2AInvokeService
 
 
@@ -18,7 +18,7 @@ class _DummyGateway:
 @pytest.mark.asyncio
 async def test_fetch_and_validate_agent_card_validation_errors_gated(monkeypatch):
     monkeypatch.setattr(
-        "app.features.agents_shared.card_validation.validate_agent_card_payload",
+        "app.features.agents.common.card_validation.validate_agent_card_payload",
         lambda payload: type(
             "_ValidationResult",
             (),
@@ -42,7 +42,7 @@ async def test_fetch_and_validate_agent_card_validation_errors_gated(monkeypatch
 @pytest.mark.asyncio
 async def test_fetch_and_validate_agent_card_exposes_warning_only_success(monkeypatch):
     monkeypatch.setattr(
-        "app.features.agents_shared.card_validation.validate_agent_card_payload",
+        "app.features.agents.common.card_validation.validate_agent_card_payload",
         lambda payload: type(
             "_ValidationResult",
             (),

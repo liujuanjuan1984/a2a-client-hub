@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
-from app.features.agents_shared.runtime_auth import (
+from app.features.agents.common.runtime_auth import (
     build_resolved_runtime_agent,
     resolve_runtime_auth_headers,
 )

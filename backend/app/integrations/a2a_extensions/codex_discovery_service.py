@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from app.features.personal_agents.runtime import A2ARuntime
+from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 

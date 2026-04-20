@@ -11,6 +11,17 @@ from app.core.logging import get_logger
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely, load_for_external_call
+from app.features.agents.personal.runtime import (
+    A2ARuntimeNotFoundError,
+    A2ARuntimeValidationError,
+    a2a_runtime_builder,
+)
+from app.features.agents.shared.runtime import (
+    SharedAgentRuntimeNotFoundError,
+    SharedAgentRuntimeValidationError,
+    SharedAgentUserCredentialRequiredError,
+    shared_agent_runtime_builder,
+)
 from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_AGENTS_START_SESSIONS,
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
@@ -21,20 +32,9 @@ from app.features.hub_assistant.shared.task_service import (
     hub_assistant_task_service,
 )
 from app.features.invoke.route_runner import run_background_invoke
-from app.features.personal_agents.runtime import (
-    A2ARuntimeNotFoundError,
-    A2ARuntimeValidationError,
-    a2a_runtime_builder,
-)
 from app.features.sessions import message_store
 from app.features.sessions.common import parse_conversation_id
 from app.features.sessions.support import SessionHubSupport
-from app.features.shared_a2a_agents.runtime import (
-    HubA2ARuntimeNotFoundError,
-    HubA2ARuntimeValidationError,
-    HubA2AUserCredentialRequiredError,
-    hub_a2a_runtime_builder,
-)
 from app.integrations.a2a_client.service import get_a2a_service
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
@@ -348,7 +348,7 @@ class HubAssistantDelegatedConversationService:
                     Any,
                     await load_for_external_call(
                         db,
-                        lambda session: hub_a2a_runtime_builder.build(
+                        lambda session: shared_agent_runtime_builder.build(
                             session,
                             user_id=cast(UUID, current_user.id),
                             agent_id=agent_uuid,
@@ -367,7 +367,7 @@ class HubAssistantDelegatedConversationService:
                         ),
                     ),
                 )
-        except (A2ARuntimeNotFoundError, HubA2ARuntimeNotFoundError) as exc:
+        except (A2ARuntimeNotFoundError, SharedAgentRuntimeNotFoundError) as exc:
             return {
                 "runtime": None,
                 "agent_uuid": agent_uuid,
@@ -377,7 +377,7 @@ class HubAssistantDelegatedConversationService:
                 "error": str(exc),
                 "error_code": "agent_not_found",
             }
-        except HubA2AUserCredentialRequiredError as exc:
+        except SharedAgentUserCredentialRequiredError as exc:
             return {
                 "runtime": None,
                 "agent_uuid": agent_uuid,
@@ -387,7 +387,7 @@ class HubAssistantDelegatedConversationService:
                 "error": getattr(exc, "error_code", "credential_required"),
                 "error_code": getattr(exc, "error_code", "credential_required"),
             }
-        except (A2ARuntimeValidationError, HubA2ARuntimeValidationError):
+        except (A2ARuntimeValidationError, SharedAgentRuntimeValidationError):
             return {
                 "runtime": None,
                 "agent_uuid": agent_uuid,
@@ -455,7 +455,7 @@ class HubAssistantDelegatedConversationService:
         if agent_source == "shared":
             return await load_for_external_call(
                 db,
-                lambda session: hub_a2a_runtime_builder.build(
+                lambda session: shared_agent_runtime_builder.build(
                     session,
                     user_id=cast(UUID, current_user.id),
                     agent_id=agent_id,
@@ -543,9 +543,9 @@ class HubAssistantDelegatedConversationService:
         except (
             A2ARuntimeNotFoundError,
             A2ARuntimeValidationError,
-            HubA2ARuntimeNotFoundError,
-            HubA2ARuntimeValidationError,
-            HubA2AUserCredentialRequiredError,
+            SharedAgentRuntimeNotFoundError,
+            SharedAgentRuntimeValidationError,
+            SharedAgentUserCredentialRequiredError,
         ) as exc:
             logger.exception(
                 "Delegated hub-assistant handoff runtime resolution failed",
