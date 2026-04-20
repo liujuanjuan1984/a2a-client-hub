@@ -3,27 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import copy
-import importlib
-import shutil
-import sys
-import threading
 import time
-from dataclasses import dataclass
-from enum import Enum
-from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import case, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import (
     HUB_ASSISTANT_INTERRUPT_TOKEN_TYPE,
-    create_hub_assistant_access_token,
-    create_hub_assistant_interrupt_token,
     get_hub_assistant_allowed_operations,
     get_hub_assistant_interrupt_conversation_id,
     get_hub_assistant_interrupt_message,
@@ -32,23 +21,24 @@ from app.core.security import (
 )
 from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
-from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.features.hub_access.actor_context import HubAction
-from app.features.hub_access.capability_catalog import (
-    list_hub_operation_ids,
+from app.features.hub_assistant.models import (
+    DEFAULT_AGENT_DESCRIPTION,
+    DEFAULT_AGENT_ID,
+    DEFAULT_AGENT_NAME,
+    FOLLOW_UP_RESUME_MESSAGE_TEMPLATE,
+    ExecutedHubAssistantRun,
+    HubAssistantConfigError,
+    HubAssistantContinuation,
+    HubAssistantInterrupt,
+    HubAssistantProfile,
+    HubAssistantRecoveredInterrupt,
+    HubAssistantRunResult,
+    HubAssistantRunStatus,
+    HubAssistantUnavailableError,
 )
-from app.features.hub_access.operation_gateway import (
-    HubConfirmationPolicy,
-    HubSurface,
-)
-from app.features.hub_assistant.shared.constants import (
-    HUB_ASSISTANT_INTERNAL_ID,
-    HUB_ASSISTANT_PUBLIC_ID,
-)
+from app.features.hub_assistant.persistence import HubAssistantPersistenceService
 from app.features.hub_assistant.shared.hub_assistant_mcp import (
-    HUB_ASSISTANT_MCP_READONLY_MOUNT_PATH,
-    HUB_ASSISTANT_MCP_WRITE_MOUNT_PATH,
     list_hub_assistant_mcp_tool_definitions,
 )
 from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
@@ -59,255 +49,33 @@ from app.features.hub_assistant.shared.task_service import (
     PermissionReplyContinuationTaskRequest,
     hub_assistant_task_service,
 )
-from app.features.sessions import block_store, message_store
+from app.features.hub_assistant.swival_runtime import (
+    WRITE_APPROVAL_SENTINEL,
+    HubAssistantSwivalRuntime,
+)
 from app.features.sessions.common import (
-    SessionSource,
     normalize_interrupt_lifecycle_event,
     parse_conversation_id,
-    project_message_blocks,
-    sender_to_role,
 )
-from app.features.sessions.service import session_hub_service
 from app.features.sessions.support import SessionHubSupport
-from app.utils.timezone_util import utc_now
 
-_DEFAULT_AGENT_ID = HUB_ASSISTANT_PUBLIC_ID
-_DEFAULT_AGENT_NAME = "A2A Client Hub Assistant"
-_DEFAULT_AGENT_DESCRIPTION = (
-    "A swival-backed Hub Assistant that can manage the authenticated user's own "
-    "a2a-client-hub resources through constrained Hub Assistant tools."
-)
-_DEFAULT_SYSTEM_PROMPT = (
-    "You are the Hub Assistant for a2a-client-hub. Help the authenticated user "
-    "inspect or manage their own agents, scheduled jobs, "
-    "sessions, and related resources using the provided MCP tools. Never invent "
-    "resource ids. For write operations, explain the intended change briefly "
-    "before using the tool. If the request is missing required identifiers, ask "
-    "one concise follow-up question. When you use `hub_assistant.agents.start_sessions` "
-    "or `hub_assistant.sessions.send_message`, treat them as handoff operations: once a "
-    "handoff is accepted, do not invent downstream outcomes, and explain that "
-    "the request was handed off to the target conversation. You do not need to "
-    "wait inline for the target side's live transport or final reply; when new "
-    "persisted text results arrive later, the host will resume you so you can "
-    "read and continue processing those results."
-)
-_FOLLOW_UP_RESUME_MESSAGE_TEMPLATE = (
-    "System follow-up wakeup: newer persisted target-session text results were "
-    "detected for this Hub Assistant conversation.\n\n"
-    "Tracked target conversation ids: {tracked_conversation_ids}\n"
-    "Changed target conversation ids: {changed_conversation_ids}\n"
-    "Previously acknowledged target-agent anchors by conversation: "
-    "{previous_target_agent_message_anchors}\n"
-    "Previously acknowledged target-agent text message ids by conversation: "
-    "{previous_target_agent_message_ids}\n"
-    "Currently observed latest target-agent anchors by conversation: "
-    "{observed_target_agent_message_anchors}\n\n"
-    "Use `hub_assistant.followups.get` to inspect the durable follow-up state, then use "
-    "`hub_assistant.sessions.get_latest_messages` with "
-    "`after_agent_message_id_by_conversation` set to the previous message-id "
-    "map above so you only read newly persisted target-agent text results. "
-    "Summarize meaningful progress or conclusions to the user. If you need to "
-    "adjust future tracking scope, call `hub_assistant.followups.set_sessions` with the "
-    "exact target conversation ids that should remain tracked. Pass an empty "
-    "list when tracking should stop. Do not wait on downstream live transport."
-)
-_WRITE_APPROVAL_SENTINEL = "[[HUB_ASSISTANT_WRITE_APPROVAL_REQUIRED]]"
-_WRITE_APPROVAL_OPERATIONS_PREFIX = "[[HUB_ASSISTANT_WRITE_OPERATIONS:"
-_WRITE_APPROVAL_OPERATIONS_SUFFIX = "]]"
-_WEB_AGENT_WRITE_OPERATION_IDS = list_hub_operation_ids(
-    surface=HubSurface.WEB_AGENT,
-    confirmation_policy=HubConfirmationPolicy.REQUIRED,
-    action=HubAction.WRITE,
-    require_tool_name=True,
-)
-_READ_ONLY_APPENDIX = (
-    " This run is read-only. Do not attempt write operations. If the user's latest "
-    "request would require a write tool, explain the intended change briefly, do not "
-    "claim that any change was applied, append a final line containing exactly "
-    f"{_WRITE_APPROVAL_SENTINEL}, then append one more final line containing exactly "
-    "`[[HUB_ASSISTANT_WRITE_OPERATIONS:<comma-separated operation ids>]]` using "
-    "only the required write operation ids from this catalog: "
-    + ", ".join(_WEB_AGENT_WRITE_OPERATION_IDS)
-    + "."
-)
-_WRITE_ENABLED_APPENDIX = (
-    " This run includes explicitly approved write tools. Only perform a write when "
-    "the user's latest request clearly asks for that change. When additional write "
-    "operations outside the approved tool set are needed, do not claim that any "
-    "change was applied, append the approval sentinel, and append the exact "
-    "operation ids that still require approval."
-)
 logger = get_logger(__name__)
-
-
-class HubAssistantError(RuntimeError):
-    """Base error for the Hub Assistant runtime."""
-
-
-class HubAssistantConfigError(HubAssistantError):
-    """Raised when the Hub Assistant runtime is not configured."""
-
-
-class HubAssistantUnavailableError(HubAssistantError):
-    """Raised when the swival runtime cannot be imported or executed."""
-
-
-class HubAssistantRunStatus(str, Enum):
-    """High-level outcome for one Hub Assistant run."""
-
-    ACCEPTED = "accepted"
-    COMPLETED = "completed"
-    INTERRUPTED = "interrupted"
-
-
-@dataclass(frozen=True)
-class HubAssistantInterrupt:
-    """Permission interrupt emitted by a read-only Hub Assistant run."""
-
-    request_id: str
-    permission: str
-    patterns: tuple[str, ...]
-    display_message: str
-
-
-@dataclass(frozen=True)
-class HubAssistantProfile:
-    """Static metadata for the swival-backed Hub Assistant."""
-
-    agent_id: str
-    name: str
-    description: str
-    runtime: str
-    configured: bool
-    resources: tuple[str, ...]
-    tool_definitions: tuple[HubAssistantToolDefinition, ...]
-
-
-@dataclass(frozen=True)
-class HubAssistantRunResult:
-    """One completed or interrupted swival-backed Hub Assistant run."""
-
-    status: HubAssistantRunStatus
-    answer: str | None
-    exhausted: bool
-    runtime: str
-    resources: tuple[str, ...]
-    tool_names: tuple[str, ...]
-    write_tools_enabled: bool
-    interrupt: HubAssistantInterrupt | None = None
-    continuation: "HubAssistantContinuation" | None = None
-
-
-@dataclass(frozen=True)
-class HubAssistantContinuation:
-    """Accepted continuation details returned immediately to the caller."""
-
-    phase: str
-    agent_message_id: UUID
-
-
-@dataclass(frozen=True)
-class HubAssistantRecoveredInterrupt:
-    """One unresolved persisted interrupt recovered from durable session history."""
-
-    request_id: str
-    session_id: str
-    type: str
-    details: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class _ExecutedHubAssistantRun:
-    """Internal swival execution result together with durable session context."""
-
-    result: HubAssistantRunResult
-    profile: HubAssistantProfile
-    local_session: Any
-    local_session_id: str
-    local_source: SessionSource
-
-
-@dataclass
-class _ConversationRuntimeState:
-    """One in-memory swival conversation runtime owned by one user conversation."""
-
-    session: Any | None = None
-    delegated_write_operation_ids: frozenset[str] = frozenset()
-    auto_approve_write_operation_ids: frozenset[str] = frozenset()
-    delegated_token_expires_at_monotonic: float = 0.0
-    last_accessed_monotonic: float = 0.0
-    lock: asyncio.Lock | None = None
-
-    def get_lock(self) -> asyncio.Lock:
-        if self.lock is None:
-            self.lock = asyncio.Lock()
-        return self.lock
+_WRITE_APPROVAL_SENTINEL = WRITE_APPROVAL_SENTINEL
 
 
 class HubAssistantService:
     """High-level facade for the Hub Assistant."""
 
     def __init__(self) -> None:
-        self._conversation_registry: dict[
-            tuple[str, str], _ConversationRuntimeState
-        ] = {}
-        self._registry_lock = threading.Lock()
         self._session_support = SessionHubSupport()
-
-    def _delegated_token_ttl_seconds(self) -> int:
-        return min(
-            settings.jwt_access_token_ttl_seconds,
-            settings.hub_assistant_swival_delegated_token_ttl_seconds,
+        self._persistence = HubAssistantPersistenceService(
+            session_support=self._session_support
         )
-
-    def _delegated_token_refresh_skew_seconds(self) -> int:
-        ttl_seconds = self._delegated_token_ttl_seconds()
-        return max(5, min(30, ttl_seconds // 10 or 1))
-
-    def _runtime_session_needs_refresh(
-        self,
-        *,
-        runtime_state: _ConversationRuntimeState,
-        delegated_write_operation_ids: frozenset[str],
-    ) -> bool:
-        if runtime_state.session is None:
-            return True
-        if runtime_state.delegated_write_operation_ids != delegated_write_operation_ids:
-            return True
-        expires_at = runtime_state.delegated_token_expires_at_monotonic
-        if expires_at <= 0:
-            return False
-        refresh_cutoff = expires_at - self._delegated_token_refresh_skew_seconds()
-        return time.monotonic() >= refresh_cutoff
-
-    async def _invalidate_runtime_session(
-        self,
-        runtime_state: _ConversationRuntimeState,
-    ) -> None:
-        session = runtime_state.session
-        runtime_state.session = None
-        runtime_state.delegated_token_expires_at_monotonic = 0.0
-        runtime_state.delegated_write_operation_ids = frozenset()
-        runtime_state.last_accessed_monotonic = time.monotonic()
-        if session is not None:
-            await asyncio.to_thread(self._close_swival_session, session)
-
-    def _extract_mcp_runtime_error(self, result: Any) -> str | None:
-        raw_messages = getattr(result, "messages", None)
-        if not isinstance(raw_messages, list):
-            return None
-        for raw_message in reversed(raw_messages):
-            if not isinstance(raw_message, dict):
-                continue
-            if raw_message.get("role") != "tool":
-                continue
-            content = raw_message.get("content")
-            if not isinstance(content, str):
-                continue
-            normalized = content.strip()
-            if normalized.startswith("error: MCP server "):
-                return normalized
-        return None
+        self._runtime = HubAssistantSwivalRuntime(
+            persisted_messages_loader=self._persistence.list_persisted_runtime_messages,
+            time_module=time,
+        )
+        self._conversation_registry = self._runtime._conversation_registry
 
     def get_profile(self) -> HubAssistantProfile:
         tool_definitions = list_hub_assistant_mcp_tool_definitions()
@@ -320,9 +88,9 @@ class HubAssistantService:
             )
         )
         return HubAssistantProfile(
-            agent_id=_DEFAULT_AGENT_ID,
-            name=_DEFAULT_AGENT_NAME,
-            description=_DEFAULT_AGENT_DESCRIPTION,
+            agent_id=DEFAULT_AGENT_ID,
+            name=DEFAULT_AGENT_NAME,
+            description=DEFAULT_AGENT_DESCRIPTION,
             runtime="swival",
             configured=self.is_configured(),
             resources=resources,
@@ -331,14 +99,15 @@ class HubAssistantService:
 
     def is_configured(self) -> bool:
         return (
-            self._has_required_runtime_configuration() and self._is_swival_importable()
+            self._runtime.has_required_runtime_configuration()
+            and self._is_swival_importable()
         )
 
     async def run(
         self,
         *,
         db: AsyncSession,
-        current_user: User,
+        current_user: Any,
         conversation_id: str,
         message: str,
         allow_write_tools: bool,
@@ -352,12 +121,12 @@ class HubAssistantService:
             message=message,
             allow_write_tools=allow_write_tools,
         )
-        await self._persist_run_turn(
+        await self._persistence.persist_run_turn(
             db=db,
             current_user=current_user,
             local_session=executed.local_session,
             local_session_id=executed.local_session_id,
-            local_source=executed.local_source,
+            local_source=cast(Any, executed.local_source),
             query=message,
             user_message_id=user_message_id,
             agent_message_id=agent_message_id,
@@ -369,7 +138,7 @@ class HubAssistantService:
         self,
         *,
         db: AsyncSession,
-        current_user: User,
+        current_user: Any,
         conversation_id: str,
     ) -> list[HubAssistantRecoveredInterrupt]:
         resolved_conversation_id = parse_conversation_id(conversation_id)
@@ -466,7 +235,7 @@ class HubAssistantService:
             )
 
         for request_id in expired_request_ids:
-            await self._persist_interrupt_resolution(
+            await self._persistence.persist_interrupt_resolution(
                 db=db,
                 current_user=current_user,
                 conversation_id=str(resolved_conversation_id),
@@ -479,12 +248,12 @@ class HubAssistantService:
         self,
         *,
         db: AsyncSession,
-        current_user: User,
+        current_user: Any,
         conversation_id: str,
         message: str,
         allow_write_tools: bool,
         allowed_write_operation_ids: frozenset[str] = frozenset(),
-    ) -> _ExecutedHubAssistantRun:
+    ) -> ExecutedHubAssistantRun:
         if not self.is_configured():
             raise HubAssistantConfigError(
                 "The Hub Assistant is not configured. "
@@ -497,18 +266,25 @@ class HubAssistantService:
                 "conversation_id is required for the Hub Assistant runtime."
             )
 
-        local_session, local_source = await self._ensure_local_hub_assistant_session(
-            db=db,
-            current_user=current_user,
-            conversation_id=normalized_conversation_id,
-        )
+        try:
+            local_session, local_source = (
+                await self._persistence.ensure_local_hub_assistant_session(
+                    db=db,
+                    current_user=current_user,
+                    conversation_id=normalized_conversation_id,
+                )
+            )
+        except RuntimeError as exc:
+            raise HubAssistantUnavailableError(str(exc)) from exc
+
         local_session_id = str(local_session.id)
         profile = self.get_profile()
-        runtime_state = await self._get_conversation_runtime_state(
+        runtime_state = await self._runtime.get_conversation_runtime_state(
             current_user_id=str(current_user.id),
             conversation_id=local_session_id,
         )
-        tool_definitions: tuple[HubAssistantToolDefinition, ...]
+
+        tool_definitions = cast(tuple[HubAssistantToolDefinition, ...], ())
         async with runtime_state.get_lock():
             effective_write_operation_ids = (
                 allowed_write_operation_ids
@@ -529,7 +305,7 @@ class HubAssistantService:
                 allow_write_tools=effective_write_tools,
                 delegated_write_operation_ids=effective_write_operation_ids,
             )
-            session = await self._ensure_conversation_session(
+            session = await self._runtime.ensure_conversation_session(
                 db=db,
                 runtime_state=runtime_state,
                 current_user=current_user,
@@ -538,18 +314,19 @@ class HubAssistantService:
             )
             try:
                 result = await asyncio.to_thread(session.ask, message)
-            except Exception as exc:  # pragma: no cover - exercised with integration
-                await self._invalidate_runtime_session(runtime_state)
+            except Exception as exc:  # pragma: no cover - integration exercised
+                await self._runtime.invalidate_runtime_session(runtime_state)
                 raise HubAssistantUnavailableError(
                     f"swival Hub Assistant run failed: {exc}"
                 ) from exc
-            mcp_runtime_error = self._extract_mcp_runtime_error(result)
+            mcp_runtime_error = self._runtime.extract_mcp_runtime_error(result)
             if mcp_runtime_error is not None:
-                await self._invalidate_runtime_session(runtime_state)
+                await self._runtime.invalidate_runtime_session(runtime_state)
                 raise HubAssistantUnavailableError(
                     f"swival Hub Assistant MCP call failed: {mcp_runtime_error}"
                 )
             runtime_state.last_accessed_monotonic = time.monotonic()
+
         answer = cast(str | None, getattr(result, "answer", None))
         exhausted = bool(getattr(result, "exhausted", False))
         if not effective_write_tools and self._answer_requests_write_approval(answer):
@@ -557,7 +334,7 @@ class HubAssistantService:
                 answer
             )
             if not requested_write_operation_ids:
-                await self._invalidate_runtime_session(runtime_state)
+                await self._runtime.invalidate_runtime_session(runtime_state)
                 raise HubAssistantUnavailableError(
                     "swival Hub Assistant requested write approval without "
                     "declaring any write operations"
@@ -569,7 +346,7 @@ class HubAssistantService:
                 answer=answer,
                 allowed_write_operation_ids=requested_write_operation_ids,
             )
-            return _ExecutedHubAssistantRun(
+            return ExecutedHubAssistantRun(
                 result=HubAssistantRunResult(
                     status=HubAssistantRunStatus.INTERRUPTED,
                     answer=self._strip_write_approval_metadata(answer),
@@ -592,7 +369,7 @@ class HubAssistantService:
                 answer
             )
             if not requested_write_operation_ids:
-                await self._invalidate_runtime_session(runtime_state)
+                await self._runtime.invalidate_runtime_session(runtime_state)
                 raise HubAssistantUnavailableError(
                     "swival Hub Assistant requested write approval without "
                     "declaring any write operations"
@@ -603,7 +380,7 @@ class HubAssistantService:
                 if operation_id not in effective_write_operation_ids
             )
             if not missing_write_operation_ids:
-                await self._invalidate_runtime_session(runtime_state)
+                await self._runtime.invalidate_runtime_session(runtime_state)
                 raise HubAssistantUnavailableError(
                     "swival Hub Assistant requested write approval after write "
                     "tools were enabled"
@@ -615,7 +392,7 @@ class HubAssistantService:
                 answer=answer,
                 allowed_write_operation_ids=missing_write_operation_ids,
             )
-            return _ExecutedHubAssistantRun(
+            return ExecutedHubAssistantRun(
                 result=HubAssistantRunResult(
                     status=HubAssistantRunStatus.INTERRUPTED,
                     answer=self._strip_write_approval_metadata(answer),
@@ -633,7 +410,7 @@ class HubAssistantService:
                 local_session_id=local_session_id,
                 local_source=local_source,
             )
-        return _ExecutedHubAssistantRun(
+        return ExecutedHubAssistantRun(
             result=HubAssistantRunResult(
                 status=HubAssistantRunStatus.COMPLETED,
                 answer=answer,
@@ -655,7 +432,7 @@ class HubAssistantService:
         self,
         *,
         db: AsyncSession,
-        current_user: User,
+        current_user: Any,
         request_id: str,
         reply: str,
         agent_message_id: UUID | None = None,
@@ -699,14 +476,14 @@ class HubAssistantService:
                 tool_names=tuple(get_hub_assistant_interrupt_tool_names(claims)),
                 write_tools_enabled=False,
             )
-            await self._persist_interrupt_resolution(
+            await self._persistence.persist_interrupt_resolution(
                 db=db,
                 current_user=current_user,
                 conversation_id=conversation_id,
                 request_id=request_id,
                 resolution="rejected",
             )
-            await self._persist_follow_up_agent_message(
+            await self._persistence.persist_follow_up_agent_message(
                 db=db,
                 current_user=current_user,
                 conversation_id=conversation_id,
@@ -725,33 +502,21 @@ class HubAssistantService:
             )
             return result
 
-        if reply == "always":
-            runtime_state = await self._get_conversation_runtime_state(
-                current_user_id=str(current_user.id),
-                conversation_id=conversation_id,
+        runtime_state = await self._runtime.get_conversation_runtime_state(
+            current_user_id=str(current_user.id),
+            conversation_id=conversation_id,
+        )
+        async with runtime_state.get_lock():
+            approved_operation_ids = (
+                runtime_state.auto_approve_write_operation_ids
+                | runtime_state.delegated_write_operation_ids
+                | approved_operation_ids
             )
-            async with runtime_state.get_lock():
-                approved_operation_ids = (
-                    runtime_state.auto_approve_write_operation_ids
-                    | runtime_state.delegated_write_operation_ids
-                    | approved_operation_ids
-                )
+            if reply == "always":
                 runtime_state.auto_approve_write_operation_ids = approved_operation_ids
-                runtime_state.last_accessed_monotonic = time.monotonic()
-        else:
-            runtime_state = await self._get_conversation_runtime_state(
-                current_user_id=str(current_user.id),
-                conversation_id=conversation_id,
-            )
-            async with runtime_state.get_lock():
-                approved_operation_ids = (
-                    runtime_state.auto_approve_write_operation_ids
-                    | runtime_state.delegated_write_operation_ids
-                    | approved_operation_ids
-                )
-                runtime_state.last_accessed_monotonic = time.monotonic()
+            runtime_state.last_accessed_monotonic = time.monotonic()
 
-        await self._persist_interrupt_resolution(
+        await self._persistence.persist_interrupt_resolution(
             db=db,
             current_user=current_user,
             conversation_id=conversation_id,
@@ -759,7 +524,7 @@ class HubAssistantService:
             resolution="replied",
         )
         continuation_agent_message_id = agent_message_id or uuid4()
-        await self._persist_follow_up_agent_message(
+        await self._persistence.persist_follow_up_agent_message(
             db=db,
             current_user=current_user,
             conversation_id=conversation_id,
@@ -807,7 +572,7 @@ class HubAssistantService:
         self,
         *,
         db: AsyncSession,
-        current_user: User,
+        current_user: Any,
         request: HubAssistantFollowUpTaskRequest,
         agent_message_id: UUID | None = None,
     ) -> HubAssistantRunResult:
@@ -821,7 +586,7 @@ class HubAssistantService:
                 message=follow_up_message,
                 allow_write_tools=False,
             )
-            await self._persist_follow_up_agent_message(
+            await self._persistence.persist_follow_up_agent_message(
                 db=db,
                 current_user=current_user,
                 conversation_id=request.hub_assistant_conversation_id,
@@ -864,7 +629,7 @@ class HubAssistantService:
                 ),
             )
             if executed.result.interrupt is not None:
-                await self._persist_permission_interrupt(
+                await self._persistence.persist_permission_interrupt(
                     db=db,
                     current_user=current_user,
                     local_session_id=executed.local_session_id,
@@ -872,7 +637,7 @@ class HubAssistantService:
                 )
             return executed.result
         except Exception as exc:
-            await self._persist_follow_up_agent_message(
+            await self._persistence.persist_follow_up_agent_message(
                 db=db,
                 current_user=current_user,
                 conversation_id=request.hub_assistant_conversation_id,
@@ -913,7 +678,7 @@ class HubAssistantService:
         self,
         *,
         db: AsyncSession,
-        current_user: User,
+        current_user: Any,
         request: PermissionReplyContinuationTaskRequest,
     ) -> None:
         extra = {
@@ -931,7 +696,7 @@ class HubAssistantService:
                 allow_write_tools=True,
                 allowed_write_operation_ids=request.approved_operation_ids,
             )
-            await self._persist_follow_up_agent_message(
+            await self._persistence.persist_follow_up_agent_message(
                 db=db,
                 current_user=current_user,
                 conversation_id=request.hub_assistant_conversation_id,
@@ -962,7 +727,7 @@ class HubAssistantService:
                 ),
             )
             if executed.result.interrupt is not None:
-                await self._persist_permission_interrupt(
+                await self._persistence.persist_permission_interrupt(
                     db=db,
                     current_user=current_user,
                     local_session_id=executed.local_session_id,
@@ -971,10 +736,9 @@ class HubAssistantService:
             await commit_safely(db)
         except Exception as exc:
             logger.exception(
-                "Hub Assistant Hub Assistant continuation failed",
-                extra=extra,
+                "Hub Assistant Hub Assistant continuation failed", extra=extra
             )
-            await self._persist_follow_up_agent_message(
+            await self._persistence.persist_follow_up_agent_message(
                 db=db,
                 current_user=current_user,
                 conversation_id=request.hub_assistant_conversation_id,
@@ -999,7 +763,7 @@ class HubAssistantService:
         self,
         request: HubAssistantFollowUpTaskRequest,
     ) -> str:
-        return _FOLLOW_UP_RESUME_MESSAGE_TEMPLATE.format(
+        return FOLLOW_UP_RESUME_MESSAGE_TEMPLATE.format(
             tracked_conversation_ids=", ".join(request.tracked_conversation_ids)
             or "(none)",
             changed_conversation_ids=", ".join(request.changed_conversation_ids)
@@ -1017,125 +781,37 @@ class HubAssistantService:
             ),
         )
 
-    def _build_mcp_url(self, *, allow_write_tools: bool) -> str:
-        base = cast(str, settings.hub_assistant_swival_mcp_base_url).rstrip("/")
-        mount_path = (
-            HUB_ASSISTANT_MCP_WRITE_MOUNT_PATH
-            if allow_write_tools
-            else HUB_ASSISTANT_MCP_READONLY_MOUNT_PATH
-        )
-        return f"{base}{mount_path}/"
-
-    def _build_system_prompt(
-        self,
-        *,
-        allow_write_tools: bool,
-        delegated_write_operation_ids: frozenset[str] = frozenset(),
-    ) -> str:
-        if allow_write_tools:
-            if delegated_write_operation_ids:
-                approved_operations = ", ".join(sorted(delegated_write_operation_ids))
-                return (
-                    _DEFAULT_SYSTEM_PROMPT
-                    + _WRITE_ENABLED_APPENDIX
-                    + f" The currently approved write operations are: {approved_operations}."
-                )
-            return _DEFAULT_SYSTEM_PROMPT + _WRITE_ENABLED_APPENDIX
-        return _DEFAULT_SYSTEM_PROMPT + _READ_ONLY_APPENDIX
-
     def _answer_requests_write_approval(self, answer: str | None) -> bool:
-        if not isinstance(answer, str):
-            return False
-        return _WRITE_APPROVAL_SENTINEL in answer
+        return self._runtime.answer_requests_write_approval(answer)
 
     def _strip_write_approval_metadata(self, answer: str | None) -> str | None:
-        if not isinstance(answer, str):
-            return answer
-        stripped_lines = [
-            line.strip()
-            for line in answer.splitlines()
-            if line.strip()
-            and line.strip() != _WRITE_APPROVAL_SENTINEL
-            and not (
-                line.strip().startswith(_WRITE_APPROVAL_OPERATIONS_PREFIX)
-                and line.strip().endswith(_WRITE_APPROVAL_OPERATIONS_SUFFIX)
-            )
-        ]
-        stripped = "\n".join(stripped_lines).strip()
-        return stripped or None
+        return self._runtime.strip_write_approval_metadata(answer)
 
-    def _list_write_tool_definitions(self) -> tuple[HubAssistantToolDefinition, ...]:
-        return tuple(
-            definition
-            for definition in list_hub_assistant_mcp_tool_definitions()
-            if definition.confirmation_policy != HubConfirmationPolicy.NONE
-        )
+    def _list_write_tool_definitions(
+        self,
+    ) -> tuple[HubAssistantToolDefinition, ...]:
+        return self._runtime.list_write_tool_definitions()
 
     def _extract_requested_write_operation_ids(
-        self,
-        answer: str | None,
+        self, answer: str | None
     ) -> tuple[str, ...]:
-        if not isinstance(answer, str):
-            return ()
-        allowed_operation_ids = {
-            definition.operation_id
-            for definition in self._list_write_tool_definitions()
-        }
-        requested_operation_ids: list[str] = []
-        for raw_line in answer.splitlines():
-            line = raw_line.strip()
-            if not (
-                line.startswith(_WRITE_APPROVAL_OPERATIONS_PREFIX)
-                and line.endswith(_WRITE_APPROVAL_OPERATIONS_SUFFIX)
-            ):
-                continue
-            raw_payload = line.removeprefix(
-                _WRITE_APPROVAL_OPERATIONS_PREFIX
-            ).removesuffix(_WRITE_APPROVAL_OPERATIONS_SUFFIX)
-            for raw_operation_id in raw_payload.split(","):
-                operation_id = raw_operation_id.strip()
-                if (
-                    operation_id
-                    and operation_id in allowed_operation_ids
-                    and operation_id not in requested_operation_ids
-                ):
-                    requested_operation_ids.append(operation_id)
-        return tuple(requested_operation_ids)
+        return self._runtime.extract_requested_write_operation_ids(answer)
 
     def _build_permission_interrupt(
         self,
         *,
-        current_user: User,
+        current_user: Any,
         conversation_id: str,
         message: str,
         answer: str | None,
         allowed_write_operation_ids: tuple[str, ...],
     ) -> HubAssistantInterrupt:
-        write_tool_definitions = tuple(
-            definition
-            for definition in self._list_write_tool_definitions()
-            if definition.operation_id in allowed_write_operation_ids
-        )
-        request_id = create_hub_assistant_interrupt_token(
-            cast(Any, current_user.id),
+        return self._runtime.build_permission_interrupt(
+            current_user=current_user,
             conversation_id=conversation_id,
             message=message,
-            tool_names=tuple(
-                definition.tool_name for definition in write_tool_definitions
-            ),
-            allowed_operations=allowed_write_operation_ids,
-        )
-        display_message = self._strip_write_approval_metadata(answer) or (
-            "This change requires explicit write approval before the Hub Assistant "
-            "can continue."
-        )
-        return HubAssistantInterrupt(
-            request_id=request_id,
-            permission="hub-assistant-write",
-            patterns=tuple(
-                definition.tool_name for definition in write_tool_definitions
-            ),
-            display_message=display_message,
+            answer=answer,
+            allowed_write_operation_ids=allowed_write_operation_ids,
         )
 
     def _select_run_tool_definitions(
@@ -1144,713 +820,19 @@ class HubAssistantService:
         allow_write_tools: bool,
         delegated_write_operation_ids: frozenset[str] = frozenset(),
     ) -> tuple[HubAssistantToolDefinition, ...]:
-        tool_definitions = list_hub_assistant_mcp_tool_definitions()
-        if allow_write_tools and not delegated_write_operation_ids:
-            return tool_definitions
-        allowed_write_operation_ids = (
-            delegated_write_operation_ids if allow_write_tools else frozenset()
-        )
-        return tuple(
-            definition
-            for definition in tool_definitions
-            if definition.confirmation_policy == HubConfirmationPolicy.NONE
-            or definition.operation_id in allowed_write_operation_ids
-        )
-
-    async def _ensure_local_hub_assistant_session(
-        self,
-        *,
-        db: AsyncSession,
-        current_user: User,
-        conversation_id: str,
-    ) -> tuple[Any, SessionSource]:
-        session, source = await session_hub_service.ensure_local_session_for_invoke(
-            db,
-            user_id=cast(Any, current_user.id),
-            agent_id=HUB_ASSISTANT_INTERNAL_ID,
-            agent_source="hub_assistant",
-            conversation_id=conversation_id,
-        )
-        if session is None or source is None:
-            raise HubAssistantUnavailableError(
-                "Failed to bind the Hub Assistant conversation to a durable session."
-            )
-        return session, source
-
-    async def _persist_run_turn(
-        self,
-        *,
-        db: AsyncSession,
-        current_user: User,
-        local_session: Any,
-        local_session_id: str,
-        local_source: SessionSource,
-        query: str,
-        user_message_id: UUID | None,
-        agent_message_id: UUID | None,
-        result: HubAssistantRunResult,
-    ) -> None:
-        await session_hub_service.record_local_invoke_messages(
-            db,
-            session=local_session,
-            source=local_source,
-            user_id=cast(Any, current_user.id),
-            agent_id=HUB_ASSISTANT_INTERNAL_ID,
-            agent_source="hub_assistant",
-            query=query,
-            response_content=result.answer or "",
-            success=result.status == HubAssistantRunStatus.COMPLETED,
-            context_id=None,
-            extra_metadata={
-                "hub_assistant": True,
-                "hub_assistant_id": HUB_ASSISTANT_PUBLIC_ID,
-                "runtime": result.runtime,
-                "resources": list(result.resources),
-                "write_tools_enabled": result.write_tools_enabled,
-            },
-            response_metadata={
-                "tools": list(result.tool_names),
-                "write_tools_enabled": result.write_tools_enabled,
-                "hub_assistant": True,
-            },
-            user_message_id=user_message_id,
-            agent_message_id=agent_message_id,
-            agent_status=(
-                "interrupted"
-                if result.status == HubAssistantRunStatus.INTERRUPTED
-                else "done"
-            ),
-            finish_reason=(
-                "interrupt"
-                if result.status == HubAssistantRunStatus.INTERRUPTED
-                else "completed"
-            ),
-            error_code=None,
-        )
-        if result.interrupt is None:
-            return
-        await self._persist_permission_interrupt(
-            db=db,
-            current_user=current_user,
-            local_session_id=local_session_id,
-            interrupt=result.interrupt,
-        )
-
-    async def _persist_permission_interrupt(
-        self,
-        *,
-        db: AsyncSession,
-        current_user: User,
-        local_session_id: str,
-        interrupt: HubAssistantInterrupt,
-    ) -> None:
-        await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
-            db,
-            local_session_id=parse_conversation_id(local_session_id),
-            user_id=cast(Any, current_user.id),
-            event={
-                "request_id": interrupt.request_id,
-                "type": "permission",
-                "phase": "asked",
-                "details": {
-                    "permission": interrupt.permission,
-                    "patterns": list(interrupt.patterns),
-                    "displayMessage": interrupt.display_message,
-                },
-            },
-        )
-
-    async def _persist_interrupt_resolution(
-        self,
-        *,
-        db: AsyncSession,
-        current_user: User,
-        conversation_id: str,
-        request_id: str,
-        resolution: str,
-    ) -> None:
-        await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
-            db,
-            local_session_id=parse_conversation_id(conversation_id),
-            user_id=cast(Any, current_user.id),
-            event={
-                "request_id": request_id,
-                "type": "permission",
-                "phase": "resolved",
-                "resolution": resolution,
-            },
-        )
-
-    async def _persist_follow_up_agent_message(
-        self,
-        *,
-        db: AsyncSession,
-        current_user: User,
-        conversation_id: str,
-        answer: str | None,
-        agent_message_id: UUID | None,
-        metadata: dict[str, Any],
-        status: str,
-        finish_reason: str | None,
-    ) -> None:
-        local_session, _ = await self._ensure_local_hub_assistant_session(
-            db=db,
-            current_user=current_user,
-            conversation_id=conversation_id,
-        )
-        setattr(local_session, "last_active_at", utc_now())
-        agent_message: AgentMessage | None = None
-        if agent_message_id is not None:
-            agent_message = await db.scalar(
-                select(AgentMessage).where(
-                    AgentMessage.id == agent_message_id,
-                    AgentMessage.user_id == cast(Any, current_user.id),
-                    AgentMessage.conversation_id == cast(Any, local_session.id),
-                    AgentMessage.sender == "agent",
-                )
-            )
-        if agent_message is None:
-            create_kwargs: dict[str, Any] = {
-                "user_id": cast(Any, current_user.id),
-                "sender": "agent",
-                "conversation_id": cast(Any, local_session.id),
-                "status": status,
-                "finish_reason": finish_reason,
-                "metadata": metadata,
-            }
-            if agent_message_id is not None:
-                create_kwargs["id"] = agent_message_id
-            agent_message = await message_store.create_agent_message(
-                db,
-                **create_kwargs,
-            )
-        else:
-            await message_store.update_agent_message(
-                db,
-                message=agent_message,
-                status=status,
-                finish_reason=finish_reason,
-                metadata=metadata,
-            )
-        await self._session_support.upsert_single_text_block(
-            db,
-            user_id=cast(Any, current_user.id),
-            message_id=cast(Any, agent_message.id),
-            content=answer or "",
-            source="hub_assistant_reply",
-        )
-
-    async def _get_conversation_runtime_state(
-        self,
-        *,
-        current_user_id: str,
-        conversation_id: str,
-    ) -> _ConversationRuntimeState:
-        await self._cleanup_expired_conversations()
-        key = (current_user_id, conversation_id)
-        with self._registry_lock:
-            runtime_state = self._conversation_registry.get(key)
-            if runtime_state is None:
-                runtime_state = _ConversationRuntimeState(
-                    last_accessed_monotonic=time.monotonic()
-                )
-                self._conversation_registry[key] = runtime_state
-            return runtime_state
-
-    async def _cleanup_expired_conversations(self) -> None:
-        cutoff = time.monotonic() - settings.hub_assistant_swival_session_ttl_seconds
-        expired_sessions: list[Any] = []
-        with self._registry_lock:
-            expired_keys = [
-                key
-                for key, runtime_state in self._conversation_registry.items()
-                if runtime_state.last_accessed_monotonic
-                and runtime_state.last_accessed_monotonic < cutoff
-            ]
-            for key in expired_keys:
-                runtime_state = self._conversation_registry.pop(key)
-                if runtime_state.session is not None:
-                    expired_sessions.append(runtime_state.session)
-        for session in expired_sessions:
-            await asyncio.to_thread(self._close_swival_session, session)
-
-    async def _ensure_conversation_session(
-        self,
-        *,
-        db: AsyncSession,
-        runtime_state: _ConversationRuntimeState,
-        current_user: User,
-        conversation_id: str,
-        delegated_write_operation_ids: frozenset[str],
-    ) -> Any:
-        if not self._runtime_session_needs_refresh(
-            runtime_state=runtime_state,
-            delegated_write_operation_ids=delegated_write_operation_ids,
-        ):
-            runtime_state.last_accessed_monotonic = time.monotonic()
-            return runtime_state.session
-
-        previous_session = runtime_state.session
-        new_session = await asyncio.to_thread(
-            self._create_swival_session,
-            current_user=current_user,
-            conversation_id=conversation_id,
+        return self._runtime.select_run_tool_definitions(
+            allow_write_tools=allow_write_tools,
             delegated_write_operation_ids=delegated_write_operation_ids,
         )
-        if previous_session is not None:
-            await asyncio.to_thread(
-                self._transfer_conversation_state, previous_session, new_session
-            )
-            await asyncio.to_thread(self._close_swival_session, previous_session)
-        else:
-            await self._best_effort_rehydrate_swival_session(
-                db=db,
-                current_user=current_user,
-                conversation_id=conversation_id,
-                session=new_session,
-            )
-
-        runtime_state.session = new_session
-        runtime_state.delegated_write_operation_ids = delegated_write_operation_ids
-        runtime_state.delegated_token_expires_at_monotonic = float(
-            getattr(
-                new_session,
-                "_hub_assistant_delegated_token_expires_at_monotonic",
-                0.0,
-            )
-        )
-        runtime_state.last_accessed_monotonic = time.monotonic()
-        return new_session
-
-    async def _best_effort_rehydrate_swival_session(
-        self,
-        *,
-        db: AsyncSession,
-        current_user: User,
-        conversation_id: str,
-        session: Any,
-    ) -> None:
-        persisted_messages = await self._list_persisted_runtime_messages(
-            db=db,
-            current_user=current_user,
-            conversation_id=conversation_id,
-        )
-        if not persisted_messages:
-            return
-
-        setup = getattr(session, "_setup", None)
-        if callable(setup):
-            try:
-                await asyncio.to_thread(setup)
-            except Exception:
-                return
-
-        existing_state = cast(
-            dict[str, Any] | None, getattr(session, "_conv_state", None)
-        )
-        if isinstance(existing_state, dict):
-            existing_messages = existing_state.get("messages")
-            if isinstance(existing_messages, list) and any(
-                not (isinstance(message, dict) and message.get("role") == "system")
-                for message in existing_messages
-            ):
-                return
-
-        make_state = getattr(session, "_make_per_run_state", None)
-        if callable(make_state):
-            system_content = None
-            system_with_memory = getattr(session, "_system_with_memory", None)
-            if callable(system_with_memory):
-                try:
-                    system_content = system_with_memory("", policy="interactive")
-                except TypeError:
-                    system_content = system_with_memory("")
-            try:
-                state = cast(
-                    dict[str, Any],
-                    make_state(system_content=cast(str | None, system_content)),
-                )
-            except TypeError:
-                state = cast(dict[str, Any], make_state())
-        else:
-            state = {"messages": []}
-
-        existing_messages = state.get("messages")
-        system_messages = (
-            [
-                copy.deepcopy(message)
-                for message in existing_messages
-                if isinstance(message, dict) and message.get("role") == "system"
-            ]
-            if isinstance(existing_messages, list)
-            else []
-        )
-        state["messages"] = system_messages + copy.deepcopy(persisted_messages)
-        setattr(session, "_conv_state", state)
-
-    async def _list_persisted_runtime_messages(
-        self,
-        *,
-        db: AsyncSession,
-        current_user: User,
-        conversation_id: str,
-    ) -> list[dict[str, str]]:
-        resolved_conversation_id = parse_conversation_id(conversation_id)
-        sender_priority = case(
-            (AgentMessage.sender.in_(["user", "automation"]), 0),
-            else_=1,
-        )
-        rows = list(
-            (
-                await db.scalars(
-                    select(AgentMessage)
-                    .where(
-                        AgentMessage.user_id == cast(Any, current_user.id),
-                        AgentMessage.conversation_id == resolved_conversation_id,
-                        AgentMessage.sender.in_(["user", "automation", "agent"]),
-                    )
-                    .order_by(
-                        AgentMessage.created_at.asc(),
-                        sender_priority.asc(),
-                        AgentMessage.id.asc(),
-                    )
-                )
-            ).all()
-        )
-        if not rows:
-            return []
-
-        message_ids = [cast(Any, message.id) for message in rows]
-        blocks = await block_store.list_blocks_by_message_ids(
-            db,
-            user_id=cast(Any, current_user.id),
-            message_ids=message_ids,
-        )
-        blocks_by_message_id: dict[Any, list[Any]] = {}
-        for block in blocks:
-            blocks_by_message_id.setdefault(block.message_id, []).append(block)
-
-        persisted_messages: list[dict[str, str]] = []
-        for message in rows:
-            role = sender_to_role(cast(str, message.sender))
-            if role not in {"user", "agent"}:
-                continue
-            rendered_blocks, content = project_message_blocks(
-                blocks_by_message_id.get(message.id, []),
-                message_status=cast(str | None, message.status),
-            )
-            if not content and not rendered_blocks:
-                continue
-            if role == "agent" and not content:
-                continue
-            persisted_messages.append(
-                {
-                    "role": "assistant" if role == "agent" else role,
-                    "content": content,
-                }
-            )
-        return persisted_messages
-
-    def _create_swival_session(
-        self,
-        *,
-        current_user: User,
-        conversation_id: str,
-        delegated_write_operation_ids: frozenset[str],
-    ) -> Any:
-        write_tools_enabled = bool(delegated_write_operation_ids)
-        session_cls = self._load_swival_session_cls()
-        tool_definitions = self._select_run_tool_definitions(
-            allow_write_tools=write_tools_enabled,
-            delegated_write_operation_ids=delegated_write_operation_ids,
-        )
-        delegated_token_ttl_seconds = self._delegated_token_ttl_seconds()
-        token = create_hub_assistant_access_token(
-            cast(Any, current_user.id),
-            allowed_operations=[
-                definition.operation_id for definition in tool_definitions
-            ],
-            delegated_by="hub_assistant",
-            conversation_id=conversation_id,
-        )
-        session = session_cls(
-            base_dir=self._resolve_swival_base_dir(current_user),
-            provider=cast(str, settings.hub_assistant_swival_provider),
-            model=cast(str, settings.hub_assistant_swival_model),
-            api_key=settings.hub_assistant_swival_api_key,
-            base_url=settings.hub_assistant_swival_base_url,
-            max_turns=settings.hub_assistant_swival_max_turns,
-            max_output_tokens=settings.hub_assistant_swival_max_output_tokens,
-            reasoning_effort=settings.hub_assistant_swival_reasoning_effort,
-            system_prompt=self._build_system_prompt(
-                allow_write_tools=write_tools_enabled,
-                delegated_write_operation_ids=delegated_write_operation_ids,
-            ),
-            files="none",
-            commands="none",
-            no_skills=True,
-            history=False,
-            memory=False,
-            continue_here=False,
-            yolo=False,
-            mcp_servers={
-                "a2a-client-hub": {
-                    "url": self._build_mcp_url(allow_write_tools=write_tools_enabled),
-                    "headers": {"Authorization": f"Bearer {token}"},
-                }
-            },
-        )
-        setattr(
-            session,
-            "_hub_assistant_delegated_token_expires_at_monotonic",
-            time.monotonic() + delegated_token_ttl_seconds,
-        )
-        return session
-
-    def _resolve_swival_base_dir(self, current_user: User) -> str:
-        configured_root = (settings.hub_assistant_swival_runtime_root or "").strip()
-        if configured_root:
-            runtime_root = Path(configured_root).expanduser()
-        else:
-            runtime_root = Path.home() / ".a2a-client-hub" / "swival-users"
-
-        user_runtime_dir = runtime_root / str(current_user.id)
-        user_runtime_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        for candidate in (runtime_root, user_runtime_dir):
-            try:
-                candidate.chmod(0o700)
-            except OSError:
-                continue
-        return str(user_runtime_dir.resolve())
-
-    def _build_session_conversation_state(
-        self,
-        session: Any,
-    ) -> dict[str, Any] | None:
-        conv_state = getattr(session, "_conv_state", None)
-        if isinstance(conv_state, dict):
-            return copy.deepcopy(conv_state)
-
-        setup = getattr(session, "_setup", None)
-        if callable(setup):
-            try:
-                setup()
-            except Exception:
-                return None
-            conv_state = getattr(session, "_conv_state", None)
-            if isinstance(conv_state, dict):
-                return copy.deepcopy(conv_state)
-
-        make_state = getattr(session, "_make_per_run_state", None)
-        if not callable(make_state):
-            return None
-
-        system_content = None
-        system_with_memory = getattr(session, "_system_with_memory", None)
-        if callable(system_with_memory):
-            try:
-                system_content = system_with_memory("", policy="interactive")
-            except TypeError:
-                system_content = system_with_memory("")
-            except Exception:
-                system_content = None
-        try:
-            return cast(
-                dict[str, Any],
-                make_state(system_content=cast(str | None, system_content)),
-            )
-        except TypeError:
-            return cast(dict[str, Any], make_state())
-        except Exception:
-            return None
-
-    def _transfer_conversation_state(
-        self,
-        previous_session: Any,
-        next_session: Any,
-    ) -> None:
-        previous_state = self._build_session_conversation_state(previous_session)
-        if previous_state is not None:
-            next_state = self._build_session_conversation_state(next_session)
-            previous_messages = previous_state.get("messages")
-            next_messages = next_state.get("messages") if next_state else None
-            previous_non_system_messages = (
-                [
-                    copy.deepcopy(message)
-                    for message in previous_messages
-                    if not (
-                        isinstance(message, dict) and message.get("role") == "system"
-                    )
-                ]
-                if isinstance(previous_messages, list)
-                else []
-            )
-            next_system_messages = (
-                [
-                    copy.deepcopy(message)
-                    for message in next_messages
-                    if isinstance(message, dict) and message.get("role") == "system"
-                ]
-                if isinstance(next_messages, list)
-                else []
-            )
-            transferred_state = copy.deepcopy(next_state) if next_state else {}
-            transferred_state["messages"] = (
-                next_system_messages + previous_non_system_messages
-            )
-            setattr(next_session, "_conv_state", transferred_state)
-        trace_session_id = getattr(previous_session, "_trace_session_id", None)
-        if isinstance(trace_session_id, str) and trace_session_id.strip():
-            setattr(next_session, "_trace_session_id", trace_session_id)
-
-    def _close_swival_session(self, session: Any) -> None:
-        close = getattr(session, "close", None)
-        if callable(close):
-            try:
-                close()
-            except Exception:
-                return
 
     def _load_swival_session_cls(self) -> type[Any]:
-        self._inject_swival_import_paths()
+        return self._runtime.load_swival_session_cls()
 
-        try:
-            module = importlib.import_module("swival")
-        except ImportError as exc:
-            raise HubAssistantUnavailableError(
-                "swival is not installed or not importable for the Hub Assistant runtime."
-            ) from exc
-        self._apply_swival_compatibility_patches()
-
-        session_cls = getattr(module, "Session", None)
-        if session_cls is None:
-            raise HubAssistantUnavailableError(
-                "swival.Session is required for the Hub Assistant runtime."
-            )
-        return cast(type[Any], session_cls)
-
-    def _apply_swival_compatibility_patches(self) -> None:
-        try:
-            module = __import__("swival.mcp_client", fromlist=["_mcp_tool_to_openai"])
-        except ImportError:
-            return
-
-        converter = getattr(module, "_mcp_tool_to_openai", None)
-        if not callable(converter) or getattr(
-            converter,
-            "_a2a_client_hub_private_field_patch",
-            False,
-        ):
-            return
-
-        def _patched_mcp_tool_to_openai(
-            server_name: str, tool: Any
-        ) -> tuple[dict, str]:
-            schema, original_name = converter(server_name, tool)
-            function_schema = schema.get("function")
-            if isinstance(function_schema, dict):
-                for key in list(function_schema.keys()):
-                    if key.startswith("_mcp_"):
-                        function_schema.pop(key, None)
-            return schema, original_name
-
-        setattr(
-            _patched_mcp_tool_to_openai,
-            "_a2a_client_hub_private_field_patch",
-            True,
-        )
-        setattr(module, "_mcp_tool_to_openai", _patched_mcp_tool_to_openai)
-
-    def _has_required_runtime_configuration(self) -> bool:
-        return bool(
-            (settings.hub_assistant_swival_provider or "").strip()
-            and (settings.hub_assistant_swival_model or "").strip()
-            and (settings.hub_assistant_swival_mcp_base_url or "").strip()
-        )
+    def _resolve_swival_base_dir(self, current_user: Any) -> str:
+        return self._runtime.resolve_swival_base_dir(current_user)
 
     def _is_swival_importable(self) -> bool:
-        loaded_module = sys.modules.get("swival")
-        if (
-            loaded_module is not None
-            and getattr(loaded_module, "Session", None) is not None
-        ):
-            return True
-
-        try:
-            importlib.import_module("swival")
-            return True
-        except ImportError:
-            pass
-
-        for candidate in self._resolve_swival_import_paths():
-            if candidate not in sys.path:
-                sys.path.insert(0, candidate)
-            try:
-                importlib.import_module("swival")
-                return True
-            except ImportError:
-                continue
-
-        return False
-
-    def _inject_swival_import_paths(self) -> None:
-        for candidate in self._resolve_swival_import_paths():
-            if candidate not in sys.path:
-                sys.path.insert(0, candidate)
-
-    def _resolve_swival_import_paths(self) -> list[str]:
-        resolved_paths: list[str] = []
-        seen: set[str] = set()
-        for raw_path in settings.hub_assistant_swival_import_paths:
-            candidate = raw_path.strip()
-            if not candidate:
-                continue
-            resolved = str(Path(candidate).expanduser().resolve())
-            if resolved in seen:
-                continue
-            seen.add(resolved)
-            resolved_paths.append(resolved)
-
-        for discovered in self._discover_swival_tool_import_paths():
-            if discovered in seen:
-                continue
-            seen.add(discovered)
-            resolved_paths.append(discovered)
-
-        return resolved_paths
-
-    def _discover_swival_tool_import_paths(self) -> list[str]:
-        executable_setting = (
-            settings.hub_assistant_swival_tool_executable or ""
-        ).strip()
-        executable_path: str | None = None
-        if executable_setting:
-            candidate = Path(executable_setting).expanduser()
-            if candidate.exists():
-                executable_path = str(candidate.resolve())
-            else:
-                executable_path = shutil.which(executable_setting)
-        else:
-            executable_path = shutil.which("swival")
-
-        if not executable_path:
-            return []
-
-        resolved_executable = Path(executable_path).expanduser().resolve()
-        venv_bin_dir = resolved_executable.parent
-        if venv_bin_dir.name not in {"bin", "Scripts"}:
-            return []
-
-        venv_root = venv_bin_dir.parent
-        candidate_paths: list[str] = []
-        for site_packages in sorted(venv_root.glob("lib/python*/site-packages")):
-            candidate_paths.append(str(site_packages.resolve()))
-
-        windows_site_packages = venv_root / "Lib" / "site-packages"
-        if windows_site_packages.exists():
-            candidate_paths.append(str(windows_site_packages.resolve()))
-
-        return candidate_paths
+        return self._runtime.is_swival_importable()
 
 
 hub_assistant_service = HubAssistantService()
