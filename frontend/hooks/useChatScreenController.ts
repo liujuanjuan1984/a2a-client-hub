@@ -18,45 +18,33 @@ import { useChatComposerController } from "@/hooks/useChatComposerController";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useChatInterruptController } from "@/hooks/useChatInterruptController";
 import { useChatScreenHubAssistantController } from "@/hooks/useChatScreenHubAssistantController";
+import { useChatScreenSessionController } from "@/hooks/useChatScreenSessionController";
 import {
   type GenericCapabilityStatus,
   useExtensionCapabilitiesQuery,
 } from "@/hooks/useExtensionCapabilitiesQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
-import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
   A2AExtensionCallError,
   recoverInterrupts,
 } from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
-import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import { isHubAssistant } from "@/lib/api/hubAssistant";
+import { continueSession } from "@/lib/api/sessions";
 import {
-  appendSessionMessage,
-  continueSession,
-  runSessionCommand,
-  type SessionMessageItem,
-} from "@/lib/api/sessions";
-import {
-  buildInvokePayload,
   getPendingInterrupt,
   getPendingInterruptQueue,
   getSharedModelSelection,
 } from "@/lib/chat-utils";
-import { addConversationMessage } from "@/lib/chatHistoryCache";
 import {
   getAnchoredOffsetAfterContentResize,
   shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
-import { generateUuid } from "@/lib/id";
 import { getInvokeMetadataBindings } from "@/lib/invokeMetadata";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
-import { parseComposerInput } from "@/lib/sessionCommand";
-import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
-import { readSharedStreamIdentity } from "@/lib/sharedMetadata";
 import { toast } from "@/lib/toast";
 import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -300,11 +288,6 @@ export function useChatScreenController({
     scheduleStickToBottom(true);
   }, [scheduleStickToBottom]);
 
-  const buildSkippedToastError = useCallback((message: string) => {
-    const error = new Error(message);
-    (error as Error & { skipToast?: boolean }).skipToast = true;
-    return error;
-  }, []);
   const {
     sendHubAssistantMessage,
     handleHubAssistantPermissionReply,
@@ -318,311 +301,20 @@ export function useChatScreenController({
     ensureSession,
     replaceRecoveredInterrupts,
   });
-
-  const invokeSessionControl = useCallback(
-    async (
-      nextConversationId: string,
-      nextAgentId: string,
-      nextAgentSource: AgentSource,
-      query: string,
-      options: {
-        userMessageId?: string;
-        sessionControlIntent: "append" | "preempt";
-      },
-    ) => {
-      const currentSession =
-        useChatStore.getState().sessions[nextConversationId];
-      if (!currentSession) {
-        throw new Error("Conversation session is unavailable.");
-      }
-      if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
-        throw new Error(
-          "Hub Assistants do not support upstream session control.",
-        );
-      }
-      const response =
-        nextAgentSource === "shared"
-          ? await invokeHubAgent(
-              nextAgentId,
-              buildInvokePayload(
-                query,
-                currentSession,
-                nextConversationId,
-                options,
-              ),
-            )
-          : await invokeAgent(
-              nextAgentId,
-              buildInvokePayload(
-                query,
-                currentSession,
-                nextConversationId,
-                options,
-              ),
-            );
-      if (!response.success) {
-        throw new Error(
-          response.error?.trim() ||
-            `${options.sessionControlIntent} session control failed.`,
-        );
-      }
-      return response;
-    },
-    [],
-  );
-
-  const addCanonicalSessionMessages = useCallback(
-    (nextConversationId: string, items: SessionMessageItem[]) => {
-      mapSessionMessagesToChatMessages(items, {
-        keepEmptyMessages: true,
-      }).forEach((message) => {
-        addConversationMessage(nextConversationId, message);
-      });
-    },
-    [],
-  );
-
-  const isAppendAvailableForSession = useCallback(
-    (
-      currentSession:
-        | {
-            streamState?: string | null;
-            metadata?: Record<string, unknown>;
-            externalSessionRef?: { externalSessionId?: string | null } | null;
-          }
-        | null
-        | undefined,
-    ) => {
-      if (currentSession?.streamState !== "streaming" || pendingInterrupt) {
-        return false;
-      }
-      const externalSessionId =
-        currentSession.externalSessionRef?.externalSessionId?.trim() ?? "";
-      const streamIdentity = readSharedStreamIdentity(currentSession?.metadata);
-      const canAppendToRunningTurn = Boolean(
-        sessionAppendStatus === "supported" &&
-        (!sessionAppendRequiresStreamIdentity ||
-          (streamIdentity.threadId && streamIdentity.turnId)),
-      );
-      return Boolean(externalSessionId) && canAppendToRunningTurn;
-    },
-    [
-      pendingInterrupt,
-      sessionAppendRequiresStreamIdentity,
-      sessionAppendStatus,
-    ],
-  );
-
-  const appendMessageToRunningSession = useCallback(
-    async (
-      nextConversationId: string,
-      nextAgentId: string,
-      content: string,
-      _nextAgentSource: AgentSource,
-    ) => {
-      const parsedInput = parseComposerInput(content);
-      if (parsedInput.kind !== "message") {
-        throw new Error("Append only supports plain text messages.");
-      }
-
-      const currentSession =
-        useChatStore.getState().sessions[nextConversationId];
-      const externalSessionId =
-        currentSession?.externalSessionRef?.externalSessionId?.trim() ?? "";
-      if (currentSession?.streamState !== "streaming" || !externalSessionId) {
-        throw new Error(
-          "Append requires an active stream with a bound upstream session.",
-        );
-      }
-      if (!isAppendAvailableForSession(currentSession)) {
-        throw new Error(
-          "The agent is still working. Interrupt it before sending a new message.",
-        );
-      }
-
-      const trimmedContent = parsedInput.text.trim();
-      const operationId = generateUuid();
-      const userMessageId = generateUuid();
-      const response = await appendSessionMessage(nextConversationId, {
-        content: trimmedContent,
-        userMessageId,
-        operationId,
-        metadata: currentSession?.metadata ?? {},
-        ...(currentSession?.workingDirectory
-          ? { workingDirectory: currentSession.workingDirectory }
-          : {}),
-      });
-      addCanonicalSessionMessages(nextConversationId, [response.userMessage]);
-      useChatStore.getState().bindExternalSession(nextConversationId, {
-        agentId: nextAgentId,
-        externalSessionId:
-          response.sessionControl?.sessionId?.trim() || externalSessionId,
-      });
-      toast.info(
-        "Message added to current response",
-        "Your message was sent to the running upstream session.",
-      );
-    },
-    [addCanonicalSessionMessages, isAppendAvailableForSession],
-  );
-
-  const preemptRunningSession = useCallback(
-    async (
-      nextConversationId: string,
-      nextAgentId: string,
-      nextAgentSource: AgentSource,
-    ) => {
-      const response = await invokeSessionControl(
-        nextConversationId,
-        nextAgentId,
-        nextAgentSource,
-        "",
-        {
-          sessionControlIntent: "preempt",
-        },
-      );
-      useChatStore
-        .getState()
-        .cancelMessage(nextConversationId, { requestRemoteCancel: false });
-
-      if (response.sessionControl?.status === "no_inflight") {
-        toast.info(
-          "No active response",
-          "There is no running response to interrupt.",
-        );
-        return;
-      }
-
-      toast.info(
-        "Response interrupted",
-        "The current response was interrupted. You can send a new message now.",
-      );
-    },
-    [invokeSessionControl],
-  );
-
-  const sendMessageWithCapabilities = useCallback(
-    async (
-      nextConversationId: string,
-      nextAgentId: string,
-      content: string,
-      nextAgentSource: AgentSource,
-    ) => {
-      const parsedInput = parseComposerInput(content);
-      if (parsedInput.kind === "command") {
-        if (sessionCommandStatus !== "supported") {
-          toast.error(
-            "Command unavailable",
-            "This agent does not expose session command support.",
-          );
-          const error = new Error("Session command is not supported.");
-          (error as Error & { skipToast?: boolean }).skipToast = true;
-          throw error;
-        }
-
-        const currentSession =
-          useChatStore.getState().sessions[nextConversationId];
-        const externalSessionId =
-          currentSession?.externalSessionRef?.externalSessionId?.trim() ?? "";
-        if (!externalSessionId) {
-          toast.error(
-            "Command unavailable",
-            "This conversation is not bound to an upstream session yet.",
-          );
-          const error = new Error(
-            "Session command requires an upstream session.",
-          );
-          (error as Error & { skipToast?: boolean }).skipToast = true;
-          throw error;
-        }
-
-        if (nextAgentSource !== "personal" && nextAgentSource !== "shared") {
-          throw new Error("Hub Assistants do not support session commands.");
-        }
-        const operationId = generateUuid();
-        const result = await runSessionCommand(nextConversationId, {
-          command: parsedInput.command,
-          arguments: parsedInput.arguments,
-          prompt: parsedInput.prompt,
-          userMessageId: generateUuid(),
-          agentMessageId: generateUuid(),
-          operationId,
-          metadata: currentSession?.metadata ?? {},
-          ...(currentSession?.workingDirectory
-            ? { workingDirectory: currentSession.workingDirectory }
-            : {}),
-        });
-        addCanonicalSessionMessages(nextConversationId, [
-          result.userMessage,
-          result.agentMessage,
-        ]);
-        toast.success("Command executed", parsedInput.command);
-        return;
-      }
-
-      const effectiveContent = parsedInput.text;
-      const currentSession =
-        useChatStore.getState().sessions[nextConversationId];
-      const isActivelyStreaming =
-        currentSession?.streamState === "streaming" ||
-        currentSession?.streamState === "continuing";
-
-      if (isHubAssistant(nextAgentId)) {
-        if (isActivelyStreaming) {
-          toast.info(
-            "Interrupt required",
-            "The assistant is still working. Interrupt it before sending a new message.",
-          );
-          throw buildSkippedToastError(
-            "Interrupt the current response before sending a new message.",
-          );
-        }
-        await sendHubAssistantMessage(
-          nextConversationId,
-          nextAgentId,
-          effectiveContent,
-        );
-        return;
-      }
-
-      if (isActivelyStreaming) {
-        if (isAppendAvailableForSession(currentSession)) {
-          await appendMessageToRunningSession(
-            nextConversationId,
-            nextAgentId,
-            effectiveContent,
-            nextAgentSource,
-          );
-          return;
-        }
-        toast.info(
-          "Interrupt required",
-          "The agent is still working. Interrupt it before sending a new message.",
-        );
-        throw buildSkippedToastError(
-          "Interrupt the current response before sending a new message.",
-        );
-      }
-
-      await sendMessage(
-        nextConversationId,
-        nextAgentId,
-        effectiveContent,
-        nextAgentSource,
-        runtimeStatusContract,
-      );
-    },
-    [
-      appendMessageToRunningSession,
-      addCanonicalSessionMessages,
-      buildSkippedToastError,
-      isAppendAvailableForSession,
-      runtimeStatusContract,
-      sendHubAssistantMessage,
-      sendMessage,
-      sessionCommandStatus,
-    ],
-  );
+  const {
+    canAppendToRunningStream,
+    preemptRunningSession,
+    sendMessageWithCapabilities,
+  } = useChatScreenSessionController({
+    session,
+    pendingInterrupt,
+    sessionAppendStatus,
+    sessionAppendRequiresStreamIdentity,
+    sessionCommandStatus,
+    runtimeStatusContract,
+    sendHubAssistantMessage,
+    sendMessage,
+  });
 
   const recoverPendingInterrupts = useCallback(
     async ({
@@ -722,10 +414,6 @@ export function useChatScreenController({
       ? "Authorization request handled."
       : null,
   });
-
-  const canAppendToRunningStream = useMemo(() => {
-    return isAppendAvailableForSession(session);
-  }, [isAppendAvailableForSession, session]);
 
   const streamSendHint = useMemo(() => {
     if (pendingInterrupt) {
