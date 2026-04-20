@@ -1,5 +1,10 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
+import {
+  cleanupChatScreenInterruptTree,
+  resetChatScreenInterruptHarness,
+} from "./ChatScreen.interrupt.test.common";
+
 import { ApiRequestError } from "@/lib/api/client";
 import { ChatScreen } from "@/screens/ChatScreen";
 
@@ -553,146 +558,47 @@ describe("ChatScreen interrupt handling", () => {
   const conversationId = "conversation-1";
 
   beforeEach(() => {
-    mockAgentStoreState.activeAgentId = "agent-1";
-    mockAddShortcut.mockReset().mockResolvedValue(undefined);
-    mockUpdateShortcut.mockReset().mockResolvedValue(undefined);
-    mockRemoveShortcut.mockReset().mockResolvedValue(undefined);
-    mockReplyPermission.mockReset();
-    mockReplyPermissions.mockReset();
-    mockReplyQuestion.mockReset();
-    mockRejectQuestion.mockReset();
-    mockReplyElicitation.mockReset();
-    mockAddConversationMessage.mockReset();
-    mockMergeConversationMessages.mockReset();
-    mockRemoveConversationMessage.mockReset();
-    mockSetConversationMessages.mockReset();
-    mockUpdateConversationMessage.mockReset();
-    mockToastInfo.mockReset();
-    mockToastSuccess.mockReset();
-    mockToastError.mockReset();
-    mockContinueSession.mockReset();
-    mockListSessionMessagesPage.mockReset().mockResolvedValue({
-      items: [],
-      pageInfo: {
-        hasMoreBefore: false,
-        nextBefore: null,
-      },
+    resetChatScreenInterruptHarness({
+      conversationId,
+      hubAssistantAgentId: HUB_ASSISTANT_AGENT_ID,
+      baseSession,
+      mockAgentStoreState,
+      mockChatState,
+      mockExtensionCapabilitiesState,
+      mockSessionHistoryState,
+      mockShortcutQueryState,
+      mockAddShortcut,
+      mockUpdateShortcut,
+      mockRemoveShortcut,
+      mockReplyPermission,
+      mockReplyPermissions,
+      mockReplyQuestion,
+      mockRejectQuestion,
+      mockReplyElicitation,
+      mockAppendSessionMessage,
+      mockListSessionMessagesPage,
+      mockRunSessionCommand,
+      mockRecoverInterrupts,
+      mockInvokeAgent,
+      mockInvokeHubAgent,
+      mockGetHubAssistantProfile,
+      mockRunHubAssistant,
+      mockRecoverHubAssistantInterrupts,
+      mockReplyHubAssistantPermissionInterrupt,
+      mockAddConversationMessage,
+      mockMergeConversationMessages,
+      mockRemoveConversationMessage,
+      mockSetConversationMessages,
+      mockUpdateConversationMessage,
+      mockToastInfo,
+      mockToastSuccess,
+      mockToastError,
+      mockContinueSession,
     });
-    mockChatState.ensureSession.mockReset();
-    mockChatState.generateConversationId
-      .mockReset()
-      .mockReturnValue("conversation-next");
-    mockChatState.sendMessage.mockReset();
-    mockChatState.cancelMessage.mockReset();
-    mockChatState.clearPendingInterrupt.mockReset();
-    mockChatState.replaceRecoveredInterrupts.mockReset();
-    mockChatState.bindExternalSession.mockReset();
-    mockChatState.setWorkingDirectory.mockReset();
-    mockChatState.setInvokeMetadataBindings.mockReset();
-    mockInvokeAgent.mockReset().mockResolvedValue({
-      success: true,
-      sessionControl: {
-        intent: "append",
-        status: "accepted",
-        sessionId: "ses-upstream-1",
-      },
-    });
-    mockInvokeHubAgent.mockReset().mockResolvedValue({ success: true });
-    mockAppendSessionMessage.mockReset();
-    mockRunSessionCommand.mockReset();
-    mockGetHubAssistantProfile.mockReset().mockResolvedValue({
-      id: HUB_ASSISTANT_AGENT_ID,
-      name: "A2A Client Hub Assistant",
-      description: "Hub Assistant",
-      runtime: "swival",
-      configured: true,
-      resources: ["agents", "followups", "jobs", "sessions"],
-      tools: [],
-    });
-    mockRunHubAssistant.mockReset().mockResolvedValue({
-      status: "completed",
-      answer: "Hub Assistant reply",
-      exhausted: false,
-      runtime: "swival",
-      resources: ["agents", "followups", "jobs", "sessions"],
-      tools: ["hub_assistant.jobs.list"],
-      write_tools_enabled: false,
-      interrupt: null,
-    });
-    mockRecoverHubAssistantInterrupts
-      .mockReset()
-      .mockResolvedValue({ items: [] });
-    mockReplyHubAssistantPermissionInterrupt.mockReset().mockResolvedValue({
-      status: "completed",
-      answer: "Write approval was handled.",
-      exhausted: false,
-      runtime: "swival",
-      resources: ["agents", "followups", "jobs", "sessions"],
-      tools: ["hub_assistant.jobs.pause"],
-      write_tools_enabled: true,
-      interrupt: null,
-    });
-    mockRecoverInterrupts.mockReset().mockResolvedValue({ items: [] });
-    mockAddConversationMessage.mockReset();
-    mockUpdateConversationMessage.mockReset();
-    mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
-    mockExtensionCapabilitiesState.interruptRecoveryStatus = "supported";
-    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
-    mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
-    mockExtensionCapabilitiesState.sessionAppendStatus = "supported";
-    mockExtensionCapabilitiesState.sessionAppend = {
-      declared: true,
-      consumedByHub: true,
-      status: "supported",
-      routeMode: "prompt_async",
-      requiresStreamIdentity: false,
-    };
-    mockExtensionCapabilitiesState.invokeMetadataStatus = "unsupported";
-    mockExtensionCapabilitiesState.invokeMetadata = null;
-    mockExtensionCapabilitiesState.canShowModelPicker = true;
-    mockSessionHistoryState.loadMore.mockReset();
-    mockSessionHistoryState.messages = [];
-    mockSessionHistoryState.error = null;
-    mockSessionHistoryState.loading = false;
-    mockSessionHistoryState.loadingMore = false;
-    mockSessionHistoryState.nextPage = undefined;
-    mockShortcutQueryState.shortcuts = [];
-    mockShortcutQueryState.getShortcutsForAgent.mockClear();
-    mockShortcutQueryState.getShortcutsForAgent.mockImplementation(
-      (agentId: string | null) => {
-        if (!agentId) {
-          return mockShortcutQueryState.shortcuts.filter(
-            (item) => !item.agentId,
-          );
-        }
-        return mockShortcutQueryState.shortcuts.filter(
-          (item) => !item.agentId || item.agentId === agentId,
-        );
-      },
-    );
-    mockContinueSession.mockResolvedValue({});
-    mockReplyPermission.mockResolvedValue({ ok: true, requestId: "perm-1" });
-    mockReplyPermissions.mockResolvedValue({ ok: true, requestId: "perms-1" });
-    mockReplyQuestion.mockResolvedValue({ ok: true, requestId: "q-1" });
-    mockRejectQuestion.mockResolvedValue({ ok: true, requestId: "q-1" });
-    mockReplyElicitation.mockResolvedValue({ ok: true, requestId: "eli-1" });
-    mockChatState.sessions = {
-      [conversationId]: baseSession(),
-    };
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 0;
-    }) as unknown as (callback: FrameRequestCallback) => number;
   });
 
   afterEach(() => {
-    if (renderedTree) {
-      act(() => {
-        renderedTree?.unmount();
-      });
-      renderedTree = null;
-    }
-    jest.useRealTimers();
+    renderedTree = cleanupChatScreenInterruptTree(renderedTree);
   });
 
   it("recovers pending interrupts for a bound upstream session", async () => {
