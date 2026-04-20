@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from typing import Any, Awaitable, Callable, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -157,17 +157,20 @@ async def record_preempt_history_event(
     state: InvokeState,
     user_id: UUID,
     event: dict[str, Any],
+    session_factory: Callable[[], Any] = AsyncSessionLocal,
+    commit_fn: Callable[[Any], Awaitable[None]] = commit_safely,
+    session_hub: Any = session_hub_service,
 ) -> None:
     if state.local_session_id is None:
         return
-    async with AsyncSessionLocal() as db:
-        await session_hub_service.record_preempt_event_by_local_session_id(
+    async with session_factory() as db:
+        await session_hub.record_preempt_event_by_local_session_id(
             db,
             local_session_id=state.local_session_id,
             user_id=user_id,
             event=event,
         )
-        await commit_safely(db)
+        await commit_fn(db)
 
 
 async def preempt_previous_invoke_if_requested(
@@ -175,12 +178,21 @@ async def preempt_previous_invoke_if_requested(
     state: InvokeState,
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
+    find_latest_agent_message_id_fn: Callable[..., Awaitable[str | None]] = (
+        find_latest_agent_message_id
+    ),
+    is_interrupt_requested_fn: Callable[[A2AAgentInvokeRequest], bool] = (
+        is_interrupt_requested
+    ),
+    record_preempt_history_event_fn: Callable[..., Awaitable[None]] = (
+        record_preempt_history_event
+    ),
 ) -> None:
     if state.local_session_id is None:
         return
-    if not is_interrupt_requested(payload):
+    if not is_interrupt_requested_fn(payload):
         return
-    target_message_id = await find_latest_agent_message_id(
+    target_message_id = await find_latest_agent_message_id_fn(
         user_id=user_id,
         conversation_id=state.local_session_id,
     )
@@ -206,7 +218,7 @@ async def preempt_previous_invoke_if_requested(
         "target_task_ids": report.target_task_ids,
         "failed_error_codes": report.failed_error_codes,
     }
-    await record_preempt_history_event(
+    await record_preempt_history_event_fn(
         state=state,
         user_id=user_id,
         event=event,
@@ -219,6 +231,9 @@ async def bind_inflight_task_if_needed(
     *,
     state: InvokeState,
     user_id: UUID,
+    record_preempt_history_event_fn: Callable[..., Awaitable[None]] = (
+        record_preempt_history_event
+    ),
 ) -> None:
     if state.local_session_id is None or state.inflight_token is None:
         return
@@ -241,7 +256,7 @@ async def bind_inflight_task_if_needed(
     if bind_report.bound:
         state.upstream_task_id = normalized_task_id
     if bind_report.preempt_event is not None:
-        await record_preempt_history_event(
+        await record_preempt_history_event_fn(
             state=state,
             user_id=user_id,
             event=bind_report.preempt_event,

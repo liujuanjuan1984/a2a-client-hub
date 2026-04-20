@@ -37,16 +37,19 @@ from app.features.invoke.recovery import (
     validate_provider_aware_continue_session,
 )
 from app.features.invoke.route_runner_session_control import (
-    build_session_control_error_response,
-    build_session_control_response,
     run_append_session_control,
+    run_preempt_session_control,
 )
 from app.features.invoke.route_runner_state import (
     AgentSource,
     InvokeState,
+    bind_inflight_task_if_needed,
     find_latest_agent_message_id,
+    preempt_previous_invoke_if_requested,
     prepare_state,
+    record_preempt_history_event,
     register_inflight_invoke,
+    unregister_inflight_invoke,
 )
 from app.features.invoke.service import (
     StreamOutcome,
@@ -54,7 +57,6 @@ from app.features.invoke.service import (
 )
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
-    coerce_uuid,
 )
 from app.features.invoke.stream_persistence import (
     ensure_local_message_headers as ensure_local_message_headers_impl,
@@ -174,16 +176,14 @@ async def _record_preempt_history_event(
     user_id: UUID,
     event: dict[str, Any],
 ) -> None:
-    if state.local_session_id is None:
-        return
-    async with AsyncSessionLocal() as db:
-        await session_hub_service.record_preempt_event_by_local_session_id(
-            db,
-            local_session_id=state.local_session_id,
-            user_id=user_id,
-            event=event,
-        )
-        await commit_safely(db)
+    await record_preempt_history_event(
+        state=state,
+        user_id=user_id,
+        event=event,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+    )
 
 
 async def _preempt_previous_invoke_if_requested(
@@ -192,43 +192,14 @@ async def _preempt_previous_invoke_if_requested(
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> None:
-    if state.local_session_id is None:
-        return
-    if not is_interrupt_requested(payload):
-        return
-    target_message_id = await _find_latest_agent_message_id(
-        user_id=user_id,
-        conversation_id=state.local_session_id,
-    )
-    pending_event = {
-        "reason": "invoke_interrupt",
-        "source": "user",
-        "target_message_id": target_message_id,
-        "replacement_user_message_id": state.user_message_id,
-        "replacement_agent_message_id": state.agent_message_id,
-    }
-    report = await session_hub_service.preempt_inflight_invoke_report(
-        user_id=user_id,
-        conversation_id=state.local_session_id,
-        reason="invoke_interrupt",
-        pending_event=pending_event,
-    )
-    if not report.attempted:
-        return
-
-    event = {
-        **pending_event,
-        "status": report.status,
-        "target_task_ids": report.target_task_ids,
-        "failed_error_codes": report.failed_error_codes,
-    }
-    await _record_preempt_history_event(
+    await preempt_previous_invoke_if_requested(
         state=state,
+        payload=payload,
         user_id=user_id,
-        event=event,
+        find_latest_agent_message_id_fn=_find_latest_agent_message_id,
+        is_interrupt_requested_fn=_is_interrupt_requested,
+        record_preempt_history_event_fn=_record_preempt_history_event,
     )
-    if report.status == "failed":
-        raise ValueError("invoke_interrupt_failed")
 
 
 async def _bind_inflight_task_if_needed(
@@ -236,30 +207,11 @@ async def _bind_inflight_task_if_needed(
     state: InvokeState,
     user_id: UUID,
 ) -> None:
-    if state.local_session_id is None or state.inflight_token is None:
-        return
-    raw_task_id = (
-        state.stream_identity.get("upstream_task_id")
-        if isinstance(state.stream_identity, dict)
-        else None
-    )
-    normalized_task_id = raw_task_id.strip() if isinstance(raw_task_id, str) else None
-    if not normalized_task_id or normalized_task_id == state.upstream_task_id:
-        return
-    bind_report = await session_hub_service.bind_inflight_task_id_report(
+    await bind_inflight_task_if_needed(
+        state=state,
         user_id=user_id,
-        conversation_id=state.local_session_id,
-        token=state.inflight_token,
-        task_id=normalized_task_id,
+        record_preempt_history_event_fn=_record_preempt_history_event,
     )
-    if bind_report.bound:
-        state.upstream_task_id = normalized_task_id
-    if bind_report.preempt_event is not None:
-        await _record_preempt_history_event(
-            state=state,
-            user_id=user_id,
-            event=bind_report.preempt_event,
-        )
 
 
 async def _unregister_inflight_invoke(
@@ -267,14 +219,10 @@ async def _unregister_inflight_invoke(
     state: InvokeState,
     user_id: UUID,
 ) -> None:
-    if state.local_session_id is None or state.inflight_token is None:
-        return
-    await session_hub_service.unregister_inflight_invoke(
+    await unregister_inflight_invoke(
+        state=state,
         user_id=user_id,
-        conversation_id=state.local_session_id,
-        token=state.inflight_token,
     )
-    state.inflight_token = None
 
 
 async def _resolve_session_binding_outbound_mode(
@@ -484,46 +432,23 @@ def _build_consume_stream_callbacks(
     Callable[[dict[str, Any]], Any],
     Callable[[StreamOutcome], Any],
 ]:
-    resolved_log_extra = log_extra if log_extra is not None else {}
-
-    async def on_event(event_payload: dict[str, Any]) -> None:
-        route_runner_streaming.diagnose_stream_hints_contract_gap(
-            state=state,
-            event_payload=event_payload,
-            logger=logger,
-            log_extra=resolved_log_extra,
-        )
-        route_runner_streaming.collect_stream_hints(
-            state=state, event_payload=event_payload
-        )
-        await _bind_inflight_task_if_needed(state=state, user_id=request.user_id)
-        await _persist_stream_block_update(
-            state=state,
-            event_payload=event_payload,
-            request=request,
-        )
-        await _persist_interrupt_lifecycle_event(
-            state=state,
-            event_payload=event_payload,
-            request=request,
-        )
-
-    async def on_finalized(outcome: StreamOutcome) -> dict[str, Any] | None:
-        try:
-            await _flush_stream_buffer(state=state, user_id=request.user_id)
-            await _persist_local_outcome(
-                state=state,
-                outcome=outcome,
-                request=request,
-            )
-            return route_runner_streaming.build_persisted_finalization_ack_event(
-                state=state,
-                outcome=outcome,
-            )
-        finally:
-            await _unregister_inflight_invoke(state=state, user_id=request.user_id)
-
-    return on_event, on_finalized
+    return route_runner_streaming.build_consume_stream_callbacks(
+        state=state,
+        request=request,
+        logger=logger,
+        log_extra=log_extra,
+        diagnose_stream_hints_contract_gap_fn=_diagnose_stream_hints_contract_gap,
+        collect_stream_hints_fn=route_runner_streaming.collect_stream_hints,
+        bind_inflight_task_if_needed_fn=_bind_inflight_task_if_needed,
+        persist_stream_block_update_fn=_persist_stream_block_update,
+        persist_interrupt_lifecycle_event_fn=_persist_interrupt_lifecycle_event,
+        flush_stream_buffer_fn=_flush_stream_buffer,
+        persist_local_outcome_fn=_persist_local_outcome,
+        build_persisted_finalization_ack_event_fn=(
+            route_runner_streaming.build_persisted_finalization_ack_event
+        ),
+        unregister_inflight_invoke_fn=_unregister_inflight_invoke,
+    )
 
 
 async def _run_preempt_session_control(
@@ -532,98 +457,13 @@ async def _run_preempt_session_control(
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> A2AAgentInvokeResponse:
-    local_session_id = coerce_uuid(payload.conversation_id)
-    if local_session_id is None:
-        return A2AAgentInvokeResponse(
-            success=True,
-            content=None,
-            error=None,
-            error_code=None,
-            source="hub_session_control",
-            jsonrpc_code=None,
-            missing_params=None,
-            upstream_error=None,
-            agent_name=getattr(runtime.resolved, "name", None),
-            agent_url=getattr(runtime.resolved, "url", None),
-            sessionControl=build_session_control_response(
-                intent="preempt",
-                status="no_inflight",
-            ),
-        )
-
-    target_message_id = await _find_latest_agent_message_id(
+    return await run_preempt_session_control(
+        runtime=runtime,
+        payload=payload,
         user_id=user_id,
-        conversation_id=local_session_id,
-    )
-    pending_event = {
-        "reason": "invoke_interrupt",
-        "source": "user",
-        "target_message_id": target_message_id,
-    }
-    report = await session_hub_service.preempt_inflight_invoke_report(
-        user_id=user_id,
-        conversation_id=local_session_id,
-        reason="invoke_interrupt",
-        pending_event=pending_event,
-    )
-    if not report.attempted:
-        return A2AAgentInvokeResponse(
-            success=True,
-            content=None,
-            error=None,
-            error_code=None,
-            source="hub_session_control",
-            jsonrpc_code=None,
-            missing_params=None,
-            upstream_error=None,
-            agent_name=getattr(runtime.resolved, "name", None),
-            agent_url=getattr(runtime.resolved, "url", None),
-            sessionControl=build_session_control_response(
-                intent="preempt",
-                status="no_inflight",
-            ),
-        )
-
-    event = {
-        **pending_event,
-        "status": report.status,
-        "target_task_ids": report.target_task_ids,
-        "failed_error_codes": report.failed_error_codes,
-    }
-    async with AsyncSessionLocal() as db:
-        await session_hub_service.record_preempt_event_by_local_session_id(
-            db,
-            local_session_id=local_session_id,
-            user_id=user_id,
-            event=event,
-        )
-        await commit_safely(db)
-    if report.status == "failed":
-        return build_session_control_error_response(
-            intent="preempt",
-            message="Interrupt failed.",
-            error_code="invoke_interrupt_failed",
-            runtime=runtime,
-        )
-
-    resolved_status: Literal["accepted", "completed"] = (
-        "completed" if report.status == "completed" else "accepted"
-    )
-    return A2AAgentInvokeResponse(
-        success=True,
-        content=None,
-        error=None,
-        error_code=None,
-        source="hub_session_control",
-        jsonrpc_code=None,
-        missing_params=None,
-        upstream_error=None,
-        agent_name=getattr(runtime.resolved, "name", None),
-        agent_url=getattr(runtime.resolved, "url", None),
-        sessionControl=build_session_control_response(
-            intent="preempt",
-            status=resolved_status,
-        ),
+        find_latest_agent_message_id_fn=_find_latest_agent_message_id,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
     )
 
 
