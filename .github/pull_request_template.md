@@ -34,6 +34,18 @@ cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-
 cd frontend && npm test -- --maxWorkers=25%
 ```
 
+If this PR includes cleanup, export removal, route/helper consolidation, or similar hygiene work, mention whether you ran:
+
+```bash
+# maintained high-confidence dead-code hygiene path
+bash scripts/check-dead-code.sh
+
+# low-confidence backend triage only
+bash scripts/check-dead-code.sh exploratory-backend
+```
+
+Exploratory output must be treated as manual triage input, not direct delete guidance.
+
 ## Risk and Rollback
 - Risks:
 - Rollback plan:
