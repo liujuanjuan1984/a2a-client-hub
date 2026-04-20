@@ -25,19 +25,19 @@ from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import cleanup_session_safely, run_with_new_session
 from app.features.auth import service as auth_service
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantActorContext,
-    HubAssistantActorType,
-    HubAssistantAuthorizationError,
-    build_hub_assistant_actor_context,
+from app.features.hub_access.actor_context import (
+    HubActorContext,
+    HubActorType,
+    HubAuthorizationError,
+    build_hub_actor_context,
+)
+from app.features.hub_access.operation_gateway import (
+    HubOperationGateway,
+    HubSurface,
 )
 from app.features.hub_assistant.shared.hub_assistant_web_agent import (
     HubAssistantWebAgentRuntime,
     build_hub_assistant_web_agent_runtime,
-)
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantSurface,
-    HubAssistantToolGateway,
 )
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ws_ticket import (
@@ -113,7 +113,7 @@ async def get_current_user(
         set_user_context(str(user.id))
         set_actor_context(
             principal_user_id=str(user.id),
-            actor_type=HubAssistantActorType.HUMAN_API.value,
+            actor_type=HubActorType.HUMAN_API.value,
             admin_mode=False,
         )
         return user
@@ -241,7 +241,7 @@ async def get_ws_ticket_user(
         set_user_context(str(user.id))
         set_actor_context(
             principal_user_id=str(user.id),
-            actor_type=HubAssistantActorType.HUMAN_API.value,
+            actor_type=HubActorType.HUMAN_API.value,
             admin_mode=False,
         )
         return user
@@ -340,20 +340,20 @@ def get_current_admin_user(
         )
     set_actor_context(
         principal_user_id=str(current_user.id),
-        actor_type=HubAssistantActorType.HUMAN_API.value,
+        actor_type=HubActorType.HUMAN_API.value,
         admin_mode=True,
     )
     return current_user
 
 
-def get_current_hub_assistant_actor(
+def get_current_hub_actor(
     current_user: User = Depends(get_current_user),
-) -> HubAssistantActorContext:
-    """Resolve the default authenticated actor for Hub Assistant operations."""
+) -> HubActorContext:
+    """Resolve the default authenticated actor for hub operations."""
 
-    actor = build_hub_assistant_actor_context(
+    actor = build_hub_actor_context(
         user=current_user,
-        actor_type=HubAssistantActorType.HUMAN_API,
+        actor_type=HubActorType.HUMAN_API,
     )
     set_actor_context(
         principal_user_id=str(actor.principal_user_id),
@@ -363,18 +363,18 @@ def get_current_hub_assistant_actor(
     return actor
 
 
-def get_current_hub_assistant_admin_actor(
+def get_current_hub_admin_actor(
     current_user: User = Depends(get_current_user),
-) -> HubAssistantActorContext:
-    """Resolve an admin-mode actor for Hub Assistant operations."""
+) -> HubActorContext:
+    """Resolve an admin-mode actor for hub operations."""
 
     try:
-        actor = build_hub_assistant_actor_context(
+        actor = build_hub_actor_context(
             user=current_user,
-            actor_type=HubAssistantActorType.HUMAN_API,
+            actor_type=HubActorType.HUMAN_API,
             admin_mode=True,
         )
-    except HubAssistantAuthorizationError as exc:
+    except HubAuthorizationError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
@@ -387,20 +387,20 @@ def get_current_hub_assistant_admin_actor(
     return actor
 
 
-def get_current_hub_assistant_tool_gateway(
-    actor: HubAssistantActorContext = Depends(get_current_hub_assistant_actor),
-) -> HubAssistantToolGateway:
-    """Resolve the default Hub Assistant authorization gateway."""
+def get_current_hub_operation_gateway(
+    actor: HubActorContext = Depends(get_current_hub_actor),
+) -> HubOperationGateway:
+    """Resolve the default authorization gateway for hub operations."""
 
-    return HubAssistantToolGateway(actor, surface=HubAssistantSurface.REST)
+    return HubOperationGateway(actor, surface=HubSurface.REST)
 
 
-def get_current_hub_assistant_admin_tool_gateway(
-    actor: HubAssistantActorContext = Depends(get_current_hub_assistant_admin_actor),
-) -> HubAssistantToolGateway:
-    """Resolve the admin-mode Hub Assistant authorization gateway."""
+def get_current_hub_admin_operation_gateway(
+    actor: HubActorContext = Depends(get_current_hub_admin_actor),
+) -> HubOperationGateway:
+    """Resolve the admin-mode authorization gateway for hub operations."""
 
-    return HubAssistantToolGateway(actor, surface=HubAssistantSurface.REST)
+    return HubOperationGateway(actor, surface=HubSurface.REST)
 
 
 def get_current_hub_assistant_web_agent_runtime(

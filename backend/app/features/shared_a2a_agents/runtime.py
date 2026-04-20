@@ -1,4 +1,4 @@
-"""Runtime helpers for building A2A invocation context from hub agents."""
+"""Runtime helpers for building A2A invocation context from shared A2A agents."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from app.integrations.a2a_client.types import ResolvedAgent
 
 
 class HubA2ARuntimeError(RuntimeError):
-    """Base error for hub A2A runtime building."""
+    """Base error for shared A2A runtime building."""
 
 
 class HubA2ARuntimeNotFoundError(HubA2ARuntimeError):
@@ -46,7 +46,7 @@ class HubA2ARuntime:
 
 
 class HubA2ARuntimeBuilder:
-    """Builds resolved runtime configuration from stored hub agent records."""
+    """Builds resolved runtime configuration from stored shared-agent records."""
 
     def __init__(self) -> None:
         self._vault = hub_a2a_secret_vault
@@ -58,7 +58,7 @@ class HubA2ARuntimeBuilder:
         user_id: UUID,
         agent_id: UUID,
     ) -> HubA2ARuntime:
-        from app.features.hub_agents.service import (
+        from app.features.shared_a2a_agents.service import (
             HubA2AAgentNotFoundError,
             hub_a2a_agent_service,
         )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.features.hub_assistant.shared.capability_catalog import (
-    ADMIN_HUB_AGENTS_LIST,
+from app.features.hub_access.capability_catalog import (
+    ADMIN_SHARED_A2A_AGENTS_LIST,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CREATE,
     HUB_ASSISTANT_AGENTS_START_SESSIONS,
@@ -12,11 +12,11 @@ from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_GET_LATEST_MESSAGES,
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
 )
+from app.features.hub_access.operation_gateway import HubSurface
 from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
     build_hub_assistant_tool_definition,
     list_hub_assistant_tool_definitions,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantSurface
 
 
 def test_build_hub_assistant_tool_definition_exposes_operation_schema() -> None:
@@ -36,7 +36,7 @@ def test_build_hub_assistant_tool_definition_exposes_operation_schema() -> None:
 
 def test_list_hub_assistant_tool_definitions_filters_by_surface() -> None:
     definitions = list_hub_assistant_tool_definitions(
-        surface=HubAssistantSurface.WEB_AGENT,
+        surface=HubSurface.WEB_AGENT,
     )
 
     operation_ids = {item.operation_id for item in definitions}
@@ -176,7 +176,7 @@ def test_build_hub_assistant_tool_definition_documents_job_conversation_policy()
 
 def test_build_hub_assistant_tool_definition_rejects_missing_tool_name() -> None:
     try:
-        build_hub_assistant_tool_definition(ADMIN_HUB_AGENTS_LIST)
+        build_hub_assistant_tool_definition(ADMIN_SHARED_A2A_AGENTS_LIST)
     except KeyError as exc:
         assert str(exc) == (
             "'Operation `admin.agents.list` does not declare a tool name.'"

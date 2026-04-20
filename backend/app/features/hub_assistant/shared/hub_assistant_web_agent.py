@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantActorContext,
-    HubAssistantActorType,
-    build_hub_assistant_actor_context,
+from app.features.hub_access.actor_context import (
+    HubActorContext,
+    HubActorType,
+    build_hub_actor_context,
+)
+from app.features.hub_access.operation_gateway import (
+    HubOperationGateway,
+    HubSurface,
 )
 from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
     HubAssistantToolDefinition,
@@ -19,18 +23,14 @@ from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
 from app.features.hub_assistant.shared.hub_assistant_toolkit import (
     HubAssistantToolkit,
 )
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantSurface,
-    HubAssistantToolGateway,
-)
 
 
 @dataclass(frozen=True)
 class HubAssistantWebAgentRuntime:
     """Resolved web-agent runtime for Hub Assistant entry points."""
 
-    actor: HubAssistantActorContext
-    gateway: HubAssistantToolGateway
+    actor: HubActorContext
+    gateway: HubOperationGateway
     toolkit: HubAssistantToolkit
     tool_definitions: tuple[HubAssistantToolDefinition, ...]
 
@@ -43,13 +43,13 @@ def build_hub_assistant_web_agent_runtime(
 ) -> HubAssistantWebAgentRuntime:
     """Build the shared runtime used by the web Hub Assistant surface."""
 
-    actor = build_hub_assistant_actor_context(
+    actor = build_hub_actor_context(
         user=current_user,
-        actor_type=HubAssistantActorType.WEB_AGENT,
+        actor_type=HubActorType.WEB_AGENT,
     )
-    gateway = HubAssistantToolGateway(
+    gateway = HubOperationGateway(
         actor,
-        surface=HubAssistantSurface.WEB_AGENT,
+        surface=HubSurface.WEB_AGENT,
         web_agent_conversation_id=web_agent_conversation_id,
     )
     toolkit = HubAssistantToolkit(
@@ -62,6 +62,6 @@ def build_hub_assistant_web_agent_runtime(
         gateway=gateway,
         toolkit=toolkit,
         tool_definitions=list_hub_assistant_tool_definitions(
-            surface=HubAssistantSurface.WEB_AGENT,
+            surface=HubSurface.WEB_AGENT,
         ),
     )

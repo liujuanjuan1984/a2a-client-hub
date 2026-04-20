@@ -7,18 +7,18 @@ import pytest
 
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
-from app.features.hub_assistant.shared import task_job as task_job_module
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantActorType,
-    build_hub_assistant_actor_context,
+from app.features.hub_access.actor_context import (
+    HubActorType,
+    build_hub_actor_context,
 )
+from app.features.hub_access.operation_gateway import (
+    HubOperationGateway,
+    HubSurface,
+)
+from app.features.hub_assistant.shared import task_job as task_job_module
 from app.features.hub_assistant.shared.task_service import (
     HubAssistantFollowUpTaskRequest,
     hub_assistant_task_service,
-)
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantSurface,
-    HubAssistantToolGateway,
 )
 from tests.support.utils import create_conversation_thread, create_user
 
@@ -26,13 +26,13 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 def _build_web_agent_gateway(user, hub_assistant_conversation_id: str):
-    actor = build_hub_assistant_actor_context(
+    actor = build_hub_actor_context(
         user=user,
-        actor_type=HubAssistantActorType.WEB_AGENT,
+        actor_type=HubActorType.WEB_AGENT,
     )
-    return HubAssistantToolGateway(
+    return HubOperationGateway(
         actor,
-        surface=HubAssistantSurface.WEB_AGENT,
+        surface=HubSurface.WEB_AGENT,
         web_agent_conversation_id=hub_assistant_conversation_id,
     )
 

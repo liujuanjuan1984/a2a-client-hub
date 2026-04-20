@@ -1,4 +1,4 @@
-"""Hub A2A agent user-facing feature router."""
+"""Shared A2A agent user-facing feature router."""
 
 from __future__ import annotations
 
@@ -18,13 +18,18 @@ from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.transaction import load_for_external_call
 from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
-from app.features.hub_agents.runtime import (
+from app.features.invoke.route_runner import (
+    run_http_invoke_route,
+    run_issue_ws_ticket_route,
+    run_ws_invoke_route,
+)
+from app.features.shared_a2a_agents.runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
     HubA2AUserCredentialRequiredError,
     hub_a2a_runtime_builder,
 )
-from app.features.hub_agents.schemas import (
+from app.features.shared_a2a_agents.schemas import (
     HubA2AAgentListMeta,
     HubA2AAgentPagination,
     HubA2AAgentUserListResponse,
@@ -32,15 +37,10 @@ from app.features.hub_agents.schemas import (
     HubA2AUserCredentialStatusResponse,
     HubA2AUserCredentialUpsertRequest,
 )
-from app.features.hub_agents.service import (
+from app.features.shared_a2a_agents.service import (
     HubA2AAgentNotFoundError,
     HubA2AAgentValidationError,
     hub_a2a_agent_service,
-)
-from app.features.invoke.route_runner import (
-    run_http_invoke_route,
-    run_issue_ws_ticket_route,
-    run_ws_invoke_route,
 )
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.controls import summarize_query
@@ -59,7 +59,7 @@ logger = get_logger(__name__)
 
 
 @router.get("", response_model=HubA2AAgentUserListResponse)
-async def list_hub_agents_for_user(
+async def list_shared_a2a_agents_for_user(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
@@ -222,7 +222,7 @@ async def validate_hub_agent_card(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except HubA2ARuntimeValidationError as exc:
         logger.exception(
-            "Hub A2A agent runtime validation failed during card validation",
+            "Shared A2A agent runtime validation failed during card validation",
             extra={
                 "user_id": str(current_user_id),
                 "agent_id": str(agent_id),
@@ -231,7 +231,7 @@ async def validate_hub_agent_card(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     logger.info(
-        "Hub A2A agent card validation requested",
+        "Shared A2A agent card validation requested",
         extra={
             "user_id": str(current_user_id),
             "agent_id": str(agent_id),
@@ -245,7 +245,7 @@ async def validate_hub_agent_card(
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
         logger.exception(
-            "Hub A2A agent card validation failed",
+            "Shared A2A agent card validation failed",
             extra={
                 "user_id": str(current_user_id),
                 "agent_id": str(agent_id),
@@ -292,7 +292,7 @@ async def invoke_hub_agent(
         runtime_validation_status_overrides=((HubA2AUserCredentialRequiredError, 409),),
         validate_message=validate_message,
         logger=logger,
-        invoke_log_message="Hub A2A agent invoke requested",
+        invoke_log_message="Shared A2A agent invoke requested",
         invoke_log_extra_builder=lambda request, runtime: {
             "user_id": str(current_user_id),
             "agent_id": str(agent_id),
@@ -361,7 +361,7 @@ async def invoke_hub_agent_ws(
         ),
         validate_message=validate_message,
         logger=logger,
-        invoke_log_message="Hub A2A agent invoke WS requested",
+        invoke_log_message="Shared A2A agent invoke WS requested",
         invoke_log_extra_builder=lambda payload, runtime: {
             "user_id": str(current_user_id),
             "agent_id": str(agent_id),

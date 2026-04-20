@@ -10,9 +10,9 @@ from app.core.config import settings
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
-from app.features.hub_agents import admin_router
-from app.features.hub_agents import router as hub_router
-from app.features.hub_agents.runtime import (
+from app.features.shared_a2a_agents import admin_router
+from app.features.shared_a2a_agents import router as hub_router
+from app.features.shared_a2a_agents.runtime import (
     HubA2ARuntimeValidationError,
     HubA2AUserCredentialRequiredError,
 )

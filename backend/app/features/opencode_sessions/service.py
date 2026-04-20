@@ -25,10 +25,10 @@ from app.db.models.external_session_directory_cache import (
 )
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_in_read_session, run_in_write_session
-from app.features.hub_agents.runtime import hub_a2a_runtime_builder
-from app.features.hub_agents.service import hub_a2a_agent_service
 from app.features.personal_agents.runtime import a2a_runtime_builder
 from app.features.personal_agents.service import a2a_agent_service
+from app.features.shared_a2a_agents.runtime import hub_a2a_runtime_builder
+from app.features.shared_a2a_agents.service import hub_a2a_agent_service
 from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
@@ -441,8 +441,10 @@ class OpencodeSessionDirectoryService:
             for record in personal_records
             if record.enabled
         ]
-        hub_agents = await hub_a2a_agent_service.list_all_visible_agents_for_user(
-            db, user_id=user_id
+        shared_a2a_agents = (
+            await hub_a2a_agent_service.list_all_visible_agents_for_user(
+                db, user_id=user_id
+            )
         )
         shared = [
             _AgentRef(
@@ -455,7 +457,7 @@ class OpencodeSessionDirectoryService:
                 auth_scheme=cast(str | None, agent.auth_scheme),
                 extra_headers=cast(dict[str, str] | None, agent.extra_headers),
             )
-            for agent in hub_agents
+            for agent in shared_a2a_agents
         ]
         return [*personal, *shared]
 

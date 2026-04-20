@@ -23,10 +23,10 @@ from app.core.security import (
 )
 from app.db.session import AsyncSessionLocal
 from app.features.auth.service import UserNotFoundError, get_active_user
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantAuthorizationError,
+from app.features.hub_access.actor_context import (
+    HubAuthorizationError,
 )
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_CREATE,
@@ -53,7 +53,11 @@ from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
     HUB_ASSISTANT_SESSIONS_UNARCHIVE,
     HUB_ASSISTANT_SESSIONS_UPDATE,
-    list_hub_assistant_operation_ids,
+    list_hub_operation_ids,
+)
+from app.features.hub_access.operation_gateway import (
+    HubConfirmationPolicy,
+    HubSurface,
 )
 from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
     HubAssistantToolDefinition,
@@ -65,10 +69,6 @@ from app.features.hub_assistant.shared.hub_assistant_toolkit import (
 from app.features.hub_assistant.shared.hub_assistant_web_agent import (
     build_hub_assistant_web_agent_runtime,
 )
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantConfirmationPolicy,
-    HubAssistantSurface,
-)
 from app.features.personal_agents.service import A2AAgentError
 from app.features.schedules.common import A2AScheduleError
 
@@ -79,20 +79,20 @@ HUB_ASSISTANT_MCP_WRITE_MOUNT_PATH = "/mcp-write"
 _MCP_USER_ID_STATE_KEY = "hub_assistant_mcp_user_id"
 _MCP_ALLOWED_OPERATION_IDS_STATE_KEY = "hub_assistant_mcp_allowed_operation_ids"
 _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY = "hub_assistant_mcp_web_agent_conversation_id"
-HUB_ASSISTANT_MCP_OPERATION_IDS = list_hub_assistant_operation_ids(
-    surface=HubAssistantSurface.WEB_AGENT,
+HUB_ASSISTANT_MCP_OPERATION_IDS = list_hub_operation_ids(
+    surface=HubSurface.WEB_AGENT,
     require_tool_name=True,
 )
 HUB_ASSISTANT_MCP_READONLY_OPERATION_IDS = frozenset(
-    list_hub_assistant_operation_ids(
-        surface=HubAssistantSurface.WEB_AGENT,
-        confirmation_policy=HubAssistantConfirmationPolicy.NONE,
+    list_hub_operation_ids(
+        surface=HubSurface.WEB_AGENT,
+        confirmation_policy=HubConfirmationPolicy.NONE,
         require_tool_name=True,
     )
 )
 HUB_ASSISTANT_MCP_WRITE_OPERATION_IDS = frozenset(
-    list_hub_assistant_operation_ids(
-        surface=HubAssistantSurface.WEB_AGENT,
+    list_hub_operation_ids(
+        surface=HubSurface.WEB_AGENT,
         require_tool_name=True,
     )
 )
@@ -245,7 +245,7 @@ async def execute_hub_assistant_mcp_operation(
                 allowed_operation_ids is not None
                 and operation_id not in allowed_operation_ids
             ):
-                raise HubAssistantAuthorizationError(
+                raise HubAuthorizationError(
                     f"Operation `{operation_id}` is not authorized for this MCP session."
                 )
             current_user = await get_active_user(session, user_id=user_id)
@@ -261,7 +261,7 @@ async def execute_hub_assistant_mcp_operation(
         except (
             A2AAgentError,
             A2AScheduleError,
-            HubAssistantAuthorizationError,
+            HubAuthorizationError,
             HubAssistantToolInputError,
             UserNotFoundError,
             ValueError,
@@ -977,7 +977,7 @@ def list_hub_assistant_mcp_tool_definitions() -> tuple[HubAssistantToolDefinitio
     return tuple(
         definition
         for definition in list_hub_assistant_tool_definitions(
-            surface=HubAssistantSurface.WEB_AGENT,
+            surface=HubSurface.WEB_AGENT,
         )
         if definition.operation_id in HUB_ASSISTANT_MCP_WRITE_OPERATION_IDS
     )

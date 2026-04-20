@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantActorType,
-    build_hub_assistant_actor_context,
+from app.features.hub_access.actor_context import (
+    HubActorType,
+    build_hub_actor_context,
 )
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantSurface,
-    HubAssistantToolGateway,
+from app.features.hub_access.operation_gateway import (
+    HubOperationGateway,
+    HubSurface,
 )
 from app.features.personal_agents import service as personal_agent_service_module
 from app.features.personal_agents.hub_assistant_agents_service import (
@@ -21,11 +21,11 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 def _build_gateway(user):
-    actor = build_hub_assistant_actor_context(
+    actor = build_hub_actor_context(
         user=user,
-        actor_type=HubAssistantActorType.HUMAN_API,
+        actor_type=HubActorType.HUMAN_API,
     )
-    return HubAssistantToolGateway(actor, surface=HubAssistantSurface.REST)
+    return HubOperationGateway(actor, surface=HubSurface.REST)
 
 
 async def test_hub_assistant_agents_service_list_and_get_agents(

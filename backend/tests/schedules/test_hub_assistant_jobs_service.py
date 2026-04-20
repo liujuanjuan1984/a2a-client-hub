@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantActorType,
-    build_hub_assistant_actor_context,
+from app.features.hub_access.actor_context import (
+    HubActorType,
+    build_hub_actor_context,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.features.schedules.hub_assistant_jobs_service import (
     hub_assistant_jobs_service,
 )
@@ -17,11 +17,11 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 def _build_gateway(user):
-    actor = build_hub_assistant_actor_context(
+    actor = build_hub_actor_context(
         user=user,
-        actor_type=HubAssistantActorType.HUMAN_API,
+        actor_type=HubActorType.HUMAN_API,
     )
-    return HubAssistantToolGateway(actor)
+    return HubOperationGateway(actor)
 
 
 async def test_hub_assistant_jobs_service_supports_first_wave_patch_shapes() -> None:

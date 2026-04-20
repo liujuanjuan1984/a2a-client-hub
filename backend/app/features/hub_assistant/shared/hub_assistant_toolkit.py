@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_CREATE,
@@ -37,15 +37,15 @@ from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
     HUB_ASSISTANT_SESSIONS_UNARCHIVE,
     HUB_ASSISTANT_SESSIONS_UPDATE,
-    get_hub_assistant_operation,
+    get_hub_operation,
 )
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.features.hub_assistant.shared.delegated_conversation_service import (
     hub_assistant_delegated_conversation_service,
 )
 from app.features.hub_assistant.shared.task_service import (
     hub_assistant_task_service,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.features.personal_agents.hub_assistant_agents_service import (
     hub_assistant_agents_service,
 )
@@ -79,7 +79,7 @@ class HubAssistantToolkit:
         *,
         db: AsyncSession,
         current_user: User,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
     ) -> None:
         self.db = db
         self.current_user = current_user
@@ -92,7 +92,7 @@ class HubAssistantToolkit:
         arguments: Mapping[str, Any] | None = None,
     ) -> HubAssistantToolExecutionResult:
         args = dict(arguments or {})
-        operation = get_hub_assistant_operation(operation_id)
+        operation = get_hub_operation(operation_id)
         if operation.operation_id == HUB_ASSISTANT_JOBS_LIST.operation_id:
             payload = await self._list_jobs(args)
         elif operation.operation_id == HUB_ASSISTANT_JOBS_GET.operation_id:

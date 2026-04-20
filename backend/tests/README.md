@@ -8,7 +8,7 @@ Backend tests are organized by either feature or shared concern.
 - `auth/`
 - `shortcuts/`
 - `personal_agents/`
-- `hub_agents/`
+- `shared_a2a_agents/`
 - `invoke/`
 - `schedules/`
 - `sessions/`

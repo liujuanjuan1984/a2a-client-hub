@@ -22,17 +22,17 @@ from app.features.health_check_helpers import (
     build_health_snapshot_update,
 )
 from app.features.health_reason_codes import AgentHealthReasonCode
-from app.features.hub_agents.runtime import (
+from app.features.hub_assistant.service import (
+    hub_assistant_service,
+)
+from app.features.personal_agents.service import a2a_agent_service
+from app.features.shared_a2a_agents.runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
     HubA2AUserCredentialRequiredError,
     hub_a2a_runtime_builder,
 )
-from app.features.hub_agents.service import hub_a2a_agent_service
-from app.features.hub_assistant.service import (
-    hub_assistant_service,
-)
-from app.features.personal_agents.service import a2a_agent_service
+from app.features.shared_a2a_agents.service import hub_a2a_agent_service
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,

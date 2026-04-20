@@ -6,10 +6,10 @@ import pytest
 
 from app.api.deps import get_current_hub_assistant_web_agent_runtime
 from app.db.models.user import User
+from app.features.hub_access.operation_gateway import HubSurface
 from app.features.hub_assistant.shared.hub_assistant_web_agent import (
     build_hub_assistant_web_agent_runtime,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantSurface
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -51,7 +51,7 @@ async def test_build_hub_assistant_web_agent_runtime_exposes_toolkit_and_tools(
     )
 
     assert runtime.actor.actor_type.value == "web_agent"
-    assert runtime.gateway.surface == HubAssistantSurface.WEB_AGENT
+    assert runtime.gateway.surface == HubSurface.WEB_AGENT
     assert any(
         item.tool_name == "hub_assistant.jobs.list" for item in runtime.tool_definitions
     )
@@ -69,4 +69,4 @@ async def test_web_agent_dependency_returns_web_agent_runtime(
     )
 
     assert runtime.actor.actor_type.value == "web_agent"
-    assert runtime.gateway.surface == HubAssistantSurface.WEB_AGENT
+    assert runtime.gateway.surface == HubSurface.WEB_AGENT

@@ -17,12 +17,6 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely, load_for_external_call
-from app.features.hub_agents.runtime import (
-    HubA2ARuntimeNotFoundError,
-    HubA2ARuntimeValidationError,
-    HubA2AUserCredentialRequiredError,
-    hub_a2a_runtime_builder,
-)
 from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_INTERNAL_ID,
     HUB_ASSISTANT_PUBLIC_ID,
@@ -49,6 +43,12 @@ from app.features.sessions.schemas import (
     SessionViewItem,
 )
 from app.features.sessions.service import session_hub_service
+from app.features.shared_a2a_agents.runtime import (
+    HubA2ARuntimeNotFoundError,
+    HubA2ARuntimeValidationError,
+    HubA2AUserCredentialRequiredError,
+    hub_a2a_runtime_builder,
+)
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.utils.session_identity import normalize_non_empty_text
 

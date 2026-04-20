@@ -11,21 +11,15 @@ from app.core.logging import get_logger
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely, load_for_external_call
-from app.features.hub_agents.runtime import (
-    HubA2ARuntimeNotFoundError,
-    HubA2ARuntimeValidationError,
-    HubA2AUserCredentialRequiredError,
-    hub_a2a_runtime_builder,
-)
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_AGENTS_START_SESSIONS,
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
 )
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.features.hub_assistant.shared.task_service import (
     DelegatedInvokeTaskRequest,
     hub_assistant_task_service,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.features.invoke.route_runner import run_background_invoke
 from app.features.personal_agents.runtime import (
     A2ARuntimeNotFoundError,
@@ -35,6 +29,12 @@ from app.features.personal_agents.runtime import (
 from app.features.sessions import message_store
 from app.features.sessions.common import parse_conversation_id
 from app.features.sessions.support import SessionHubSupport
+from app.features.shared_a2a_agents.runtime import (
+    HubA2ARuntimeNotFoundError,
+    HubA2ARuntimeValidationError,
+    HubA2AUserCredentialRequiredError,
+    hub_a2a_runtime_builder,
+)
 from app.integrations.a2a_client.service import get_a2a_service
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
@@ -55,7 +55,7 @@ class HubAssistantDelegatedConversationService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         conversation_ids: list[UUID],
         message: str,
@@ -104,7 +104,7 @@ class HubAssistantDelegatedConversationService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         agent_ids: list[UUID],
         message: str,

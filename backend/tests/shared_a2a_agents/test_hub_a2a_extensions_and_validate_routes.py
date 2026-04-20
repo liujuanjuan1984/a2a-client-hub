@@ -9,8 +9,8 @@ import pytest
 from app.core.config import settings
 from app.features.extension_capabilities import common_router as extension_router_common
 from app.features.extension_capabilities import hub_router as hub_extension_router
-from app.features.hub_agents import admin_router
-from app.features.hub_agents import router as hub_router
+from app.features.shared_a2a_agents import admin_router
+from app.features.shared_a2a_agents import router as hub_router
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
@@ -1246,7 +1246,7 @@ async def test_hub_card_validate_logs_traceback_for_upstream_failure(
     assert resp.status_code == 502
     assert resp.json()["detail"] == "hub upstream failed"
     assert len(logged) == 1
-    assert logged[0]["message"] == "Hub A2A agent card validation failed"
+    assert logged[0]["message"] == "Shared A2A agent card validation failed"
     assert logged[0]["extra"]["user_id"] == str(user.id)
     assert logged[0]["extra"]["agent_id"] == str(agent_id)
 

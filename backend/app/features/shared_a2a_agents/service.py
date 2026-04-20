@@ -1,4 +1,4 @@
-"""Hub A2A agent feature service and credential helpers."""
+"""Shared A2A agent feature service and credential helpers."""
 
 from __future__ import annotations
 

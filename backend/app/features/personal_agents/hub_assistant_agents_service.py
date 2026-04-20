@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_CREATE,
@@ -17,7 +17,7 @@ from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_AGENTS_LIST,
     HUB_ASSISTANT_AGENTS_UPDATE_CONFIG,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.features.personal_agents.service import (
     A2AAgentHealthCheckItemRecord,
     A2AAgentHealthCheckSummaryRecord,
@@ -40,7 +40,7 @@ class HubAssistantAgentsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         page: int,
         size: int,
@@ -62,7 +62,7 @@ class HubAssistantAgentsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         agent_id: UUID,
     ) -> A2AAgentRecord:
@@ -81,7 +81,7 @@ class HubAssistantAgentsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         agent_id: UUID,
         force: bool = True,
@@ -102,7 +102,7 @@ class HubAssistantAgentsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         force: bool = False,
     ) -> tuple[A2AAgentHealthCheckSummaryRecord, list[A2AAgentHealthCheckItemRecord]]:
@@ -120,7 +120,7 @@ class HubAssistantAgentsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         name: str,
         card_url: str,
@@ -160,7 +160,7 @@ class HubAssistantAgentsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         agent_id: UUID,
         name: str | None = None,
@@ -203,7 +203,7 @@ class HubAssistantAgentsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         agent_id: UUID,
     ) -> None:

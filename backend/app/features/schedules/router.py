@@ -10,13 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     get_async_db,
-    get_current_hub_assistant_tool_gateway,
+    get_current_hub_operation_gateway,
     get_current_user,
 )
 from app.api.retry_after import db_busy_retry_after_headers
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.features.schedules.common import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,
@@ -133,7 +133,7 @@ async def _set_schedule_task_enabled(
     enabled: bool,
     db: AsyncSession,
     current_user: User,
-    gateway: HubAssistantToolGateway,
+    gateway: HubOperationGateway,
 ) -> A2AScheduleToggleResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
     schedule_timezone = _validate_timezone(user_timezone=current_user_timezone)
@@ -206,7 +206,7 @@ async def list_schedule_tasks(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
-    gateway: HubAssistantToolGateway = Depends(get_current_hub_assistant_tool_gateway),
+    gateway: HubOperationGateway = Depends(get_current_hub_operation_gateway),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskListResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
@@ -234,7 +234,7 @@ async def list_schedule_tasks(
 async def get_schedule_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    gateway: HubAssistantToolGateway = Depends(get_current_hub_assistant_tool_gateway),
+    gateway: HubOperationGateway = Depends(get_current_hub_operation_gateway),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
@@ -255,7 +255,7 @@ async def patch_schedule_task(
     task_id: UUID,
     payload: A2AScheduleTaskUpdate,
     db: AsyncSession = Depends(get_async_db),
-    gateway: HubAssistantToolGateway = Depends(get_current_hub_assistant_tool_gateway),
+    gateway: HubOperationGateway = Depends(get_current_hub_operation_gateway),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
     current_user_timezone = cast(str | None, current_user.timezone)
@@ -332,7 +332,7 @@ async def delete_schedule_task(
 async def enable_schedule_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    gateway: HubAssistantToolGateway = Depends(get_current_hub_assistant_tool_gateway),
+    gateway: HubOperationGateway = Depends(get_current_hub_operation_gateway),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleToggleResponse:
     return await _set_schedule_task_enabled(
@@ -348,7 +348,7 @@ async def enable_schedule_task(
 async def disable_schedule_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    gateway: HubAssistantToolGateway = Depends(get_current_hub_assistant_tool_gateway),
+    gateway: HubOperationGateway = Depends(get_current_hub_operation_gateway),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleToggleResponse:
     return await _set_schedule_task_enabled(

@@ -1,4 +1,4 @@
-"""Shared authorization gateway for Hub Assistant entry points."""
+"""Shared authorization gateway for hub feature entry points."""
 
 from __future__ import annotations
 
@@ -7,45 +7,43 @@ from enum import Enum
 from typing import Awaitable, Callable, Generic, TypeVar
 from uuid import UUID
 
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantAction,
-    HubAssistantActorContext,
-    HubAssistantAuditFields,
-    HubAssistantAuthorizationError,
-    HubAssistantResource,
-    HubAssistantScope,
+from app.features.hub_access.actor_context import (
+    HubAction,
+    HubActorContext,
+    HubAuditFields,
+    HubAuthorizationError,
+    HubResource,
+    HubScope,
 )
 
 _ResultT = TypeVar("_ResultT")
 
 
-class HubAssistantConfirmationPolicy(str, Enum):
-    """Confirmation policy for one Hub Assistant operation."""
+class HubConfirmationPolicy(str, Enum):
+    """Confirmation policy for one hub operation."""
 
     NONE = "none"
     REQUIRED = "required"
 
 
-class HubAssistantSurface(str, Enum):
-    """Entry surfaces that may expose one Hub Assistant operation."""
+class HubSurface(str, Enum):
+    """Entry surfaces that may expose one hub operation."""
 
     REST = "rest"
     WEB_AGENT = "web_agent"
 
 
 @dataclass(frozen=True)
-class HubAssistantOperation:
-    """One authorized Hub Assistant operation."""
+class HubOperation:
+    """One authorized hub operation."""
 
     operation_id: str
-    scope: HubAssistantScope
-    resource: HubAssistantResource
-    action: HubAssistantAction
+    scope: HubScope
+    resource: HubResource
+    action: HubAction
     event_name: str
-    confirmation_policy: HubAssistantConfirmationPolicy = (
-        HubAssistantConfirmationPolicy.NONE
-    )
-    surfaces: frozenset[HubAssistantSurface] = field(default_factory=frozenset)
+    confirmation_policy: HubConfirmationPolicy = HubConfirmationPolicy.NONE
+    surfaces: frozenset[HubSurface] = field(default_factory=frozenset)
     first_wave_exposed: bool = False
     description: str | None = None
     tool_name: str | None = None
@@ -57,17 +55,17 @@ class AuthorizedExecution(Generic[_ResultT]):
     """Authorized execution result and canonical audit fields."""
 
     result: _ResultT
-    audit_fields: HubAssistantAuditFields
+    audit_fields: HubAuditFields
 
 
-class HubAssistantToolGateway:
-    """Authorization gateway shared by API and Hub Assistant layers."""
+class HubOperationGateway:
+    """Authorization gateway shared by API and assistant layers."""
 
     def __init__(
         self,
-        actor: HubAssistantActorContext,
+        actor: HubActorContext,
         *,
-        surface: HubAssistantSurface | None = None,
+        surface: HubSurface | None = None,
         web_agent_conversation_id: str | None = None,
     ) -> None:
         self.actor = actor
@@ -82,10 +80,10 @@ class HubAssistantToolGateway:
     def authorize(
         self,
         *,
-        operation: HubAssistantOperation,
+        operation: HubOperation,
         resource_id: str | None = None,
         target_user_id: UUID | None = None,
-    ) -> HubAssistantAuditFields:
+    ) -> HubAuditFields:
         """Authorize one operation and return canonical audit fields."""
 
         if not self.actor.allows(
@@ -93,7 +91,7 @@ class HubAssistantToolGateway:
             resource=operation.resource,
             action=operation.action,
         ):
-            raise HubAssistantAuthorizationError(
+            raise HubAuthorizationError(
                 "Actor is not allowed to perform "
                 f"{operation.scope.value}:{operation.resource.value}:{operation.action.value}"
             )
@@ -102,7 +100,7 @@ class HubAssistantToolGateway:
             and operation.surfaces
             and self.surface not in operation.surfaces
         ):
-            raise HubAssistantAuthorizationError(
+            raise HubAuthorizationError(
                 f"Operation `{operation.operation_id}` is not exposed on "
                 f"`{self.surface.value}`."
             )
@@ -123,7 +121,7 @@ class HubAssistantToolGateway:
     async def execute(
         self,
         *,
-        operation: HubAssistantOperation,
+        operation: HubOperation,
         handler: Callable[[], Awaitable[_ResultT]],
         resource_id: str | None = None,
         target_user_id: UUID | None = None,

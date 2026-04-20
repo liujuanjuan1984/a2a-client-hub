@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_ARCHIVE,
     HUB_ASSISTANT_SESSIONS_GET,
     HUB_ASSISTANT_SESSIONS_GET_LATEST_MESSAGES,
@@ -21,7 +21,7 @@ from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_UNARCHIVE,
     HUB_ASSISTANT_SESSIONS_UPDATE,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.features.sessions.common import SessionSource
 from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now
@@ -108,7 +108,7 @@ class HubAssistantSessionsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         page: int,
         size: int,
@@ -136,7 +136,7 @@ class HubAssistantSessionsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         conversation_id: str,
     ) -> dict[str, Any]:
@@ -160,7 +160,7 @@ class HubAssistantSessionsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         conversation_ids: list[str],
         limit_per_session: int = 1,
@@ -297,7 +297,7 @@ class HubAssistantSessionsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         conversation_id: str,
         title: str,
@@ -319,7 +319,7 @@ class HubAssistantSessionsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         conversation_id: str,
     ) -> dict[str, Any]:
@@ -341,7 +341,7 @@ class HubAssistantSessionsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         conversation_id: str,
     ) -> dict[str, Any]:

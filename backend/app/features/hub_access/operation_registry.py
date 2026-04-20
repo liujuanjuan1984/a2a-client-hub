@@ -1,4 +1,4 @@
-"""Declarative registry for Hub Assistant operations and tool inputs."""
+"""Declarative registry for hub operations and tool inputs."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantAction,
-    HubAssistantResource,
-    HubAssistantScope,
+from app.features.hub_access.actor_context import (
+    HubAction,
+    HubResource,
+    HubScope,
 )
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantConfirmationPolicy,
-    HubAssistantOperation,
-    HubAssistantSurface,
+from app.features.hub_access.operation_gateway import (
+    HubConfirmationPolicy,
+    HubOperation,
+    HubSurface,
 )
 
 
@@ -200,29 +200,27 @@ class _AgentsStartSessionsInput(_StrictBaseModel):
 
 
 @dataclass(frozen=True)
-class HubAssistantOperationSpec:
+class HubOperationSpec:
     """Declarative metadata for one registered Hub Assistant operation."""
 
     symbol_name: str
     operation_id: str
-    scope: HubAssistantScope
-    resource: HubAssistantResource
-    action: HubAssistantAction
+    scope: HubScope
+    resource: HubResource
+    action: HubAction
     event_name: str
-    surfaces: frozenset[HubAssistantSurface]
-    confirmation_policy: HubAssistantConfirmationPolicy = (
-        HubAssistantConfirmationPolicy.NONE
-    )
+    surfaces: frozenset[HubSurface]
+    confirmation_policy: HubConfirmationPolicy = HubConfirmationPolicy.NONE
     first_wave_exposed: bool = False
     description: str | None = None
     tool_name: str | None = None
     delegated_by: str | None = None
     input_model: type[BaseModel] | None = None
 
-    def build_operation(self) -> HubAssistantOperation:
+    def build_operation(self) -> HubOperation:
         """Build a runtime operation from this declarative spec."""
 
-        return HubAssistantOperation(
+        return HubOperation(
             operation_id=self.operation_id,
             scope=self.scope,
             resource=self.resource,
@@ -239,20 +237,20 @@ class HubAssistantOperationSpec:
 
 _HUB_ASSISTANT_ENTRY_SURFACES = frozenset(
     {
-        HubAssistantSurface.REST,
-        HubAssistantSurface.WEB_AGENT,
+        HubSurface.REST,
+        HubSurface.WEB_AGENT,
     }
 )
-_WEB_AGENT_ONLY_SURFACES = frozenset({HubAssistantSurface.WEB_AGENT})
-_REST_ONLY_SURFACES = frozenset({HubAssistantSurface.REST})
+_WEB_AGENT_ONLY_SURFACES = frozenset({HubSurface.WEB_AGENT})
+_REST_ONLY_SURFACES = frozenset({HubSurface.REST})
 
 _OPERATION_SPECS = (
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_LIST",
         operation_id="hub_assistant.agents.list",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.READ,
         event_name="hub_assistant_agent.list.requested",
         tool_name="hub_assistant.agents.list",
         first_wave_exposed=True,
@@ -260,12 +258,12 @@ _OPERATION_SPECS = (
         description="List the current user's agents.",
         input_model=_AgentsListInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_GET",
         operation_id="hub_assistant.agents.get",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.READ,
         event_name="hub_assistant_agent.get.requested",
         tool_name="hub_assistant.agents.get",
         first_wave_exposed=True,
@@ -273,87 +271,87 @@ _OPERATION_SPECS = (
         description="Read one current-user agent in detail.",
         input_model=_AgentGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_CHECK_HEALTH",
         operation_id="hub_assistant.agents.check_health",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_agent.check_health.requested",
         tool_name="hub_assistant.agents.check_health",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Run a health check for one current-user agent.",
         input_model=_AgentCheckHealthInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL",
         operation_id="hub_assistant.agents.check_health_all",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_agent.check_health_all.requested",
         tool_name="hub_assistant.agents.check_health_all",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Run a health check sweep for all current-user agents.",
         input_model=_AgentsCheckHealthAllInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_CREATE",
         operation_id="hub_assistant.agents.create",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_agent.create.requested",
         tool_name="hub_assistant.agents.create",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Create one current-user agent.",
         input_model=_AgentCreateInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_UPDATE_CONFIG",
         operation_id="hub_assistant.agents.update_config",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_agent.update_config.requested",
         tool_name="hub_assistant.agents.update_config",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Update one current-user agent.",
         input_model=_AgentUpdateConfigInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_DELETE",
         operation_id="hub_assistant.agents.delete",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_agent.delete.requested",
         tool_name="hub_assistant.agents.delete",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Soft-delete one current-user agent.",
         input_model=_AgentGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_AGENTS_START_SESSIONS",
         operation_id="hub_assistant.agents.start_sessions",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_agent.start_sessions.requested",
         tool_name="hub_assistant.agents.start_sessions",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description=(
             "Start one or more new conversations for the current user's agents, "
             "send a delegated message, and hand each conversation off to the "
@@ -363,12 +361,12 @@ _OPERATION_SPECS = (
         ),
         input_model=_AgentsStartSessionsInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_FOLLOWUPS_GET",
         operation_id="hub_assistant.followups.get",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.FOLLOWUPS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.FOLLOWUPS,
+        action=HubAction.READ,
         event_name="hub_assistant_followup.get.requested",
         tool_name="hub_assistant.followups.get",
         first_wave_exposed=True,
@@ -380,12 +378,12 @@ _OPERATION_SPECS = (
         ),
         input_model=_FollowUpsGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_FOLLOWUPS_SET_SESSIONS",
         operation_id="hub_assistant.followups.set_sessions",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.FOLLOWUPS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.FOLLOWUPS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_followup.set_sessions.requested",
         tool_name="hub_assistant.followups.set_sessions",
         first_wave_exposed=True,
@@ -397,12 +395,12 @@ _OPERATION_SPECS = (
         ),
         input_model=_FollowUpsSetSessionsInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_SESSIONS_LIST",
         operation_id="hub_assistant.sessions.list",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.SESSIONS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.SESSIONS,
+        action=HubAction.READ,
         event_name="hub_assistant_session.list.requested",
         tool_name="hub_assistant.sessions.list",
         first_wave_exposed=True,
@@ -410,12 +408,12 @@ _OPERATION_SPECS = (
         description="List the current user's sessions.",
         input_model=_SessionsListInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_SESSIONS_GET",
         operation_id="hub_assistant.sessions.get",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.SESSIONS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.SESSIONS,
+        action=HubAction.READ,
         event_name="hub_assistant_session.get.requested",
         tool_name="hub_assistant.sessions.get",
         first_wave_exposed=True,
@@ -423,12 +421,12 @@ _OPERATION_SPECS = (
         description="Read one current-user session in detail.",
         input_model=_SessionGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_SESSIONS_GET_LATEST_MESSAGES",
         operation_id="hub_assistant.sessions.get_latest_messages",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.SESSIONS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.SESSIONS,
+        action=HubAction.READ,
         event_name="hub_assistant_session.get_latest_messages.requested",
         tool_name="hub_assistant.sessions.get_latest_messages",
         first_wave_exposed=True,
@@ -441,59 +439,59 @@ _OPERATION_SPECS = (
         ),
         input_model=_SessionsGetLatestMessagesInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_SESSIONS_UPDATE",
         operation_id="hub_assistant.sessions.update",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.SESSIONS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.SESSIONS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_session.update.requested",
         tool_name="hub_assistant.sessions.update",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Update one current-user session.",
         input_model=_SessionUpdateInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_SESSIONS_ARCHIVE",
         operation_id="hub_assistant.sessions.archive",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.SESSIONS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.SESSIONS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_session.archive.requested",
         tool_name="hub_assistant.sessions.archive",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Archive one current-user session as a soft delete.",
         input_model=_SessionGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_SESSIONS_UNARCHIVE",
         operation_id="hub_assistant.sessions.unarchive",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.SESSIONS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.SESSIONS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_session.unarchive.requested",
         tool_name="hub_assistant.sessions.unarchive",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Restore one archived current-user session.",
         input_model=_SessionGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_SESSIONS_SEND_MESSAGE",
         operation_id="hub_assistant.sessions.send_message",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.SESSIONS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.SESSIONS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_session.send_message.requested",
         tool_name="hub_assistant.sessions.send_message",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description=(
             "Send one delegated message to one or more current-user conversations "
             "and hand each conversation off to the platform-managed target session "
@@ -503,12 +501,12 @@ _OPERATION_SPECS = (
         ),
         input_model=_SessionsSendMessageInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_LIST",
         operation_id="hub_assistant.jobs.list",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.READ,
         event_name="hub_assistant_job.list.requested",
         tool_name="hub_assistant.jobs.list",
         first_wave_exposed=True,
@@ -516,12 +514,12 @@ _OPERATION_SPECS = (
         description="List the current user's jobs.",
         input_model=_JobsListInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_GET",
         operation_id="hub_assistant.jobs.get",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.READ,
         event_name="hub_assistant_job.get.requested",
         tool_name="hub_assistant.jobs.get",
         first_wave_exposed=True,
@@ -529,188 +527,188 @@ _OPERATION_SPECS = (
         description="Read one current-user job in detail.",
         input_model=_JobGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_CREATE",
         operation_id="hub_assistant.jobs.create",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_job.create.requested",
         tool_name="hub_assistant.jobs.create",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description=(
             "Create one current-user job. For `conversation_policy`, use the exact "
             "enum `new_each_run` or `reuse_single`."
         ),
         input_model=_JobsCreateInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_PAUSE",
         operation_id="hub_assistant.jobs.pause",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_job.pause.requested",
         tool_name="hub_assistant.jobs.pause",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Pause one current-user job.",
         input_model=_JobGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_RESUME",
         operation_id="hub_assistant.jobs.resume",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_job.resume.requested",
         tool_name="hub_assistant.jobs.resume",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Resume one current-user job.",
         input_model=_JobGetInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_UPDATE_PROMPT",
         operation_id="hub_assistant.jobs.update_prompt",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_job.update_prompt.requested",
         tool_name="hub_assistant.jobs.update_prompt",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Update the prompt of one current-user job.",
         input_model=_JobUpdatePromptInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_UPDATE",
         operation_id="hub_assistant.jobs.update",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_job.update.requested",
         tool_name="hub_assistant.jobs.update",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description=(
             "Update one current-user job. For `conversation_policy`, use the exact "
             "enum `new_each_run` or `reuse_single`."
         ),
         input_model=_JobUpdateInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_UPDATE_SCHEDULE",
         operation_id="hub_assistant.jobs.update_schedule",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_job.update_schedule.requested",
         tool_name="hub_assistant.jobs.update_schedule",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Update the schedule of one current-user job.",
         input_model=_JobUpdateScheduleInput,
     ),
-    HubAssistantOperationSpec(
+    HubOperationSpec(
         symbol_name="HUB_ASSISTANT_JOBS_DELETE",
         operation_id="hub_assistant.jobs.delete",
-        scope=HubAssistantScope.SELF,
-        resource=HubAssistantResource.JOBS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.SELF,
+        resource=HubResource.JOBS,
+        action=HubAction.WRITE,
         event_name="hub_assistant_job.delete.requested",
         tool_name="hub_assistant.jobs.delete",
         first_wave_exposed=True,
         surfaces=_HUB_ASSISTANT_ENTRY_SURFACES,
-        confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
+        confirmation_policy=HubConfirmationPolicy.REQUIRED,
         description="Soft-delete one current-user job.",
         input_model=_JobGetInput,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENTS_LIST",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENTS_LIST",
         operation_id="admin.agents.list",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.READ,
         event_name="hub_agent.list.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENTS_GET",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENTS_GET",
         operation_id="admin.agents.get",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.READ,
         event_name="hub_agent.get.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENTS_CREATE",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENTS_CREATE",
         operation_id="admin.agents.create",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_agent.create.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENTS_UPDATE",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENTS_UPDATE",
         operation_id="admin.agents.update",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_agent.update.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENTS_DELETE",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENTS_DELETE",
         operation_id="admin.agents.delete",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_agent.delete.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENT_ALLOWLIST_LIST",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENT_ALLOWLIST_LIST",
         operation_id="admin.agents.allowlist.list",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.READ,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.READ,
         event_name="hub_agent.allowlist.list.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENT_ALLOWLIST_ADD",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENT_ALLOWLIST_ADD",
         operation_id="admin.agents.allowlist.add",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_agent.allowlist.add.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENT_ALLOWLIST_REPLACE",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENT_ALLOWLIST_REPLACE",
         operation_id="admin.agents.allowlist.replace",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_agent.allowlist.replace.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
-    HubAssistantOperationSpec(
-        symbol_name="ADMIN_HUB_AGENT_ALLOWLIST_REMOVE",
+    HubOperationSpec(
+        symbol_name="ADMIN_SHARED_A2A_AGENT_ALLOWLIST_REMOVE",
         operation_id="admin.agents.allowlist.remove",
-        scope=HubAssistantScope.ADMIN,
-        resource=HubAssistantResource.AGENTS,
-        action=HubAssistantAction.WRITE,
+        scope=HubScope.ADMIN,
+        resource=HubResource.AGENTS,
+        action=HubAction.WRITE,
         event_name="hub_agent.allowlist.remove.requested",
         surfaces=_REST_ONLY_SURFACES,
     ),
@@ -719,9 +717,9 @@ _OPERATION_SPECS = (
 _OPERATION_SPECS_BY_ID = {spec.operation_id: spec for spec in _OPERATION_SPECS}
 
 
-def get_hub_assistant_operation_spec(
+def get_hub_operation_spec(
     operation_id: str,
-) -> HubAssistantOperationSpec:
+) -> HubOperationSpec:
     """Resolve one registered operation spec by id."""
 
     try:
@@ -730,10 +728,10 @@ def get_hub_assistant_operation_spec(
         raise KeyError(f"Unknown Hub Assistant operation: {operation_id}") from exc
 
 
-def list_hub_assistant_operation_specs(
+def list_hub_operation_specs(
     *,
     first_wave_only: bool = True,
-) -> tuple[HubAssistantOperationSpec, ...]:
+) -> tuple[HubOperationSpec, ...]:
     """List registered operation specs in declarative order."""
 
     if not first_wave_only:
@@ -741,7 +739,7 @@ def list_hub_assistant_operation_specs(
     return tuple(spec for spec in _OPERATION_SPECS if spec.first_wave_exposed)
 
 
-def get_hub_assistant_input_model(operation_id: str) -> type[BaseModel] | None:
+def get_hub_operation_input_model(operation_id: str) -> type[BaseModel] | None:
     """Resolve the registered input model for one operation id."""
 
-    return get_hub_assistant_operation_spec(operation_id).input_model
+    return get_hub_operation_spec(operation_id).input_model

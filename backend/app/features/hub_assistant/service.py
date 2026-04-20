@@ -34,9 +34,13 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.features.hub_assistant.shared.actor_context import HubAssistantAction
-from app.features.hub_assistant.shared.capability_catalog import (
-    list_hub_assistant_operation_ids,
+from app.features.hub_access.actor_context import HubAction
+from app.features.hub_access.capability_catalog import (
+    list_hub_operation_ids,
+)
+from app.features.hub_access.operation_gateway import (
+    HubConfirmationPolicy,
+    HubSurface,
 )
 from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_INTERNAL_ID,
@@ -54,10 +58,6 @@ from app.features.hub_assistant.shared.task_service import (
     HubAssistantFollowUpTaskRequest,
     PermissionReplyContinuationTaskRequest,
     hub_assistant_task_service,
-)
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantConfirmationPolicy,
-    HubAssistantSurface,
 )
 from app.features.sessions import block_store, message_store
 from app.features.sessions.common import (
@@ -114,10 +114,10 @@ _FOLLOW_UP_RESUME_MESSAGE_TEMPLATE = (
 _WRITE_APPROVAL_SENTINEL = "[[HUB_ASSISTANT_WRITE_APPROVAL_REQUIRED]]"
 _WRITE_APPROVAL_OPERATIONS_PREFIX = "[[HUB_ASSISTANT_WRITE_OPERATIONS:"
 _WRITE_APPROVAL_OPERATIONS_SUFFIX = "]]"
-_WEB_AGENT_WRITE_OPERATION_IDS = list_hub_assistant_operation_ids(
-    surface=HubAssistantSurface.WEB_AGENT,
-    confirmation_policy=HubAssistantConfirmationPolicy.REQUIRED,
-    action=HubAssistantAction.WRITE,
+_WEB_AGENT_WRITE_OPERATION_IDS = list_hub_operation_ids(
+    surface=HubSurface.WEB_AGENT,
+    confirmation_policy=HubConfirmationPolicy.REQUIRED,
+    action=HubAction.WRITE,
     require_tool_name=True,
 )
 _READ_ONLY_APPENDIX = (
@@ -1068,7 +1068,7 @@ class HubAssistantService:
         return tuple(
             definition
             for definition in list_hub_assistant_mcp_tool_definitions()
-            if definition.confirmation_policy != HubAssistantConfirmationPolicy.NONE
+            if definition.confirmation_policy != HubConfirmationPolicy.NONE
         )
 
     def _extract_requested_write_operation_ids(
@@ -1153,7 +1153,7 @@ class HubAssistantService:
         return tuple(
             definition
             for definition in tool_definitions
-            if definition.confirmation_policy == HubAssistantConfirmationPolicy.NONE
+            if definition.confirmation_policy == HubConfirmationPolicy.NONE
             or definition.operation_id in allowed_write_operation_ids
         )
 

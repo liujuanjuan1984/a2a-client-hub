@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.db.models.user_agent_availability_snapshot import UserAgentAvailabilitySnapshot
 from app.features.agents_catalog.service import unified_agent_catalog_service
-from app.features.hub_agents.runtime import HubA2AUserCredentialRequiredError
+from app.features.shared_a2a_agents.runtime import HubA2AUserCredentialRequiredError
 from tests.support.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]

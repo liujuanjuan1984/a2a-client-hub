@@ -16,11 +16,11 @@ from app.db.models.conversation_thread import ConversationThread
 from app.db.models.hub_assistant_task import HubAssistantTask
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_FOLLOWUPS_GET,
     HUB_ASSISTANT_FOLLOWUPS_SET_SESSIONS,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.utils.timezone_util import utc_now
 
 HubAssistantTaskKind = Literal[
@@ -132,7 +132,7 @@ class HubAssistantTaskService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
     ) -> dict[str, Any]:
         hub_assistant_conversation_id = self._require_hub_assistant_conversation_id(
@@ -163,7 +163,7 @@ class HubAssistantTaskService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         conversation_ids: list[str],
     ) -> dict[str, Any]:
@@ -785,7 +785,7 @@ class HubAssistantTaskService:
         return self._normalize_anchor_map(payload.get("target_agent_message_anchors"))
 
     @staticmethod
-    def _require_hub_assistant_conversation_id(gateway: HubAssistantToolGateway) -> str:
+    def _require_hub_assistant_conversation_id(gateway: HubOperationGateway) -> str:
         if gateway.web_agent_conversation_id is None:
             raise ValueError("hub_assistant_conversation_context_required")
         return gateway.web_agent_conversation_id

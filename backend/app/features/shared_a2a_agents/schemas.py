@@ -1,4 +1,4 @@
-"""Hub A2A agent feature schemas."""
+"""Shared A2A agent feature schemas."""
 
 from __future__ import annotations
 
@@ -94,11 +94,11 @@ class HubA2AAgentUserResponse(BaseModel):
 
 
 class HubA2AAgentPagination(Pagination):
-    """Pagination metadata for hub agent listings."""
+    """Pagination metadata for shared-agent listings."""
 
 
 class HubA2AAgentListMeta(BaseModel):
-    """Additional list metadata for hub agents."""
+    """Additional list metadata for shared A2A agents."""
 
 
 class HubA2AAgentAdminListResponse(

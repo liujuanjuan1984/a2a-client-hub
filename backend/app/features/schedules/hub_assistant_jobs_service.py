@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_JOBS_CREATE,
     HUB_ASSISTANT_JOBS_DELETE,
     HUB_ASSISTANT_JOBS_GET,
@@ -21,7 +21,7 @@ from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_JOBS_UPDATE_PROMPT,
     HUB_ASSISTANT_JOBS_UPDATE_SCHEDULE,
 )
-from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_access.operation_gateway import HubOperationGateway
 from app.features.schedules.schemas import A2AScheduleTaskUpdate
 from app.features.schedules.service import a2a_schedule_service
 
@@ -72,7 +72,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         page: int,
         size: int,
@@ -92,7 +92,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         task_id: UUID,
     ) -> A2AScheduleTask:
@@ -111,7 +111,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         name: str,
         agent_id: UUID,
@@ -148,7 +148,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         task_id: UUID,
         timezone_str: str,
@@ -175,7 +175,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         task_id: UUID,
         timezone_str: str,
@@ -202,7 +202,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         task_id: UUID,
         timezone_str: str,
@@ -242,7 +242,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         task_id: UUID,
         prompt: str,
@@ -270,7 +270,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         task_id: UUID,
         cycle_type: str | None,
@@ -300,7 +300,7 @@ class HubAssistantJobsService:
         self,
         *,
         db: AsyncSession,
-        gateway: HubAssistantToolGateway,
+        gateway: HubOperationGateway,
         current_user: User,
         task_id: UUID,
     ) -> None:

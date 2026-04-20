@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.hub_assistant.shared import (
-    delegated_conversation_service as delegated_conversation_service_module,
+from app.features.hub_access.actor_context import (
+    HubActorType,
+    build_hub_actor_context,
 )
-from app.features.hub_assistant.shared import task_service as task_service_module
-from app.features.hub_assistant.shared.actor_context import (
-    HubAssistantActorType,
-    build_hub_assistant_actor_context,
-)
-from app.features.hub_assistant.shared.capability_catalog import (
+from app.features.hub_access.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_START_SESSIONS,
@@ -24,13 +20,17 @@ from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_LIST,
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
 )
+from app.features.hub_access.operation_gateway import (
+    HubOperationGateway,
+    HubSurface,
+)
+from app.features.hub_assistant.shared import (
+    delegated_conversation_service as delegated_conversation_service_module,
+)
+from app.features.hub_assistant.shared import task_service as task_service_module
 from app.features.hub_assistant.shared.hub_assistant_toolkit import (
     HubAssistantToolInputError,
     HubAssistantToolkit,
-)
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantSurface,
-    HubAssistantToolGateway,
 )
 from app.features.personal_agents import service as personal_agent_service_module
 from app.features.sessions import (
@@ -47,11 +47,11 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 def _build_toolkit(async_db_session, user):
-    actor = build_hub_assistant_actor_context(
+    actor = build_hub_actor_context(
         user=user,
-        actor_type=HubAssistantActorType.HUMAN_API,
+        actor_type=HubActorType.HUMAN_API,
     )
-    gateway = HubAssistantToolGateway(actor, surface=HubAssistantSurface.REST)
+    gateway = HubOperationGateway(actor, surface=HubSurface.REST)
     return HubAssistantToolkit(
         db=async_db_session,
         current_user=user,
@@ -60,13 +60,13 @@ def _build_toolkit(async_db_session, user):
 
 
 def _build_web_agent_toolkit(async_db_session, user, conversation_id: str):
-    actor = build_hub_assistant_actor_context(
+    actor = build_hub_actor_context(
         user=user,
-        actor_type=HubAssistantActorType.WEB_AGENT,
+        actor_type=HubActorType.WEB_AGENT,
     )
-    gateway = HubAssistantToolGateway(
+    gateway = HubOperationGateway(
         actor,
-        surface=HubAssistantSurface.WEB_AGENT,
+        surface=HubSurface.WEB_AGENT,
         web_agent_conversation_id=conversation_id,
     )
     return HubAssistantToolkit(

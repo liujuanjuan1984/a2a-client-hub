@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.features.extension_capabilities.common_router import (
     create_extension_capability_router,
 )
-from app.features.hub_agents.runtime import (
+from app.features.shared_a2a_agents.runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,

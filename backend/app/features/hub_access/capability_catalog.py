@@ -1,27 +1,25 @@
-"""Registered Hub Assistant capability operations."""
+"""Registered hub operations shared by assistant and admin entry points."""
 
 from __future__ import annotations
 
-from app.features.hub_assistant.shared.actor_context import HubAssistantAction
-from app.features.hub_assistant.shared.operation_registry import (
-    list_hub_assistant_operation_specs,
+from app.features.hub_access.actor_context import HubAction
+from app.features.hub_access.operation_gateway import (
+    HubConfirmationPolicy,
+    HubOperation,
+    HubSurface,
 )
-from app.features.hub_assistant.shared.tool_gateway import (
-    HubAssistantConfirmationPolicy,
-    HubAssistantOperation,
-    HubAssistantSurface,
+from app.features.hub_access.operation_registry import (
+    list_hub_operation_specs,
 )
 
-ALL_HUB_ASSISTANT_OPERATIONS = {
+ALL_HUB_OPERATIONS = {
     spec.operation_id: spec.build_operation()
-    for spec in list_hub_assistant_operation_specs(first_wave_only=False)
+    for spec in list_hub_operation_specs(first_wave_only=False)
 }
 
 
-def _bind_operations(*operation_ids: str) -> tuple[HubAssistantOperation, ...]:
-    return tuple(
-        ALL_HUB_ASSISTANT_OPERATIONS[operation_id] for operation_id in operation_ids
-    )
+def _bind_operations(*operation_ids: str) -> tuple[HubOperation, ...]:
+    return tuple(ALL_HUB_OPERATIONS[operation_id] for operation_id in operation_ids)
 
 
 (
@@ -81,15 +79,15 @@ def _bind_operations(*operation_ids: str) -> tuple[HubAssistantOperation, ...]:
 )
 
 (
-    ADMIN_HUB_AGENTS_LIST,
-    ADMIN_HUB_AGENTS_GET,
-    ADMIN_HUB_AGENTS_CREATE,
-    ADMIN_HUB_AGENTS_UPDATE,
-    ADMIN_HUB_AGENTS_DELETE,
-    ADMIN_HUB_AGENT_ALLOWLIST_LIST,
-    ADMIN_HUB_AGENT_ALLOWLIST_ADD,
-    ADMIN_HUB_AGENT_ALLOWLIST_REPLACE,
-    ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
+    ADMIN_SHARED_A2A_AGENTS_LIST,
+    ADMIN_SHARED_A2A_AGENTS_GET,
+    ADMIN_SHARED_A2A_AGENTS_CREATE,
+    ADMIN_SHARED_A2A_AGENTS_UPDATE,
+    ADMIN_SHARED_A2A_AGENTS_DELETE,
+    ADMIN_SHARED_A2A_AGENT_ALLOWLIST_LIST,
+    ADMIN_SHARED_A2A_AGENT_ALLOWLIST_ADD,
+    ADMIN_SHARED_A2A_AGENT_ALLOWLIST_REPLACE,
+    ADMIN_SHARED_A2A_AGENT_ALLOWLIST_REMOVE,
 ) = _bind_operations(
     "admin.agents.list",
     "admin.agents.get",
@@ -103,13 +101,12 @@ def _bind_operations(*operation_ids: str) -> tuple[HubAssistantOperation, ...]:
 )
 
 FIRST_WAVE_EXPOSED_OPERATIONS = tuple(
-    ALL_HUB_ASSISTANT_OPERATIONS[spec.operation_id]
-    for spec in list_hub_assistant_operation_specs()
+    ALL_HUB_OPERATIONS[spec.operation_id] for spec in list_hub_operation_specs()
 )
 
 INTERNAL_ADMIN_OPERATIONS = tuple(
-    ALL_HUB_ASSISTANT_OPERATIONS[spec.operation_id]
-    for spec in list_hub_assistant_operation_specs(first_wave_only=False)
+    ALL_HUB_OPERATIONS[spec.operation_id]
+    for spec in list_hub_operation_specs(first_wave_only=False)
     if not spec.first_wave_exposed
 )
 
@@ -121,31 +118,31 @@ UNSUPPORTED_FIRST_WAVE_OPERATION_IDS = frozenset(
 )
 
 
-def get_hub_assistant_operation(operation_id: str) -> HubAssistantOperation:
+def get_hub_operation(operation_id: str) -> HubOperation:
     """Resolve one registered Hub Assistant operation by id."""
 
     try:
-        return ALL_HUB_ASSISTANT_OPERATIONS[operation_id]
+        return ALL_HUB_OPERATIONS[operation_id]
     except KeyError as exc:
         raise KeyError(f"Unknown Hub Assistant operation: {operation_id}") from exc
 
 
-def list_hub_assistant_operations(
+def list_hub_operations(
     *,
-    surface: HubAssistantSurface | None = None,
+    surface: HubSurface | None = None,
     first_wave_only: bool = True,
-    confirmation_policy: HubAssistantConfirmationPolicy | None = None,
-    action: HubAssistantAction | None = None,
+    confirmation_policy: HubConfirmationPolicy | None = None,
+    action: HubAction | None = None,
     require_tool_name: bool = False,
-) -> tuple[HubAssistantOperation, ...]:
+) -> tuple[HubOperation, ...]:
     """List registered operations through one shared filter path."""
 
     source_operations = (
         FIRST_WAVE_EXPOSED_OPERATIONS
         if first_wave_only
-        else tuple(ALL_HUB_ASSISTANT_OPERATIONS.values())
+        else tuple(ALL_HUB_OPERATIONS.values())
     )
-    filtered: list[HubAssistantOperation] = []
+    filtered: list[HubOperation] = []
     for operation in source_operations:
         if require_tool_name and operation.tool_name is None:
             continue
@@ -166,19 +163,19 @@ def list_hub_assistant_operations(
     return tuple(sorted(filtered, key=lambda item: item.operation_id))
 
 
-def list_hub_assistant_operation_ids(
+def list_hub_operation_ids(
     *,
-    surface: HubAssistantSurface | None = None,
+    surface: HubSurface | None = None,
     first_wave_only: bool = True,
-    confirmation_policy: HubAssistantConfirmationPolicy | None = None,
-    action: HubAssistantAction | None = None,
+    confirmation_policy: HubConfirmationPolicy | None = None,
+    action: HubAction | None = None,
     require_tool_name: bool = False,
 ) -> tuple[str, ...]:
     """List filtered operation ids in stable order."""
 
     return tuple(
         operation.operation_id
-        for operation in list_hub_assistant_operations(
+        for operation in list_hub_operations(
             surface=surface,
             first_wave_only=first_wave_only,
             confirmation_policy=confirmation_policy,

@@ -12,12 +12,12 @@ from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
 from app.features.agents_shared.common import upsert_agent_credential
-from app.features.hub_agents.runtime import HubA2ARuntimeValidationError
 from app.features.opencode_sessions import router as opencode_session_directory
 from app.features.opencode_sessions import (
     service as opencode_session_directory_service_module,
 )
 from app.features.personal_agents.runtime import A2ARuntimeValidationError
+from app.features.shared_a2a_agents.runtime import HubA2ARuntimeValidationError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user

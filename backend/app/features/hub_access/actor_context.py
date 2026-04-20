@@ -1,4 +1,4 @@
-"""Shared actor-context primitives for Hub Assistant entry points."""
+"""Shared actor-context primitives for hub feature entry points."""
 
 from __future__ import annotations
 
@@ -10,26 +10,26 @@ from uuid import UUID
 from app.db.models.user import User
 
 
-class HubAssistantAuthorizationError(PermissionError):
-    """Raised when a Hub Assistant actor is not allowed to use a scope."""
+class HubAuthorizationError(PermissionError):
+    """Raised when a hub actor is not allowed to use a scope."""
 
 
-class HubAssistantActorType(str, Enum):
-    """Supported actor types for Hub Assistant entry points."""
+class HubActorType(str, Enum):
+    """Supported actor types for hub feature entry points."""
 
     HUMAN_API = "human_api"
     WEB_AGENT = "web_agent"
 
 
-class HubAssistantScope(str, Enum):
+class HubScope(str, Enum):
     """Permission scopes for Hub Assistant resources."""
 
     SELF = "self"
     ADMIN = "admin"
 
 
-class HubAssistantResource(str, Enum):
-    """Managed resource categories exposed by Hub Assistant entry points."""
+class HubResource(str, Enum):
+    """Managed resource categories exposed by hub feature entry points."""
 
     AGENTS = "agents"
     JOBS = "jobs"
@@ -37,7 +37,7 @@ class HubAssistantResource(str, Enum):
     FOLLOWUPS = "followups"
 
 
-class HubAssistantAction(str, Enum):
+class HubAction(str, Enum):
     """Allowed action buckets for Hub Assistant resources."""
 
     READ = "read"
@@ -48,9 +48,9 @@ class HubAssistantAction(str, Enum):
 class PermissionGrant:
     """One permission grant over a resource scope."""
 
-    scope: HubAssistantScope
-    resource: HubAssistantResource
-    actions: frozenset[HubAssistantAction]
+    scope: HubScope
+    resource: HubResource
+    actions: frozenset[HubAction]
 
 
 @dataclass(frozen=True)
@@ -62,9 +62,9 @@ class PermissionEnvelope:
     def allows(
         self,
         *,
-        scope: HubAssistantScope,
-        resource: HubAssistantResource,
-        action: HubAssistantAction,
+        scope: HubScope,
+        resource: HubResource,
+        action: HubAction,
     ) -> bool:
         """Return whether the resolved envelope grants the requested action."""
 
@@ -79,17 +79,17 @@ class PermissionEnvelope:
 
 
 @dataclass(frozen=True)
-class HubAssistantAuditFields:
-    """Canonical audit fields for Hub Assistant operations."""
+class HubAuditFields:
+    """Canonical audit fields for hub operations."""
 
     event_name: str
-    actor_type: HubAssistantActorType
+    actor_type: HubActorType
     acting_user_id: UUID
     principal_user_id: UUID
     admin_mode: bool
-    scope: HubAssistantScope
-    resource: HubAssistantResource | None = None
-    action: HubAssistantAction | None = None
+    scope: HubScope
+    resource: HubResource | None = None
+    action: HubAction | None = None
     resource_id: str | None = None
     target_user_id: UUID | None = None
     tool_name: str | None = None
@@ -121,10 +121,10 @@ class HubAssistantAuditFields:
 
 
 @dataclass(frozen=True)
-class HubAssistantActorContext:
-    """Resolved actor context for Hub Assistant entry points."""
+class HubActorContext:
+    """Resolved actor context for hub feature entry points."""
 
-    actor_type: HubAssistantActorType
+    actor_type: HubActorType
     acting_user_id: UUID
     principal_user_id: UUID
     admin_mode: bool
@@ -134,9 +134,9 @@ class HubAssistantActorContext:
     def allows(
         self,
         *,
-        scope: HubAssistantScope,
-        resource: HubAssistantResource,
-        action: HubAssistantAction,
+        scope: HubScope,
+        resource: HubResource,
+        action: HubAction,
     ) -> bool:
         """Return whether the current actor can execute the requested action."""
 
@@ -150,26 +150,24 @@ class HubAssistantActorContext:
         self,
         *,
         event_name: str,
-        scope: HubAssistantScope | None = None,
-        resource: HubAssistantResource | None = None,
-        action: HubAssistantAction | None = None,
+        scope: HubScope | None = None,
+        resource: HubResource | None = None,
+        action: HubAction | None = None,
         resource_id: str | None = None,
         target_user_id: UUID | None = None,
         tool_name: str | None = None,
         delegated_by: str | None = None,
         operation_id: str | None = None,
         confirmation_policy: str | None = None,
-    ) -> HubAssistantAuditFields:
+    ) -> HubAuditFields:
         """Build canonical audit fields for one actor-mediated operation."""
 
         resolved_scope = (
             scope
             if scope is not None
-            else (
-                HubAssistantScope.ADMIN if self.admin_mode else HubAssistantScope.SELF
-            )
+            else (HubScope.ADMIN if self.admin_mode else HubScope.SELF)
         )
-        return HubAssistantAuditFields(
+        return HubAuditFields(
             event_name=event_name,
             actor_type=self.actor_type,
             acting_user_id=self.acting_user_id,
@@ -187,40 +185,40 @@ class HubAssistantActorContext:
         )
 
 
-def build_hub_assistant_actor_context(
+def build_hub_actor_context(
     *,
     user: User,
-    actor_type: HubAssistantActorType,
+    actor_type: HubActorType,
     admin_mode: bool = False,
     principal_user_id: UUID | None = None,
-) -> HubAssistantActorContext:
-    """Resolve the current actor context for Hub Assistant operations."""
+) -> HubActorContext:
+    """Resolve the current actor context for hub operations."""
 
     actor_user_id = cast(UUID | None, user.id)
     if actor_user_id is None:
         raise ValueError("Authenticated user id is required")
 
     if admin_mode and not bool(user.is_superuser):
-        raise HubAssistantAuthorizationError("Admin mode requires superuser privileges")
+        raise HubAuthorizationError("Admin mode requires superuser privileges")
 
     resolved_principal_user_id = principal_user_id or actor_user_id
     if (
         actor_type
         in {
-            HubAssistantActorType.HUMAN_API,
+            HubActorType.HUMAN_API,
         }
         and resolved_principal_user_id != actor_user_id
     ):
-        raise HubAssistantAuthorizationError(
+        raise HubAuthorizationError(
             "Direct human actions cannot impersonate another principal user"
         )
 
     grants: list[PermissionGrant] = []
-    all_actions = frozenset({HubAssistantAction.READ, HubAssistantAction.WRITE})
-    for resource in HubAssistantResource:
+    all_actions = frozenset({HubAction.READ, HubAction.WRITE})
+    for resource in HubResource:
         grants.append(
             PermissionGrant(
-                scope=HubAssistantScope.SELF,
+                scope=HubScope.SELF,
                 resource=resource,
                 actions=all_actions,
             )
@@ -228,13 +226,13 @@ def build_hub_assistant_actor_context(
         if admin_mode:
             grants.append(
                 PermissionGrant(
-                    scope=HubAssistantScope.ADMIN,
+                    scope=HubScope.ADMIN,
                     resource=resource,
                     actions=all_actions,
                 )
             )
 
-    return HubAssistantActorContext(
+    return HubActorContext(
         actor_type=actor_type,
         acting_user_id=actor_user_id,
         principal_user_id=resolved_principal_user_id,
