@@ -12,7 +12,7 @@ from app.api.deps import (
     get_current_hub_assistant_tool_gateway,
 )
 from app.db.models.user import User
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantAction,
     HubAssistantActorType,
     HubAssistantAuthorizationError,
@@ -20,14 +20,14 @@ from app.features.hub_assistant_shared.actor_context import (
     HubAssistantScope,
     build_hub_assistant_actor_context,
 )
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     ADMIN_HUB_AGENTS_CREATE,
     FIRST_WAVE_EXPOSED_OPERATIONS,
     HUB_ASSISTANT_JOBS_UPDATE_SCHEDULE,
     UNSUPPORTED_FIRST_WAVE_OPERATION_IDS,
     get_hub_assistant_operation,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantOperation,
     HubAssistantSurface,
     HubAssistantToolGateway,

@@ -14,10 +14,10 @@ from app.core.security import create_hub_assistant_access_token
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.hub_assistant_task import HubAssistantTask
-from app.features.hub_assistant_shared import (
+from app.features.hub_assistant.shared import (
     delegated_conversation_service as delegated_conversation_service_module,
 )
-from app.features.hub_assistant_shared.hub_assistant_mcp import (
+from app.features.hub_assistant.shared.hub_assistant_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
     _MCP_USER_ID_STATE_KEY,
     _MCP_WEB_AGENT_CONVERSATION_ID_STATE_KEY,
@@ -29,10 +29,10 @@ from app.features.hub_assistant_shared.hub_assistant_mcp import (
     hub_assistant_mcp_server,
     hub_assistant_write_mcp_server,
 )
-from app.features.hub_assistant_shared.task_job import (
+from app.features.hub_assistant.shared.task_job import (
     dispatch_due_hub_assistant_tasks,
 )
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared.task_service import (
     hub_assistant_task_service,
 )
 from app.features.invoke import route_runner as invoke_route_runner

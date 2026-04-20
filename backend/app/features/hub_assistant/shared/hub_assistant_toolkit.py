@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_CREATE,
@@ -39,13 +39,13 @@ from app.features.hub_assistant_shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_UPDATE,
     get_hub_assistant_operation,
 )
-from app.features.hub_assistant_shared.delegated_conversation_service import (
+from app.features.hub_assistant.shared.delegated_conversation_service import (
     hub_assistant_delegated_conversation_service,
 )
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared.task_service import (
     hub_assistant_task_service,
 )
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.features.personal_agents.hub_assistant_agents_service import (
     hub_assistant_agents_service,
 )

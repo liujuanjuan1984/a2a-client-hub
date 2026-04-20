@@ -6,8 +6,8 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.db.models.hub_assistant_task import HubAssistantTask
-from app.features.hub_assistant_shared import task_job as task_job_module
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared import task_job as task_job_module
+from app.features.hub_assistant.shared.task_service import (
     DelegatedInvokeTaskRequest,
     PermissionReplyContinuationTaskRequest,
     hub_assistant_task_service,

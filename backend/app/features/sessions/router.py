@@ -23,7 +23,7 @@ from app.features.hub_agents.runtime import (
     HubA2AUserCredentialRequiredError,
     hub_a2a_runtime_builder,
 )
-from app.features.hub_assistant_shared.constants import (
+from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_INTERNAL_ID,
     HUB_ASSISTANT_PUBLIC_ID,
 )

@@ -271,7 +271,7 @@ async def reply_hub_assistant_permission_interrupt(
 
     await commit_safely(db)
     if result.continuation is not None:
-        from app.features.hub_assistant_shared.task_job import (
+        from app.features.hub_assistant.shared.task_job import (
             request_hub_assistant_task_run,
         )
 

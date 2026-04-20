@@ -17,15 +17,15 @@ from app.features.hub_agents.runtime import (
     HubA2AUserCredentialRequiredError,
     hub_a2a_runtime_builder,
 )
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_AGENTS_START_SESSIONS,
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
 )
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared.task_service import (
     DelegatedInvokeTaskRequest,
     hub_assistant_task_service,
 )
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.features.invoke.route_runner import run_background_invoke
 from app.features.personal_agents.runtime import (
     A2ARuntimeNotFoundError,
@@ -93,7 +93,7 @@ class HubAssistantDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            from app.features.hub_assistant_shared.task_job import (
+            from app.features.hub_assistant.shared.task_job import (
                 request_hub_assistant_task_run,
             )
 
@@ -144,7 +144,7 @@ class HubAssistantDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            from app.features.hub_assistant_shared.task_job import (
+            from app.features.hub_assistant.shared.task_job import (
                 request_hub_assistant_task_run,
             )
 

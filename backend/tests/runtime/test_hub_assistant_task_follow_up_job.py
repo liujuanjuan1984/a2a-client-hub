@@ -7,16 +7,16 @@ import pytest
 
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
-from app.features.hub_assistant_shared import task_job as task_job_module
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared import task_job as task_job_module
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantActorType,
     build_hub_assistant_actor_context,
 )
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared.task_service import (
     HubAssistantFollowUpTaskRequest,
     hub_assistant_task_service,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantSurface,
     HubAssistantToolGateway,
 )

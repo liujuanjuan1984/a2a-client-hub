@@ -6,10 +6,10 @@ import pytest
 
 from app.api.deps import get_current_hub_assistant_web_agent_runtime
 from app.db.models.user import User
-from app.features.hub_assistant_shared.hub_assistant_web_agent import (
+from app.features.hub_assistant.shared.hub_assistant_web_agent import (
     build_hub_assistant_web_agent_runtime,
 )
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantSurface
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantSurface
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]

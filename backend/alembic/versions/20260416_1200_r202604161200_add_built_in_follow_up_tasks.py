@@ -1,4 +1,4 @@
-"""Add durable Hub Assistant follow-up task table.
+"""Add durable built-in follow-up task table.
 
 Revision ID: r202604161200
 Revises: r202604131730
@@ -22,18 +22,34 @@ depends_on = None
 SCHEMA_NAME = os.getenv("SCHEMA_NAME", "a2a_client_hub_schema")
 
 
+def _get_inspector() -> sa.Inspector:
+    return sa.inspect(op.get_bind())
+
+
+def _drop_indexes_by_columns(table_name: str, *column_names: str) -> None:
+    target_columns = tuple(column_names)
+    for index in _get_inspector().get_indexes(table_name, schema=SCHEMA_NAME):
+        if tuple(index.get("column_names") or ()) != target_columns:
+            continue
+        op.drop_index(
+            index["name"],
+            table_name=table_name,
+            schema=SCHEMA_NAME,
+        )
+
+
 def upgrade() -> None:
     op.create_table(
-        "hub_assistant_follow_up_tasks",
+        "built_in_follow_up_tasks",
         sa.Column(
-            "hub_assistant_conversation_id",
+            "built_in_conversation_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey(
                 f"{SCHEMA_NAME}.conversation_threads.id",
                 ondelete="CASCADE",
             ),
             nullable=False,
-            comment="Hub Assistant conversation that owns this follow-up substrate.",
+            comment="Built-in conversation that owns this follow-up substrate.",
         ),
         sa.Column(
             "status",
@@ -47,7 +63,7 @@ def upgrade() -> None:
             postgresql.JSONB(astext_type=sa.Text()),
             nullable=False,
             server_default=sa.text("'[]'::jsonb"),
-            comment="Current target conversation ids tracked by the Hub Assistant.",
+            comment="Current target conversation ids tracked by the built-in agent.",
         ),
         sa.Column(
             "target_agent_message_anchors",
@@ -104,35 +120,35 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint(
             "user_id",
-            "hub_assistant_conversation_id",
-            name="uq_hub_assistant_follow_up_tasks_user_conversation",
+            "built_in_conversation_id",
+            name="uq_built_in_follow_up_tasks_user_conversation",
         ),
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        "ix_hub_assistant_follow_up_tasks_status_updated_at",
-        "hub_assistant_follow_up_tasks",
+        "ix_built_in_follow_up_tasks_status_updated_at",
+        "built_in_follow_up_tasks",
         ["status", "updated_at"],
         unique=False,
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        "ix_hub_assistant_follow_up_tasks_conversation_status",
-        "hub_assistant_follow_up_tasks",
-        ["hub_assistant_conversation_id", "status"],
+        "ix_built_in_follow_up_tasks_conversation_status",
+        "built_in_follow_up_tasks",
+        ["built_in_conversation_id", "status"],
         unique=False,
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        op.f("ix_a2a_client_hub_schema_hub_assistant_follow_up_tasks_hub_assistant_conversation_id"),
-        "hub_assistant_follow_up_tasks",
-        ["hub_assistant_conversation_id"],
+        "ix_built_in_follow_up_tasks_conversation",
+        "built_in_follow_up_tasks",
+        ["built_in_conversation_id"],
         unique=False,
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        op.f("ix_a2a_client_hub_schema_hub_assistant_follow_up_tasks_user_id"),
-        "hub_assistant_follow_up_tasks",
+        "ix_built_in_follow_up_tasks_user_id",
+        "built_in_follow_up_tasks",
         ["user_id"],
         unique=False,
         schema=SCHEMA_NAME,
@@ -140,24 +156,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    _drop_indexes_by_columns("built_in_follow_up_tasks", "user_id")
+    _drop_indexes_by_columns("built_in_follow_up_tasks", "built_in_conversation_id")
     op.drop_index(
-        op.f("ix_a2a_client_hub_schema_hub_assistant_follow_up_tasks_user_id"),
-        table_name="hub_assistant_follow_up_tasks",
+        "ix_built_in_follow_up_tasks_conversation_status",
+        table_name="built_in_follow_up_tasks",
         schema=SCHEMA_NAME,
     )
     op.drop_index(
-        op.f("ix_a2a_client_hub_schema_hub_assistant_follow_up_tasks_hub_assistant_conversation_id"),
-        table_name="hub_assistant_follow_up_tasks",
+        "ix_built_in_follow_up_tasks_status_updated_at",
+        table_name="built_in_follow_up_tasks",
         schema=SCHEMA_NAME,
     )
-    op.drop_index(
-        "ix_hub_assistant_follow_up_tasks_conversation_status",
-        table_name="hub_assistant_follow_up_tasks",
-        schema=SCHEMA_NAME,
-    )
-    op.drop_index(
-        "ix_hub_assistant_follow_up_tasks_status_updated_at",
-        table_name="hub_assistant_follow_up_tasks",
-        schema=SCHEMA_NAME,
-    )
-    op.drop_table("hub_assistant_follow_up_tasks", schema=SCHEMA_NAME)
+    op.drop_table("built_in_follow_up_tasks", schema=SCHEMA_NAME)

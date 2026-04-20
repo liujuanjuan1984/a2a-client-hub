@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     ADMIN_HUB_AGENTS_LIST,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CREATE,
@@ -12,11 +12,11 @@ from app.features.hub_assistant_shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_GET_LATEST_MESSAGES,
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
 )
-from app.features.hub_assistant_shared.hub_assistant_tool_contract import (
+from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
     build_hub_assistant_tool_definition,
     list_hub_assistant_tool_definitions,
 )
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantSurface
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantSurface
 
 
 def test_build_hub_assistant_tool_definition_exposes_operation_schema() -> None:

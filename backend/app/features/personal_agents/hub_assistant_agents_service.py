@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_CREATE,
@@ -17,7 +17,7 @@ from app.features.hub_assistant_shared.capability_catalog import (
     HUB_ASSISTANT_AGENTS_LIST,
     HUB_ASSISTANT_AGENTS_UPDATE_CONFIG,
 )
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.features.personal_agents.service import (
     A2AAgentHealthCheckItemRecord,
     A2AAgentHealthCheckSummaryRecord,

@@ -16,7 +16,7 @@ from app.api.deps import (
 from app.api.retry_after import db_busy_retry_after_headers
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.features.schedules.common import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,

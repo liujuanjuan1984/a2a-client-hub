@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.features.hub_assistant_shared.constants import (
+from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_PUBLIC_ID,
 )
 from app.features.invoke.shared_metadata import merge_preferred_session_binding_metadata

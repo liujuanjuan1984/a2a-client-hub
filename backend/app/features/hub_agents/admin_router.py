@@ -35,7 +35,7 @@ from app.features.hub_agents.service import (
     HubA2AUserNotFoundError,
     hub_a2a_agent_service,
 )
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     ADMIN_HUB_AGENT_ALLOWLIST_ADD,
     ADMIN_HUB_AGENT_ALLOWLIST_LIST,
     ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
@@ -46,7 +46,7 @@ from app.features.hub_assistant_shared.capability_catalog import (
     ADMIN_HUB_AGENTS_LIST,
     ADMIN_HUB_AGENTS_UPDATE,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantOperation,
     HubAssistantToolGateway,
 )

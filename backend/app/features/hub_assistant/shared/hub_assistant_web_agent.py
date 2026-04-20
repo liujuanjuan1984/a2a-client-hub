@@ -7,19 +7,19 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantActorContext,
     HubAssistantActorType,
     build_hub_assistant_actor_context,
 )
-from app.features.hub_assistant_shared.hub_assistant_tool_contract import (
+from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
     HubAssistantToolDefinition,
     list_hub_assistant_tool_definitions,
 )
-from app.features.hub_assistant_shared.hub_assistant_toolkit import (
+from app.features.hub_assistant.shared.hub_assistant_toolkit import (
     HubAssistantToolkit,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantSurface,
     HubAssistantToolGateway,
 )

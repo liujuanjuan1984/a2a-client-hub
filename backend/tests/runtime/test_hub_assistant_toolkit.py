@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.hub_assistant_shared import (
+from app.features.hub_assistant.shared import (
     delegated_conversation_service as delegated_conversation_service_module,
 )
-from app.features.hub_assistant_shared import task_service as task_service_module
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared import task_service as task_service_module
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantActorType,
     build_hub_assistant_actor_context,
 )
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_START_SESSIONS,
@@ -24,11 +24,11 @@ from app.features.hub_assistant_shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_LIST,
     HUB_ASSISTANT_SESSIONS_SEND_MESSAGE,
 )
-from app.features.hub_assistant_shared.hub_assistant_toolkit import (
+from app.features.hub_assistant.shared.hub_assistant_toolkit import (
     HubAssistantToolInputError,
     HubAssistantToolkit,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantSurface,
     HubAssistantToolGateway,
 )

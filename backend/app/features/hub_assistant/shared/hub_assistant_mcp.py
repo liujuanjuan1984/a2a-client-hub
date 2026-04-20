@@ -23,10 +23,10 @@ from app.core.security import (
 )
 from app.db.session import AsyncSessionLocal
 from app.features.auth.service import UserNotFoundError, get_active_user
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantAuthorizationError,
 )
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH,
     HUB_ASSISTANT_AGENTS_CHECK_HEALTH_ALL,
     HUB_ASSISTANT_AGENTS_CREATE,
@@ -55,17 +55,17 @@ from app.features.hub_assistant_shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_UPDATE,
     list_hub_assistant_operation_ids,
 )
-from app.features.hub_assistant_shared.hub_assistant_tool_contract import (
+from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
     HubAssistantToolDefinition,
     list_hub_assistant_tool_definitions,
 )
-from app.features.hub_assistant_shared.hub_assistant_toolkit import (
+from app.features.hub_assistant.shared.hub_assistant_toolkit import (
     HubAssistantToolInputError,
 )
-from app.features.hub_assistant_shared.hub_assistant_web_agent import (
+from app.features.hub_assistant.shared.hub_assistant_web_agent import (
     build_hub_assistant_web_agent_runtime,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantConfirmationPolicy,
     HubAssistantSurface,
 )

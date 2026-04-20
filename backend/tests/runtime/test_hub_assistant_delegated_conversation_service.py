@@ -6,17 +6,17 @@ from uuid import uuid4
 
 import pytest
 
-from app.features.hub_assistant_shared import (
+from app.features.hub_assistant.shared import (
     delegated_conversation_service as delegated_conversation_service_module,
 )
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantActorType,
     build_hub_assistant_actor_context,
 )
-from app.features.hub_assistant_shared.task_job import (
+from app.features.hub_assistant.shared.task_job import (
     dispatch_due_hub_assistant_tasks,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantSurface,
     HubAssistantToolGateway,
 )

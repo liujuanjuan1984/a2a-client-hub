@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_ARCHIVE,
     HUB_ASSISTANT_SESSIONS_GET,
     HUB_ASSISTANT_SESSIONS_GET_LATEST_MESSAGES,
@@ -21,7 +21,7 @@ from app.features.hub_assistant_shared.capability_catalog import (
     HUB_ASSISTANT_SESSIONS_UNARCHIVE,
     HUB_ASSISTANT_SESSIONS_UPDATE,
 )
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.features.sessions.common import SessionSource
 from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now

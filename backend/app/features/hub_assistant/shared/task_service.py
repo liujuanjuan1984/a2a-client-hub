@@ -16,11 +16,11 @@ from app.db.models.conversation_thread import ConversationThread
 from app.db.models.hub_assistant_task import HubAssistantTask
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.capability_catalog import (
     HUB_ASSISTANT_FOLLOWUPS_GET,
     HUB_ASSISTANT_FOLLOWUPS_SET_SESSIONS,
 )
-from app.features.hub_assistant_shared.tool_gateway import HubAssistantToolGateway
+from app.features.hub_assistant.shared.tool_gateway import HubAssistantToolGateway
 from app.utils.timezone_util import utc_now
 
 HubAssistantTaskKind = Literal[

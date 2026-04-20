@@ -18,8 +18,8 @@ from app.features.hub_assistant.service import (
     HubAssistantRunStatus,
     hub_assistant_service,
 )
-from app.features.hub_assistant_shared import delegated_conversation_service
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared import delegated_conversation_service
+from app.features.hub_assistant.shared.task_service import (
     DelegatedInvokeTaskRequest,
     HubAssistantFollowUpTaskCompletion,
     HubAssistantFollowUpTaskRequest,

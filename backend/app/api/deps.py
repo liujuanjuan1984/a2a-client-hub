@@ -25,17 +25,17 @@ from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import cleanup_session_safely, run_with_new_session
 from app.features.auth import service as auth_service
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantActorContext,
     HubAssistantActorType,
     HubAssistantAuthorizationError,
     build_hub_assistant_actor_context,
 )
-from app.features.hub_assistant_shared.hub_assistant_web_agent import (
+from app.features.hub_assistant.shared.hub_assistant_web_agent import (
     HubAssistantWebAgentRuntime,
     build_hub_assistant_web_agent_runtime,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantSurface,
     HubAssistantToolGateway,
 )

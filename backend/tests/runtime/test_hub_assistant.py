@@ -27,10 +27,10 @@ from app.features.hub_assistant.service import (
     HubAssistantUnavailableError,
     hub_assistant_service,
 )
-from app.features.hub_assistant_shared.task_job import (
+from app.features.hub_assistant.shared.task_job import (
     dispatch_due_hub_assistant_tasks,
 )
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared.task_service import (
     HubAssistantFollowUpTaskRequest,
 )
 from app.features.sessions.service import session_hub_service

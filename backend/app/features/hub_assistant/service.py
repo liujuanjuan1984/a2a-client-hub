@@ -34,28 +34,28 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.features.hub_assistant_shared.actor_context import HubAssistantAction
-from app.features.hub_assistant_shared.capability_catalog import (
+from app.features.hub_assistant.shared.actor_context import HubAssistantAction
+from app.features.hub_assistant.shared.capability_catalog import (
     list_hub_assistant_operation_ids,
 )
-from app.features.hub_assistant_shared.constants import (
+from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_INTERNAL_ID,
     HUB_ASSISTANT_PUBLIC_ID,
 )
-from app.features.hub_assistant_shared.hub_assistant_mcp import (
+from app.features.hub_assistant.shared.hub_assistant_mcp import (
     HUB_ASSISTANT_MCP_READONLY_MOUNT_PATH,
     HUB_ASSISTANT_MCP_WRITE_MOUNT_PATH,
     list_hub_assistant_mcp_tool_definitions,
 )
-from app.features.hub_assistant_shared.hub_assistant_tool_contract import (
+from app.features.hub_assistant.shared.hub_assistant_tool_contract import (
     HubAssistantToolDefinition,
 )
-from app.features.hub_assistant_shared.task_service import (
+from app.features.hub_assistant.shared.task_service import (
     HubAssistantFollowUpTaskRequest,
     PermissionReplyContinuationTaskRequest,
     hub_assistant_task_service,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantConfirmationPolicy,
     HubAssistantSurface,
 )

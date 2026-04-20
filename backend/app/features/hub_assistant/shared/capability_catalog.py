@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from app.features.hub_assistant_shared.actor_context import HubAssistantAction
-from app.features.hub_assistant_shared.operation_registry import (
+from app.features.hub_assistant.shared.actor_context import HubAssistantAction
+from app.features.hub_assistant.shared.operation_registry import (
     list_hub_assistant_operation_specs,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantConfirmationPolicy,
     HubAssistantOperation,
     HubAssistantSurface,

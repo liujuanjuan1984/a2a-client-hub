@@ -9,7 +9,7 @@ from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.features.hub_assistant_shared.constants import (
+from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_INTERNAL_ID,
     HUB_ASSISTANT_PUBLIC_ID,
 )

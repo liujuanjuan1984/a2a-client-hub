@@ -25,14 +25,14 @@ from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_with_new_session
 from app.features.auth.cleanup_service import ensure_auth_cleanup_job
-from app.features.hub_assistant_shared.hub_assistant_mcp import (
+from app.features.hub_assistant.shared.hub_assistant_mcp import (
     HUB_ASSISTANT_MCP_READONLY_MOUNT_PATH,
     HUB_ASSISTANT_MCP_READONLY_OPERATION_IDS,
     HUB_ASSISTANT_MCP_WRITE_MOUNT_PATH,
     HUB_ASSISTANT_MCP_WRITE_OPERATION_IDS,
     build_hub_assistant_mcp_http_app,
 )
-from app.features.hub_assistant_shared.task_job import (
+from app.features.hub_assistant.shared.task_job import (
     ensure_hub_assistant_task_job,
 )
 from app.features.schedules.job import ensure_a2a_schedule_job

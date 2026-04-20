@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.features.hub_assistant_shared.constants import (
+from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_PUBLIC_ID,
 )
 from app.features.working_directory import merge_working_directory_metadata

@@ -7,12 +7,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.features.hub_assistant_shared.actor_context import (
+from app.features.hub_assistant.shared.actor_context import (
     HubAssistantAction,
     HubAssistantResource,
     HubAssistantScope,
 )
-from app.features.hub_assistant_shared.tool_gateway import (
+from app.features.hub_assistant.shared.tool_gateway import (
     HubAssistantConfirmationPolicy,
     HubAssistantOperation,
     HubAssistantSurface,
