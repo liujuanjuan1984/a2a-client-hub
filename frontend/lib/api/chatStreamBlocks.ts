@@ -1,9 +1,9 @@
 import type {
+  InterruptType,
   PendingRuntimeInterrupt,
   RuntimeInterrupt,
   StreamMissingParam,
 } from "./chatRuntimeStatus";
-import { isRuntimeInterrupt } from "./chatRuntimeStatus";
 import {
   asRecord,
   extractTextFromParts,
@@ -182,6 +182,130 @@ const buildInterruptEventMessageCode = (
     return "permissions_requested";
   }
   return "question_requested";
+};
+
+const isInterruptQuestionOption = (
+  value: unknown,
+): value is {
+  label: string;
+  description?: string | null;
+  value?: string | null;
+} => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as {
+    label?: unknown;
+    description?: unknown;
+    value?: unknown;
+  };
+  return (
+    typeof candidate.label === "string" &&
+    (candidate.description === undefined ||
+      candidate.description === null ||
+      typeof candidate.description === "string") &&
+    (candidate.value === undefined ||
+      candidate.value === null ||
+      typeof candidate.value === "string")
+  );
+};
+
+const isInterruptQuestion = (
+  value: unknown,
+): value is {
+  question: string;
+  header?: string | null;
+  description?: string | null;
+  options?: unknown[];
+} => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as {
+    question?: unknown;
+    header?: unknown;
+    description?: unknown;
+    options?: unknown;
+  };
+  return (
+    typeof candidate.question === "string" &&
+    (candidate.header === undefined ||
+      candidate.header === null ||
+      typeof candidate.header === "string") &&
+    (candidate.description === undefined ||
+      candidate.description === null ||
+      typeof candidate.description === "string") &&
+    (candidate.options === undefined ||
+      (Array.isArray(candidate.options) &&
+        candidate.options.every(isInterruptQuestionOption)))
+  );
+};
+
+const isRuntimeInterrupt = (value: unknown): value is RuntimeInterrupt => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as RuntimeInterrupt;
+  const isInterruptType = (
+    input: RuntimeInterrupt["type"],
+  ): input is InterruptType =>
+    input === "permission" ||
+    input === "question" ||
+    input === "permissions" ||
+    input === "elicitation";
+  if (
+    typeof candidate.requestId !== "string" ||
+    !isInterruptType(candidate.type)
+  ) {
+    return false;
+  }
+  if (candidate.phase === "resolved") {
+    return (
+      candidate.resolution === "replied" ||
+      candidate.resolution === "rejected" ||
+      candidate.resolution === "expired"
+    );
+  }
+  if (candidate.phase !== "asked") {
+    return false;
+  }
+  const details = candidate.details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return false;
+  }
+  return (
+    (details.permission === undefined ||
+      details.permission === null ||
+      typeof details.permission === "string") &&
+    (details.patterns === undefined ||
+      (Array.isArray(details.patterns) &&
+        details.patterns.every((item) => typeof item === "string"))) &&
+    (details.displayMessage === undefined ||
+      details.displayMessage === null ||
+      typeof details.displayMessage === "string") &&
+    (details.questions === undefined ||
+      (Array.isArray(details.questions) &&
+        details.questions.every(isInterruptQuestion))) &&
+    (details.permissions === undefined ||
+      details.permissions === null ||
+      (typeof details.permissions === "object" &&
+        !Array.isArray(details.permissions))) &&
+    (details.serverName === undefined ||
+      details.serverName === null ||
+      typeof details.serverName === "string") &&
+    (details.mode === undefined ||
+      details.mode === null ||
+      typeof details.mode === "string") &&
+    (details.url === undefined ||
+      details.url === null ||
+      typeof details.url === "string") &&
+    (details.elicitationId === undefined ||
+      details.elicitationId === null ||
+      typeof details.elicitationId === "string") &&
+    (details.meta === undefined ||
+      details.meta === null ||
+      (typeof details.meta === "object" && !Array.isArray(details.meta)))
+  );
 };
 
 const stringifyInterruptObject = (value: unknown): string | null => {
