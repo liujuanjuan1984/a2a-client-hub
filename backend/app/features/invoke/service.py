@@ -48,6 +48,11 @@ from app.features.invoke.service_types import (
     StreamEvent,
     StreamEventPayloadCallbackFn,
     StreamFinalizedCallbackFn,
+)
+from app.features.invoke.service_types import (
+    StreamFinishReason as StreamFinishReasonValue,
+)
+from app.features.invoke.service_types import (
     StreamMetadataCallbackFn,
     StreamOutcome,
     StreamSessionStartedCallbackFn,
@@ -57,6 +62,7 @@ from app.features.invoke.service_types import (
 
 asyncio = asyncio_module
 time = time_module
+StreamFinishReason = StreamFinishReasonValue
 
 
 class A2AInvokeService:

@@ -2,26 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
 
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.error_codes import status_code_for_invoke_error_code
-from app.api.error_handlers import build_error_detail, build_error_response
-from app.api.retry_after import db_busy_retry_after_headers
-from app.db.locking import (
-    RetryableDbLockError,
-    RetryableDbQueryTimeoutError,
-)
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke import guard as invoke_guard
-from app.features.invoke import route_runner_streaming
+from app.features.invoke import (
+    route_runner_routes,
+    route_runner_streaming,
+    route_runner_ws_ticket,
+)
 from app.features.invoke import session_binding as invoke_session_binding
 from app.features.invoke.guard import (
     build_invoke_guard_key,
@@ -1014,124 +1009,31 @@ async def run_ws_invoke_route(
     invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
     unexpected_log_message: str,
 ) -> None:
-    selected_subprotocol = getattr(websocket.state, "selected_subprotocol", None)
-    if selected_subprotocol:
-        await websocket.accept(subprotocol=selected_subprotocol)
-    else:
-        await websocket.accept()
-
-    try:
-        data = await websocket.receive_json()
-        try:
-            payload = A2AAgentInvokeRequest.model_validate(data)
-        except ValidationError:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Invalid request payload",
-                error_code="invalid_request",
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-            )
-            return
-
-        if not payload.query.strip():
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Query must be a non-empty string",
-                error_code="invalid_query",
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-            )
-            return
-
-        try:
-            runtime = await runtime_builder()
-        except runtime_not_found_errors as exc:
-            message = (
-                runtime_not_found_message(exc)
-                if callable(runtime_not_found_message)
-                else runtime_not_found_message
-            )
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=message,
-                error_code=runtime_not_found_code,
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            )
-            return
-        except runtime_validation_errors as exc:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=str(exc),
-                error_code="runtime_invalid",
-            )
-            await await_cancel_safe(websocket.close(code=status.WS_1011_INTERNAL_ERROR))
-            return
-        await _close_open_transaction(db)
-
-        logger.info(
-            invoke_log_message,
-            extra=invoke_log_extra_builder(payload, runtime),
-        )
-        guard_key = build_invoke_guard_key(
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            payload=payload,
-        )
-
-        try:
-            async with guard_inflight_invoke(guard_key):
-                await run_ws_invoke_with_session_recovery(
-                    websocket=websocket,
-                    gateway=gateway,
-                    runtime=runtime,
-                    user_id=user_id,
-                    agent_id=agent_id,
-                    agent_source=agent_source,
-                    payload=payload,
-                    validate_message=validate_message,
-                    logger=logger,
-                    log_extra={
-                        "user_id": str(user_id),
-                        "agent_id": str(agent_id),
-                    },
-                    max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
-                )
-        except ValueError as exc:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=str(exc),
-                error_code=invoke_session_binding.ws_error_code_for_invoke_session_error(
-                    str(exc)
-                ),
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            )
-            return
-
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected", extra={"user_id": str(user_id)})
-    except Exception:
-        logger.error(unexpected_log_message, exc_info=True)
-        try:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Upstream streaming failed",
-                error_code="upstream_stream_error",
-            )
-        except Exception:
-            pass
-    finally:
-        try:
-            await await_cancel_safe_suppressed(websocket.close())
-        except Exception:
-            pass
+    await route_runner_routes.run_ws_invoke_route(
+        websocket=websocket,
+        db=db,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        gateway=gateway,
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=runtime_not_found_errors,
+        runtime_not_found_message=runtime_not_found_message,
+        runtime_not_found_code=runtime_not_found_code,
+        runtime_validation_errors=runtime_validation_errors,
+        validate_message=validate_message,
+        logger=logger,
+        invoke_log_message=invoke_log_message,
+        invoke_log_extra_builder=invoke_log_extra_builder,
+        unexpected_log_message=unexpected_log_message,
+        close_open_transaction_fn=_close_open_transaction,
+        build_invoke_guard_key_fn=build_invoke_guard_key,
+        run_ws_invoke_with_session_recovery_fn=run_ws_invoke_with_session_recovery,
+        await_cancel_safe_fn=await_cancel_safe,
+        await_cancel_safe_suppressed_fn=await_cancel_safe_suppressed,
+        guard_inflight_invoke_fn=guard_inflight_invoke,
+        session_not_found_retry_limit=_SESSION_NOT_FOUND_RETRY_LIMIT,
+    )
 
 
 async def run_http_invoke_route(
@@ -1156,149 +1058,32 @@ async def run_http_invoke_route(
     invoke_log_message: str,
     invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
 ) -> A2AAgentInvokeResponse | StreamingResponse | JSONResponse:
-    if not payload.query.strip():
-        raise HTTPException(status_code=400, detail="Query must be a non-empty string")
-
-    try:
-        runtime = await runtime_builder()
-    except runtime_not_found_errors as exc:
-        raise HTTPException(
-            status_code=runtime_not_found_status_code,
-            detail=str(exc),
-        ) from exc
-    except runtime_validation_errors as exc:
-        status_code = runtime_validation_status_code
-        if runtime_validation_status_overrides:
-            for error_type, override in runtime_validation_status_overrides:
-                if isinstance(exc, error_type):
-                    status_code = override
-                    break
-        raise HTTPException(
-            status_code=status_code,
-            detail=str(exc),
-        ) from exc
-    await _close_open_transaction(db)
-
-    logger.info(
-        invoke_log_message,
-        extra=invoke_log_extra_builder(payload, runtime),
-    )
-    guard_key = build_invoke_guard_key(
+    return await route_runner_routes.run_http_invoke_route(
+        db=db,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
         payload=payload,
+        stream=stream,
+        gateway=gateway,
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=runtime_not_found_errors,
+        runtime_not_found_status_code=runtime_not_found_status_code,
+        runtime_validation_errors=runtime_validation_errors,
+        runtime_validation_status_code=runtime_validation_status_code,
+        runtime_validation_status_overrides=runtime_validation_status_overrides,
+        validate_message=validate_message,
+        logger=logger,
+        invoke_log_message=invoke_log_message,
+        invoke_log_extra_builder=invoke_log_extra_builder,
+        close_open_transaction_fn=_close_open_transaction,
+        build_invoke_guard_key_fn=build_invoke_guard_key,
+        try_acquire_invoke_guard_fn=_try_acquire_invoke_guard,
+        release_invoke_guard_fn=_release_invoke_guard,
+        run_http_invoke_with_session_recovery_fn=run_http_invoke_with_session_recovery,
+        guard_inflight_invoke_fn=guard_inflight_invoke,
+        session_not_found_retry_limit=_SESSION_NOT_FOUND_RETRY_LIMIT,
     )
-
-    if stream and guard_key:
-        acquired = await _try_acquire_invoke_guard(guard_key)
-        if not acquired:
-            raise HTTPException(
-                status_code=invoke_session_binding.status_code_for_invoke_session_error(
-                    "invoke_inflight"
-                ),
-                detail="invoke_inflight",
-            )
-        try:
-            response = await run_http_invoke_with_session_recovery(
-                gateway=gateway,
-                runtime=runtime,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                payload=payload,
-                stream=stream,
-                validate_message=validate_message,
-                logger=logger,
-                log_extra={
-                    "user_id": str(user_id),
-                    "agent_id": str(agent_id),
-                },
-                max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
-            )
-        except ValueError as exc:
-            await _release_invoke_guard(guard_key)
-            raise HTTPException(
-                status_code=invoke_session_binding.status_code_for_invoke_session_error(
-                    str(exc)
-                ),
-                detail=str(exc),
-            ) from exc
-        except Exception:
-            await _release_invoke_guard(guard_key)
-            raise
-
-        if isinstance(response, StreamingResponse):
-            original_iterator = response.body_iterator
-
-            async def guarded_iterator() -> AsyncIterator[Any]:
-                try:
-                    async for chunk in original_iterator:
-                        yield chunk
-                finally:
-                    await _release_invoke_guard(guard_key)
-
-            response.body_iterator = guarded_iterator()
-            return response
-
-        if not response.success:
-            await _release_invoke_guard(guard_key)
-            return build_error_response(
-                status_code=status_code_for_invoke_error_code(response.error_code),
-                detail=build_error_detail(
-                    message=response.error or "Invoke failed",
-                    error_code=response.error_code,
-                    source=response.source,
-                    jsonrpc_code=response.jsonrpc_code,
-                    missing_params=response.missing_params,
-                    upstream_error=response.upstream_error,
-                ),
-            )
-        await _release_invoke_guard(guard_key)
-        return response
-
-    try:
-        async with guard_inflight_invoke(guard_key):
-            response = await run_http_invoke_with_session_recovery(
-                gateway=gateway,
-                runtime=runtime,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                payload=payload,
-                stream=stream,
-                validate_message=validate_message,
-                logger=logger,
-                log_extra={
-                    "user_id": str(user_id),
-                    "agent_id": str(agent_id),
-                },
-                max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
-            )
-
-            if isinstance(response, StreamingResponse):
-                return response
-
-            if response.success:
-                return response
-            return build_error_response(
-                status_code=status_code_for_invoke_error_code(response.error_code),
-                detail=build_error_detail(
-                    message=response.error or "Invoke failed",
-                    error_code=response.error_code,
-                    source=response.source,
-                    jsonrpc_code=response.jsonrpc_code,
-                    missing_params=response.missing_params,
-                    upstream_error=response.upstream_error,
-                ),
-            )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=invoke_session_binding.status_code_for_invoke_session_error(
-                str(exc)
-            ),
-            detail=str(exc),
-        ) from exc
 
 
 async def run_issue_ws_ticket_route(
@@ -1312,34 +1097,14 @@ async def run_issue_ws_ticket_route(
     not_found_status_code: int,
     not_found_detail: str | Callable[[Exception], str],
 ) -> WsTicketResponse:
-    try:
-        await ensure_access()
-    except not_found_errors as exc:
-        detail = (
-            not_found_detail(exc) if callable(not_found_detail) else not_found_detail
-        )
-        raise HTTPException(status_code=not_found_status_code, detail=detail) from exc
-
-    try:
-        issued = await ws_ticket_service.issue_ticket(
-            db,
-            user_id=user_id,
-            scope_type=scope_type,
-            scope_id=scope_id,
-        )
-    except RetryableDbLockError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    except RetryableDbQueryTimeoutError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-            headers=db_busy_retry_after_headers(),
-        ) from exc
-    return WsTicketResponse(
-        token=issued.token,
-        expires_at=issued.expires_at,
-        expires_in=issued.expires_in,
+    return await route_runner_ws_ticket.run_issue_ws_ticket_route(
+        db=db,
+        user_id=user_id,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        ensure_access=ensure_access,
+        not_found_errors=not_found_errors,
+        not_found_status_code=not_found_status_code,
+        not_found_detail=not_found_detail,
+        issue_ticket_fn=ws_ticket_service.issue_ticket,
     )
