@@ -42,11 +42,11 @@ const HEALTH_FILTER_ORDER: UnifiedAgentHealthStatus[] = [
 const SOURCE_LABELS: Record<AgentConfig["source"], string> = {
   personal: "PERSONAL",
   shared: "SHARED",
-  builtin: "BUILT-IN",
+  hub_assistant: "BUILT-IN",
 };
 
 const SOURCE_SORT_ORDER: Record<AgentConfig["source"], number> = {
-  builtin: 0,
+  hub_assistant: 0,
   personal: 1,
   shared: 2,
 };
@@ -91,7 +91,7 @@ export function AgentListScreen() {
         unknown: 0,
       };
       const nextSourceCounts: Record<AgentConfig["source"], number> = {
-        builtin: 0,
+        hub_assistant: 0,
         personal: 0,
         shared: 0,
       };
@@ -305,13 +305,13 @@ export function AgentListScreen() {
     </View>
   );
 
-  const renderBuiltInAgentItem = (agent: AgentConfig) => (
+  const renderHubAssistantItem = (agent: AgentConfig) => (
     <View className="mb-4 overflow-hidden rounded-2xl bg-surface shadow-sm">
       <View className="px-4 py-4">
         {renderAgentMeta(agent)}
         <Text className="mt-3 text-xs text-slate-400">
           {agent.description ??
-            "Manage your agents, sessions, and jobs through constrained built-in tools."}
+            "Manage your agents, sessions, and jobs through constrained Hub Assistant tools."}
         </Text>
         {agent.resources?.length ? (
           <Text className="mt-2 text-xs text-slate-500">
@@ -328,7 +328,7 @@ export function AgentListScreen() {
           iconRight="chevron-forward"
           onPress={() => handleChat(agent.id)}
           accessibilityRole="button"
-          accessibilityLabel="Open built-in assistant"
+          accessibilityLabel="Open Hub Assistant"
           accessibilityHint={`Open chat with ${agent.name}`}
         />
       </View>
@@ -337,8 +337,8 @@ export function AgentListScreen() {
 
   const renderAgentItem = useCallback(
     ({ item }: { item: AgentConfig }) => {
-      if (item.source === "builtin") {
-        return renderBuiltInAgentItem(item);
+      if (item.source === "hub_assistant") {
+        return renderHubAssistantItem(item);
       }
       if (item.source === "shared") {
         return renderSharedAgentItem(item);
@@ -354,8 +354,8 @@ export function AgentListScreen() {
         <View className="flex-row items-center justify-between gap-4">
           <View className="flex-1">
             <Text className="text-sm font-semibold text-white">
-              Built-in {sourceCounts.builtin} / Personal {sourceCounts.personal}{" "}
-              / Shared {sourceCounts.shared}
+              Hub Assistant {sourceCounts.hub_assistant} / Personal{" "}
+              {sourceCounts.personal} / Shared {sourceCounts.shared}
             </Text>
           </View>
           <Button

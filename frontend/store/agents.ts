@@ -12,7 +12,7 @@ type AgentStatus = "idle" | "checking" | "success" | "error";
 
 export type AgentHeader = HeaderEntryWithId;
 
-export type AgentSource = "personal" | "shared" | "builtin";
+export type AgentSource = "personal" | "shared" | "hub_assistant";
 
 export type AgentConfig = {
   id: string;

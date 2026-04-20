@@ -26,13 +26,13 @@ DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash("dummy-password-not-used")
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
-SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE = "self_management_interrupt"
-SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM = "sm_ops"
-SELF_MANAGEMENT_DELEGATED_BY_CLAIM = "sm_delegate"
-SELF_MANAGEMENT_CONVERSATION_ID_CLAIM = "sm_conversation_id"
-SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM = "sm_interrupt_message"
-SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM = "sm_interrupt_tool_names"
-SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM = "sm_interrupt_conversation_id"
+HUB_ASSISTANT_INTERRUPT_TOKEN_TYPE = "hub_assistant_interrupt"
+HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM = "ha_ops"
+HUB_ASSISTANT_DELEGATED_BY_CLAIM = "ha_delegate"
+HUB_ASSISTANT_CONVERSATION_ID_CLAIM = "ha_conversation_id"
+HUB_ASSISTANT_INTERRUPT_MESSAGE_CLAIM = "ha_interrupt_message"
+HUB_ASSISTANT_INTERRUPT_TOOL_NAMES_CLAIM = "ha_interrupt_tool_names"
+HUB_ASSISTANT_INTERRUPT_CONVERSATION_ID_CLAIM = "ha_interrupt_conversation_id"
 
 
 @dataclass(frozen=True)
@@ -334,7 +334,7 @@ def create_user_access_token(user_id: Union[str, UUID]) -> str:
     )
 
 
-def create_self_management_access_token(
+def create_hub_assistant_access_token(
     user_id: Union[str, UUID],
     *,
     allowed_operations: Sequence[str],
@@ -352,23 +352,23 @@ def create_self_management_access_token(
         str(conversation_id).strip() if conversation_id is not None else ""
     )
     extra_claims: dict[str, Any] = {
-        SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
-        SELF_MANAGEMENT_DELEGATED_BY_CLAIM: delegated_by,
+        HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
+        HUB_ASSISTANT_DELEGATED_BY_CLAIM: delegated_by,
     }
     if normalized_conversation_id:
-        extra_claims[SELF_MANAGEMENT_CONVERSATION_ID_CLAIM] = normalized_conversation_id
+        extra_claims[HUB_ASSISTANT_CONVERSATION_ID_CLAIM] = normalized_conversation_id
     return create_jwt_token(
         subject=str(user_id),
         token_type=ACCESS_TOKEN_TYPE,
         expires_in_seconds=min(
             settings.jwt_access_token_ttl_seconds,
-            settings.self_management_swival_delegated_token_ttl_seconds,
+            settings.hub_assistant_swival_delegated_token_ttl_seconds,
         ),
         extra_claims=extra_claims,
     )
 
 
-def create_self_management_interrupt_token(
+def create_hub_assistant_interrupt_token(
     user_id: Union[str, UUID],
     *,
     conversation_id: str,
@@ -391,13 +391,13 @@ def create_self_management_interrupt_token(
     )
     return create_jwt_token(
         subject=str(user_id),
-        token_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
-        expires_in_seconds=settings.self_management_interrupt_ttl_seconds,
+        token_type=HUB_ASSISTANT_INTERRUPT_TOKEN_TYPE,
+        expires_in_seconds=settings.hub_assistant_interrupt_ttl_seconds,
         extra_claims={
-            SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM: normalized_conversation_id,
-            SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM: message,
-            SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM: normalized_tool_names,
-            SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
+            HUB_ASSISTANT_INTERRUPT_CONVERSATION_ID_CLAIM: normalized_conversation_id,
+            HUB_ASSISTANT_INTERRUPT_MESSAGE_CLAIM: message,
+            HUB_ASSISTANT_INTERRUPT_TOOL_NAMES_CLAIM: normalized_tool_names,
+            HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
         },
     )
 
@@ -417,45 +417,45 @@ def create_user_refresh_token(
     )
 
 
-def get_self_management_allowed_operations(
+def get_hub_assistant_allowed_operations(
     claims: VerifiedJwtClaims,
 ) -> frozenset[str]:
-    raw_operations = claims.raw_payload.get(SELF_MANAGEMENT_ALLOWED_OPERATIONS_CLAIM)
+    raw_operations = claims.raw_payload.get(HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM)
     if not isinstance(raw_operations, list):
         return frozenset()
     return frozenset(str(item).strip() for item in raw_operations if str(item).strip())
 
 
-def get_self_management_conversation_id(claims: VerifiedJwtClaims) -> str | None:
-    raw_conversation_id = claims.raw_payload.get(SELF_MANAGEMENT_CONVERSATION_ID_CLAIM)
+def get_hub_assistant_conversation_id(claims: VerifiedJwtClaims) -> str | None:
+    raw_conversation_id = claims.raw_payload.get(HUB_ASSISTANT_CONVERSATION_ID_CLAIM)
     if not isinstance(raw_conversation_id, str):
         return None
     conversation_id = raw_conversation_id.strip()
     return conversation_id or None
 
 
-def get_self_management_interrupt_message(claims: VerifiedJwtClaims) -> str | None:
-    raw_message = claims.raw_payload.get(SELF_MANAGEMENT_INTERRUPT_MESSAGE_CLAIM)
+def get_hub_assistant_interrupt_message(claims: VerifiedJwtClaims) -> str | None:
+    raw_message = claims.raw_payload.get(HUB_ASSISTANT_INTERRUPT_MESSAGE_CLAIM)
     if not isinstance(raw_message, str):
         return None
     message = raw_message.strip()
     return message or None
 
 
-def get_self_management_interrupt_tool_names(
+def get_hub_assistant_interrupt_tool_names(
     claims: VerifiedJwtClaims,
 ) -> tuple[str, ...]:
-    raw_tool_names = claims.raw_payload.get(SELF_MANAGEMENT_INTERRUPT_TOOL_NAMES_CLAIM)
+    raw_tool_names = claims.raw_payload.get(HUB_ASSISTANT_INTERRUPT_TOOL_NAMES_CLAIM)
     if not isinstance(raw_tool_names, list):
         return ()
     return tuple(str(item).strip() for item in raw_tool_names if str(item).strip())
 
 
-def get_self_management_interrupt_conversation_id(
+def get_hub_assistant_interrupt_conversation_id(
     claims: VerifiedJwtClaims,
 ) -> str | None:
     raw_conversation_id = claims.raw_payload.get(
-        SELF_MANAGEMENT_INTERRUPT_CONVERSATION_ID_CLAIM
+        HUB_ASSISTANT_INTERRUPT_CONVERSATION_ID_CLAIM
     )
     if not isinstance(raw_conversation_id, str):
         return None

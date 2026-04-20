@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-UnifiedAgentSource = Literal["personal", "shared", "builtin"]
+UnifiedAgentSource = Literal["personal", "shared", "hub_assistant"]
 UnifiedAgentAuthType = Literal["none", "bearer", "basic"]
 UnifiedAgentHealthStatus = Literal["unknown", "healthy", "degraded", "unavailable"]
 UnifiedAgentHealthReasonCode = Literal[

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     get_async_db,
-    get_current_self_management_admin_tool_gateway,
+    get_current_hub_assistant_admin_tool_gateway,
 )
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
@@ -35,7 +35,7 @@ from app.features.hub_agents.service import (
     HubA2AUserNotFoundError,
     hub_a2a_agent_service,
 )
-from app.features.self_management_shared.capability_catalog import (
+from app.features.hub_assistant_shared.capability_catalog import (
     ADMIN_HUB_AGENT_ALLOWLIST_ADD,
     ADMIN_HUB_AGENT_ALLOWLIST_LIST,
     ADMIN_HUB_AGENT_ALLOWLIST_REMOVE,
@@ -46,9 +46,9 @@ from app.features.self_management_shared.capability_catalog import (
     ADMIN_HUB_AGENTS_LIST,
     ADMIN_HUB_AGENTS_UPDATE,
 )
-from app.features.self_management_shared.tool_gateway import (
-    SelfManagementOperation,
-    SelfManagementToolGateway,
+from app.features.hub_assistant_shared.tool_gateway import (
+    HubAssistantOperation,
+    HubAssistantToolGateway,
 )
 from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.logging_redaction import redact_url_for_logging
@@ -58,9 +58,9 @@ logger = get_logger(__name__)
 
 
 def _build_admin_audit_extra(
-    gateway: SelfManagementToolGateway,
+    gateway: HubAssistantToolGateway,
     *,
-    operation: SelfManagementOperation,
+    operation: HubAssistantOperation,
     resource_id: str | None = None,
     target_user_id: UUID | None = None,
 ) -> dict[str, Any]:
@@ -100,8 +100,8 @@ def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse
 async def list_hub_agents_admin(
     *,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=200, description="Page size"),
@@ -133,8 +133,8 @@ async def create_hub_agent_admin(
     payload: HubA2AAgentAdminCreate,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> HubA2AAgentAdminResponse:
     current_admin_id = gateway.actor.acting_user_id
@@ -191,8 +191,8 @@ async def get_hub_agent_admin(
     *,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> HubA2AAgentAdminResponse:
     gateway.authorize(operation=ADMIN_HUB_AGENTS_GET, resource_id=str(agent_id))
@@ -210,8 +210,8 @@ async def update_hub_agent_admin(
     payload: HubA2AAgentAdminUpdate,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> HubA2AAgentAdminResponse:
     current_admin_id = gateway.actor.acting_user_id
@@ -287,8 +287,8 @@ async def delete_hub_agent_admin(
     *,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> Response:
     gateway.authorize(operation=ADMIN_HUB_AGENTS_DELETE, resource_id=str(agent_id))
@@ -311,8 +311,8 @@ async def list_hub_agent_allowlist_admin(
     *,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> HubA2AAllowlistListResponse:
     gateway.authorize(
@@ -352,8 +352,8 @@ async def add_hub_agent_allowlist_admin(
     payload: HubA2AAllowlistAddRequest,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> HubA2AAllowlistEntryResponse:
     current_admin_id = gateway.actor.acting_user_id
@@ -408,8 +408,8 @@ async def replace_hub_agent_allowlist_admin(
     payload: HubA2AAllowlistReplaceRequest,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> HubA2AAllowlistListResponse:
     current_admin_id = gateway.actor.acting_user_id
@@ -471,8 +471,8 @@ async def remove_hub_agent_allowlist_admin(
     agent_id: UUID,
     user_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    gateway: SelfManagementToolGateway = Depends(
-        get_current_self_management_admin_tool_gateway
+    gateway: HubAssistantToolGateway = Depends(
+        get_current_hub_assistant_admin_tool_gateway
     ),
 ) -> Response:
     gateway.authorize(

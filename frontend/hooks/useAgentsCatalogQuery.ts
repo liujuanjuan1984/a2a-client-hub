@@ -313,10 +313,10 @@ export function useValidateAgentMutation() {
       let response;
       try {
         response =
-          agent.source === "builtin"
+          agent.source === "hub_assistant"
             ? {
                 success: true,
-                message: "Built-in agent is managed by the local runtime.",
+                message: "Hub Assistant is managed by the local runtime.",
               }
             : agent.source === "shared"
               ? await validateHubAgentCard(agentId)

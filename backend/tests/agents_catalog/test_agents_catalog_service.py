@@ -41,8 +41,8 @@ async def test_list_catalog_reads_persisted_shared_and_builtin_snapshots(
             ),
             UserAgentAvailabilitySnapshot(
                 user_id=user.id,
-                agent_source="builtin",
-                agent_id="self-management-assistant",
+                agent_source="hub_assistant",
+                agent_id="hub-assistant",
                 health_status="unavailable",
                 last_health_check_at=checked_at,
                 last_health_check_error="Built-in runtime unavailable",
@@ -83,9 +83,9 @@ async def test_list_catalog_reads_persisted_shared_and_builtin_snapshots(
         _fake_list_visible_agents_for_user,
     )
     monkeypatch.setattr(
-        "app.features.agents_catalog.service.self_management_built_in_agent_service.get_profile",
+        "app.features.agents_catalog.service.hub_assistant_service.get_profile",
         lambda: SimpleNamespace(
-            agent_id="self-management-assistant",
+            agent_id="hub-assistant",
             name="A2A Client Hub Assistant",
             description="Built-in assistant",
             runtime="swival",
@@ -103,12 +103,15 @@ async def test_list_catalog_reads_persisted_shared_and_builtin_snapshots(
     assert by_source["shared"]["health_status"] == "healthy"
     assert by_source["shared"]["last_health_check_at"] == checked_at
     assert by_source["shared"]["last_health_check_reason_code"] is None
-    assert by_source["builtin"]["health_status"] == "unavailable"
+    assert by_source["hub_assistant"]["health_status"] == "unavailable"
     assert (
-        by_source["builtin"]["last_health_check_error"]
+        by_source["hub_assistant"]["last_health_check_error"]
         == "Built-in runtime unavailable"
     )
-    assert by_source["builtin"]["last_health_check_reason_code"] == "agent_unavailable"
+    assert (
+        by_source["hub_assistant"]["last_health_check_reason_code"]
+        == "agent_unavailable"
+    )
 
 
 @pytest.mark.asyncio
@@ -187,9 +190,9 @@ async def test_check_catalog_health_persists_shared_and_builtin_snapshots(
         lambda: SimpleNamespace(gateway=object()),
     )
     monkeypatch.setattr(
-        "app.features.agents_catalog.service.self_management_built_in_agent_service.get_profile",
+        "app.features.agents_catalog.service.hub_assistant_service.get_profile",
         lambda: SimpleNamespace(
-            agent_id="self-management-assistant",
+            agent_id="hub-assistant",
             name="A2A Client Hub Assistant",
             description="Built-in assistant",
             runtime="swival",
@@ -208,7 +211,7 @@ async def test_check_catalog_health_persists_shared_and_builtin_snapshots(
     assert summary.healthy == 2
     assert {(item.agent_source, item.health_status) for item in items} == {
         ("shared", "healthy"),
-        ("builtin", "healthy"),
+        ("hub_assistant", "healthy"),
     }
     assert all(item.reason_code is None for item in items)
 
@@ -229,7 +232,7 @@ async def test_check_catalog_health_persists_shared_and_builtin_snapshots(
         for row in snapshots
     } == {
         ("shared", str(shared_agent_id), "healthy", None),
-        ("builtin", "self-management-assistant", "healthy", None),
+        ("hub_assistant", "hub-assistant", "healthy", None),
     }
 
 
@@ -295,9 +298,9 @@ async def test_check_catalog_health_marks_missing_shared_credential_unavailable(
         _fake_build,
     )
     monkeypatch.setattr(
-        "app.features.agents_catalog.service.self_management_built_in_agent_service.get_profile",
+        "app.features.agents_catalog.service.hub_assistant_service.get_profile",
         lambda: SimpleNamespace(
-            agent_id="self-management-assistant",
+            agent_id="hub-assistant",
             name="A2A Client Hub Assistant",
             description="Built-in assistant",
             runtime="swival",

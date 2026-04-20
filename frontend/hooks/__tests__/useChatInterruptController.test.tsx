@@ -141,14 +141,17 @@ describe("useChatInterruptController", () => {
 
     const { result } = renderHook(() =>
       useChatInterruptController({
-        activeAgentId: "self-management-assistant",
+        activeAgentId: "hub-assistant",
         agentSource: null,
         conversationId: "conv-1",
         pendingInterrupt: {
           requestId: "perm-override-1",
           type: "permission",
           phase: "asked",
-          details: { permission: "write", patterns: ["self.jobs.pause"] },
+          details: {
+            permission: "write",
+            patterns: ["hub_assistant.jobs.pause"],
+          },
         },
         lastResolvedInterrupt: null,
         pendingQuestionCount: 0,

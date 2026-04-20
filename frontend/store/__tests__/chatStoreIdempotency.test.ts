@@ -476,43 +476,47 @@ describe("chat store idempotency semantics", () => {
     expect(session?.pendingInterrupt?.requestId).toBe("stream-1");
   });
 
-  it("replaceRecoveredInterrupts can replace all pending interrupts for a built-in conversation", () => {
-    useChatStore.getState().ensureSession("conv-builtin", "self-management");
+  it("replaceRecoveredInterrupts can replace all pending interrupts for a Hub Assistant conversation", () => {
+    useChatStore
+      .getState()
+      .ensureSession("conv-hub_assistant", "hub-assistant");
     useChatStore.setState((state) => ({
       sessions: {
         ...state.sessions,
-        "conv-builtin": {
-          ...state.sessions["conv-builtin"],
+        "conv-hub_assistant": {
+          ...state.sessions["conv-hub_assistant"],
           pendingInterrupts: [
             {
-              requestId: "builtin-local-stale-1",
+              requestId: "hub_assistant-local-stale-1",
               type: "permission",
               phase: "asked",
               details: {
-                permission: "self-management-write",
-                patterns: ["self.jobs.pause"],
+                permission: "hub-assistant-write",
+                patterns: ["hub_assistant.jobs.pause"],
               },
             },
           ],
           pendingInterrupt: {
-            requestId: "builtin-local-stale-1",
+            requestId: "hub_assistant-local-stale-1",
             type: "permission",
             phase: "asked",
             details: {
-              permission: "self-management-write",
-              patterns: ["self.jobs.pause"],
+              permission: "hub-assistant-write",
+              patterns: ["hub_assistant.jobs.pause"],
             },
           },
         },
       },
     }));
 
-    useChatStore.getState().replaceRecoveredInterrupts("conv-builtin", [], {
-      sessionId: "conv-builtin",
-      replaceAllForConversation: true,
-    });
+    useChatStore
+      .getState()
+      .replaceRecoveredInterrupts("conv-hub_assistant", [], {
+        sessionId: "conv-hub_assistant",
+        replaceAllForConversation: true,
+      });
 
-    const session = useChatStore.getState().sessions["conv-builtin"];
+    const session = useChatStore.getState().sessions["conv-hub_assistant"];
     expect(session?.pendingInterrupts).toEqual([]);
     expect(session?.pendingInterrupt).toBeNull();
   });

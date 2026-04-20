@@ -178,7 +178,7 @@ class ShortcutService:
             .order_by(ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc())
         )
 
-        # Pagination is intentionally mixed here: built-in defaults are a small,
+        # Pagination is intentionally mixed here: default fallback sizes are small,
         # fixed in-memory source that must stay ahead of user-defined shortcuts,
         # while custom shortcuts continue to use DB offset/limit.
         start_index = (page - 1) * size

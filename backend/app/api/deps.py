@@ -25,19 +25,19 @@ from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import cleanup_session_safely, run_with_new_session
 from app.features.auth import service as auth_service
-from app.features.self_management_shared.actor_context import (
-    SelfManagementActorContext,
-    SelfManagementActorType,
-    SelfManagementAuthorizationError,
-    build_self_management_actor_context,
+from app.features.hub_assistant_shared.actor_context import (
+    HubAssistantActorContext,
+    HubAssistantActorType,
+    HubAssistantAuthorizationError,
+    build_hub_assistant_actor_context,
 )
-from app.features.self_management_shared.self_management_web_agent import (
-    SelfManagementWebAgentRuntime,
-    build_self_management_web_agent_runtime,
+from app.features.hub_assistant_shared.hub_assistant_web_agent import (
+    HubAssistantWebAgentRuntime,
+    build_hub_assistant_web_agent_runtime,
 )
-from app.features.self_management_shared.tool_gateway import (
-    SelfManagementSurface,
-    SelfManagementToolGateway,
+from app.features.hub_assistant_shared.tool_gateway import (
+    HubAssistantSurface,
+    HubAssistantToolGateway,
 )
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ws_ticket import (
@@ -113,7 +113,7 @@ async def get_current_user(
         set_user_context(str(user.id))
         set_actor_context(
             principal_user_id=str(user.id),
-            actor_type=SelfManagementActorType.HUMAN_API.value,
+            actor_type=HubAssistantActorType.HUMAN_API.value,
             admin_mode=False,
         )
         return user
@@ -241,7 +241,7 @@ async def get_ws_ticket_user(
         set_user_context(str(user.id))
         set_actor_context(
             principal_user_id=str(user.id),
-            actor_type=SelfManagementActorType.HUMAN_API.value,
+            actor_type=HubAssistantActorType.HUMAN_API.value,
             admin_mode=False,
         )
         return user
@@ -340,20 +340,20 @@ def get_current_admin_user(
         )
     set_actor_context(
         principal_user_id=str(current_user.id),
-        actor_type=SelfManagementActorType.HUMAN_API.value,
+        actor_type=HubAssistantActorType.HUMAN_API.value,
         admin_mode=True,
     )
     return current_user
 
 
-def get_current_self_management_actor(
+def get_current_hub_assistant_actor(
     current_user: User = Depends(get_current_user),
-) -> SelfManagementActorContext:
-    """Resolve the default authenticated actor for self-management operations."""
+) -> HubAssistantActorContext:
+    """Resolve the default authenticated actor for Hub Assistant operations."""
 
-    actor = build_self_management_actor_context(
+    actor = build_hub_assistant_actor_context(
         user=current_user,
-        actor_type=SelfManagementActorType.HUMAN_API,
+        actor_type=HubAssistantActorType.HUMAN_API,
     )
     set_actor_context(
         principal_user_id=str(actor.principal_user_id),
@@ -363,18 +363,18 @@ def get_current_self_management_actor(
     return actor
 
 
-def get_current_self_management_admin_actor(
+def get_current_hub_assistant_admin_actor(
     current_user: User = Depends(get_current_user),
-) -> SelfManagementActorContext:
-    """Resolve an admin-mode actor for self-management operations."""
+) -> HubAssistantActorContext:
+    """Resolve an admin-mode actor for Hub Assistant operations."""
 
     try:
-        actor = build_self_management_actor_context(
+        actor = build_hub_assistant_actor_context(
             user=current_user,
-            actor_type=SelfManagementActorType.HUMAN_API,
+            actor_type=HubAssistantActorType.HUMAN_API,
             admin_mode=True,
         )
-    except SelfManagementAuthorizationError as exc:
+    except HubAssistantAuthorizationError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
@@ -387,31 +387,29 @@ def get_current_self_management_admin_actor(
     return actor
 
 
-def get_current_self_management_tool_gateway(
-    actor: SelfManagementActorContext = Depends(get_current_self_management_actor),
-) -> SelfManagementToolGateway:
-    """Resolve the default self-management authorization gateway."""
+def get_current_hub_assistant_tool_gateway(
+    actor: HubAssistantActorContext = Depends(get_current_hub_assistant_actor),
+) -> HubAssistantToolGateway:
+    """Resolve the default Hub Assistant authorization gateway."""
 
-    return SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
-
-
-def get_current_self_management_admin_tool_gateway(
-    actor: SelfManagementActorContext = Depends(
-        get_current_self_management_admin_actor
-    ),
-) -> SelfManagementToolGateway:
-    """Resolve the admin-mode self-management authorization gateway."""
-
-    return SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
+    return HubAssistantToolGateway(actor, surface=HubAssistantSurface.REST)
 
 
-def get_current_self_management_web_agent_runtime(
+def get_current_hub_assistant_admin_tool_gateway(
+    actor: HubAssistantActorContext = Depends(get_current_hub_assistant_admin_actor),
+) -> HubAssistantToolGateway:
+    """Resolve the admin-mode Hub Assistant authorization gateway."""
+
+    return HubAssistantToolGateway(actor, surface=HubAssistantSurface.REST)
+
+
+def get_current_hub_assistant_web_agent_runtime(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-) -> SelfManagementWebAgentRuntime:
-    """Resolve the built-in web-agent runtime for self-management operations."""
+) -> HubAssistantWebAgentRuntime:
+    """Resolve the Hub Assistant web-agent runtime for Hub Assistant operations."""
 
-    runtime = build_self_management_web_agent_runtime(
+    runtime = build_hub_assistant_web_agent_runtime(
         db=db,
         current_user=current_user,
     )

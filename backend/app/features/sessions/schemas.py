@@ -8,14 +8,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.features.self_management_shared.constants import (
-    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+from app.features.hub_assistant_shared.constants import (
+    HUB_ASSISTANT_PUBLIC_ID,
 )
 from app.features.working_directory import merge_working_directory_metadata
 from app.schemas.pagination import Pagination
 
 SessionSource = Literal["manual", "scheduled"]
-AgentSource = Literal["personal", "shared", "builtin"]
+AgentSource = Literal["personal", "shared", "hub_assistant"]
 
 
 class SessionQueryRequest(BaseModel):
@@ -28,7 +28,7 @@ class SessionQueryRequest(BaseModel):
     agent_id: Optional[str] = Field(
         None,
         description=(
-            "Filter by agent id. Accepts a UUID or the built-in self-management "
+            "Filter by agent id. Accepts a UUID or the Hub Assistant "
             "assistant public id."
         ),
     )
@@ -38,14 +38,13 @@ class SessionQueryRequest(BaseModel):
     def validate_agent_id(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if value == SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID:
+        if value == HUB_ASSISTANT_PUBLIC_ID:
             return value
         try:
             UUID(value)
         except (TypeError, ValueError) as exc:
             raise ValueError(
-                "Input should be a valid UUID or the built-in self-management "
-                "assistant id."
+                "Input should be a valid UUID or the Hub Assistant " "assistant id."
             ) from exc
         return value
 

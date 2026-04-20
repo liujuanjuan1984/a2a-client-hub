@@ -63,8 +63,8 @@ async def test_app_lifespan_cleans_up_when_startup_fails(
     )
     monkeypatch.setattr(
         main_module,
-        "ensure_self_management_agent_task_job",
-        lambda: called.append("self_management_agent_task_job"),
+        "ensure_hub_assistant_task_job",
+        lambda: called.append("hub_assistant_task_job"),
     )
     monkeypatch.setattr(
         main_module,
@@ -109,6 +109,6 @@ async def test_app_lifespan_cleans_up_when_startup_fails(
 
     assert "auth_cleanup_job" in called
     assert "schedule_cleanup_job" in called
-    assert "self_management_agent_task_job" in called
+    assert "hub_assistant_task_job" in called
     assert "shutdown_scheduler" in called
     assert "close_http" in called

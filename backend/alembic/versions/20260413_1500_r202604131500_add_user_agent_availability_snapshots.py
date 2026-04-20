@@ -1,4 +1,4 @@
-"""Add user agent availability snapshots for shared and built-in agents.
+"""Add user agent availability snapshots for shared and Hub Assistants.
 
 Revision ID: r202604131500
 Revises: r202604082015

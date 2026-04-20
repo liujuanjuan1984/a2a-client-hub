@@ -25,19 +25,19 @@ from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_with_new_session
 from app.features.auth.cleanup_service import ensure_auth_cleanup_job
+from app.features.hub_assistant_shared.hub_assistant_mcp import (
+    HUB_ASSISTANT_MCP_READONLY_MOUNT_PATH,
+    HUB_ASSISTANT_MCP_READONLY_OPERATION_IDS,
+    HUB_ASSISTANT_MCP_WRITE_MOUNT_PATH,
+    HUB_ASSISTANT_MCP_WRITE_OPERATION_IDS,
+    build_hub_assistant_mcp_http_app,
+)
+from app.features.hub_assistant_shared.task_job import (
+    ensure_hub_assistant_task_job,
+)
 from app.features.schedules.job import ensure_a2a_schedule_job
 from app.features.schedules.service import (
     ensure_a2a_schedule_execution_cleanup_job,
-)
-from app.features.self_management_shared.self_management_mcp import (
-    SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
-    SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS,
-    SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
-    SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS,
-    build_self_management_mcp_http_app,
-)
-from app.features.self_management_shared.task_job import (
-    ensure_self_management_agent_task_job,
 )
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.integrations.a2a_extensions import (
@@ -105,7 +105,7 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
         ensure_a2a_schedule_job()
         ensure_auth_cleanup_job()
         ensure_a2a_schedule_execution_cleanup_job()
-        ensure_self_management_agent_task_job()
+        ensure_hub_assistant_task_job()
         ensure_ws_ticket_cleanup_job()
 
         async def _init_a2a_service() -> None:
@@ -143,11 +143,11 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 # Create FastAPI application instance
-mcp_readonly_app = build_self_management_mcp_http_app(
-    operation_ids=SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS
+mcp_readonly_app = build_hub_assistant_mcp_http_app(
+    operation_ids=HUB_ASSISTANT_MCP_READONLY_OPERATION_IDS
 )
-mcp_write_app = build_self_management_mcp_http_app(
-    operation_ids=SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS
+mcp_write_app = build_hub_assistant_mcp_http_app(
+    operation_ids=HUB_ASSISTANT_MCP_WRITE_OPERATION_IDS
 )
 
 app = FastAPI(
@@ -201,8 +201,8 @@ def include_all_routers() -> None:
 
 
 include_all_routers()
-app.mount(SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH, mcp_readonly_app)
-app.mount(SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH, mcp_write_app)
+app.mount(HUB_ASSISTANT_MCP_READONLY_MOUNT_PATH, mcp_readonly_app)
+app.mount(HUB_ASSISTANT_MCP_WRITE_MOUNT_PATH, mcp_write_app)
 
 
 @app.get("/")

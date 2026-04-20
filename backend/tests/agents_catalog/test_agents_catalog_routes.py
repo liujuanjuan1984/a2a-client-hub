@@ -30,17 +30,17 @@ async def test_list_current_user_agent_catalog_returns_unified_items(
         assert user_id == user.id
         return [
             {
-                "id": "self-management-assistant",
-                "source": "builtin",
+                "id": "hub-assistant",
+                "source": "hub_assistant",
                 "name": "A2A Client Hub Assistant",
-                "card_url": "builtin://self-management-assistant",
+                "card_url": "hub-assistant://hub-assistant",
                 "auth_type": "none",
                 "enabled": True,
                 "health_status": "healthy",
                 "last_health_check_at": None,
                 "last_health_check_error": None,
                 "last_health_check_reason_code": None,
-                "description": "Built-in self-management assistant",
+                "description": "Hub Assistant",
                 "runtime": "swival",
                 "resources": ["agents", "sessions"],
             },
@@ -77,7 +77,7 @@ async def test_list_current_user_agent_catalog_returns_unified_items(
 
     assert response.status_code == 200
     payload = response.json()
-    assert [item["source"] for item in payload["items"]] == ["builtin", "shared"]
+    assert [item["source"] for item in payload["items"]] == ["hub_assistant", "shared"]
     assert payload["items"][0]["runtime"] == "swival"
     assert payload["items"][1]["credential_mode"] == "user"
 
@@ -128,8 +128,8 @@ async def test_check_current_user_agent_catalog_health_returns_summary_and_items
                     reason_code="credential_required",
                 ),
                 SimpleNamespace(
-                    agent_id="self-management-assistant",
-                    agent_source="builtin",
+                    agent_id="hub-assistant",
+                    agent_source="hub_assistant",
                     health_status="healthy",
                     checked_at=checked_at,
                     skipped_cooldown=False,

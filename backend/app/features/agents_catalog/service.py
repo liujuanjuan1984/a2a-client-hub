@@ -29,10 +29,10 @@ from app.features.hub_agents.runtime import (
     hub_a2a_runtime_builder,
 )
 from app.features.hub_agents.service import hub_a2a_agent_service
-from app.features.personal_agents.service import a2a_agent_service
-from app.features.self_management_agent.service import (
-    self_management_built_in_agent_service,
+from app.features.hub_assistant.service import (
+    hub_assistant_service,
 )
+from app.features.personal_agents.service import a2a_agent_service
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
@@ -76,9 +76,9 @@ class _AvailabilitySnapshotRecord:
 
 
 class UnifiedAgentCatalogService:
-    """Current-user catalog aggregation across personal/shared/built-in agents."""
+    """Current-user catalog aggregation across personal/shared/Hub Assistants."""
 
-    _non_personal_sources = ("shared", "builtin")
+    _non_personal_sources = ("shared", "hub_assistant")
 
     @staticmethod
     def _extract_validation_error(validation: Any) -> str:
@@ -242,10 +242,10 @@ class UnifiedAgentCatalogService:
     ) -> list[dict[str, Any]]:
         personal_records = await a2a_agent_service.list_all_agents(db, user_id=user_id)
         shared_records = await self._list_all_visible_shared_agents(db, user_id=user_id)
-        built_in_profile = self_management_built_in_agent_service.get_profile()
+        hub_assistant_profile = hub_assistant_service.get_profile()
         keys = {("shared", str(record.id)) for record in shared_records}
-        if built_in_profile.configured:
-            keys.add(("builtin", built_in_profile.agent_id))
+        if hub_assistant_profile.configured:
+            keys.add(("hub_assistant", hub_assistant_profile.agent_id))
         snapshots = await self._load_availability_snapshots(
             db,
             user_id=user_id,
@@ -253,39 +253,41 @@ class UnifiedAgentCatalogService:
         )
 
         items: list[dict[str, Any]] = []
-        if built_in_profile.configured:
-            built_in_snapshot = snapshots.get(("builtin", built_in_profile.agent_id))
+        if hub_assistant_profile.configured:
+            hub_assistant_snapshot = snapshots.get(
+                ("hub_assistant", hub_assistant_profile.agent_id)
+            )
             items.append(
                 {
-                    "id": built_in_profile.agent_id,
-                    "source": "builtin",
-                    "name": built_in_profile.name,
-                    "card_url": "builtin://self-management-assistant",
+                    "id": hub_assistant_profile.agent_id,
+                    "source": "hub_assistant",
+                    "name": hub_assistant_profile.name,
+                    "card_url": "hub-assistant://hub-assistant",
                     "auth_type": "none",
                     "enabled": True,
                     "health_status": (
-                        built_in_snapshot.health_status
-                        if built_in_snapshot is not None
+                        hub_assistant_snapshot.health_status
+                        if hub_assistant_snapshot is not None
                         else A2AAgent.HEALTH_UNKNOWN
                     ),
                     "last_health_check_at": (
-                        built_in_snapshot.last_health_check_at
-                        if built_in_snapshot is not None
+                        hub_assistant_snapshot.last_health_check_at
+                        if hub_assistant_snapshot is not None
                         else None
                     ),
                     "last_health_check_error": (
-                        built_in_snapshot.last_health_check_error
-                        if built_in_snapshot is not None
+                        hub_assistant_snapshot.last_health_check_error
+                        if hub_assistant_snapshot is not None
                         else None
                     ),
                     "last_health_check_reason_code": (
-                        built_in_snapshot.last_health_check_reason_code
-                        if built_in_snapshot is not None
+                        hub_assistant_snapshot.last_health_check_reason_code
+                        if hub_assistant_snapshot is not None
                         else None
                     ),
-                    "description": built_in_profile.description,
-                    "runtime": built_in_profile.runtime,
-                    "resources": list(built_in_profile.resources),
+                    "description": hub_assistant_profile.description,
+                    "runtime": hub_assistant_profile.runtime,
+                    "resources": list(hub_assistant_profile.resources),
                     "extra_headers": {},
                     "invoke_metadata_defaults": {},
                 }
@@ -384,10 +386,10 @@ class UnifiedAgentCatalogService:
         }
 
         shared_records = await self._list_all_visible_shared_agents(db, user_id=user_id)
-        built_in_profile = self_management_built_in_agent_service.get_profile()
+        hub_assistant_profile = hub_assistant_service.get_profile()
         keys = {("shared", str(record.id)) for record in shared_records}
-        if built_in_profile.configured:
-            keys.add(("builtin", built_in_profile.agent_id))
+        if hub_assistant_profile.configured:
+            keys.add(("hub_assistant", hub_assistant_profile.agent_id))
         snapshots = await self._load_availability_snapshots(
             db,
             user_id=user_id,
@@ -545,8 +547,8 @@ class UnifiedAgentCatalogService:
                 reason_code=reason_code,
             )
 
-        if built_in_profile.configured:
-            snapshot = snapshots.get(("builtin", built_in_profile.agent_id))
+        if hub_assistant_profile.configured:
+            snapshot = snapshots.get(("hub_assistant", hub_assistant_profile.agent_id))
             now = utc_now()
             requested += 1
             if (
@@ -557,8 +559,8 @@ class UnifiedAgentCatalogService:
             ):
                 skipped_cooldown += 1
                 _append_item(
-                    agent_id=built_in_profile.agent_id,
-                    agent_source="builtin",
+                    agent_id=hub_assistant_profile.agent_id,
+                    agent_source="hub_assistant",
                     health_status=snapshot.health_status,
                     checked_at=snapshot.last_health_check_at,
                     skipped=True,
@@ -569,18 +571,18 @@ class UnifiedAgentCatalogService:
                 checked += 1
                 health_status = (
                     A2AAgent.HEALTH_HEALTHY
-                    if built_in_profile.configured
+                    if hub_assistant_profile.configured
                     else A2AAgent.HEALTH_UNAVAILABLE
                 )
                 error_message = (
                     None
-                    if built_in_profile.configured
-                    else "Built-in self-management runtime is not configured"
+                    if hub_assistant_profile.configured
+                    else "Built-in Hub Assistant runtime is not configured"
                 )
                 pending_updates.append(
                     (
-                        "builtin",
-                        built_in_profile.agent_id,
+                        "hub_assistant",
+                        hub_assistant_profile.agent_id,
                         build_health_snapshot_update(
                             health_status=health_status,
                             healthy_status=A2AAgent.HEALTH_HEALTHY,
@@ -605,8 +607,8 @@ class UnifiedAgentCatalogService:
                     )
                 )
                 _append_item(
-                    agent_id=built_in_profile.agent_id,
-                    agent_source="builtin",
+                    agent_id=hub_assistant_profile.agent_id,
+                    agent_source="hub_assistant",
                     health_status=health_status,
                     checked_at=now,
                     skipped=False,
