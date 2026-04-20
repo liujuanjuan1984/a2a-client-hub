@@ -33,7 +33,6 @@ from app.core.security import (
 from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
-from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
 from app.features.self_management_shared.actor_context import SelfManagementAction
 from app.features.self_management_shared.capability_catalog import (
@@ -42,6 +41,10 @@ from app.features.self_management_shared.capability_catalog import (
 from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
     SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+)
+from app.features.self_management_shared.dispatch_service import (
+    PermissionReplyContinuationDispatchRequest,
+    self_management_dispatch_service,
 )
 from app.features.self_management_shared.follow_up_service import (
     BuiltInFollowUpWakeRequest,
@@ -210,7 +213,7 @@ class SelfManagementBuiltInAgentReplyOutcome:
     """Immediate reply result plus optional async continuation request."""
 
     result: SelfManagementBuiltInAgentRunResult
-    continuation_request: "_PermissionReplyContinuationRequest" | None = None
+    continuation_request: PermissionReplyContinuationDispatchRequest | None = None
 
 
 @dataclass(frozen=True)
@@ -232,18 +235,6 @@ class _ExecutedBuiltInRun:
     local_session: Any
     local_session_id: str
     local_source: SessionSource
-
-
-@dataclass(frozen=True)
-class _PermissionReplyContinuationRequest:
-    """All state required to continue one accepted permission reply in background."""
-
-    current_user_id: UUID
-    conversation_id: str
-    message: str
-    request_id: str
-    agent_message_id: UUID
-    approved_operation_ids: frozenset[str]
 
 
 @dataclass
@@ -810,34 +801,40 @@ class SelfManagementBuiltInAgentService:
                 agent_message_id=continuation_agent_message_id,
             ),
         )
+        continuation_request = PermissionReplyContinuationDispatchRequest(
+            current_user_id=cast(Any, current_user.id),
+            conversation_id=conversation_id,
+            message=interrupt_message,
+            request_id=request_id,
+            agent_message_id=continuation_agent_message_id,
+            approved_operation_ids=frozenset(approved_operation_ids),
+        )
+        await self_management_dispatch_service.enqueue_permission_reply_continuation(
+            db=db,
+            request=continuation_request,
+        )
         return SelfManagementBuiltInAgentReplyOutcome(
             result=result,
-            continuation_request=_PermissionReplyContinuationRequest(
-                current_user_id=cast(Any, current_user.id),
-                conversation_id=conversation_id,
-                message=interrupt_message,
-                request_id=request_id,
-                agent_message_id=continuation_agent_message_id,
-                approved_operation_ids=frozenset(approved_operation_ids),
-            ),
+            continuation_request=continuation_request,
         )
 
     def schedule_permission_reply_continuation(
         self,
-        request: _PermissionReplyContinuationRequest,
+        request: PermissionReplyContinuationDispatchRequest,
     ) -> None:
-        task = asyncio.create_task(
-            self._run_permission_reply_continuation(request),
-            name=f"self-management-permission-reply:{request.request_id}",
+        del request
+        from app.features.self_management_shared.dispatch_job import (
+            request_self_management_dispatch_run,
         )
-        self._continuation_tasks.add(task)
-        task.add_done_callback(self._continuation_tasks.discard)
+
+        request_self_management_dispatch_run()
 
     async def drain_pending_tasks(self) -> None:
-        tasks = list(self._continuation_tasks)
-        self._continuation_tasks.clear()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        from app.features.self_management_shared.dispatch_job import (
+            dispatch_due_self_management_tasks,
+        )
+
+        await dispatch_due_self_management_tasks()
 
     async def run_durable_follow_up(
         self,
@@ -947,9 +944,12 @@ class SelfManagementBuiltInAgentService:
             )
             raise
 
-    async def _run_permission_reply_continuation(
+    async def run_permission_reply_continuation(
         self,
-        request: _PermissionReplyContinuationRequest,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        request: PermissionReplyContinuationDispatchRequest,
     ) -> None:
         extra = {
             "user_id": str(request.current_user_id),
@@ -958,92 +958,80 @@ class SelfManagementBuiltInAgentService:
             "agent_message_id": str(request.agent_message_id),
         }
         try:
-            async with AsyncSessionLocal() as db:
-                user = await db.get(User, request.current_user_id)
-                if user is None:
-                    logger.warning(
-                        "Built-in self-management continuation skipped because the user no longer exists",
-                        extra=extra,
-                    )
-                    return
-                try:
-                    executed = await self._execute_run(
-                        db=db,
-                        current_user=user,
-                        conversation_id=request.conversation_id,
-                        message=request.message,
-                        allow_write_tools=True,
-                        allowed_write_operation_ids=request.approved_operation_ids,
-                    )
-                    await self._persist_follow_up_agent_message(
-                        db=db,
-                        current_user=user,
-                        conversation_id=request.conversation_id,
-                        answer=executed.result.answer,
-                        agent_message_id=request.agent_message_id,
-                        metadata={
-                            "built_in_agent": True,
-                            "runtime": executed.result.runtime,
-                            "reply_resolution": "replied",
-                            "interrupt_request_id": request.request_id,
-                            "tools": list(executed.result.tool_names),
-                            "write_tools_enabled": executed.result.write_tools_enabled,
-                            "continuation_phase": (
-                                "interrupted"
-                                if executed.result.status
-                                == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
-                                else "completed"
-                            ),
-                        },
-                        status=(
-                            "interrupted"
-                            if executed.result.status
-                            == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
-                            else "done"
-                        ),
-                        finish_reason=(
-                            "interrupt"
-                            if executed.result.status
-                            == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
-                            else "completed"
-                        ),
-                    )
-                    if executed.result.interrupt is not None:
-                        await self._persist_permission_interrupt(
-                            db=db,
-                            current_user=user,
-                            local_session_id=executed.local_session_id,
-                            interrupt=executed.result.interrupt,
-                        )
-                except Exception as exc:
-                    logger.exception(
-                        "Built-in self-management continuation failed",
-                        extra=extra,
-                    )
-                    await self._persist_follow_up_agent_message(
-                        db=db,
-                        current_user=user,
-                        conversation_id=request.conversation_id,
-                        answer=str(exc),
-                        agent_message_id=request.agent_message_id,
-                        metadata={
-                            "built_in_agent": True,
-                            "runtime": "swival",
-                            "reply_resolution": "replied",
-                            "interrupt_request_id": request.request_id,
-                            "tools": [],
-                            "write_tools_enabled": True,
-                            "continuation_phase": "failed",
-                        },
-                        status="error",
-                        finish_reason="failed",
-                    )
-                await commit_safely(db)
-        except Exception:
+            executed = await self._execute_run(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.conversation_id,
+                message=request.message,
+                allow_write_tools=True,
+                allowed_write_operation_ids=request.approved_operation_ids,
+            )
+            await self._persist_follow_up_agent_message(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.conversation_id,
+                answer=executed.result.answer,
+                agent_message_id=request.agent_message_id,
+                metadata={
+                    "built_in_agent": True,
+                    "runtime": executed.result.runtime,
+                    "reply_resolution": "replied",
+                    "interrupt_request_id": request.request_id,
+                    "tools": list(executed.result.tool_names),
+                    "write_tools_enabled": executed.result.write_tools_enabled,
+                    "continuation_phase": (
+                        "interrupted"
+                        if executed.result.status
+                        == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                        else "completed"
+                    ),
+                },
+                status=(
+                    "interrupted"
+                    if executed.result.status
+                    == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                    else "done"
+                ),
+                finish_reason=(
+                    "interrupt"
+                    if executed.result.status
+                    == SelfManagementBuiltInAgentRunStatus.INTERRUPTED
+                    else "completed"
+                ),
+            )
+            if executed.result.interrupt is not None:
+                await self._persist_permission_interrupt(
+                    db=db,
+                    current_user=current_user,
+                    local_session_id=executed.local_session_id,
+                    interrupt=executed.result.interrupt,
+                )
+            await commit_safely(db)
+        except Exception as exc:
             logger.exception(
-                "Built-in self-management continuation crashed before persistence could finish",
+                "Built-in self-management continuation failed",
                 extra=extra,
             )
+            await self._persist_follow_up_agent_message(
+                db=db,
+                current_user=current_user,
+                conversation_id=request.conversation_id,
+                answer=str(exc),
+                agent_message_id=request.agent_message_id,
+                metadata={
+                    "built_in_agent": True,
+                    "runtime": "swival",
+                    "reply_resolution": "replied",
+                    "interrupt_request_id": request.request_id,
+                    "tools": [],
+                    "write_tools_enabled": True,
+                    "continuation_phase": "failed",
+                },
+                status="error",
+                finish_reason="failed",
+            )
+            await commit_safely(db)
+            raise
 
     def _build_follow_up_resume_message(
         self,

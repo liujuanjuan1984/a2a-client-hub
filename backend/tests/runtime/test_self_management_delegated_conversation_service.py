@@ -125,6 +125,7 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
             "status": "accepted",
         }
     ]
+    await async_db_session.commit()
     release_dispatch.set()
     await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
 
@@ -219,6 +220,7 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
             "status": "accepted",
         }
     ]
+    await async_db_session.commit()
     release_dispatch.set()
     await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
     assert captured_conversation_id == returned_conversation_id

@@ -816,6 +816,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
     assert result["ok"] is True
     assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result["result"]["items"][0]["status"] == "accepted"
+    await async_db_session.commit()
     await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
 
     automation_message = await async_db_session.scalar(
@@ -1022,6 +1023,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
     assert result["ok"] is True
     assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result["result"]["items"][0]["status"] == "accepted"
+    await async_db_session.commit()
     await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
 
     automation_message = await async_db_session.scalar(

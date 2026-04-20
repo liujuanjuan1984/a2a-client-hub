@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
@@ -28,6 +27,10 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_START_SESSIONS,
     SELF_SESSIONS_SEND_MESSAGE,
 )
+from app.features.self_management_shared.dispatch_service import (
+    DelegatedInvokeDispatchRequest,
+    self_management_dispatch_service,
+)
 from app.features.self_management_shared.follow_up_service import (
     built_in_follow_up_service,
 )
@@ -50,7 +53,6 @@ class SelfManagementDelegatedConversationService:
 
     def __init__(self) -> None:
         self._session_support = SessionHubSupport()
-        self._dispatch_tasks: set[asyncio.Task[None]] = set()
 
     async def send_messages_to_sessions(
         self,
@@ -67,6 +69,7 @@ class SelfManagementDelegatedConversationService:
 
         items: list[dict[str, Any]] = []
         accepted_conversation_ids: list[str] = []
+        dispatched = False
         operation_id = str(uuid4())
         for conversation_id in self._dedupe_uuids(conversation_ids):
             gateway.authorize(
@@ -84,6 +87,7 @@ class SelfManagementDelegatedConversationService:
             items.append(item)
             if item.get("status") == "accepted":
                 accepted_conversation_ids.append(str(conversation_id))
+                dispatched = True
         if accepted_conversation_ids:
             await self._auto_track_handoff_conversations(
                 db=db,
@@ -91,6 +95,12 @@ class SelfManagementDelegatedConversationService:
                 built_in_conversation_id=gateway.web_agent_conversation_id,
                 conversation_ids=accepted_conversation_ids,
             )
+        if dispatched:
+            from app.features.self_management_shared.dispatch_job import (
+                request_self_management_dispatch_run,
+            )
+
+            request_self_management_dispatch_run()
         return self._serialize_batch_payload(items=items)
 
     async def start_sessions_for_agents(
@@ -108,6 +118,7 @@ class SelfManagementDelegatedConversationService:
 
         items: list[dict[str, Any]] = []
         accepted_conversation_ids: list[str] = []
+        dispatched = False
         operation_id = str(uuid4())
         for agent_id in self._dedupe_uuids(agent_ids):
             gateway.authorize(
@@ -127,6 +138,7 @@ class SelfManagementDelegatedConversationService:
                 conversation_id = item.get("conversation_id")
                 if isinstance(conversation_id, str) and conversation_id.strip():
                     accepted_conversation_ids.append(conversation_id.strip())
+                    dispatched = True
         if accepted_conversation_ids:
             await self._auto_track_handoff_conversations(
                 db=db,
@@ -134,13 +146,20 @@ class SelfManagementDelegatedConversationService:
                 built_in_conversation_id=gateway.web_agent_conversation_id,
                 conversation_ids=accepted_conversation_ids,
             )
+        if dispatched:
+            from app.features.self_management_shared.dispatch_job import (
+                request_self_management_dispatch_run,
+            )
+
+            request_self_management_dispatch_run()
         return self._serialize_batch_payload(items=items)
 
     async def drain_pending_tasks(self) -> None:
-        tasks = list(self._dispatch_tasks)
-        self._dispatch_tasks.clear()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        from app.features.self_management_shared.dispatch_job import (
+            dispatch_due_self_management_tasks,
+        )
+
+        await dispatch_due_self_management_tasks()
 
     async def _send_one_session_message(
         self,
@@ -197,17 +216,19 @@ class SelfManagementDelegatedConversationService:
             target_session_title=cast(str, thread.title),
             delegated_message=message,
         )
-        self._schedule_delegated_invoke(
-            runtime=runtime_info["runtime"],
-            user_id=user_id,
-            agent_id=cast(UUID, runtime_info["agent_uuid"]),
-            agent_source=cast(
-                Literal["personal", "shared"], runtime_info["agent_source"]
+        await self_management_dispatch_service.enqueue_delegated_invoke(
+            db=db,
+            request=DelegatedInvokeDispatchRequest(
+                current_user_id=user_id,
+                agent_id=cast(UUID, runtime_info["agent_uuid"]),
+                agent_source=cast(
+                    Literal["personal", "shared"], runtime_info["agent_source"]
+                ),
+                message=message,
+                conversation_id=str(conversation_id),
+                target_kind="session",
+                target_id=str(conversation_id),
             ),
-            message=message,
-            conversation_id=str(conversation_id),
-            target_kind="session",
-            target_id=str(conversation_id),
         )
         return {
             "target_type": "session",
@@ -267,15 +288,17 @@ class SelfManagementDelegatedConversationService:
             target_session_title=None,
             delegated_message=message,
         )
-        self._schedule_delegated_invoke(
-            runtime=runtime_info["runtime"],
-            user_id=cast(UUID, current_user.id),
-            agent_id=agent_id,
-            agent_source="personal",
-            message=message,
-            conversation_id=local_conversation_id,
-            target_kind="agent",
-            target_id=str(agent_id),
+        await self_management_dispatch_service.enqueue_delegated_invoke(
+            db=db,
+            request=DelegatedInvokeDispatchRequest(
+                current_user_id=cast(UUID, current_user.id),
+                agent_id=agent_id,
+                agent_source="personal",
+                message=message,
+                conversation_id=local_conversation_id,
+                target_kind="agent",
+                target_id=str(agent_id),
+            ),
         )
         return {
             "target_type": "agent",
@@ -425,6 +448,32 @@ class SelfManagementDelegatedConversationService:
             "error_code": None,
         }
 
+    async def _resolve_runtime_for_dispatch(
+        self,
+        *,
+        db: AsyncSession,
+        current_user: User,
+        agent_id: UUID,
+        agent_source: Literal["personal", "shared"],
+    ) -> Any:
+        if agent_source == "shared":
+            return await load_for_external_call(
+                db,
+                lambda session: hub_a2a_runtime_builder.build(
+                    session,
+                    user_id=cast(UUID, current_user.id),
+                    agent_id=agent_id,
+                ),
+            )
+        return await load_for_external_call(
+            db,
+            lambda session: a2a_runtime_builder.build(
+                session,
+                user_id=cast(UUID, current_user.id),
+                agent_id=agent_id,
+            ),
+        )
+
     async def _run_delegated_invoke(
         self,
         *,
@@ -472,79 +521,65 @@ class SelfManagementDelegatedConversationService:
             },
         )
 
-    def _schedule_delegated_invoke(
+    async def run_delegated_dispatch_request(
         self,
         *,
-        runtime: Any,
-        user_id: UUID,
-        agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
-        message: str,
-        conversation_id: str | None,
-        target_kind: Literal["session", "agent"],
-        target_id: str,
-    ) -> None:
-        task = asyncio.create_task(
-            self._run_delegated_invoke_task(
-                runtime=runtime,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                message=message,
-                conversation_id=conversation_id,
-                target_kind=target_kind,
-                target_id=target_id,
-            ),
-            name=f"self-management-delegated-handoff:{target_kind}:{target_id}",
-        )
-        self._dispatch_tasks.add(task)
-        task.add_done_callback(self._dispatch_tasks.discard)
-
-    async def _run_delegated_invoke_task(
-        self,
-        *,
-        runtime: Any,
-        user_id: UUID,
-        agent_id: UUID,
-        agent_source: Literal["personal", "shared"],
-        message: str,
-        conversation_id: str | None,
-        target_kind: Literal["session", "agent"],
-        target_id: str,
+        db: AsyncSession,
+        current_user: User,
+        request: DelegatedInvokeDispatchRequest,
     ) -> None:
         extra = {
-            "user_id": str(user_id),
-            "agent_id": str(agent_id),
-            "agent_source": agent_source,
-            "conversation_id": conversation_id,
+            "user_id": str(request.current_user_id),
+            "agent_id": str(request.agent_id),
+            "agent_source": request.agent_source,
+            "conversation_id": request.conversation_id,
             "delegated_by": _DELEGATED_BY,
-            "delegated_target_kind": target_kind,
-            "delegated_target_id": target_id,
+            "delegated_target_kind": request.target_kind,
+            "delegated_target_id": request.target_id,
         }
         try:
-            result = await self._run_delegated_invoke(
-                runtime=runtime,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                message=message,
-                conversation_id=conversation_id,
-                target_kind=target_kind,
-                target_id=target_id,
+            runtime = await self._resolve_runtime_for_dispatch(
+                db=db,
+                current_user=current_user,
+                agent_id=request.agent_id,
+                agent_source=request.agent_source,
             )
-        except Exception:
+        except (
+            A2ARuntimeNotFoundError,
+            A2ARuntimeValidationError,
+            HubA2ARuntimeNotFoundError,
+            HubA2ARuntimeValidationError,
+            HubA2AUserCredentialRequiredError,
+        ) as exc:
             logger.exception(
-                "Delegated self-management handoff execution failed",
+                "Delegated self-management handoff runtime resolution failed",
                 extra=extra,
             )
-            return
+            raise RuntimeError(str(exc)) from exc
+
+        result = await self._run_delegated_invoke(
+            runtime=runtime,
+            user_id=request.current_user_id,
+            agent_id=request.agent_id,
+            agent_source=request.agent_source,
+            message=request.message,
+            conversation_id=request.conversation_id,
+            target_kind=request.target_kind,
+            target_id=request.target_id,
+        )
         if not bool(result.get("success")):
+            error_code = cast(str | None, result.get("error_code"))
             logger.warning(
                 "Delegated self-management handoff finished with a failed target outcome",
                 extra={
                     **extra,
-                    "error_code": cast(str | None, result.get("error_code")),
+                    "error_code": error_code,
                 },
+            )
+            raise RuntimeError(
+                error_code
+                or cast(str | None, result.get("error"))
+                or "delegated_invoke_failed"
             )
 
     @staticmethod
