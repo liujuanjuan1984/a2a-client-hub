@@ -157,20 +157,6 @@ def upgrade() -> None:
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        op.f("ix_a2a_client_hub_schema_self_management_agent_tasks_built_in_conversation_id"),
-        "self_management_agent_tasks",
-        ["built_in_conversation_id"],
-        unique=False,
-        schema=SCHEMA_NAME,
-    )
-    op.create_index(
-        op.f("ix_a2a_client_hub_schema_self_management_agent_tasks_user_id"),
-        "self_management_agent_tasks",
-        ["user_id"],
-        unique=False,
-        schema=SCHEMA_NAME,
-    )
-    op.create_index(
         "uq_self_management_agent_tasks_follow_up_conversation",
         "self_management_agent_tasks",
         ["user_id", "built_in_conversation_id"],

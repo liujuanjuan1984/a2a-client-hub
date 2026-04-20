@@ -63,11 +63,16 @@ class SelfManagementAgentTask(Base, TimestampMixin, UserOwnedMixin):
     KIND_PERMISSION_REPLY_CONTINUATION: ClassVar[str] = "permission_reply_continuation"
     KIND_DELEGATED_INVOKE: ClassVar[str] = "delegated_invoke"
 
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_NAME}.users.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Data owner (UUID)",
+    )
     built_in_conversation_id = Column(
         UUID(as_uuid=True),
         ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
         comment="Built-in conversation that owns this task.",
     )
     task_kind = Column(
