@@ -18,6 +18,7 @@ Use this index to find the right document instead of repeating the same guidance
 - Authentication and session model: [`authentication.md`](authentication.md)
 - Release automation and version synchronization: [`release-workflow.md`](release-workflow.md)
 - Production security baseline: [`security-baseline.md`](security-baseline.md)
+- Dead-code hygiene workflow and triage boundaries: [`dead-code-hygiene.md`](dead-code-hygiene.md)
 
 ## Contract References
 

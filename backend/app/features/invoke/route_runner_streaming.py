@@ -551,6 +551,23 @@ def build_consume_stream_callbacks(
     request: InvokePersistenceRequest,
     logger: Any = None,
     log_extra: dict[str, Any] | None = None,
+    diagnose_stream_hints_contract_gap_fn: Callable[..., None] = (
+        diagnose_stream_hints_contract_gap
+    ),
+    collect_stream_hints_fn: Callable[..., None] = collect_stream_hints,
+    bind_inflight_task_if_needed_fn: Callable[..., Any] = (
+        bind_inflight_task_if_needed
+    ),
+    persist_stream_block_update_fn: Callable[..., Any] = persist_stream_block_update,
+    persist_interrupt_lifecycle_event_fn: Callable[..., Any] = (
+        persist_interrupt_lifecycle_event
+    ),
+    flush_stream_buffer_fn: Callable[..., Any] = flush_stream_buffer,
+    persist_local_outcome_fn: Callable[..., Any] = persist_local_outcome,
+    build_persisted_finalization_ack_event_fn: Callable[..., dict[str, Any] | None] = (
+        build_persisted_finalization_ack_event
+    ),
+    unregister_inflight_invoke_fn: Callable[..., Any] = unregister_inflight_invoke,
 ) -> tuple[
     Callable[[dict[str, Any]], Any],
     Callable[[StreamOutcome], Any],
@@ -558,20 +575,20 @@ def build_consume_stream_callbacks(
     resolved_log_extra = log_extra if log_extra is not None else {}
 
     async def on_event(event_payload: dict[str, Any]) -> None:
-        diagnose_stream_hints_contract_gap(
+        diagnose_stream_hints_contract_gap_fn(
             state=state,
             event_payload=event_payload,
             logger=logger,
             log_extra=resolved_log_extra,
         )
-        collect_stream_hints(state=state, event_payload=event_payload)
-        await bind_inflight_task_if_needed(state=state, user_id=request.user_id)
-        await persist_stream_block_update(
+        collect_stream_hints_fn(state=state, event_payload=event_payload)
+        await bind_inflight_task_if_needed_fn(state=state, user_id=request.user_id)
+        await persist_stream_block_update_fn(
             state=state,
             event_payload=event_payload,
             request=request,
         )
-        await persist_interrupt_lifecycle_event(
+        await persist_interrupt_lifecycle_event_fn(
             state=state,
             event_payload=event_payload,
             request=request,
@@ -579,18 +596,18 @@ def build_consume_stream_callbacks(
 
     async def on_finalized(outcome: StreamOutcome) -> dict[str, Any] | None:
         try:
-            await flush_stream_buffer(state=state, user_id=request.user_id)
-            await persist_local_outcome(
+            await flush_stream_buffer_fn(state=state, user_id=request.user_id)
+            await persist_local_outcome_fn(
                 state=state,
                 outcome=outcome,
                 request=request,
             )
-            return build_persisted_finalization_ack_event(
+            return build_persisted_finalization_ack_event_fn(
                 state=state,
                 outcome=outcome,
             )
         finally:
-            await unregister_inflight_invoke(state=state, user_id=request.user_id)
+            await unregister_inflight_invoke_fn(state=state, user_id=request.user_id)
 
     return on_event, on_finalized
 

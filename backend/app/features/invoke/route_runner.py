@@ -2,26 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
 
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.error_codes import status_code_for_invoke_error_code
-from app.api.error_handlers import build_error_detail, build_error_response
-from app.api.retry_after import db_busy_retry_after_headers
-from app.db.locking import (
-    RetryableDbLockError,
-    RetryableDbQueryTimeoutError,
-)
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke import guard as invoke_guard
-from app.features.invoke import route_runner_streaming
+from app.features.invoke import (
+    route_runner_routes,
+    route_runner_streaming,
+    route_runner_ws_ticket,
+)
 from app.features.invoke import session_binding as invoke_session_binding
 from app.features.invoke.guard import (
     build_invoke_guard_key,
@@ -37,16 +32,19 @@ from app.features.invoke.recovery import (
     validate_provider_aware_continue_session,
 )
 from app.features.invoke.route_runner_session_control import (
-    build_session_control_error_response,
-    build_session_control_response,
     run_append_session_control,
+    run_preempt_session_control,
 )
 from app.features.invoke.route_runner_state import (
     AgentSource,
     InvokeState,
+    bind_inflight_task_if_needed,
     find_latest_agent_message_id,
+    preempt_previous_invoke_if_requested,
     prepare_state,
+    record_preempt_history_event,
     register_inflight_invoke,
+    unregister_inflight_invoke,
 )
 from app.features.invoke.service import (
     StreamOutcome,
@@ -54,7 +52,6 @@ from app.features.invoke.service import (
 )
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
-    coerce_uuid,
 )
 from app.features.invoke.stream_persistence import (
     ensure_local_message_headers as ensure_local_message_headers_impl,
@@ -174,16 +171,14 @@ async def _record_preempt_history_event(
     user_id: UUID,
     event: dict[str, Any],
 ) -> None:
-    if state.local_session_id is None:
-        return
-    async with AsyncSessionLocal() as db:
-        await session_hub_service.record_preempt_event_by_local_session_id(
-            db,
-            local_session_id=state.local_session_id,
-            user_id=user_id,
-            event=event,
-        )
-        await commit_safely(db)
+    await record_preempt_history_event(
+        state=state,
+        user_id=user_id,
+        event=event,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+    )
 
 
 async def _preempt_previous_invoke_if_requested(
@@ -192,43 +187,14 @@ async def _preempt_previous_invoke_if_requested(
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> None:
-    if state.local_session_id is None:
-        return
-    if not is_interrupt_requested(payload):
-        return
-    target_message_id = await _find_latest_agent_message_id(
-        user_id=user_id,
-        conversation_id=state.local_session_id,
-    )
-    pending_event = {
-        "reason": "invoke_interrupt",
-        "source": "user",
-        "target_message_id": target_message_id,
-        "replacement_user_message_id": state.user_message_id,
-        "replacement_agent_message_id": state.agent_message_id,
-    }
-    report = await session_hub_service.preempt_inflight_invoke_report(
-        user_id=user_id,
-        conversation_id=state.local_session_id,
-        reason="invoke_interrupt",
-        pending_event=pending_event,
-    )
-    if not report.attempted:
-        return
-
-    event = {
-        **pending_event,
-        "status": report.status,
-        "target_task_ids": report.target_task_ids,
-        "failed_error_codes": report.failed_error_codes,
-    }
-    await _record_preempt_history_event(
+    await preempt_previous_invoke_if_requested(
         state=state,
+        payload=payload,
         user_id=user_id,
-        event=event,
+        find_latest_agent_message_id_fn=_find_latest_agent_message_id,
+        is_interrupt_requested_fn=_is_interrupt_requested,
+        record_preempt_history_event_fn=_record_preempt_history_event,
     )
-    if report.status == "failed":
-        raise ValueError("invoke_interrupt_failed")
 
 
 async def _bind_inflight_task_if_needed(
@@ -236,30 +202,11 @@ async def _bind_inflight_task_if_needed(
     state: InvokeState,
     user_id: UUID,
 ) -> None:
-    if state.local_session_id is None or state.inflight_token is None:
-        return
-    raw_task_id = (
-        state.stream_identity.get("upstream_task_id")
-        if isinstance(state.stream_identity, dict)
-        else None
-    )
-    normalized_task_id = raw_task_id.strip() if isinstance(raw_task_id, str) else None
-    if not normalized_task_id or normalized_task_id == state.upstream_task_id:
-        return
-    bind_report = await session_hub_service.bind_inflight_task_id_report(
+    await bind_inflight_task_if_needed(
+        state=state,
         user_id=user_id,
-        conversation_id=state.local_session_id,
-        token=state.inflight_token,
-        task_id=normalized_task_id,
+        record_preempt_history_event_fn=_record_preempt_history_event,
     )
-    if bind_report.bound:
-        state.upstream_task_id = normalized_task_id
-    if bind_report.preempt_event is not None:
-        await _record_preempt_history_event(
-            state=state,
-            user_id=user_id,
-            event=bind_report.preempt_event,
-        )
 
 
 async def _unregister_inflight_invoke(
@@ -267,14 +214,10 @@ async def _unregister_inflight_invoke(
     state: InvokeState,
     user_id: UUID,
 ) -> None:
-    if state.local_session_id is None or state.inflight_token is None:
-        return
-    await session_hub_service.unregister_inflight_invoke(
+    await unregister_inflight_invoke(
+        state=state,
         user_id=user_id,
-        conversation_id=state.local_session_id,
-        token=state.inflight_token,
     )
-    state.inflight_token = None
 
 
 async def _resolve_session_binding_outbound_mode(
@@ -484,46 +427,23 @@ def _build_consume_stream_callbacks(
     Callable[[dict[str, Any]], Any],
     Callable[[StreamOutcome], Any],
 ]:
-    resolved_log_extra = log_extra if log_extra is not None else {}
-
-    async def on_event(event_payload: dict[str, Any]) -> None:
-        route_runner_streaming.diagnose_stream_hints_contract_gap(
-            state=state,
-            event_payload=event_payload,
-            logger=logger,
-            log_extra=resolved_log_extra,
-        )
-        route_runner_streaming.collect_stream_hints(
-            state=state, event_payload=event_payload
-        )
-        await _bind_inflight_task_if_needed(state=state, user_id=request.user_id)
-        await _persist_stream_block_update(
-            state=state,
-            event_payload=event_payload,
-            request=request,
-        )
-        await _persist_interrupt_lifecycle_event(
-            state=state,
-            event_payload=event_payload,
-            request=request,
-        )
-
-    async def on_finalized(outcome: StreamOutcome) -> dict[str, Any] | None:
-        try:
-            await _flush_stream_buffer(state=state, user_id=request.user_id)
-            await _persist_local_outcome(
-                state=state,
-                outcome=outcome,
-                request=request,
-            )
-            return route_runner_streaming.build_persisted_finalization_ack_event(
-                state=state,
-                outcome=outcome,
-            )
-        finally:
-            await _unregister_inflight_invoke(state=state, user_id=request.user_id)
-
-    return on_event, on_finalized
+    return route_runner_streaming.build_consume_stream_callbacks(
+        state=state,
+        request=request,
+        logger=logger,
+        log_extra=log_extra,
+        diagnose_stream_hints_contract_gap_fn=_diagnose_stream_hints_contract_gap,
+        collect_stream_hints_fn=route_runner_streaming.collect_stream_hints,
+        bind_inflight_task_if_needed_fn=_bind_inflight_task_if_needed,
+        persist_stream_block_update_fn=_persist_stream_block_update,
+        persist_interrupt_lifecycle_event_fn=_persist_interrupt_lifecycle_event,
+        flush_stream_buffer_fn=_flush_stream_buffer,
+        persist_local_outcome_fn=_persist_local_outcome,
+        build_persisted_finalization_ack_event_fn=(
+            route_runner_streaming.build_persisted_finalization_ack_event
+        ),
+        unregister_inflight_invoke_fn=_unregister_inflight_invoke,
+    )
 
 
 async def _run_preempt_session_control(
@@ -532,98 +452,13 @@ async def _run_preempt_session_control(
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> A2AAgentInvokeResponse:
-    local_session_id = coerce_uuid(payload.conversation_id)
-    if local_session_id is None:
-        return A2AAgentInvokeResponse(
-            success=True,
-            content=None,
-            error=None,
-            error_code=None,
-            source="hub_session_control",
-            jsonrpc_code=None,
-            missing_params=None,
-            upstream_error=None,
-            agent_name=getattr(runtime.resolved, "name", None),
-            agent_url=getattr(runtime.resolved, "url", None),
-            sessionControl=build_session_control_response(
-                intent="preempt",
-                status="no_inflight",
-            ),
-        )
-
-    target_message_id = await _find_latest_agent_message_id(
+    return await run_preempt_session_control(
+        runtime=runtime,
+        payload=payload,
         user_id=user_id,
-        conversation_id=local_session_id,
-    )
-    pending_event = {
-        "reason": "invoke_interrupt",
-        "source": "user",
-        "target_message_id": target_message_id,
-    }
-    report = await session_hub_service.preempt_inflight_invoke_report(
-        user_id=user_id,
-        conversation_id=local_session_id,
-        reason="invoke_interrupt",
-        pending_event=pending_event,
-    )
-    if not report.attempted:
-        return A2AAgentInvokeResponse(
-            success=True,
-            content=None,
-            error=None,
-            error_code=None,
-            source="hub_session_control",
-            jsonrpc_code=None,
-            missing_params=None,
-            upstream_error=None,
-            agent_name=getattr(runtime.resolved, "name", None),
-            agent_url=getattr(runtime.resolved, "url", None),
-            sessionControl=build_session_control_response(
-                intent="preempt",
-                status="no_inflight",
-            ),
-        )
-
-    event = {
-        **pending_event,
-        "status": report.status,
-        "target_task_ids": report.target_task_ids,
-        "failed_error_codes": report.failed_error_codes,
-    }
-    async with AsyncSessionLocal() as db:
-        await session_hub_service.record_preempt_event_by_local_session_id(
-            db,
-            local_session_id=local_session_id,
-            user_id=user_id,
-            event=event,
-        )
-        await commit_safely(db)
-    if report.status == "failed":
-        return build_session_control_error_response(
-            intent="preempt",
-            message="Interrupt failed.",
-            error_code="invoke_interrupt_failed",
-            runtime=runtime,
-        )
-
-    resolved_status: Literal["accepted", "completed"] = (
-        "completed" if report.status == "completed" else "accepted"
-    )
-    return A2AAgentInvokeResponse(
-        success=True,
-        content=None,
-        error=None,
-        error_code=None,
-        source="hub_session_control",
-        jsonrpc_code=None,
-        missing_params=None,
-        upstream_error=None,
-        agent_name=getattr(runtime.resolved, "name", None),
-        agent_url=getattr(runtime.resolved, "url", None),
-        sessionControl=build_session_control_response(
-            intent="preempt",
-            status=resolved_status,
-        ),
+        find_latest_agent_message_id_fn=_find_latest_agent_message_id,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
     )
 
 
@@ -1174,124 +1009,31 @@ async def run_ws_invoke_route(
     invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
     unexpected_log_message: str,
 ) -> None:
-    selected_subprotocol = getattr(websocket.state, "selected_subprotocol", None)
-    if selected_subprotocol:
-        await websocket.accept(subprotocol=selected_subprotocol)
-    else:
-        await websocket.accept()
-
-    try:
-        data = await websocket.receive_json()
-        try:
-            payload = A2AAgentInvokeRequest.model_validate(data)
-        except ValidationError:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Invalid request payload",
-                error_code="invalid_request",
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-            )
-            return
-
-        if not payload.query.strip():
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Query must be a non-empty string",
-                error_code="invalid_query",
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-            )
-            return
-
-        try:
-            runtime = await runtime_builder()
-        except runtime_not_found_errors as exc:
-            message = (
-                runtime_not_found_message(exc)
-                if callable(runtime_not_found_message)
-                else runtime_not_found_message
-            )
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=message,
-                error_code=runtime_not_found_code,
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            )
-            return
-        except runtime_validation_errors as exc:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=str(exc),
-                error_code="runtime_invalid",
-            )
-            await await_cancel_safe(websocket.close(code=status.WS_1011_INTERNAL_ERROR))
-            return
-        await _close_open_transaction(db)
-
-        logger.info(
-            invoke_log_message,
-            extra=invoke_log_extra_builder(payload, runtime),
-        )
-        guard_key = build_invoke_guard_key(
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            payload=payload,
-        )
-
-        try:
-            async with guard_inflight_invoke(guard_key):
-                await run_ws_invoke_with_session_recovery(
-                    websocket=websocket,
-                    gateway=gateway,
-                    runtime=runtime,
-                    user_id=user_id,
-                    agent_id=agent_id,
-                    agent_source=agent_source,
-                    payload=payload,
-                    validate_message=validate_message,
-                    logger=logger,
-                    log_extra={
-                        "user_id": str(user_id),
-                        "agent_id": str(agent_id),
-                    },
-                    max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
-                )
-        except ValueError as exc:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=str(exc),
-                error_code=invoke_session_binding.ws_error_code_for_invoke_session_error(
-                    str(exc)
-                ),
-            )
-            await await_cancel_safe(
-                websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            )
-            return
-
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected", extra={"user_id": str(user_id)})
-    except Exception:
-        logger.error(unexpected_log_message, exc_info=True)
-        try:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Upstream streaming failed",
-                error_code="upstream_stream_error",
-            )
-        except Exception:
-            pass
-    finally:
-        try:
-            await await_cancel_safe_suppressed(websocket.close())
-        except Exception:
-            pass
+    await route_runner_routes.run_ws_invoke_route(
+        websocket=websocket,
+        db=db,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        gateway=gateway,
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=runtime_not_found_errors,
+        runtime_not_found_message=runtime_not_found_message,
+        runtime_not_found_code=runtime_not_found_code,
+        runtime_validation_errors=runtime_validation_errors,
+        validate_message=validate_message,
+        logger=logger,
+        invoke_log_message=invoke_log_message,
+        invoke_log_extra_builder=invoke_log_extra_builder,
+        unexpected_log_message=unexpected_log_message,
+        close_open_transaction_fn=_close_open_transaction,
+        build_invoke_guard_key_fn=build_invoke_guard_key,
+        run_ws_invoke_with_session_recovery_fn=run_ws_invoke_with_session_recovery,
+        await_cancel_safe_fn=await_cancel_safe,
+        await_cancel_safe_suppressed_fn=await_cancel_safe_suppressed,
+        guard_inflight_invoke_fn=guard_inflight_invoke,
+        session_not_found_retry_limit=_SESSION_NOT_FOUND_RETRY_LIMIT,
+    )
 
 
 async def run_http_invoke_route(
@@ -1316,149 +1058,32 @@ async def run_http_invoke_route(
     invoke_log_message: str,
     invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
 ) -> A2AAgentInvokeResponse | StreamingResponse | JSONResponse:
-    if not payload.query.strip():
-        raise HTTPException(status_code=400, detail="Query must be a non-empty string")
-
-    try:
-        runtime = await runtime_builder()
-    except runtime_not_found_errors as exc:
-        raise HTTPException(
-            status_code=runtime_not_found_status_code,
-            detail=str(exc),
-        ) from exc
-    except runtime_validation_errors as exc:
-        status_code = runtime_validation_status_code
-        if runtime_validation_status_overrides:
-            for error_type, override in runtime_validation_status_overrides:
-                if isinstance(exc, error_type):
-                    status_code = override
-                    break
-        raise HTTPException(
-            status_code=status_code,
-            detail=str(exc),
-        ) from exc
-    await _close_open_transaction(db)
-
-    logger.info(
-        invoke_log_message,
-        extra=invoke_log_extra_builder(payload, runtime),
-    )
-    guard_key = build_invoke_guard_key(
+    return await route_runner_routes.run_http_invoke_route(
+        db=db,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
         payload=payload,
+        stream=stream,
+        gateway=gateway,
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=runtime_not_found_errors,
+        runtime_not_found_status_code=runtime_not_found_status_code,
+        runtime_validation_errors=runtime_validation_errors,
+        runtime_validation_status_code=runtime_validation_status_code,
+        runtime_validation_status_overrides=runtime_validation_status_overrides,
+        validate_message=validate_message,
+        logger=logger,
+        invoke_log_message=invoke_log_message,
+        invoke_log_extra_builder=invoke_log_extra_builder,
+        close_open_transaction_fn=_close_open_transaction,
+        build_invoke_guard_key_fn=build_invoke_guard_key,
+        try_acquire_invoke_guard_fn=_try_acquire_invoke_guard,
+        release_invoke_guard_fn=_release_invoke_guard,
+        run_http_invoke_with_session_recovery_fn=run_http_invoke_with_session_recovery,
+        guard_inflight_invoke_fn=guard_inflight_invoke,
+        session_not_found_retry_limit=_SESSION_NOT_FOUND_RETRY_LIMIT,
     )
-
-    if stream and guard_key:
-        acquired = await _try_acquire_invoke_guard(guard_key)
-        if not acquired:
-            raise HTTPException(
-                status_code=invoke_session_binding.status_code_for_invoke_session_error(
-                    "invoke_inflight"
-                ),
-                detail="invoke_inflight",
-            )
-        try:
-            response = await run_http_invoke_with_session_recovery(
-                gateway=gateway,
-                runtime=runtime,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                payload=payload,
-                stream=stream,
-                validate_message=validate_message,
-                logger=logger,
-                log_extra={
-                    "user_id": str(user_id),
-                    "agent_id": str(agent_id),
-                },
-                max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
-            )
-        except ValueError as exc:
-            await _release_invoke_guard(guard_key)
-            raise HTTPException(
-                status_code=invoke_session_binding.status_code_for_invoke_session_error(
-                    str(exc)
-                ),
-                detail=str(exc),
-            ) from exc
-        except Exception:
-            await _release_invoke_guard(guard_key)
-            raise
-
-        if isinstance(response, StreamingResponse):
-            original_iterator = response.body_iterator
-
-            async def guarded_iterator() -> AsyncIterator[Any]:
-                try:
-                    async for chunk in original_iterator:
-                        yield chunk
-                finally:
-                    await _release_invoke_guard(guard_key)
-
-            response.body_iterator = guarded_iterator()
-            return response
-
-        if not response.success:
-            await _release_invoke_guard(guard_key)
-            return build_error_response(
-                status_code=status_code_for_invoke_error_code(response.error_code),
-                detail=build_error_detail(
-                    message=response.error or "Invoke failed",
-                    error_code=response.error_code,
-                    source=response.source,
-                    jsonrpc_code=response.jsonrpc_code,
-                    missing_params=response.missing_params,
-                    upstream_error=response.upstream_error,
-                ),
-            )
-        await _release_invoke_guard(guard_key)
-        return response
-
-    try:
-        async with guard_inflight_invoke(guard_key):
-            response = await run_http_invoke_with_session_recovery(
-                gateway=gateway,
-                runtime=runtime,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                payload=payload,
-                stream=stream,
-                validate_message=validate_message,
-                logger=logger,
-                log_extra={
-                    "user_id": str(user_id),
-                    "agent_id": str(agent_id),
-                },
-                max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
-            )
-
-            if isinstance(response, StreamingResponse):
-                return response
-
-            if response.success:
-                return response
-            return build_error_response(
-                status_code=status_code_for_invoke_error_code(response.error_code),
-                detail=build_error_detail(
-                    message=response.error or "Invoke failed",
-                    error_code=response.error_code,
-                    source=response.source,
-                    jsonrpc_code=response.jsonrpc_code,
-                    missing_params=response.missing_params,
-                    upstream_error=response.upstream_error,
-                ),
-            )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=invoke_session_binding.status_code_for_invoke_session_error(
-                str(exc)
-            ),
-            detail=str(exc),
-        ) from exc
 
 
 async def run_issue_ws_ticket_route(
@@ -1472,34 +1097,14 @@ async def run_issue_ws_ticket_route(
     not_found_status_code: int,
     not_found_detail: str | Callable[[Exception], str],
 ) -> WsTicketResponse:
-    try:
-        await ensure_access()
-    except not_found_errors as exc:
-        detail = (
-            not_found_detail(exc) if callable(not_found_detail) else not_found_detail
-        )
-        raise HTTPException(status_code=not_found_status_code, detail=detail) from exc
-
-    try:
-        issued = await ws_ticket_service.issue_ticket(
-            db,
-            user_id=user_id,
-            scope_type=scope_type,
-            scope_id=scope_id,
-        )
-    except RetryableDbLockError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    except RetryableDbQueryTimeoutError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-            headers=db_busy_retry_after_headers(),
-        ) from exc
-    return WsTicketResponse(
-        token=issued.token,
-        expires_at=issued.expires_at,
-        expires_in=issued.expires_in,
+    return await route_runner_ws_ticket.run_issue_ws_ticket_route(
+        db=db,
+        user_id=user_id,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        ensure_access=ensure_access,
+        not_found_errors=not_found_errors,
+        not_found_status_code=not_found_status_code,
+        not_found_detail=not_found_detail,
+        issue_ticket_fn=ws_ticket_service.issue_ticket,
     )

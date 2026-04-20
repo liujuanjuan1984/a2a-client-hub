@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, cast
+from typing import Any, Awaitable, Callable, Literal, cast
 from uuid import UUID, uuid4
 
 from app.db.session import AsyncSessionLocal
@@ -180,6 +180,11 @@ async def run_preempt_session_control(
     runtime: Any,
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
+    find_latest_agent_message_id_fn: Callable[..., Awaitable[str | None]] = (
+        find_latest_agent_message_id
+    ),
+    session_factory: Callable[[], Any] = AsyncSessionLocal,
+    commit_fn: Callable[[Any], Awaitable[None]] = commit_safely,
 ) -> A2AAgentInvokeResponse:
     local_session_id = coerce_uuid(payload.conversation_id)
     if local_session_id is None:
@@ -200,7 +205,7 @@ async def run_preempt_session_control(
             ),
         )
 
-    target_message_id = await find_latest_agent_message_id(
+    target_message_id = await find_latest_agent_message_id_fn(
         user_id=user_id,
         conversation_id=local_session_id,
     )
@@ -239,14 +244,14 @@ async def run_preempt_session_control(
         "target_task_ids": report.target_task_ids,
         "failed_error_codes": report.failed_error_codes,
     }
-    async with AsyncSessionLocal() as db:
+    async with session_factory() as db:
         await session_hub_service.record_preempt_event_by_local_session_id(
             db,
             local_session_id=local_session_id,
             user_id=user_id,
             event=event,
         )
-        await commit_safely(db)
+        await commit_fn(db)
     if report.status == "failed":
         return build_session_control_error_response(
             intent="preempt",

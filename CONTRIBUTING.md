@@ -59,6 +59,28 @@ Notes:
 - If your change affects both backend and frontend, run backend checks first, then frontend checks.
 - Use full frontend regressions when a human asks for them, when a PR is moving out of Draft, or when scoped checks are insufficient for cross-module changes.
 
+## Dead Code Hygiene
+
+Use the repository-level wrapper when you want a focused dead-code hygiene pass:
+
+```bash
+# maintained high-confidence backend + frontend checks
+bash scripts/check-dead-code.sh
+
+# maintained high-confidence backend-only or frontend-only checks
+bash scripts/check-dead-code.sh backend
+bash scripts/check-dead-code.sh frontend
+
+# backend exploratory scan for manual triage only
+bash scripts/check-dead-code.sh exploratory-backend
+```
+
+Notes:
+
+- Treat the default wrapper modes as the maintained high-confidence path.
+- Treat `exploratory-backend` as manual triage input only, not direct delete guidance.
+- See [docs/dead-code-hygiene.md](docs/dead-code-hygiene.md) for the maintained guidance and false-positive boundaries.
+
 ## Pull Request Guidelines
 
 - Use a clear PR title and summary of behavior changes.
