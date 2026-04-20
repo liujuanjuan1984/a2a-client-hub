@@ -22,22 +22,6 @@ depends_on = None
 SCHEMA_NAME = os.getenv("SCHEMA_NAME", "a2a_client_hub_schema")
 
 
-def _get_inspector() -> sa.Inspector:
-    return sa.inspect(op.get_bind())
-
-
-def _drop_indexes_by_columns(table_name: str, *column_names: str) -> None:
-    target_columns = tuple(column_names)
-    for index in _get_inspector().get_indexes(table_name, schema=SCHEMA_NAME):
-        if tuple(index.get("column_names") or ()) != target_columns:
-            continue
-        op.drop_index(
-            index["name"],
-            table_name=table_name,
-            schema=SCHEMA_NAME,
-        )
-
-
 def upgrade() -> None:
     op.create_table(
         "built_in_follow_up_tasks",
@@ -140,14 +124,14 @@ def upgrade() -> None:
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        "ix_built_in_follow_up_tasks_conversation",
+        op.f("ix_a2a_client_hub_schema_built_in_follow_up_tasks_built_in_conversation_id"),
         "built_in_follow_up_tasks",
         ["built_in_conversation_id"],
         unique=False,
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        "ix_built_in_follow_up_tasks_user_id",
+        op.f("ix_a2a_client_hub_schema_built_in_follow_up_tasks_user_id"),
         "built_in_follow_up_tasks",
         ["user_id"],
         unique=False,
@@ -156,8 +140,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    _drop_indexes_by_columns("built_in_follow_up_tasks", "user_id")
-    _drop_indexes_by_columns("built_in_follow_up_tasks", "built_in_conversation_id")
+    op.drop_index(
+        op.f("ix_a2a_client_hub_schema_built_in_follow_up_tasks_user_id"),
+        table_name="built_in_follow_up_tasks",
+        schema=SCHEMA_NAME,
+    )
+    op.drop_index(
+        op.f("ix_a2a_client_hub_schema_built_in_follow_up_tasks_built_in_conversation_id"),
+        table_name="built_in_follow_up_tasks",
+        schema=SCHEMA_NAME,
+    )
     op.drop_index(
         "ix_built_in_follow_up_tasks_conversation_status",
         table_name="built_in_follow_up_tasks",

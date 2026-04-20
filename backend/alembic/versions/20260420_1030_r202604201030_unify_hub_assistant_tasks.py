@@ -513,14 +513,14 @@ def downgrade() -> None:
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        "ix_built_in_follow_up_tasks_conversation",
+        op.f("ix_a2a_client_hub_schema_built_in_follow_up_tasks_built_in_conversation_id"),
         "built_in_follow_up_tasks",
         ["built_in_conversation_id"],
         unique=False,
         schema=SCHEMA_NAME,
     )
     op.create_index(
-        "ix_built_in_follow_up_tasks_user_id",
+        op.f("ix_a2a_client_hub_schema_built_in_follow_up_tasks_user_id"),
         "built_in_follow_up_tasks",
         ["user_id"],
         unique=False,
