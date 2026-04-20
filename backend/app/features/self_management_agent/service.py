@@ -42,13 +42,6 @@ from app.features.self_management_shared.constants import (
     SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
     SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
 )
-from app.features.self_management_shared.dispatch_service import (
-    PermissionReplyContinuationDispatchRequest,
-    self_management_dispatch_service,
-)
-from app.features.self_management_shared.follow_up_service import (
-    BuiltInFollowUpWakeRequest,
-)
 from app.features.self_management_shared.self_management_mcp import (
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
@@ -56,6 +49,11 @@ from app.features.self_management_shared.self_management_mcp import (
 )
 from app.features.self_management_shared.self_management_tool_contract import (
     SelfManagementToolDefinition,
+)
+from app.features.self_management_shared.task_service import (
+    PermissionReplyContinuationTaskRequest,
+    SelfManagementFollowUpTaskRequest,
+    self_management_agent_task_service,
 )
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementConfirmationPolicy,
@@ -792,11 +790,11 @@ class SelfManagementBuiltInAgentService:
                 agent_message_id=continuation_agent_message_id,
             ),
         )
-        await self_management_dispatch_service.enqueue_permission_reply_continuation(
+        await self_management_agent_task_service.enqueue_permission_reply_continuation(
             db=db,
-            request=PermissionReplyContinuationDispatchRequest(
+            request=PermissionReplyContinuationTaskRequest(
                 current_user_id=cast(Any, current_user.id),
-                conversation_id=conversation_id,
+                built_in_conversation_id=conversation_id,
                 message=interrupt_message,
                 request_id=request_id,
                 agent_message_id=continuation_agent_message_id,
@@ -810,7 +808,7 @@ class SelfManagementBuiltInAgentService:
         *,
         db: AsyncSession,
         current_user: User,
-        request: BuiltInFollowUpWakeRequest,
+        request: SelfManagementFollowUpTaskRequest,
         agent_message_id: UUID | None = None,
     ) -> SelfManagementBuiltInAgentRunResult:
         follow_up_agent_message_id = agent_message_id or uuid4()
@@ -918,11 +916,11 @@ class SelfManagementBuiltInAgentService:
         *,
         db: AsyncSession,
         current_user: User,
-        request: PermissionReplyContinuationDispatchRequest,
+        request: PermissionReplyContinuationTaskRequest,
     ) -> None:
         extra = {
             "user_id": str(request.current_user_id),
-            "conversation_id": request.conversation_id,
+            "conversation_id": request.built_in_conversation_id,
             "request_id": request.request_id,
             "agent_message_id": str(request.agent_message_id),
         }
@@ -930,7 +928,7 @@ class SelfManagementBuiltInAgentService:
             executed = await self._execute_run(
                 db=db,
                 current_user=current_user,
-                conversation_id=request.conversation_id,
+                conversation_id=request.built_in_conversation_id,
                 message=request.message,
                 allow_write_tools=True,
                 allowed_write_operation_ids=request.approved_operation_ids,
@@ -938,7 +936,7 @@ class SelfManagementBuiltInAgentService:
             await self._persist_follow_up_agent_message(
                 db=db,
                 current_user=current_user,
-                conversation_id=request.conversation_id,
+                conversation_id=request.built_in_conversation_id,
                 answer=executed.result.answer,
                 agent_message_id=request.agent_message_id,
                 metadata={
@@ -984,7 +982,7 @@ class SelfManagementBuiltInAgentService:
             await self._persist_follow_up_agent_message(
                 db=db,
                 current_user=current_user,
-                conversation_id=request.conversation_id,
+                conversation_id=request.built_in_conversation_id,
                 answer=str(exc),
                 agent_message_id=request.agent_message_id,
                 metadata={
@@ -1004,7 +1002,7 @@ class SelfManagementBuiltInAgentService:
 
     def _build_follow_up_resume_message(
         self,
-        request: BuiltInFollowUpWakeRequest,
+        request: SelfManagementFollowUpTaskRequest,
     ) -> str:
         return _FOLLOW_UP_RESUME_MESSAGE_TEMPLATE.format(
             tracked_conversation_ids=", ".join(request.tracked_conversation_ids)

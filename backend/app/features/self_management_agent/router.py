@@ -273,9 +273,9 @@ async def reply_self_management_built_in_agent_permission_interrupt(
 
     await commit_safely(db)
     if result.continuation is not None:
-        from app.features.self_management_shared.dispatch_job import (
-            request_self_management_dispatch_run,
+        from app.features.self_management_shared.task_job import (
+            request_self_management_agent_task_run,
         )
 
-        request_self_management_dispatch_run()
+        request_self_management_agent_task_run()
     return _to_run_response(result)

@@ -49,8 +49,8 @@ from app.features.self_management_shared.capability_catalog import (
 from app.features.self_management_shared.delegated_conversation_service import (
     self_management_delegated_conversation_service,
 )
-from app.features.self_management_shared.follow_up_service import (
-    built_in_follow_up_service,
+from app.features.self_management_shared.task_service import (
+    self_management_agent_task_service,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions.common import SessionSource
@@ -341,14 +341,14 @@ class SelfManagementToolkit:
         return {"session": self._serialize_session(session_item)}
 
     async def _get_follow_up_state(self, _args: dict[str, Any]) -> dict[str, Any]:
-        return await built_in_follow_up_service.get_follow_up_state(
+        return await self_management_agent_task_service.get_follow_up_state(
             db=self.db,
             gateway=self.gateway,
             current_user=self.current_user,
         )
 
     async def _set_follow_up_sessions(self, args: dict[str, Any]) -> dict[str, Any]:
-        return await built_in_follow_up_service.set_tracked_sessions(
+        return await self_management_agent_task_service.set_tracked_sessions(
             db=self.db,
             gateway=self.gateway,
             current_user=self.current_user,

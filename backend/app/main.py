@@ -29,18 +29,15 @@ from app.features.schedules.job import ensure_a2a_schedule_job
 from app.features.schedules.service import (
     ensure_a2a_schedule_execution_cleanup_job,
 )
-from app.features.self_management_agent.follow_up_job import (
-    ensure_self_management_follow_up_job,
-)
-from app.features.self_management_shared.dispatch_job import (
-    ensure_self_management_dispatch_job,
-)
 from app.features.self_management_shared.self_management_mcp import (
     SELF_MANAGEMENT_MCP_READONLY_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_READONLY_OPERATION_IDS,
     SELF_MANAGEMENT_MCP_WRITE_MOUNT_PATH,
     SELF_MANAGEMENT_MCP_WRITE_OPERATION_IDS,
     build_self_management_mcp_http_app,
+)
+from app.features.self_management_shared.task_job import (
+    ensure_self_management_agent_task_job,
 )
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.integrations.a2a_extensions import (
@@ -108,8 +105,7 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
         ensure_a2a_schedule_job()
         ensure_auth_cleanup_job()
         ensure_a2a_schedule_execution_cleanup_job()
-        ensure_self_management_follow_up_job()
-        ensure_self_management_dispatch_job()
+        ensure_self_management_agent_task_job()
         ensure_ws_ticket_cleanup_job()
 
         async def _init_a2a_service() -> None:

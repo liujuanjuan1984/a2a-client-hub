@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+from typing import cast
 from uuid import UUID
 
 import pytest
 
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
+from app.db.models.self_management_agent_task import SelfManagementAgentTask
 from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
-from app.features.self_management_shared.follow_up_service import (
-    built_in_follow_up_service,
+from app.features.self_management_shared.task_service import (
+    SelfManagementFollowUpTaskCompletion,
+    SelfManagementFollowUpTaskRequest,
+    self_management_agent_task_service,
 )
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
@@ -100,7 +104,7 @@ async def _append_agent_text_block(
     return message
 
 
-async def test_follow_up_service_sets_and_gets_tracked_sessions(
+async def test_self_management_agent_task_service_sets_and_gets_tracked_sessions(
     async_db_session,
 ) -> None:
     user = await create_user(async_db_session)
@@ -122,13 +126,13 @@ async def test_follow_up_service_sets_and_gets_tracked_sessions(
     )
     gateway = _build_web_agent_gateway(user, str(built_in_thread.id))
 
-    set_payload = await built_in_follow_up_service.set_tracked_sessions(
+    set_payload = await self_management_agent_task_service.set_tracked_sessions(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
         conversation_ids=[str(target_thread.id)],
     )
-    get_payload = await built_in_follow_up_service.get_follow_up_state(
+    get_payload = await self_management_agent_task_service.get_follow_up_state(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
@@ -154,7 +158,7 @@ async def test_follow_up_service_sets_and_gets_tracked_sessions(
     ]
 
 
-async def test_follow_up_service_claims_new_results_without_advancing_anchor(
+async def test_self_management_agent_task_service_claims_new_results_without_advancing_anchor(
     async_db_session,
 ) -> None:
     user = await create_user(async_db_session)
@@ -175,7 +179,7 @@ async def test_follow_up_service_claims_new_results_without_advancing_anchor(
         content="Initial target result",
     )
     gateway = _build_web_agent_gateway(user, str(built_in_thread.id))
-    await built_in_follow_up_service.set_tracked_sessions(
+    await self_management_agent_task_service.set_tracked_sessions(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
@@ -189,13 +193,14 @@ async def test_follow_up_service_claims_new_results_without_advancing_anchor(
         content="Updated target result",
     )
 
-    requests = await built_in_follow_up_service.claim_due_follow_up_tasks(
+    work_items = await self_management_agent_task_service.claim_due_tasks(
         db=async_db_session,
         batch_size=10,
     )
 
-    assert len(requests) == 1
-    request = requests[0]
+    assert len(work_items) == 1
+    assert work_items[0].task_kind == SelfManagementAgentTask.KIND_FOLLOW_UP_WATCH
+    request = cast(SelfManagementFollowUpTaskRequest, work_items[0].request)
     assert request.built_in_conversation_id == str(built_in_thread.id)
     assert request.tracked_conversation_ids == (str(target_thread.id),)
     assert request.changed_conversation_ids == (str(target_thread.id),)
@@ -206,7 +211,7 @@ async def test_follow_up_service_claims_new_results_without_advancing_anchor(
         str(target_thread.id): _build_anchor(second_agent_message)
     }
 
-    running_payload = await built_in_follow_up_service.get_follow_up_state(
+    running_payload = await self_management_agent_task_service.get_follow_up_state(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
@@ -221,12 +226,14 @@ async def test_follow_up_service_claims_new_results_without_advancing_anchor(
         }
     ]
 
-    await built_in_follow_up_service.complete_follow_up_run(
+    await self_management_agent_task_service.complete_task(
         db=async_db_session,
-        task_id=request.task_id,
-        next_target_agent_message_anchors=request.observed_target_agent_message_anchors,
+        task_id=cast(UUID, work_items[0].task_id),
+        follow_up_completion=SelfManagementFollowUpTaskCompletion(
+            next_target_agent_message_anchors=request.observed_target_agent_message_anchors
+        ),
     )
-    completed_payload = await built_in_follow_up_service.get_follow_up_state(
+    completed_payload = await self_management_agent_task_service.get_follow_up_state(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
@@ -243,7 +250,7 @@ async def test_follow_up_service_claims_new_results_without_advancing_anchor(
     ]
 
 
-async def test_follow_up_service_claims_same_message_when_status_or_updated_at_changes(
+async def test_self_management_agent_task_service_claims_same_message_when_status_or_updated_at_changes(
     async_db_session,
 ) -> None:
     user = await create_user(async_db_session)
@@ -266,7 +273,7 @@ async def test_follow_up_service_claims_same_message_when_status_or_updated_at_c
     )
     first_anchor = _build_anchor(target_message)
     gateway = _build_web_agent_gateway(user, str(built_in_thread.id))
-    await built_in_follow_up_service.set_tracked_sessions(
+    await self_management_agent_task_service.set_tracked_sessions(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
@@ -283,13 +290,14 @@ async def test_follow_up_service_claims_same_message_when_status_or_updated_at_c
     )
     second_anchor = _build_anchor(updated_message)
 
-    requests = await built_in_follow_up_service.claim_due_follow_up_tasks(
+    work_items = await self_management_agent_task_service.claim_due_tasks(
         db=async_db_session,
         batch_size=10,
     )
 
-    assert len(requests) == 1
-    request = requests[0]
+    assert len(work_items) == 1
+    assert work_items[0].task_kind == SelfManagementAgentTask.KIND_FOLLOW_UP_WATCH
+    request = cast(SelfManagementFollowUpTaskRequest, work_items[0].request)
     assert request.changed_conversation_ids == (str(target_thread.id),)
     assert request.previous_target_agent_message_anchors == {
         str(target_thread.id): first_anchor
@@ -301,20 +309,22 @@ async def test_follow_up_service_claims_same_message_when_status_or_updated_at_c
     assert first_anchor["status"] == "streaming"
     assert second_anchor["status"] == "done"
 
-    await built_in_follow_up_service.complete_follow_up_run(
+    await self_management_agent_task_service.complete_task(
         db=async_db_session,
-        task_id=request.task_id,
-        next_target_agent_message_anchors=request.observed_target_agent_message_anchors,
+        task_id=cast(UUID, work_items[0].task_id),
+        follow_up_completion=SelfManagementFollowUpTaskCompletion(
+            next_target_agent_message_anchors=request.observed_target_agent_message_anchors
+        ),
     )
 
     assert (
-        await built_in_follow_up_service.claim_due_follow_up_tasks(
+        await self_management_agent_task_service.claim_due_tasks(
             db=async_db_session,
             batch_size=10,
         )
         == []
     )
-    completed_payload = await built_in_follow_up_service.get_follow_up_state(
+    completed_payload = await self_management_agent_task_service.get_follow_up_state(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
@@ -330,7 +340,7 @@ async def test_follow_up_service_claims_same_message_when_status_or_updated_at_c
     ]
 
 
-async def test_follow_up_service_add_tracked_sessions_merges_existing_targets(
+async def test_self_management_agent_task_service_add_tracked_sessions_merges_existing_targets(
     async_db_session,
 ) -> None:
     user = await create_user(async_db_session)
@@ -362,14 +372,14 @@ async def test_follow_up_service_add_tracked_sessions_merges_existing_targets(
         content="Second target result",
     )
     gateway = _build_web_agent_gateway(user, str(built_in_thread.id))
-    await built_in_follow_up_service.set_tracked_sessions(
+    await self_management_agent_task_service.set_tracked_sessions(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
         conversation_ids=[str(first_target_thread.id)],
     )
 
-    payload = await built_in_follow_up_service.add_tracked_sessions(
+    payload = await self_management_agent_task_service.add_tracked_sessions(
         db=async_db_session,
         current_user=user,
         built_in_conversation_id=str(built_in_thread.id),

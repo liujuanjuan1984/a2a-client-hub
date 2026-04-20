@@ -7,14 +7,14 @@ import pytest
 
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
-from app.features.self_management_agent import follow_up_job as follow_up_job_module
+from app.features.self_management_shared import task_job as task_job_module
 from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
-from app.features.self_management_shared.follow_up_service import (
-    BuiltInFollowUpWakeRequest,
-    built_in_follow_up_service,
+from app.features.self_management_shared.task_service import (
+    SelfManagementFollowUpTaskRequest,
+    self_management_agent_task_service,
 )
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
@@ -76,7 +76,7 @@ async def _append_agent_text_message(
     return message
 
 
-async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
+async def test_self_management_agent_task_job_wakes_and_rearms_follow_up_task(
     async_db_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -99,7 +99,7 @@ async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
         content="Initial target result",
     )
     gateway = _build_web_agent_gateway(user, str(built_in_thread.id))
-    await built_in_follow_up_service.set_tracked_sessions(
+    await self_management_agent_task_service.set_tracked_sessions(
         db=async_db_session,
         gateway=gateway,
         current_user=user,
@@ -113,7 +113,7 @@ async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
     )
     second_agent_message_id = str(second_agent_message.id)
 
-    recorded_requests: list[BuiltInFollowUpWakeRequest] = []
+    recorded_requests: list[SelfManagementFollowUpTaskRequest] = []
 
     async def _fake_run_durable_follow_up(**kwargs):
         recorded_requests.append(kwargs["request"])
@@ -134,12 +134,12 @@ async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
         )()
 
     monkeypatch.setattr(
-        follow_up_job_module.self_management_built_in_agent_service,
+        task_job_module.self_management_built_in_agent_service,
         "run_durable_follow_up",
         _fake_run_durable_follow_up,
     )
 
-    await follow_up_job_module.dispatch_due_self_management_follow_ups(batch_size=10)
+    await task_job_module.dispatch_due_self_management_agent_tasks(batch_size=10)
 
     assert len(recorded_requests) == 1
     request = recorded_requests[0]
@@ -152,7 +152,7 @@ async def test_dispatch_due_self_management_follow_ups_wakes_and_rearms_task(
 
     async_db_session.expire_all()
     await async_db_session.refresh(user)
-    payload = await built_in_follow_up_service.get_follow_up_state(
+    payload = await self_management_agent_task_service.get_follow_up_state(
         db=async_db_session,
         gateway=gateway,
         current_user=user,

@@ -6,9 +6,7 @@ from app.features.personal_agents import service as personal_agent_service_modul
 from app.features.self_management_shared import (
     delegated_conversation_service as delegated_conversation_service_module,
 )
-from app.features.self_management_shared import (
-    follow_up_service as follow_up_service_module,
-)
+from app.features.self_management_shared import task_service as task_service_module
 from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
@@ -408,12 +406,12 @@ async def test_self_management_toolkit_reads_and_updates_follow_up_state(
         }
 
     monkeypatch.setattr(
-        follow_up_service_module.built_in_follow_up_service,
+        task_service_module.self_management_agent_task_service,
         "get_follow_up_state",
         _fake_get_follow_up_state,
     )
     monkeypatch.setattr(
-        follow_up_service_module.built_in_follow_up_service,
+        task_service_module.self_management_agent_task_service,
         "set_tracked_sessions",
         _fake_set_tracked_sessions,
     )

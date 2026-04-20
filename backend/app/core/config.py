@@ -904,35 +904,20 @@ class Settings(BaseSettings):
         alias="SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS",
         description="Maximum idle lifetime in seconds for one built-in self-management swival conversation session.",
     )
-    self_management_follow_up_poll_interval_seconds: int = Field(
-        default=10,
-        alias="SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS",
-        description="Seconds between durable built-in follow-up scheduler scans.",
-    )
-    self_management_dispatch_poll_interval_seconds: int = Field(
+    self_management_agent_task_poll_interval_seconds: int = Field(
         default=5,
-        alias="SELF_MANAGEMENT_DISPATCH_POLL_INTERVAL_SECONDS",
-        description="Seconds between durable self-management dispatch scheduler scans.",
+        alias="SELF_MANAGEMENT_AGENT_TASK_POLL_INTERVAL_SECONDS",
+        description="Seconds between built-in self-management task scheduler scans.",
     )
-    self_management_follow_up_batch_size: int = Field(
+    self_management_agent_task_batch_size: int = Field(
         default=20,
-        alias="SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE",
-        description="Maximum built-in follow-up tasks scanned per scheduler cycle.",
+        alias="SELF_MANAGEMENT_AGENT_TASK_BATCH_SIZE",
+        description="Maximum built-in self-management tasks scanned per scheduler cycle.",
     )
-    self_management_dispatch_batch_size: int = Field(
-        default=20,
-        alias="SELF_MANAGEMENT_DISPATCH_BATCH_SIZE",
-        description="Maximum durable self-management dispatch tasks scanned per scheduler cycle.",
-    )
-    self_management_follow_up_running_timeout_seconds: int = Field(
+    self_management_agent_task_running_timeout_seconds: int = Field(
         default=10 * 60,
-        alias="SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS",
-        description="Seconds before one running built-in follow-up task is considered stale and recoverable.",
-    )
-    self_management_dispatch_running_timeout_seconds: int = Field(
-        default=10 * 60,
-        alias="SELF_MANAGEMENT_DISPATCH_RUNNING_TIMEOUT_SECONDS",
-        description="Seconds before one running durable self-management dispatch task is considered stale and recoverable.",
+        alias="SELF_MANAGEMENT_AGENT_TASK_RUNNING_TIMEOUT_SECONDS",
+        description="Seconds before one running built-in self-management task is considered stale and recoverable.",
     )
 
     model_config = SettingsConfigDict(
@@ -1007,79 +992,44 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("self_management_follow_up_poll_interval_seconds")
+    @field_validator("self_management_agent_task_poll_interval_seconds")
     @classmethod
-    def validate_self_management_follow_up_poll_interval_seconds(
+    def validate_self_management_agent_task_poll_interval_seconds(
         cls, value: int
     ) -> int:
         if value <= 0:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS must be positive"
+                "SELF_MANAGEMENT_AGENT_TASK_POLL_INTERVAL_SECONDS must be positive"
             )
         if value > 300:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS must not exceed 300"
+                "SELF_MANAGEMENT_AGENT_TASK_POLL_INTERVAL_SECONDS must not exceed 300"
             )
         return value
 
-    @field_validator("self_management_dispatch_poll_interval_seconds")
+    @field_validator("self_management_agent_task_batch_size")
     @classmethod
-    def validate_self_management_dispatch_poll_interval_seconds(cls, value: int) -> int:
+    def validate_self_management_agent_task_batch_size(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError(
-                "SELF_MANAGEMENT_DISPATCH_POLL_INTERVAL_SECONDS must be positive"
-            )
-        if value > 300:
-            raise ValueError(
-                "SELF_MANAGEMENT_DISPATCH_POLL_INTERVAL_SECONDS must not exceed 300"
-            )
-        return value
-
-    @field_validator("self_management_follow_up_batch_size")
-    @classmethod
-    def validate_self_management_follow_up_batch_size(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE must be positive")
+            raise ValueError("SELF_MANAGEMENT_AGENT_TASK_BATCH_SIZE must be positive")
         if value > 500:
-            raise ValueError("SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE must not exceed 500")
+            raise ValueError(
+                "SELF_MANAGEMENT_AGENT_TASK_BATCH_SIZE must not exceed 500"
+            )
         return value
 
-    @field_validator("self_management_dispatch_batch_size")
+    @field_validator("self_management_agent_task_running_timeout_seconds")
     @classmethod
-    def validate_self_management_dispatch_batch_size(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("SELF_MANAGEMENT_DISPATCH_BATCH_SIZE must be positive")
-        if value > 500:
-            raise ValueError("SELF_MANAGEMENT_DISPATCH_BATCH_SIZE must not exceed 500")
-        return value
-
-    @field_validator("self_management_follow_up_running_timeout_seconds")
-    @classmethod
-    def validate_self_management_follow_up_running_timeout_seconds(
+    def validate_self_management_agent_task_running_timeout_seconds(
         cls, value: int
     ) -> int:
         if value <= 0:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS must be positive"
+                "SELF_MANAGEMENT_AGENT_TASK_RUNNING_TIMEOUT_SECONDS must be positive"
             )
         if value > 86400:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS must not exceed 86400"
-            )
-        return value
-
-    @field_validator("self_management_dispatch_running_timeout_seconds")
-    @classmethod
-    def validate_self_management_dispatch_running_timeout_seconds(
-        cls, value: int
-    ) -> int:
-        if value <= 0:
-            raise ValueError(
-                "SELF_MANAGEMENT_DISPATCH_RUNNING_TIMEOUT_SECONDS must be positive"
-            )
-        if value > 86400:
-            raise ValueError(
-                "SELF_MANAGEMENT_DISPATCH_RUNNING_TIMEOUT_SECONDS must not exceed 86400"
+                "SELF_MANAGEMENT_AGENT_TASK_RUNNING_TIMEOUT_SECONDS must not exceed 86400"
             )
         return value
 

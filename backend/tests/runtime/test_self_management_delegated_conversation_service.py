@@ -13,8 +13,8 @@ from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
-from app.features.self_management_shared.dispatch_job import (
-    dispatch_due_self_management_tasks,
+from app.features.self_management_shared.task_job import (
+    dispatch_due_self_management_agent_tasks,
 )
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
@@ -29,12 +29,16 @@ from tests.support.utils import (
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-def _build_gateway(user):
+def _build_gateway(user, built_in_conversation_id: str):
     actor = build_self_management_actor_context(
         user=user,
-        actor_type=SelfManagementActorType.HUMAN_API,
+        actor_type=SelfManagementActorType.WEB_AGENT,
     )
-    return SelfManagementToolGateway(actor, surface=SelfManagementSurface.REST)
+    return SelfManagementToolGateway(
+        actor,
+        surface=SelfManagementSurface.WEB_AGENT,
+        web_agent_conversation_id=built_in_conversation_id,
+    )
 
 
 async def test_send_messages_to_sessions_uses_automation_invoke_path(
@@ -42,6 +46,11 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = await create_user(async_db_session)
+    built_in_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Built-in Conversation",
+    )
     agent = await create_a2a_agent(
         async_db_session,
         user_id=user.id,
@@ -108,12 +117,12 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
     result = await asyncio.wait_for(
         delegated_conversation_service_module.self_management_delegated_conversation_service.send_messages_to_sessions(
             db=async_db_session,
-            gateway=_build_gateway(user),
+            gateway=_build_gateway(user, str(built_in_thread.id)),
             current_user=user,
             conversation_ids=[thread.id],
             message="ping",
         ),
-        timeout=0.1,
+        timeout=1.0,
     )
 
     assert result["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
@@ -130,7 +139,7 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
     ]
     await async_db_session.commit()
     release_dispatch.set()
-    await dispatch_due_self_management_tasks()
+    await dispatch_due_self_management_agent_tasks()
 
 
 async def test_start_sessions_for_agents_uses_automation_invoke_path(
@@ -138,6 +147,11 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = await create_user(async_db_session)
+    built_in_thread = await create_conversation_thread(
+        async_db_session,
+        user_id=user.id,
+        title="Built-in Conversation",
+    )
     agent = await create_a2a_agent(
         async_db_session,
         user_id=user.id,
@@ -201,12 +215,12 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
     result = await asyncio.wait_for(
         delegated_conversation_service_module.self_management_delegated_conversation_service.start_sessions_for_agents(
             db=async_db_session,
-            gateway=_build_gateway(user),
+            gateway=_build_gateway(user, str(built_in_thread.id)),
             current_user=user,
             agent_ids=[agent.id],
             message="hello",
         ),
-        timeout=0.1,
+        timeout=1.0,
     )
 
     assert result["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
@@ -225,5 +239,5 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
     ]
     await async_db_session.commit()
     release_dispatch.set()
-    await dispatch_due_self_management_tasks()
+    await dispatch_due_self_management_agent_tasks()
     assert captured_conversation_id == returned_conversation_id

@@ -27,12 +27,9 @@ from app.features.self_management_shared.capability_catalog import (
     SELF_AGENTS_START_SESSIONS,
     SELF_SESSIONS_SEND_MESSAGE,
 )
-from app.features.self_management_shared.dispatch_service import (
-    DelegatedInvokeDispatchRequest,
-    self_management_dispatch_service,
-)
-from app.features.self_management_shared.follow_up_service import (
-    built_in_follow_up_service,
+from app.features.self_management_shared.task_service import (
+    DelegatedInvokeTaskRequest,
+    self_management_agent_task_service,
 )
 from app.features.self_management_shared.tool_gateway import SelfManagementToolGateway
 from app.features.sessions import message_store
@@ -96,11 +93,11 @@ class SelfManagementDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            from app.features.self_management_shared.dispatch_job import (
-                request_self_management_dispatch_run,
+            from app.features.self_management_shared.task_job import (
+                request_self_management_agent_task_run,
             )
 
-            request_self_management_dispatch_run()
+            request_self_management_agent_task_run()
         return self._serialize_batch_payload(items=items)
 
     async def start_sessions_for_agents(
@@ -147,11 +144,11 @@ class SelfManagementDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            from app.features.self_management_shared.dispatch_job import (
-                request_self_management_dispatch_run,
+            from app.features.self_management_shared.task_job import (
+                request_self_management_agent_task_run,
             )
 
-            request_self_management_dispatch_run()
+            request_self_management_agent_task_run()
         return self._serialize_batch_payload(items=items)
 
     async def _send_one_session_message(
@@ -209,10 +206,13 @@ class SelfManagementDelegatedConversationService:
             target_session_title=cast(str, thread.title),
             delegated_message=message,
         )
-        await self_management_dispatch_service.enqueue_delegated_invoke(
+        await self_management_agent_task_service.enqueue_delegated_invoke(
             db=db,
-            request=DelegatedInvokeDispatchRequest(
+            request=DelegatedInvokeTaskRequest(
                 current_user_id=user_id,
+                built_in_conversation_id=self._require_built_in_conversation_id(
+                    built_in_conversation_id
+                ),
                 agent_id=cast(UUID, runtime_info["agent_uuid"]),
                 agent_source=cast(
                     Literal["personal", "shared"], runtime_info["agent_source"]
@@ -281,10 +281,13 @@ class SelfManagementDelegatedConversationService:
             target_session_title=None,
             delegated_message=message,
         )
-        await self_management_dispatch_service.enqueue_delegated_invoke(
+        await self_management_agent_task_service.enqueue_delegated_invoke(
             db=db,
-            request=DelegatedInvokeDispatchRequest(
+            request=DelegatedInvokeTaskRequest(
                 current_user_id=cast(UUID, current_user.id),
+                built_in_conversation_id=self._require_built_in_conversation_id(
+                    built_in_conversation_id
+                ),
                 agent_id=agent_id,
                 agent_source="personal",
                 message=message,
@@ -312,7 +315,7 @@ class SelfManagementDelegatedConversationService:
     ) -> None:
         if not built_in_conversation_id:
             return
-        await built_in_follow_up_service.add_tracked_sessions(
+        await self_management_agent_task_service.add_tracked_sessions(
             db=db,
             current_user=current_user,
             built_in_conversation_id=built_in_conversation_id,
@@ -519,7 +522,7 @@ class SelfManagementDelegatedConversationService:
         *,
         db: AsyncSession,
         current_user: User,
-        request: DelegatedInvokeDispatchRequest,
+        request: DelegatedInvokeTaskRequest,
     ) -> None:
         extra = {
             "user_id": str(request.current_user_id),
@@ -685,6 +688,12 @@ class SelfManagementDelegatedConversationService:
             seen.add(value)
             deduped.append(value)
         return deduped
+
+    @staticmethod
+    def _require_built_in_conversation_id(value: str | None) -> str:
+        if value is None or not value.strip():
+            raise ValueError("built_in_conversation_context_required")
+        return value.strip()
 
 
 def normalize_name(value: Any) -> str | None:

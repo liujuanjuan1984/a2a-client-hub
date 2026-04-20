@@ -13,17 +13,12 @@ from sqlalchemy import select
 from app.core.security import create_self_management_access_token
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
+from app.db.models.self_management_agent_task import SelfManagementAgentTask
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.features.personal_agents import service as personal_agent_service_module
 from app.features.self_management_shared import (
     delegated_conversation_service as delegated_conversation_service_module,
-)
-from app.features.self_management_shared.dispatch_job import (
-    dispatch_due_self_management_tasks,
-)
-from app.features.self_management_shared.follow_up_service import (
-    built_in_follow_up_service,
 )
 from app.features.self_management_shared.self_management_mcp import (
     _MCP_ALLOWED_OPERATION_IDS_STATE_KEY,
@@ -36,6 +31,12 @@ from app.features.self_management_shared.self_management_mcp import (
     execute_self_management_mcp_operation,
     self_management_mcp_server,
     self_management_write_mcp_server,
+)
+from app.features.self_management_shared.task_job import (
+    dispatch_due_self_management_agent_tasks,
+)
+from app.features.self_management_shared.task_service import (
+    self_management_agent_task_service,
 )
 from app.main import combine_lifespans
 from tests.support.utils import (
@@ -820,7 +821,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
     assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result["result"]["items"][0]["status"] == "accepted"
     await async_db_session.commit()
-    await dispatch_due_self_management_tasks()
+    await dispatch_due_self_management_agent_tasks()
 
     automation_message = await async_db_session.scalar(
         select(AgentMessage).where(
@@ -862,15 +863,17 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
             "latest_agent_message_id": None,
         }
     ]
-    requests = await built_in_follow_up_service.claim_due_follow_up_tasks(
+    work_items = await self_management_agent_task_service.claim_due_tasks(
         db=async_db_session,
         batch_size=10,
     )
-    assert len(requests) == 1
-    assert requests[0].built_in_conversation_id == str(built_in_thread.id)
-    assert requests[0].changed_conversation_ids == (str(thread.id),)
-    assert requests[0].previous_target_agent_message_anchors == {}
-    assert requests[0].observed_target_agent_message_anchors == {
+    assert len(work_items) == 1
+    assert work_items[0].task_kind == SelfManagementAgentTask.KIND_FOLLOW_UP_WATCH
+    request = work_items[0].request
+    assert request.built_in_conversation_id == str(built_in_thread.id)
+    assert request.changed_conversation_ids == (str(thread.id),)
+    assert request.previous_target_agent_message_anchors == {}
+    assert request.observed_target_agent_message_anchors == {
         str(thread.id): _build_anchor(agent_message)
     }
 
@@ -1027,7 +1030,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
     assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result["result"]["items"][0]["status"] == "accepted"
     await async_db_session.commit()
-    await dispatch_due_self_management_tasks()
+    await dispatch_due_self_management_agent_tasks()
 
     automation_message = await async_db_session.scalar(
         select(AgentMessage).where(
@@ -1067,17 +1070,19 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
             "latest_agent_message_id": None,
         }
     ]
-    requests = await built_in_follow_up_service.claim_due_follow_up_tasks(
+    work_items = await self_management_agent_task_service.claim_due_tasks(
         db=async_db_session,
         batch_size=10,
     )
-    assert len(requests) == 1
-    assert requests[0].built_in_conversation_id == str(built_in_thread.id)
-    assert requests[0].changed_conversation_ids == (
+    assert len(work_items) == 1
+    assert work_items[0].task_kind == SelfManagementAgentTask.KIND_FOLLOW_UP_WATCH
+    request = work_items[0].request
+    assert request.built_in_conversation_id == str(built_in_thread.id)
+    assert request.changed_conversation_ids == (
         result["result"]["items"][0]["conversation_id"],
     )
-    assert requests[0].previous_target_agent_message_anchors == {}
-    assert requests[0].observed_target_agent_message_anchors == {
+    assert request.previous_target_agent_message_anchors == {}
+    assert request.observed_target_agent_message_anchors == {
         result["result"]["items"][0]["conversation_id"]: _build_anchor(
             target_agent_message
         )
