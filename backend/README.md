@@ -217,8 +217,8 @@ Backend tests are being grouped under `backend/tests/<group_name>/` so related c
 
 Current layout direction:
 
-- Feature directories such as `tests/invoke/`, `tests/sessions/`, and `tests/hub_agents/`
-- Shared capability directories such as `tests/client/`, `tests/runtime/`, `tests/proxy/`, and `tests/shared/`
+- Feature directories such as `tests/agents/`, `tests/hub_assistant/`, `tests/invoke/`, and `tests/sessions/`
+- Shared capability directories such as `tests/client/`, `tests/extensions/`, `tests/runtime/`, and `tests/proxy/`
 - Shared fixtures remain at the `backend/tests/` root, and reusable helpers live under `backend/tests/support/`
 
 ## Incremental mypy Gate
