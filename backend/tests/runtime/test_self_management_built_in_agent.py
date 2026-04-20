@@ -127,9 +127,6 @@ def _install_fake_swival(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _reset_built_in_agent_runtime() -> None:
-    for task in list(self_management_built_in_agent_service._continuation_tasks):
-        task.cancel()
-    self_management_built_in_agent_service._continuation_tasks.clear()
     self_management_built_in_agent_service._conversation_registry.clear()
 
 

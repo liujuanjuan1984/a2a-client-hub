@@ -253,7 +253,6 @@ class SelfManagementBuiltInAgentService:
         self._conversation_registry: dict[
             tuple[str, str], _ConversationRuntimeState
         ] = {}
-        self._continuation_tasks: set[asyncio.Task[None]] = set()
         self._registry_lock = threading.Lock()
         self._session_support = SessionHubSupport()
 
@@ -793,17 +792,16 @@ class SelfManagementBuiltInAgentService:
                 agent_message_id=continuation_agent_message_id,
             ),
         )
-        continuation_request = PermissionReplyContinuationDispatchRequest(
-            current_user_id=cast(Any, current_user.id),
-            conversation_id=conversation_id,
-            message=interrupt_message,
-            request_id=request_id,
-            agent_message_id=continuation_agent_message_id,
-            approved_operation_ids=frozenset(approved_operation_ids),
-        )
         await self_management_dispatch_service.enqueue_permission_reply_continuation(
             db=db,
-            request=continuation_request,
+            request=PermissionReplyContinuationDispatchRequest(
+                current_user_id=cast(Any, current_user.id),
+                conversation_id=conversation_id,
+                message=interrupt_message,
+                request_id=request_id,
+                agent_message_id=continuation_agent_message_id,
+                approved_operation_ids=frozenset(approved_operation_ids),
+            ),
         )
         return result
 
