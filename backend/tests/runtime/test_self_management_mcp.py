@@ -19,6 +19,9 @@ from app.features.personal_agents import service as personal_agent_service_modul
 from app.features.self_management_shared import (
     delegated_conversation_service as delegated_conversation_service_module,
 )
+from app.features.self_management_shared.dispatch_job import (
+    dispatch_due_self_management_tasks,
+)
 from app.features.self_management_shared.follow_up_service import (
     built_in_follow_up_service,
 )
@@ -817,7 +820,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_session_
     assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result["result"]["items"][0]["status"] == "accepted"
     await async_db_session.commit()
-    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
     automation_message = await async_db_session.scalar(
         select(AgentMessage).where(
@@ -1024,7 +1027,7 @@ async def test_execute_self_management_mcp_operation_persists_delegated_agent_st
     assert result["result"]["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
     assert result["result"]["items"][0]["status"] == "accepted"
     await async_db_session.commit()
-    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
     automation_message = await async_db_session.scalar(
         select(AgentMessage).where(

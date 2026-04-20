@@ -154,13 +154,6 @@ class SelfManagementDelegatedConversationService:
             request_self_management_dispatch_run()
         return self._serialize_batch_payload(items=items)
 
-    async def drain_pending_tasks(self) -> None:
-        from app.features.self_management_shared.dispatch_job import (
-            dispatch_due_self_management_tasks,
-        )
-
-        await dispatch_due_self_management_tasks()
-
     async def _send_one_session_message(
         self,
         *,

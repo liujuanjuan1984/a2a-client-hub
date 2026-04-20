@@ -209,14 +209,6 @@ class SelfManagementBuiltInAgentContinuation:
 
 
 @dataclass(frozen=True)
-class SelfManagementBuiltInAgentReplyOutcome:
-    """Immediate reply result plus optional async continuation request."""
-
-    result: SelfManagementBuiltInAgentRunResult
-    continuation_request: PermissionReplyContinuationDispatchRequest | None = None
-
-
-@dataclass(frozen=True)
 class SelfManagementBuiltInAgentRecoveredInterrupt:
     """One unresolved persisted interrupt recovered from durable session history."""
 
@@ -670,7 +662,7 @@ class SelfManagementBuiltInAgentService:
         request_id: str,
         reply: str,
         agent_message_id: UUID | None = None,
-    ) -> SelfManagementBuiltInAgentReplyOutcome:
+    ) -> SelfManagementBuiltInAgentRunResult:
         claims = verify_jwt_token_claims(
             request_id,
             expected_type=SELF_MANAGEMENT_INTERRUPT_TOKEN_TYPE,
@@ -734,7 +726,7 @@ class SelfManagementBuiltInAgentService:
                 status="done",
                 finish_reason="interrupt_rejected",
             )
-            return SelfManagementBuiltInAgentReplyOutcome(result=result)
+            return result
 
         if reply == "always":
             runtime_state = await self._get_conversation_runtime_state(
@@ -813,28 +805,7 @@ class SelfManagementBuiltInAgentService:
             db=db,
             request=continuation_request,
         )
-        return SelfManagementBuiltInAgentReplyOutcome(
-            result=result,
-            continuation_request=continuation_request,
-        )
-
-    def schedule_permission_reply_continuation(
-        self,
-        request: PermissionReplyContinuationDispatchRequest,
-    ) -> None:
-        del request
-        from app.features.self_management_shared.dispatch_job import (
-            request_self_management_dispatch_run,
-        )
-
-        request_self_management_dispatch_run()
-
-    async def drain_pending_tasks(self) -> None:
-        from app.features.self_management_shared.dispatch_job import (
-            dispatch_due_self_management_tasks,
-        )
-
-        await dispatch_due_self_management_tasks()
+        return result
 
     async def run_durable_follow_up(
         self,

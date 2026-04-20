@@ -13,6 +13,9 @@ from app.features.self_management_shared.actor_context import (
     SelfManagementActorType,
     build_self_management_actor_context,
 )
+from app.features.self_management_shared.dispatch_job import (
+    dispatch_due_self_management_tasks,
+)
 from app.features.self_management_shared.tool_gateway import (
     SelfManagementSurface,
     SelfManagementToolGateway,
@@ -127,7 +130,7 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
     ]
     await async_db_session.commit()
     release_dispatch.set()
-    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
 
 async def test_start_sessions_for_agents_uses_automation_invoke_path(
@@ -222,5 +225,5 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
     ]
     await async_db_session.commit()
     release_dispatch.set()
-    await delegated_conversation_service_module.self_management_delegated_conversation_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
     assert captured_conversation_id == returned_conversation_id

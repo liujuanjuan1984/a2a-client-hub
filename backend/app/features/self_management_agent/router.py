@@ -224,7 +224,7 @@ async def reply_self_management_built_in_agent_permission_interrupt(
     current_user: User = Depends(get_current_user),
 ) -> SelfManagementBuiltInAgentRunResponse:
     try:
-        outcome = (
+        result = (
             await self_management_built_in_agent_service.reply_permission_interrupt(
                 db=db,
                 current_user=current_user,
@@ -272,8 +272,10 @@ async def reply_self_management_built_in_agent_permission_interrupt(
         raise
 
     await commit_safely(db)
-    if outcome.continuation_request is not None:
-        self_management_built_in_agent_service.schedule_permission_reply_continuation(
-            outcome.continuation_request
+    if result.continuation is not None:
+        from app.features.self_management_shared.dispatch_job import (
+            request_self_management_dispatch_run,
         )
-    return _to_run_response(outcome.result)
+
+        request_self_management_dispatch_run()
+    return _to_run_response(result)

@@ -29,6 +29,9 @@ from app.features.self_management_agent.service import (
     SelfManagementBuiltInAgentUnavailableError,
     self_management_built_in_agent_service,
 )
+from app.features.self_management_shared.dispatch_job import (
+    dispatch_due_self_management_tasks,
+)
 from app.features.self_management_shared.follow_up_service import (
     BuiltInFollowUpWakeRequest,
 )
@@ -929,10 +932,7 @@ async def test_built_in_agent_interrupt_and_resolution_are_persisted(
             reply="reject",
         )
     )
-    assert (
-        reject_outcome.result.answer
-        == "Write approval was rejected. No changes were made."
-    )
+    assert reject_outcome.answer == "Write approval was rejected. No changes were made."
 
     messages, _extra, _db_mutated = await session_hub_service.list_messages(
         async_db_session,
@@ -1001,13 +1001,9 @@ async def test_built_in_agent_permission_reply_persists_supplied_agent_message_i
         reply="once",
         agent_message_id=follow_up_agent_message_id,
     )
-    assert outcome.result.status == "accepted"
-    assert outcome.continuation_request is not None
+    assert outcome.status == "accepted"
     await async_db_session.commit()
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
     messages, _extra, _db_mutated = await session_hub_service.list_messages(
         async_db_session,
@@ -1048,20 +1044,15 @@ async def test_built_in_agent_permission_reply_background_failure_persists_error
 
     _FakeSwivalSession.next_error = RuntimeError("write tool failed")
     follow_up_agent_message_id = uuid4()
-    outcome = await self_management_built_in_agent_service.reply_permission_interrupt(
+    await self_management_built_in_agent_service.reply_permission_interrupt(
         db=async_db_session,
         current_user=user,
         request_id=interrupt_result.interrupt.request_id,
         reply="once",
         agent_message_id=follow_up_agent_message_id,
     )
-    assert outcome.continuation_request is not None
     await async_db_session.commit()
-
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
     messages, _extra, _db_mutated = await session_hub_service.list_messages(
         async_db_session,
@@ -1111,13 +1102,8 @@ async def test_built_in_agent_permission_reply_background_interrupt_persists_new
         request_id=interrupt_result.interrupt.request_id,
         reply="once",
     )
-    assert outcome.continuation_request is not None
     await async_db_session.commit()
-
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
     messages, _extra, _db_mutated = await session_hub_service.list_messages(
         async_db_session,
@@ -1129,7 +1115,7 @@ async def test_built_in_agent_permission_reply_background_interrupt_persists_new
     interrupted_reply = next(
         item
         for item in messages
-        if item["id"] == str(outcome.result.continuation.agent_message_id)
+        if item["id"] == str(outcome.continuation.agent_message_id)
     )
     assert interrupted_reply["role"] == "agent"
     assert interrupted_reply["status"] == "interrupted"
@@ -1317,17 +1303,13 @@ async def test_built_in_agent_permission_reply_once_resumes_with_write_tools(
         request_id=interrupt.request_id,
         reply="once",
     )
-    assert outcome.result.status == "accepted"
-    assert outcome.result.write_tools_enabled is True
-    assert "self.jobs.pause" in outcome.result.tool_names
-    assert "self.sessions.update" not in outcome.result.tool_names
-    assert outcome.continuation_request is not None
+    assert outcome.status == "accepted"
+    assert outcome.write_tools_enabled is True
+    assert "self.jobs.pause" in outcome.tool_names
+    assert "self.sessions.update" not in outcome.tool_names
     assert _FakeSwivalSession.ask_call_count == 0
     await async_db_session.commit()
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
     assert _FakeSwivalSession.ask_call_count == 1
     assert _FakeSwivalSession.last_message == "Pause my job"
     assert _FakeSwivalSession.last_init_kwargs is not None
@@ -1368,13 +1350,9 @@ async def test_built_in_agent_session_refresh_preserves_new_system_prompt(
         request_id=interrupt_result.interrupt.request_id,
         reply="once",
     )
-    assert outcome.result.status == "accepted"
-    assert outcome.continuation_request is not None
+    assert outcome.status == "accepted"
     await async_db_session.commit()
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
     assert _FakeSwivalSession.instance_count == 2
     assert _FakeSwivalSession.instances[1]._conv_state is not None
     next_messages = cast(
@@ -1422,10 +1400,10 @@ async def test_built_in_agent_permission_reply_reject_returns_no_change_result(
         request_id=interrupt.request_id,
         reply="reject",
     )
-    assert outcome.result.status == "completed"
-    assert outcome.result.answer == "Write approval was rejected. No changes were made."
-    assert outcome.result.write_tools_enabled is False
-    assert outcome.result.exhausted is False
+    assert outcome.status == "completed"
+    assert outcome.answer == "Write approval was rejected. No changes were made."
+    assert outcome.write_tools_enabled is False
+    assert outcome.exhausted is False
     assert _FakeSwivalSession.ask_call_count == 0
 
 
@@ -1470,7 +1448,7 @@ async def test_built_in_agent_permission_reply_route_resumes_or_rejects(
     assert approve_response.json()["write_tools_enabled"] is True
     assert approve_response.json()["interrupt"] is None
     assert approve_response.json()["continuation"]["phase"] == "running"
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
 
 async def test_built_in_agent_interrupt_recovery_route_returns_unresolved_interrupts(
@@ -1958,13 +1936,9 @@ async def test_built_in_agent_permission_reply_always_enables_session_scoped_wri
             reply="always",
         )
     )
-    assert always_outcome.result.status == "accepted"
-    assert always_outcome.continuation_request is not None
+    assert always_outcome.status == "accepted"
     await async_db_session.commit()
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        always_outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
     follow_up_result = await self_management_built_in_agent_service.run(
         db=async_db_session,
         current_user=user,
@@ -1973,7 +1947,7 @@ async def test_built_in_agent_permission_reply_always_enables_session_scoped_wri
         allow_write_tools=False,
     )
 
-    assert always_outcome.result.write_tools_enabled is True
+    assert always_outcome.write_tools_enabled is True
     assert follow_up_result.write_tools_enabled is True
     assert "self.jobs.pause" in follow_up_result.tool_names
     assert "self.sessions.update" not in follow_up_result.tool_names
@@ -2002,20 +1976,14 @@ async def test_built_in_agent_requests_additional_approval_for_new_write_operati
         allowed_write_operation_ids=("self.jobs.pause",),
     )
 
-    always_outcome = (
-        await self_management_built_in_agent_service.reply_permission_interrupt(
-            db=async_db_session,
-            current_user=user,
-            request_id=interrupt.request_id,
-            reply="always",
-        )
+    await self_management_built_in_agent_service.reply_permission_interrupt(
+        db=async_db_session,
+        current_user=user,
+        request_id=interrupt.request_id,
+        reply="always",
     )
-    assert always_outcome.continuation_request is not None
     await async_db_session.commit()
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        always_outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
+    await dispatch_due_self_management_tasks()
 
     _FakeSwivalSession.next_answer = _approval_answer(
         "Deleting that agent requires additional approval.",
@@ -2043,16 +2011,12 @@ async def test_built_in_agent_requests_additional_approval_for_new_write_operati
             reply="once",
         )
     )
-    assert resumed_outcome.result.status == "accepted"
-    assert resumed_outcome.continuation_request is not None
+    assert resumed_outcome.status == "accepted"
     await async_db_session.commit()
-    self_management_built_in_agent_service.schedule_permission_reply_continuation(
-        resumed_outcome.continuation_request
-    )
-    await self_management_built_in_agent_service.drain_pending_tasks()
-    assert resumed_outcome.result.write_tools_enabled is True
-    assert resumed_outcome.result.tool_names == ("self.agents.delete",)
-    assert "self.sessions.update" not in resumed_outcome.result.tool_names
+    await dispatch_due_self_management_tasks()
+    assert resumed_outcome.write_tools_enabled is True
+    assert resumed_outcome.tool_names == ("self.agents.delete",)
+    assert "self.sessions.update" not in resumed_outcome.tool_names
 
 
 async def test_built_in_agent_runtime_patches_private_swival_mcp_tool_fields(
