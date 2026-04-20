@@ -1,7 +1,13 @@
 import logging
 
 from app.core.config import settings
-from app.core.logging import JsonFormatter, RequestIdFilter, TextFormatter
+from app.core.logging import (
+    JsonFormatter,
+    RequestIdFilter,
+    TextFormatter,
+    clear_actor_context,
+    reset_actor_context,
+)
 
 
 def test_text_formatter_renders_human_readable_context() -> None:
@@ -68,7 +74,11 @@ def test_request_id_filter_injects_actor_context_defaults() -> None:
         exc_info=None,
     )
 
-    RequestIdFilter().filter(record)
+    tokens = clear_actor_context()
+    try:
+        RequestIdFilter().filter(record)
+    finally:
+        reset_actor_context(tokens)
 
     assert record.request_id == "-"
     assert record.user_id == "-"

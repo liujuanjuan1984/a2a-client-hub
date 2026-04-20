@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.features.invoke.shared_metadata import merge_preferred_session_binding_metadata
-from app.features.self_management_shared.constants import (
-    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+from app.features.hub_assistant.shared.constants import (
+    HUB_ASSISTANT_PUBLIC_ID,
 )
+from app.features.invoke.shared_metadata import merge_preferred_session_binding_metadata
 from app.features.sessions import block_store
 from app.features.sessions import common as session_common
 from app.features.sessions.identity import conversation_identity_service
@@ -51,9 +51,9 @@ class SessionQueryService:
             str(thread_agent_id) if thread_agent_id is not None else None
         )
         serialized_agent_source = thread_agent_source or "personal"
-        if thread_agent_source == "builtin":
-            serialized_agent_id = SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID
-            serialized_agent_source = "builtin"
+        if thread_agent_source == "hub_assistant":
+            serialized_agent_id = HUB_ASSISTANT_PUBLIC_ID
+            serialized_agent_source = "hub_assistant"
         return {
             "conversationId": str(thread.id),
             "source": resolved_source,

@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { ApiRequestError } from "@/lib/api/client";
 import { ChatScreen } from "@/screens/ChatScreen";
 
-const SELF_MANAGEMENT_AGENT_ID = "self-management-assistant";
+const HUB_ASSISTANT_AGENT_ID = "hub-assistant";
 
 const mockReplyPermission = jest.fn();
 const mockReplyPermissions = jest.fn();
@@ -16,10 +16,10 @@ const mockRunSessionCommand = jest.fn();
 const mockRecoverInterrupts = jest.fn();
 const mockInvokeAgent = jest.fn();
 const mockInvokeHubAgent = jest.fn();
-const mockGetSelfManagementBuiltInAgentProfile = jest.fn();
-const mockRunSelfManagementBuiltInAgent = jest.fn();
-const mockRecoverSelfManagementBuiltInAgentInterrupts = jest.fn();
-const mockReplySelfManagementBuiltInAgentPermissionInterrupt = jest.fn();
+const mockGetHubAssistantProfile = jest.fn();
+const mockRunHubAssistant = jest.fn();
+const mockRecoverHubAssistantInterrupts = jest.fn();
+const mockReplyHubAssistantPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
 const mockMergeConversationMessages = jest.fn();
 const mockRemoveConversationMessage = jest.fn();
@@ -366,10 +366,10 @@ jest.mock("@/hooks/useAgentsCatalogQuery", () => ({
         status: "success",
       },
       {
-        id: SELF_MANAGEMENT_AGENT_ID,
-        source: "builtin",
+        id: HUB_ASSISTANT_AGENT_ID,
+        source: "hub_assistant",
         name: "A2A Client Hub Assistant",
-        cardUrl: "builtin://self-management-assistant",
+        cardUrl: "hub-assistant://hub-assistant",
         status: "success",
       },
     ],
@@ -486,18 +486,17 @@ jest.mock("@/lib/chatHistoryCache", () => ({
     mockUpdateConversationMessage(...args),
 }));
 
-jest.mock("@/lib/api/selfManagementAgent", () => ({
-  SELF_MANAGEMENT_BUILT_IN_AGENT_ID: SELF_MANAGEMENT_AGENT_ID,
-  isSelfManagementBuiltInAgent: (agentId?: string | null) =>
-    (agentId ?? "").trim() === SELF_MANAGEMENT_AGENT_ID,
-  getSelfManagementBuiltInAgentProfile: (...args: unknown[]) =>
-    mockGetSelfManagementBuiltInAgentProfile(...args),
-  runSelfManagementBuiltInAgent: (...args: unknown[]) =>
-    mockRunSelfManagementBuiltInAgent(...args),
-  recoverSelfManagementBuiltInAgentInterrupts: (...args: unknown[]) =>
-    mockRecoverSelfManagementBuiltInAgentInterrupts(...args),
-  replySelfManagementBuiltInAgentPermissionInterrupt: (...args: unknown[]) =>
-    mockReplySelfManagementBuiltInAgentPermissionInterrupt(...args),
+jest.mock("@/lib/api/hubAssistant", () => ({
+  HUB_ASSISTANT_ID: HUB_ASSISTANT_AGENT_ID,
+  isHubAssistant: (agentId?: string | null) =>
+    (agentId ?? "").trim() === HUB_ASSISTANT_AGENT_ID,
+  getHubAssistantProfile: (...args: unknown[]) =>
+    mockGetHubAssistantProfile(...args),
+  runHubAssistant: (...args: unknown[]) => mockRunHubAssistant(...args),
+  recoverHubAssistantInterrupts: (...args: unknown[]) =>
+    mockRecoverHubAssistantInterrupts(...args),
+  replyHubAssistantPermissionInterrupt: (...args: unknown[]) =>
+    mockReplyHubAssistantPermissionInterrupt(...args),
   toPendingRuntimeInterrupt: (interrupt: {
     requestId: string;
     type: "permission";
@@ -601,40 +600,38 @@ describe("ChatScreen interrupt handling", () => {
     mockInvokeHubAgent.mockReset().mockResolvedValue({ success: true });
     mockAppendSessionMessage.mockReset();
     mockRunSessionCommand.mockReset();
-    mockGetSelfManagementBuiltInAgentProfile.mockReset().mockResolvedValue({
-      id: SELF_MANAGEMENT_AGENT_ID,
+    mockGetHubAssistantProfile.mockReset().mockResolvedValue({
+      id: HUB_ASSISTANT_AGENT_ID,
       name: "A2A Client Hub Assistant",
-      description: "Built-in self-management assistant",
+      description: "Hub Assistant",
       runtime: "swival",
       configured: true,
       resources: ["agents", "followups", "jobs", "sessions"],
       tools: [],
     });
-    mockRunSelfManagementBuiltInAgent.mockReset().mockResolvedValue({
+    mockRunHubAssistant.mockReset().mockResolvedValue({
       status: "completed",
-      answer: "Built-in agent reply",
+      answer: "Hub Assistant reply",
       exhausted: false,
       runtime: "swival",
       resources: ["agents", "followups", "jobs", "sessions"],
-      tools: ["self.jobs.list"],
+      tools: ["hub_assistant.jobs.list"],
       write_tools_enabled: false,
       interrupt: null,
     });
-    mockRecoverSelfManagementBuiltInAgentInterrupts
+    mockRecoverHubAssistantInterrupts
       .mockReset()
       .mockResolvedValue({ items: [] });
-    mockReplySelfManagementBuiltInAgentPermissionInterrupt
-      .mockReset()
-      .mockResolvedValue({
-        status: "completed",
-        answer: "Write approval was handled.",
-        exhausted: false,
-        runtime: "swival",
-        resources: ["agents", "followups", "jobs", "sessions"],
-        tools: ["self.jobs.pause"],
-        write_tools_enabled: true,
-        interrupt: null,
-      });
+    mockReplyHubAssistantPermissionInterrupt.mockReset().mockResolvedValue({
+      status: "completed",
+      answer: "Write approval was handled.",
+      exhausted: false,
+      runtime: "swival",
+      resources: ["agents", "followups", "jobs", "sessions"],
+      tools: ["hub_assistant.jobs.pause"],
+      write_tools_enabled: true,
+      interrupt: null,
+    });
     mockRecoverInterrupts.mockReset().mockResolvedValue({ items: [] });
     mockAddConversationMessage.mockReset();
     mockUpdateConversationMessage.mockReset();
@@ -760,16 +757,16 @@ describe("ChatScreen interrupt handling", () => {
     );
   });
 
-  it("recovers pending interrupts for the built-in agent from durable history", async () => {
-    mockAgentStoreState.activeAgentId = SELF_MANAGEMENT_AGENT_ID;
+  it("recovers pending interrupts for the Hub Assistant from durable history", async () => {
+    mockAgentStoreState.activeAgentId = HUB_ASSISTANT_AGENT_ID;
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      agentId: SELF_MANAGEMENT_AGENT_ID,
+      agentId: HUB_ASSISTANT_AGENT_ID,
     };
-    mockRecoverSelfManagementBuiltInAgentInterrupts.mockResolvedValue({
+    mockRecoverHubAssistantInterrupts.mockResolvedValue({
       items: [
         {
-          requestId: "perm-builtin-1",
+          requestId: "perm-hub_assistant-1",
           sessionId: conversationId,
           type: "permission",
           phase: "asked",
@@ -778,23 +775,21 @@ describe("ChatScreen interrupt handling", () => {
           contextId: null,
           expiresAt: null,
           details: {
-            permission: "self-management-write",
-            patterns: ["self.jobs.pause"],
+            permission: "hub-assistant-write",
+            patterns: ["hub_assistant.jobs.pause"],
             displayMessage: "Approve pause access",
           },
         },
       ],
     });
 
-    renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
 
     await act(async () => {
       await Promise.resolve();
     });
 
-    expect(
-      mockRecoverSelfManagementBuiltInAgentInterrupts,
-    ).toHaveBeenCalledWith({
+    expect(mockRecoverHubAssistantInterrupts).toHaveBeenCalledWith({
       conversationId,
     });
     expect(mockRecoverInterrupts).not.toHaveBeenCalled();
@@ -802,7 +797,7 @@ describe("ChatScreen interrupt handling", () => {
       conversationId,
       [
         {
-          requestId: "perm-builtin-1",
+          requestId: "perm-hub_assistant-1",
           sessionId: conversationId,
           type: "permission",
           phase: "asked",
@@ -811,8 +806,8 @@ describe("ChatScreen interrupt handling", () => {
           contextId: null,
           expiresAt: null,
           details: {
-            permission: "self-management-write",
-            patterns: ["self.jobs.pause"],
+            permission: "hub-assistant-write",
+            patterns: ["hub_assistant.jobs.pause"],
             displayMessage: "Approve pause access",
           },
         },
@@ -1592,33 +1587,33 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("routes built-in self-management runs into the existing permission interrupt UI", async () => {
+  it("routes Hub Assistant hub-assistant runs into the existing permission interrupt UI", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      agentId: SELF_MANAGEMENT_AGENT_ID,
+      agentId: HUB_ASSISTANT_AGENT_ID,
       externalSessionRef: null,
     };
-    mockRunSelfManagementBuiltInAgent.mockResolvedValueOnce({
+    mockRunHubAssistant.mockResolvedValueOnce({
       status: "interrupted",
       answer: "I can pause that job after write approval.",
       exhausted: false,
       runtime: "swival",
       resources: ["agents", "jobs", "sessions"],
-      tools: ["self.jobs.list", "self.jobs.pause"],
+      tools: ["hub_assistant.jobs.list", "hub_assistant.jobs.pause"],
       write_tools_enabled: false,
       interrupt: {
-        requestId: "builtin-perm-1",
+        requestId: "hub_assistant-perm-1",
         type: "permission",
         phase: "asked",
         details: {
-          permission: "self-management-write",
-          patterns: ["self.jobs.pause"],
+          permission: "hub-assistant-write",
+          patterns: ["hub_assistant.jobs.pause"],
           displayMessage: "Approve write access to continue.",
         },
       },
     });
 
-    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
     const root = tree.root;
     const input = root.findByProps({ placeholder: "Type your message" });
     const sendButton = root.findByProps({ testID: "chat-send-button" });
@@ -1631,7 +1626,7 @@ describe("ChatScreen interrupt handling", () => {
       await Promise.resolve();
     });
 
-    expect(mockRunSelfManagementBuiltInAgent).toHaveBeenCalledWith({
+    expect(mockRunHubAssistant).toHaveBeenCalledWith({
       conversationId,
       message: "Pause my job",
       userMessageId: expect.any(String),
@@ -1663,12 +1658,12 @@ describe("ChatScreen interrupt handling", () => {
     expect(
       mockChatState.sessions[conversationId]?.pendingInterrupt,
     ).toMatchObject({
-      requestId: "builtin-perm-1",
+      requestId: "hub_assistant-perm-1",
       type: "permission",
       phase: "asked",
       details: {
-        permission: "self-management-write",
-        patterns: ["self.jobs.pause"],
+        permission: "hub-assistant-write",
+        patterns: ["hub_assistant.jobs.pause"],
         displayMessage: "Approve write access to continue.",
       },
     });
@@ -1695,36 +1690,36 @@ describe("ChatScreen interrupt handling", () => {
       expectedResolution: "rejected",
     },
   ])(
-    "submits built-in permission reply %s through the existing interrupt action card",
+    "submits Hub Assistant permission reply %s through the existing interrupt action card",
     async ({ buttonTestId, reply, expectedResolution }) => {
       mockChatState.sessions[conversationId] = {
         ...baseSession(),
-        agentId: SELF_MANAGEMENT_AGENT_ID,
+        agentId: HUB_ASSISTANT_AGENT_ID,
         pendingInterrupt: {
-          requestId: "builtin-perm-2",
+          requestId: "hub_assistant-perm-2",
           type: "permission",
           phase: "asked",
           details: {
-            permission: "self-management-write",
-            patterns: ["self.jobs.pause"],
+            permission: "hub-assistant-write",
+            patterns: ["hub_assistant.jobs.pause"],
             displayMessage: "Approve write access to continue.",
           },
         },
         pendingInterrupts: [
           {
-            requestId: "builtin-perm-2",
+            requestId: "hub_assistant-perm-2",
             type: "permission",
             phase: "asked",
             details: {
-              permission: "self-management-write",
-              patterns: ["self.jobs.pause"],
+              permission: "hub-assistant-write",
+              patterns: ["hub_assistant.jobs.pause"],
               displayMessage: "Approve write access to continue.",
             },
           },
         ],
       };
 
-      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+      const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
       const root = tree.root;
       const permissionButton = root.findByProps({
         testID: buttonTestId,
@@ -1735,10 +1730,8 @@ describe("ChatScreen interrupt handling", () => {
         await Promise.resolve();
       });
 
-      expect(
-        mockReplySelfManagementBuiltInAgentPermissionInterrupt,
-      ).toHaveBeenCalledWith({
-        requestId: "builtin-perm-2",
+      expect(mockReplyHubAssistantPermissionInterrupt).toHaveBeenCalledWith({
+        requestId: "hub_assistant-perm-2",
         reply,
         agentMessageId: expect.any(String),
       });
@@ -1764,7 +1757,7 @@ describe("ChatScreen interrupt handling", () => {
       expect(
         mockChatState.sessions[conversationId]?.lastResolvedInterrupt,
       ).toMatchObject({
-        requestId: "builtin-perm-2",
+        requestId: "hub_assistant-perm-2",
         type: "permission",
         phase: "resolved",
         resolution: expectedResolution,
@@ -1780,8 +1773,8 @@ describe("ChatScreen interrupt handling", () => {
     },
   );
 
-  it("closes the built-in authorization card on fast-ack and enters continuation state", async () => {
-    mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockImplementationOnce(
+  it("closes the Hub Assistant authorization card on fast-ack and enters continuation state", async () => {
+    mockReplyHubAssistantPermissionInterrupt.mockImplementationOnce(
       async (payload: { agentMessageId: string }) => {
         return {
           status: "accepted",
@@ -1789,7 +1782,7 @@ describe("ChatScreen interrupt handling", () => {
           exhausted: false,
           runtime: "swival",
           resources: ["agents", "jobs", "sessions"],
-          tools: ["self.jobs.pause"],
+          tools: ["hub_assistant.jobs.pause"],
           write_tools_enabled: true,
           interrupt: null,
           continuation: {
@@ -1801,32 +1794,32 @@ describe("ChatScreen interrupt handling", () => {
     );
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      agentId: SELF_MANAGEMENT_AGENT_ID,
+      agentId: HUB_ASSISTANT_AGENT_ID,
       pendingInterrupt: {
-        requestId: "builtin-perm-async-1",
+        requestId: "hub_assistant-perm-async-1",
         type: "permission",
         phase: "asked",
         details: {
-          permission: "self-management-write",
-          patterns: ["self.jobs.pause"],
+          permission: "hub-assistant-write",
+          patterns: ["hub_assistant.jobs.pause"],
           displayMessage: "Approve write access to continue.",
         },
       },
       pendingInterrupts: [
         {
-          requestId: "builtin-perm-async-1",
+          requestId: "hub_assistant-perm-async-1",
           type: "permission",
           phase: "asked",
           details: {
-            permission: "self-management-write",
-            patterns: ["self.jobs.pause"],
+            permission: "hub-assistant-write",
+            patterns: ["hub_assistant.jobs.pause"],
             displayMessage: "Approve write access to continue.",
           },
         },
       ],
     };
 
-    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
     const root = tree.root;
     const permissionButton = root.findByProps({
       testID: "interrupt-permission-once",
@@ -1837,10 +1830,8 @@ describe("ChatScreen interrupt handling", () => {
       await Promise.resolve();
     });
 
-    expect(
-      mockReplySelfManagementBuiltInAgentPermissionInterrupt,
-    ).toHaveBeenCalledWith({
-      requestId: "builtin-perm-async-1",
+    expect(mockReplyHubAssistantPermissionInterrupt).toHaveBeenCalledWith({
+      requestId: "hub_assistant-perm-async-1",
       reply: "once",
       agentMessageId: expect.any(String),
     });
@@ -1851,7 +1842,7 @@ describe("ChatScreen interrupt handling", () => {
     expect(
       mockChatState.sessions[conversationId]?.lastResolvedInterrupt,
     ).toMatchObject({
-      requestId: "builtin-perm-async-1",
+      requestId: "hub_assistant-perm-async-1",
       type: "permission",
       phase: "resolved",
       resolution: "replied",
@@ -1869,7 +1860,7 @@ describe("ChatScreen interrupt handling", () => {
   it("keeps waiting for persisted continuation state instead of forcing a timeout error", async () => {
     jest.useFakeTimers();
     try {
-      mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockImplementationOnce(
+      mockReplyHubAssistantPermissionInterrupt.mockImplementationOnce(
         async (payload: { agentMessageId: string }) => {
           return {
             status: "accepted",
@@ -1877,7 +1868,7 @@ describe("ChatScreen interrupt handling", () => {
             exhausted: false,
             runtime: "swival",
             resources: ["agents", "jobs", "sessions"],
-            tools: ["self.jobs.pause"],
+            tools: ["hub_assistant.jobs.pause"],
             write_tools_enabled: true,
             interrupt: null,
             continuation: {
@@ -1889,32 +1880,32 @@ describe("ChatScreen interrupt handling", () => {
       );
       mockChatState.sessions[conversationId] = {
         ...baseSession(),
-        agentId: SELF_MANAGEMENT_AGENT_ID,
+        agentId: HUB_ASSISTANT_AGENT_ID,
         pendingInterrupt: {
-          requestId: "builtin-perm-async-2",
+          requestId: "hub_assistant-perm-async-2",
           type: "permission",
           phase: "asked",
           details: {
-            permission: "self-management-write",
-            patterns: ["self.jobs.pause"],
+            permission: "hub-assistant-write",
+            patterns: ["hub_assistant.jobs.pause"],
             displayMessage: "Approve write access to continue.",
           },
         },
         pendingInterrupts: [
           {
-            requestId: "builtin-perm-async-2",
+            requestId: "hub_assistant-perm-async-2",
             type: "permission",
             phase: "asked",
             details: {
-              permission: "self-management-write",
-              patterns: ["self.jobs.pause"],
+              permission: "hub-assistant-write",
+              patterns: ["hub_assistant.jobs.pause"],
               displayMessage: "Approve write access to continue.",
             },
           },
         ],
       };
 
-      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+      const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
       const root = tree.root;
       const permissionButton = root.findByProps({
         testID: "interrupt-permission-once",
@@ -1942,7 +1933,7 @@ describe("ChatScreen interrupt handling", () => {
         expect.any(String),
         expect.objectContaining({
           content:
-            "Built-in assistant continuation timed out while waiting for persisted output.",
+            "Hub Assistant continuation timed out while waiting for persisted output.",
           status: "error",
         }),
       );
@@ -1955,12 +1946,12 @@ describe("ChatScreen interrupt handling", () => {
     }
   });
 
-  it("refreshes an idle built-in chat so proactive follow-up replies become visible", async () => {
+  it("refreshes an idle Hub Assistant chat so proactive follow-up replies become visible", async () => {
     jest.useFakeTimers();
     try {
       mockChatState.sessions[conversationId] = {
         ...baseSession(),
-        agentId: SELF_MANAGEMENT_AGENT_ID,
+        agentId: HUB_ASSISTANT_AGENT_ID,
         streamState: "idle",
       };
       mockListSessionMessagesPage.mockResolvedValue({
@@ -1982,7 +1973,7 @@ describe("ChatScreen interrupt handling", () => {
         },
       });
 
-      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+      const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
 
       await act(async () => {
         jest.advanceTimersByTime(5_000);
@@ -2014,12 +2005,12 @@ describe("ChatScreen interrupt handling", () => {
     }
   });
 
-  it("does not re-run built-in interrupt recovery when only historical agent messages are interrupted", async () => {
+  it("does not re-run Hub Assistant interrupt recovery when only historical agent messages are interrupted", async () => {
     jest.useFakeTimers();
     try {
       mockChatState.sessions[conversationId] = {
         ...baseSession(),
-        agentId: SELF_MANAGEMENT_AGENT_ID,
+        agentId: HUB_ASSISTANT_AGENT_ID,
         streamState: "idle",
       };
       mockListSessionMessagesPage.mockResolvedValue({
@@ -2051,12 +2042,12 @@ describe("ChatScreen interrupt handling", () => {
         },
       });
 
-      const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+      const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
 
       await act(async () => {
         await Promise.resolve();
       });
-      mockRecoverSelfManagementBuiltInAgentInterrupts.mockClear();
+      mockRecoverHubAssistantInterrupts.mockClear();
 
       await act(async () => {
         jest.advanceTimersByTime(5_000);
@@ -2068,9 +2059,7 @@ describe("ChatScreen interrupt handling", () => {
         before: null,
         limit: 8,
       });
-      expect(
-        mockRecoverSelfManagementBuiltInAgentInterrupts,
-      ).not.toHaveBeenCalled();
+      expect(mockRecoverHubAssistantInterrupts).not.toHaveBeenCalled();
 
       act(() => {
         tree.unmount();
@@ -2080,8 +2069,8 @@ describe("ChatScreen interrupt handling", () => {
     }
   });
 
-  it("clears stale built-in permission interrupts when the reply request expired", async () => {
-    mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(
+  it("clears stale Hub Assistant permission interrupts when the reply request expired", async () => {
+    mockReplyHubAssistantPermissionInterrupt.mockRejectedValueOnce(
       new ApiRequestError("Bad Request", 400, {
         errorCode: "interrupt_request_expired",
         upstreamError: {
@@ -2091,32 +2080,32 @@ describe("ChatScreen interrupt handling", () => {
     );
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      agentId: SELF_MANAGEMENT_AGENT_ID,
+      agentId: HUB_ASSISTANT_AGENT_ID,
       pendingInterrupt: {
-        requestId: "builtin-perm-stale-1",
+        requestId: "hub_assistant-perm-stale-1",
         type: "permission",
         phase: "asked",
         details: {
-          permission: "self-management-write",
-          patterns: ["self.jobs.pause"],
+          permission: "hub-assistant-write",
+          patterns: ["hub_assistant.jobs.pause"],
           displayMessage: "Approve write access to continue.",
         },
       },
       pendingInterrupts: [
         {
-          requestId: "builtin-perm-stale-1",
+          requestId: "hub_assistant-perm-stale-1",
           type: "permission",
           phase: "asked",
           details: {
-            permission: "self-management-write",
-            patterns: ["self.jobs.pause"],
+            permission: "hub-assistant-write",
+            patterns: ["hub_assistant.jobs.pause"],
             displayMessage: "Approve write access to continue.",
           },
         },
       ],
     };
 
-    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
     const root = tree.root;
     const permissionButton = root.findByProps({
       testID: "interrupt-permission-once",
@@ -2127,16 +2116,14 @@ describe("ChatScreen interrupt handling", () => {
       await Promise.resolve();
     });
 
-    expect(
-      mockReplySelfManagementBuiltInAgentPermissionInterrupt,
-    ).toHaveBeenCalledWith({
-      requestId: "builtin-perm-stale-1",
+    expect(mockReplyHubAssistantPermissionInterrupt).toHaveBeenCalledWith({
+      requestId: "hub_assistant-perm-stale-1",
       reply: "once",
       agentMessageId: expect.any(String),
     });
     expect(mockChatState.clearPendingInterrupt).toHaveBeenCalledWith(
       conversationId,
-      "builtin-perm-stale-1",
+      "hub_assistant-perm-stale-1",
     );
     expect(mockRemoveConversationMessage).toHaveBeenCalledWith(
       conversationId,
@@ -2156,8 +2143,8 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("restores built-in permission reply state after non-terminal errors", async () => {
-    mockReplySelfManagementBuiltInAgentPermissionInterrupt.mockRejectedValueOnce(
+  it("restores Hub Assistant permission reply state after non-terminal errors", async () => {
+    mockReplyHubAssistantPermissionInterrupt.mockRejectedValueOnce(
       new ApiRequestError("Server Error", 500, {
         errorCode: "internal_error",
         upstreamError: {
@@ -2167,32 +2154,32 @@ describe("ChatScreen interrupt handling", () => {
     );
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
-      agentId: SELF_MANAGEMENT_AGENT_ID,
+      agentId: HUB_ASSISTANT_AGENT_ID,
       pendingInterrupt: {
-        requestId: "builtin-perm-failed-1",
+        requestId: "hub_assistant-perm-failed-1",
         type: "permission",
         phase: "asked",
         details: {
-          permission: "self-management-write",
-          patterns: ["self.jobs.pause"],
+          permission: "hub-assistant-write",
+          patterns: ["hub_assistant.jobs.pause"],
           displayMessage: "Approve write access to continue.",
         },
       },
       pendingInterrupts: [
         {
-          requestId: "builtin-perm-failed-1",
+          requestId: "hub_assistant-perm-failed-1",
           type: "permission",
           phase: "asked",
           details: {
-            permission: "self-management-write",
-            patterns: ["self.jobs.pause"],
+            permission: "hub-assistant-write",
+            patterns: ["hub_assistant.jobs.pause"],
             displayMessage: "Approve write access to continue.",
           },
         },
       ],
     };
 
-    const tree = renderChatScreen(conversationId, SELF_MANAGEMENT_AGENT_ID);
+    const tree = renderChatScreen(conversationId, HUB_ASSISTANT_AGENT_ID);
     const root = tree.root;
     const permissionButton = root.findByProps({
       testID: "interrupt-permission-once",

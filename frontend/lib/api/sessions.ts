@@ -17,7 +17,7 @@ export type SessionListItem = {
   external_provider?: string | null;
   external_session_id?: string | null;
   agent_id?: string | null;
-  agent_source?: "personal" | "shared" | "builtin" | null;
+  agent_source?: "personal" | "shared" | "hub_assistant" | null;
   title: string;
   last_active_at?: string | null;
   created_at?: string | null;

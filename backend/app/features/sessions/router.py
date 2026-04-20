@@ -17,22 +17,22 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely, load_for_external_call
-from app.features.hub_agents.runtime import (
-    HubA2ARuntimeNotFoundError,
-    HubA2ARuntimeValidationError,
-    HubA2AUserCredentialRequiredError,
-    hub_a2a_runtime_builder,
-)
-from app.features.invoke.stream_payloads import extract_stream_text_from_parts
-from app.features.personal_agents.runtime import (
+from app.features.agents.personal.runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,
     a2a_runtime_builder,
 )
-from app.features.self_management_shared.constants import (
-    SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
-    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+from app.features.agents.shared.runtime import (
+    SharedAgentRuntimeNotFoundError,
+    SharedAgentRuntimeValidationError,
+    SharedAgentUserCredentialRequiredError,
+    shared_agent_runtime_builder,
 )
+from app.features.hub_assistant.shared.constants import (
+    HUB_ASSISTANT_INTERNAL_ID,
+    HUB_ASSISTANT_PUBLIC_ID,
+)
+from app.features.invoke.stream_payloads import extract_stream_text_from_parts
 from app.features.sessions.schemas import (
     SessionAppendMessageRequest,
     SessionAppendMessageResponse,
@@ -103,8 +103,8 @@ def _status_code_for_session_error(detail: str) -> int:
 def _resolve_session_query_agent_id(agent_id: str | None) -> UUID | None:
     if agent_id is None:
         return None
-    if agent_id == SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID:
-        return SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID
+    if agent_id == HUB_ASSISTANT_PUBLIC_ID:
+        return HUB_ASSISTANT_INTERNAL_ID
     return UUID(agent_id)
 
 
@@ -226,7 +226,7 @@ async def _load_runtime_for_thread(
 ) -> Any:
     agent_id = cast(UUID | None, thread.agent_id)
     agent_source = cast(str | None, thread.agent_source)
-    if agent_source == "builtin":
+    if agent_source == "hub_assistant":
         raise HTTPException(status_code=400, detail="runtime_invalid")
     if agent_id is None or agent_source not in {"personal", "shared"}:
         raise HTTPException(status_code=400, detail="runtime_invalid")
@@ -236,7 +236,7 @@ async def _load_runtime_for_thread(
         if agent_source == "shared":
             return await load_for_external_call(
                 db,
-                lambda session: hub_a2a_runtime_builder.build(
+                lambda session: shared_agent_runtime_builder.build(
                     session,
                     user_id=current_user_id,
                     agent_id=agent_id,
@@ -250,14 +250,14 @@ async def _load_runtime_for_thread(
                 agent_id=agent_id,
             ),
         )
-    except (A2ARuntimeNotFoundError, HubA2ARuntimeNotFoundError) as exc:
+    except (A2ARuntimeNotFoundError, SharedAgentRuntimeNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except HubA2AUserCredentialRequiredError as exc:
+    except SharedAgentUserCredentialRequiredError as exc:
         raise HTTPException(
             status_code=403,
             detail=getattr(exc, "error_code", "credential_required"),
         ) from exc
-    except (A2ARuntimeValidationError, HubA2ARuntimeValidationError) as exc:
+    except (A2ARuntimeValidationError, SharedAgentRuntimeValidationError) as exc:
         raise HTTPException(status_code=400, detail="runtime_invalid") from exc
 
 

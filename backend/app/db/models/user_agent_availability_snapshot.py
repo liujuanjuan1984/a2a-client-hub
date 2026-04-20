@@ -41,7 +41,7 @@ class UserAgentAvailabilitySnapshot(Base, TimestampMixin):
         String(16),
         nullable=False,
         index=True,
-        comment="Agent source scope (shared/builtin).",
+        comment="Agent source scope (shared/hub_assistant).",
     )
     agent_id = Column(
         String(120),

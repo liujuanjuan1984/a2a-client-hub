@@ -6,17 +6,17 @@ from typing import Final
 # app.main and make startup registration changes reviewable in one place.
 ROUTER_MODULES: Final[tuple[str, ...]] = (
     "app.features.auth.router",
-    "app.features.personal_agents.router",
-    "app.features.agents_catalog.router",
-    "app.features.hub_agents.router",
-    "app.features.hub_agents.admin_router",
+    "app.features.agents.personal.router",
+    "app.features.agents.catalog.router",
+    "app.features.agents.shared.router",
+    "app.features.agents.shared.admin_router",
     "app.api.routers.admin_proxy_allowlist",
     "app.features.schedules.router",
     "app.features.extension_capabilities.personal_router",
     "app.features.extension_capabilities.hub_router",
-    "app.features.opencode_sessions.router",
+    "app.features.external_sessions.opencode.router",
     "app.features.sessions.router",
-    "app.features.self_management_agent.router",
+    "app.features.hub_assistant.router",
     "app.features.invitations.router",
     "app.features.shortcuts.router",
 )

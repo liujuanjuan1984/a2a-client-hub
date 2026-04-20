@@ -15,8 +15,8 @@ from app.features.schedules.common import (
     A2AScheduleConflictError,
     A2AScheduleServiceBusyError,
 )
-from app.features.schedules.self_management_jobs_service import (
-    self_management_jobs_service,
+from app.features.schedules.hub_assistant_jobs_service import (
+    hub_assistant_jobs_service,
 )
 from app.features.schedules.service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
@@ -168,7 +168,7 @@ async def test_schedule_routes_crud_and_toggle(
         assert after_delete_resp.status_code == 404
 
 
-async def test_schedule_patch_prompt_uses_self_management_jobs_service(
+async def test_schedule_patch_prompt_uses_hub_assistant_jobs_service(
     async_db_session,
     async_session_maker,
     monkeypatch,
@@ -178,7 +178,7 @@ async def test_schedule_patch_prompt_uses_self_management_jobs_service(
         async_db_session, user_id=user.id, suffix="prompt-gateway"
     )
 
-    original = self_management_jobs_service.update_prompt
+    original = hub_assistant_jobs_service.update_prompt
     called = {"value": False}
 
     async def _wrapped_update_prompt(**kwargs):
@@ -186,7 +186,7 @@ async def test_schedule_patch_prompt_uses_self_management_jobs_service(
         return await original(**kwargs)
 
     monkeypatch.setattr(
-        self_management_jobs_service,
+        hub_assistant_jobs_service,
         "update_prompt",
         _wrapped_update_prompt,
     )
@@ -220,7 +220,7 @@ async def test_schedule_patch_prompt_uses_self_management_jobs_service(
     assert called["value"] is True
 
 
-async def test_schedule_patch_schedule_uses_self_management_jobs_service(
+async def test_schedule_patch_schedule_uses_hub_assistant_jobs_service(
     async_db_session,
     async_session_maker,
     monkeypatch,
@@ -230,7 +230,7 @@ async def test_schedule_patch_schedule_uses_self_management_jobs_service(
         async_db_session, user_id=user.id, suffix="schedule-gateway"
     )
 
-    original = self_management_jobs_service.update_schedule
+    original = hub_assistant_jobs_service.update_schedule
     called = {"value": False}
 
     async def _wrapped_update_schedule(**kwargs):
@@ -238,7 +238,7 @@ async def test_schedule_patch_schedule_uses_self_management_jobs_service(
         return await original(**kwargs)
 
     monkeypatch.setattr(
-        self_management_jobs_service,
+        hub_assistant_jobs_service,
         "update_schedule",
         _wrapped_update_schedule,
     )

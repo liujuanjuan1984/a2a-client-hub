@@ -1,0 +1,167 @@
+"""Runtime helpers for building A2A invocation context from shared A2A agents."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional, cast
+from uuid import UUID
+
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.secret_vault import hub_a2a_secret_vault
+from app.db.models.a2a_agent import A2AAgent
+from app.db.models.a2a_agent_credential import A2AAgentCredential
+from app.db.models.hub_a2a_user_credential import HubA2AUserCredential
+from app.features.agents.common.runtime_auth import build_resolved_runtime_agent
+from app.integrations.a2a_client.types import ResolvedAgent
+
+
+class SharedAgentRuntimeError(RuntimeError):
+    """Base error for shared A2A runtime building."""
+
+
+class SharedAgentRuntimeNotFoundError(SharedAgentRuntimeError):
+    """Raised when the agent cannot be located or is not visible to the user."""
+
+
+class SharedAgentRuntimeValidationError(SharedAgentRuntimeError):
+    """Raised when runtime data is invalid or incomplete."""
+
+
+class SharedAgentUserCredentialRequiredError(SharedAgentRuntimeValidationError):
+    """Raised when a shared agent requires user-owned credentials."""
+
+    error_code = "credential_required"
+
+
+@dataclass(frozen=True)
+class SharedAgentRuntime:
+    agent_id: UUID
+    agent_name: str
+    agent_url: str
+    agent_enabled: bool
+    invoke_metadata_defaults: dict[str, str]
+    resolved: ResolvedAgent
+
+
+class SharedAgentRuntimeBuilder:
+    """Builds resolved runtime configuration from stored shared-agent records."""
+
+    def __init__(self) -> None:
+        self._vault = hub_a2a_secret_vault
+
+    async def build(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent_id: UUID,
+    ) -> SharedAgentRuntime:
+        from app.features.agents.shared.service import (
+            SharedAgentNotFoundError,
+            shared_agent_service,
+        )
+
+        try:
+            agent = await shared_agent_service.ensure_visible_for_user(
+                db, user_id=user_id, agent_id=agent_id
+            )
+        except SharedAgentNotFoundError as exc:
+            raise SharedAgentRuntimeNotFoundError(str(exc)) from exc
+
+        credential = None
+        if agent.auth_type in {"bearer", "basic"}:
+            credential = await self._get_credential(
+                db,
+                user_id=user_id,
+                agent=agent,
+            )
+        return self.build_from_agent(agent=agent, credential=credential)
+
+    def build_from_agent(
+        self,
+        *,
+        agent: A2AAgent,
+        credential: Optional[A2AAgentCredential],
+    ) -> SharedAgentRuntime:
+        resolved, _ = self.resolve_prefetched(
+            name=cast(str, agent.name),
+            card_url=cast(str, agent.card_url),
+            extra_headers=cast(dict[str, str] | None, agent.extra_headers),
+            auth_type=cast(str, agent.auth_type),
+            auth_header=cast(str | None, agent.auth_header),
+            auth_scheme=cast(str | None, agent.auth_scheme),
+            credential=credential,
+        )
+
+        return SharedAgentRuntime(
+            agent_id=cast(UUID, agent.id),
+            agent_name=cast(str, agent.name),
+            agent_url=cast(str, agent.card_url),
+            agent_enabled=bool(getattr(agent, "enabled", True)),
+            invoke_metadata_defaults=cast(
+                dict[str, str], agent.invoke_metadata_defaults or {}
+            ),
+            resolved=resolved,
+        )
+
+    def resolve_prefetched(
+        self,
+        *,
+        name: str,
+        card_url: str,
+        extra_headers: dict[str, str] | None,
+        auth_type: str,
+        auth_header: str | None,
+        auth_scheme: str | None,
+        credential: Optional[A2AAgentCredential],
+    ) -> tuple[ResolvedAgent, Optional[str]]:
+        return build_resolved_runtime_agent(
+            name=name,
+            card_url=card_url,
+            extra_headers=extra_headers,
+            auth_type=auth_type,
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            credential=credential,
+            vault=self._vault,
+            validation_error_cls=SharedAgentRuntimeValidationError,
+        )
+
+    async def _get_credential(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent: A2AAgent,
+    ) -> Optional[A2AAgentCredential | HubA2AUserCredential]:
+        agent_id = cast(UUID, agent.id)
+        credential_mode = cast(
+            str,
+            getattr(agent, "credential_mode", A2AAgent.CREDENTIAL_NONE),
+        )
+        if credential_mode == A2AAgent.CREDENTIAL_SHARED:
+            stmt = select(A2AAgentCredential).where(
+                A2AAgentCredential.agent_id == agent_id
+            )
+            return cast(A2AAgentCredential | None, await db.scalar(stmt))
+        if credential_mode == A2AAgent.CREDENTIAL_USER:
+            stmt = select(HubA2AUserCredential).where(
+                and_(
+                    HubA2AUserCredential.agent_id == agent_id,
+                    HubA2AUserCredential.user_id == user_id,
+                )
+            )
+            credential = cast(HubA2AUserCredential | None, await db.scalar(stmt))
+            if credential is None or cast(str | None, credential.auth_type) != cast(
+                str, agent.auth_type
+            ):
+                raise SharedAgentUserCredentialRequiredError(
+                    "This shared agent requires your credential. Open agent details and save it first."
+                )
+            return credential
+        return None
+
+
+shared_agent_runtime_builder = SharedAgentRuntimeBuilder()

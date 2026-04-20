@@ -834,90 +834,90 @@ class Settings(BaseSettings):
         alias="OPENCODE_SESSIONS_REFRESH_CONCURRENCY",
         description="Maximum concurrent upstream refreshes when updating cached OpenCode session listings.",
     )
-    self_management_swival_import_paths: list[str] = Field(
+    hub_assistant_swival_import_paths: list[str] = Field(
         default_factory=list,
-        alias="SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS",
-        description="Optional extra import roots used before importing swival for the built-in self-management agent runtime.",
+        alias="HUB_ASSISTANT_SWIVAL_IMPORT_PATHS",
+        description="Optional extra import roots used before importing swival for the Hub Assistant runtime.",
     )
-    self_management_swival_tool_executable: str | None = Field(
+    hub_assistant_swival_tool_executable: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE",
+        alias="HUB_ASSISTANT_SWIVAL_TOOL_EXECUTABLE",
         description="Optional absolute path or command name used to discover a uv tool-installed swival runtime when the backend environment cannot import swival directly.",
     )
-    self_management_swival_runtime_root: str | None = Field(
+    hub_assistant_swival_runtime_root: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT",
-        description="Optional root directory used to isolate built-in swival runtime files per authenticated user.",
+        alias="HUB_ASSISTANT_SWIVAL_RUNTIME_ROOT",
+        description="Optional root directory used to isolate Hub Assistant swival runtime files per authenticated user.",
     )
-    self_management_swival_provider: str | None = Field(
+    hub_assistant_swival_provider: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_PROVIDER",
-        description="Configured swival provider id for the built-in self-management agent runtime.",
+        alias="HUB_ASSISTANT_SWIVAL_PROVIDER",
+        description="Configured swival provider id for the Hub Assistant runtime.",
     )
-    self_management_swival_model: str | None = Field(
+    hub_assistant_swival_model: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_MODEL",
-        description="Configured swival model id for the built-in self-management agent runtime.",
+        alias="HUB_ASSISTANT_SWIVAL_MODEL",
+        description="Configured swival model id for the Hub Assistant runtime.",
     )
-    self_management_swival_base_url: str | None = Field(
+    hub_assistant_swival_base_url: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_BASE_URL",
-        description="Optional base URL forwarded to swival for the built-in self-management agent runtime.",
+        alias="HUB_ASSISTANT_SWIVAL_BASE_URL",
+        description="Optional base URL forwarded to swival for the Hub Assistant runtime.",
     )
-    self_management_swival_api_key: str | None = Field(
+    hub_assistant_swival_api_key: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_API_KEY",
-        description="Optional API key forwarded to swival for the built-in self-management agent runtime.",
+        alias="HUB_ASSISTANT_SWIVAL_API_KEY",
+        description="Optional API key forwarded to swival for the Hub Assistant runtime.",
     )
-    self_management_swival_mcp_base_url: str | None = Field(
+    hub_assistant_swival_mcp_base_url: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL",
-        description="Trusted internal base URL used by the built-in self-management agent runtime when connecting back to the local MCP adapter.",
+        alias="HUB_ASSISTANT_SWIVAL_MCP_BASE_URL",
+        description="Trusted internal base URL used by the Hub Assistant runtime when connecting back to the local MCP adapter.",
     )
-    self_management_swival_reasoning_effort: str | None = Field(
+    hub_assistant_swival_reasoning_effort: str | None = Field(
         default=None,
-        alias="SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT",
-        description="Optional reasoning effort forwarded to swival for the built-in self-management agent runtime.",
+        alias="HUB_ASSISTANT_SWIVAL_REASONING_EFFORT",
+        description="Optional reasoning effort forwarded to swival for the Hub Assistant runtime.",
     )
-    self_management_swival_max_turns: int = Field(
+    hub_assistant_swival_max_turns: int = Field(
         default=12,
-        alias="SELF_MANAGEMENT_SWIVAL_MAX_TURNS",
-        description="Maximum number of turns allowed for one built-in self-management agent run.",
+        alias="HUB_ASSISTANT_SWIVAL_MAX_TURNS",
+        description="Maximum number of turns allowed for one Hub Assistant run.",
     )
-    self_management_swival_max_output_tokens: int = Field(
+    hub_assistant_swival_max_output_tokens: int = Field(
         default=4096,
-        alias="SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS",
-        description="Maximum output tokens allowed for one built-in self-management agent run.",
+        alias="HUB_ASSISTANT_SWIVAL_MAX_OUTPUT_TOKENS",
+        description="Maximum output tokens allowed for one Hub Assistant run.",
     )
-    self_management_swival_delegated_token_ttl_seconds: int = Field(
+    hub_assistant_swival_delegated_token_ttl_seconds: int = Field(
         default=30 * 60,
-        alias="SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS",
-        description="Maximum lifetime in seconds for delegated built-in agent access tokens used against the internal MCP adapter.",
+        alias="HUB_ASSISTANT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS",
+        description="Maximum lifetime in seconds for delegated Hub Assistant access tokens used against the internal MCP adapter.",
     )
-    self_management_interrupt_ttl_seconds: int = Field(
+    hub_assistant_interrupt_ttl_seconds: int = Field(
         default=900,
-        alias="SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS",
-        description="Maximum lifetime in seconds for built-in self-management interrupt request tokens.",
+        alias="HUB_ASSISTANT_INTERRUPT_TTL_SECONDS",
+        description="Maximum lifetime in seconds for Hub Assistant interrupt request tokens.",
     )
-    self_management_swival_session_ttl_seconds: int = Field(
+    hub_assistant_swival_session_ttl_seconds: int = Field(
         default=30 * 60,
-        alias="SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS",
-        description="Maximum idle lifetime in seconds for one built-in self-management swival conversation session.",
+        alias="HUB_ASSISTANT_SWIVAL_SESSION_TTL_SECONDS",
+        description="Maximum idle lifetime in seconds for one Hub Assistant swival conversation session.",
     )
-    self_management_follow_up_poll_interval_seconds: int = Field(
-        default=10,
-        alias="SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS",
-        description="Seconds between durable built-in follow-up scheduler scans.",
+    hub_assistant_task_poll_interval_seconds: int = Field(
+        default=5,
+        alias="HUB_ASSISTANT_TASK_POLL_INTERVAL_SECONDS",
+        description="Seconds between Hub Assistant task scheduler scans.",
     )
-    self_management_follow_up_batch_size: int = Field(
+    hub_assistant_task_batch_size: int = Field(
         default=20,
-        alias="SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE",
-        description="Maximum built-in follow-up tasks scanned per scheduler cycle.",
+        alias="HUB_ASSISTANT_TASK_BATCH_SIZE",
+        description="Maximum Hub Assistant tasks scanned per scheduler cycle.",
     )
-    self_management_follow_up_running_timeout_seconds: int = Field(
+    hub_assistant_task_running_timeout_seconds: int = Field(
         default=10 * 60,
-        alias="SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS",
-        description="Seconds before one running built-in follow-up task is considered stale and recoverable.",
+        alias="HUB_ASSISTANT_TASK_RUNNING_TIMEOUT_SECONDS",
+        description="Seconds before one running Hub Assistant task is considered stale and recoverable.",
     )
 
     model_config = SettingsConfigDict(
@@ -953,81 +953,77 @@ class Settings(BaseSettings):
             raise ValueError("WS_TICKET_TTL_SECONDS must not exceed 600")
         return value
 
-    @field_validator("self_management_swival_delegated_token_ttl_seconds")
+    @field_validator("hub_assistant_swival_delegated_token_ttl_seconds")
     @classmethod
-    def validate_self_management_swival_delegated_token_ttl_seconds(
+    def validate_hub_assistant_swival_delegated_token_ttl_seconds(
         cls, value: int
     ) -> int:
         if value <= 0:
             raise ValueError(
-                "SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must be positive"
+                "HUB_ASSISTANT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must be positive"
             )
         if value > 3600:
             raise ValueError(
-                "SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must not exceed 3600"
+                "HUB_ASSISTANT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS must not exceed 3600"
             )
         return value
 
-    @field_validator("self_management_interrupt_ttl_seconds")
+    @field_validator("hub_assistant_interrupt_ttl_seconds")
     @classmethod
-    def validate_self_management_interrupt_ttl_seconds(cls, value: int) -> int:
+    def validate_hub_assistant_interrupt_ttl_seconds(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS must be positive")
+            raise ValueError("HUB_ASSISTANT_INTERRUPT_TTL_SECONDS must be positive")
         if value > 86400:
             raise ValueError(
-                "SELF_MANAGEMENT_INTERRUPT_TTL_SECONDS must not exceed 86400"
+                "HUB_ASSISTANT_INTERRUPT_TTL_SECONDS must not exceed 86400"
             )
         return value
 
-    @field_validator("self_management_swival_session_ttl_seconds")
+    @field_validator("hub_assistant_swival_session_ttl_seconds")
     @classmethod
-    def validate_self_management_swival_session_ttl_seconds(cls, value: int) -> int:
+    def validate_hub_assistant_swival_session_ttl_seconds(cls, value: int) -> int:
         if value <= 0:
             raise ValueError(
-                "SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS must be positive"
+                "HUB_ASSISTANT_SWIVAL_SESSION_TTL_SECONDS must be positive"
             )
         if value > 86400:
             raise ValueError(
-                "SELF_MANAGEMENT_SWIVAL_SESSION_TTL_SECONDS must not exceed 86400"
+                "HUB_ASSISTANT_SWIVAL_SESSION_TTL_SECONDS must not exceed 86400"
             )
         return value
 
-    @field_validator("self_management_follow_up_poll_interval_seconds")
+    @field_validator("hub_assistant_task_poll_interval_seconds")
     @classmethod
-    def validate_self_management_follow_up_poll_interval_seconds(
-        cls, value: int
-    ) -> int:
+    def validate_hub_assistant_task_poll_interval_seconds(cls, value: int) -> int:
         if value <= 0:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS must be positive"
+                "HUB_ASSISTANT_TASK_POLL_INTERVAL_SECONDS must be positive"
             )
         if value > 300:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_POLL_INTERVAL_SECONDS must not exceed 300"
+                "HUB_ASSISTANT_TASK_POLL_INTERVAL_SECONDS must not exceed 300"
             )
         return value
 
-    @field_validator("self_management_follow_up_batch_size")
+    @field_validator("hub_assistant_task_batch_size")
     @classmethod
-    def validate_self_management_follow_up_batch_size(cls, value: int) -> int:
+    def validate_hub_assistant_task_batch_size(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE must be positive")
+            raise ValueError("HUB_ASSISTANT_TASK_BATCH_SIZE must be positive")
         if value > 500:
-            raise ValueError("SELF_MANAGEMENT_FOLLOW_UP_BATCH_SIZE must not exceed 500")
+            raise ValueError("HUB_ASSISTANT_TASK_BATCH_SIZE must not exceed 500")
         return value
 
-    @field_validator("self_management_follow_up_running_timeout_seconds")
+    @field_validator("hub_assistant_task_running_timeout_seconds")
     @classmethod
-    def validate_self_management_follow_up_running_timeout_seconds(
-        cls, value: int
-    ) -> int:
+    def validate_hub_assistant_task_running_timeout_seconds(cls, value: int) -> int:
         if value <= 0:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS must be positive"
+                "HUB_ASSISTANT_TASK_RUNNING_TIMEOUT_SECONDS must be positive"
             )
         if value > 86400:
             raise ValueError(
-                "SELF_MANAGEMENT_FOLLOW_UP_RUNNING_TIMEOUT_SECONDS must not exceed 86400"
+                "HUB_ASSISTANT_TASK_RUNNING_TIMEOUT_SECONDS must not exceed 86400"
             )
         return value
 
@@ -1058,25 +1054,23 @@ class Settings(BaseSettings):
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must not exceed 20")
         return value
 
-    @field_validator("self_management_swival_max_turns")
+    @field_validator("hub_assistant_swival_max_turns")
     @classmethod
-    def validate_self_management_swival_max_turns(cls, value: int) -> int:
+    def validate_hub_assistant_swival_max_turns(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("SELF_MANAGEMENT_SWIVAL_MAX_TURNS must be positive")
+            raise ValueError("HUB_ASSISTANT_SWIVAL_MAX_TURNS must be positive")
         if value > 100:
-            raise ValueError("SELF_MANAGEMENT_SWIVAL_MAX_TURNS must not exceed 100")
+            raise ValueError("HUB_ASSISTANT_SWIVAL_MAX_TURNS must not exceed 100")
         return value
 
-    @field_validator("self_management_swival_max_output_tokens")
+    @field_validator("hub_assistant_swival_max_output_tokens")
     @classmethod
-    def validate_self_management_swival_max_output_tokens(cls, value: int) -> int:
+    def validate_hub_assistant_swival_max_output_tokens(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError(
-                "SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS must be positive"
-            )
+            raise ValueError("HUB_ASSISTANT_SWIVAL_MAX_OUTPUT_TOKENS must be positive")
         if value > 32768:
             raise ValueError(
-                "SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS must not exceed 32768"
+                "HUB_ASSISTANT_SWIVAL_MAX_OUTPUT_TOKENS must not exceed 32768"
             )
         return value
 

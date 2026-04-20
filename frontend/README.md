@@ -121,12 +121,12 @@ Message id contract:
 - Stream events are consumed via normalized snake_case fields (`message_id`, `event_id`, `seq`); missing upstream ids are tolerated with fallback keys, and weak fallback identity disables strict duplicate suppression (with throttled warning logs).
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
 - Message status semantics are preserved from history payloads (`streaming`, `done`, `error`, `interrupted`).
-- The built-in self-management assistant is injected into the normal agent catalog and reuses the existing permission interrupt card: read-only runs can return a `permission` interrupt, and the same UI resolves it through the dedicated self-management reply endpoint.
-- The Agents screen surfaces the built-in self-management assistant in the Shared view so it can be opened directly for hands-on testing, instead of requiring a deep link or a prior session reopen.
-- Built-in self-management runs are conversation-backed: the frontend sends the current `conversationId`, so follow-up turns reuse the same server-side swival session instead of restarting from a stateless one-shot run.
-- For built-in permission interrupts, `Allow once` resumes just the current turn, while `Always allow` enables write tools for the current built-in conversation until that server-side session expires.
-- Because built-in runs now project into the normal sessions domain, the same `conversationId` can later be reopened from the Sessions directory and its persisted history survives beyond the in-memory swival runtime object.
-- Reopening a built-in conversation now also recovers unresolved permission interrupts from durable session history, so the existing interrupt card can resume the pending approval flow after a refresh or reopen.
+- The Hub Assistant is injected into the normal agent catalog and reuses the existing permission interrupt card: read-only runs can return a `permission` interrupt, and the same UI resolves it through the dedicated hub-assistant reply endpoint.
+- The Agents screen surfaces the Hub Assistant in the Shared view so it can be opened directly for hands-on testing, instead of requiring a deep link or a prior session reopen.
+- Hub Assistant hub-assistant runs are conversation-backed: the frontend sends the current `conversationId`, so follow-up turns reuse the same server-side swival session instead of restarting from a stateless one-shot run.
+- For Hub Assistant permission interrupts, `Allow once` resumes just the current turn, while `Always allow` enables write tools for the current Hub Assistant conversation until that server-side session expires.
+- Because Hub Assistant runs now project into the normal sessions domain, the same `conversationId` can later be reopened from the Sessions directory and its persisted history survives beyond the in-memory swival runtime object.
+- Reopening a Hub Assistant conversation now also recovers unresolved permission interrupts from durable session history, so the existing interrupt card can resume the pending approval flow after a refresh or reopen.
 
 ## Block-based Streaming
 

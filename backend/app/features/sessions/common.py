@@ -32,7 +32,7 @@ from app.utils.session_identity import normalize_non_empty_text
 from app.utils.timezone_util import ensure_utc
 
 SessionSource = Literal["manual", "scheduled"]
-SessionAgentSource = Literal["personal", "shared", "builtin"]
+SessionAgentSource = Literal["personal", "shared", "hub_assistant"]
 ResolvedSource = Literal["manual", "scheduled"]
 
 

@@ -1,6 +1,6 @@
 import { apiRequest } from "@/lib/api/client";
 
-export type UnifiedAgentSource = "personal" | "shared" | "builtin";
+export type UnifiedAgentSource = "personal" | "shared" | "hub_assistant";
 export type UnifiedAgentHealthStatus =
   | "unknown"
   | "healthy"

@@ -29,8 +29,8 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
 from app.db.session import AsyncSessionLocal, async_engine
 from app.db.transaction import commit_safely, rollback_safely
+from app.features.agents.personal.runtime import a2a_runtime_builder
 from app.features.invoke.route_runner import run_background_invoke
-from app.features.personal_agents.runtime import a2a_runtime_builder
 from app.features.schedules.common import (
     A2A_SCHEDULE_SOURCE,
     A2AScheduleConflictError,

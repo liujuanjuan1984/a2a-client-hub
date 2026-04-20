@@ -65,7 +65,7 @@ Default API prefix: `/api/v1`.
 
 ## Run the MCP Surface
 
-The backend also mounts an authenticated FastMCP surface for self-management.
+The backend also mounts an authenticated FastMCP surface for hub-assistant.
 This is intended for agent runtimes such as `swival`, not for direct browser use.
 
 - Mounted paths:
@@ -74,11 +74,11 @@ This is intended for agent runtimes such as `swival`, not for direct browser use
 - Transport: HTTP SSE
 - Auth: delegated bearer token in `Authorization: Bearer <token>`
 - Read-only MCP tools:
-  `self.agents.list`, `self.agents.get`,
-  `self.jobs.list`, `self.jobs.get`,
-  `self.sessions.list`, `self.sessions.get`
+  `hub_assistant.agents.list`, `hub_assistant.agents.get`,
+  `hub_assistant.jobs.list`, `hub_assistant.jobs.get`,
+  `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
 - Write-enabled MCP tools add:
-  `self.agents.update_config`, `self.jobs.pause`
+  `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
 
 Once the API server is running, an MCP client can connect to:
 
@@ -94,50 +94,50 @@ http://localhost:8000/mcp-write/
 
 ## Run the Swival-Backed Built-In Agent
 
-The backend also exposes a first-wave built-in self-management agent surface
+The backend also exposes a first-wave Hub Assistant surface
 that uses `swival` as the runtime and the authenticated MCP surface as its tool
 backend.
 
-- Profile: `GET /api/v1/me/self-management/agent`
-- Run once: `POST /api/v1/me/self-management/agent:run`
-- Recover pending interrupts: `POST /api/v1/me/self-management/agent/interrupts:recover`
+- Profile: `GET /api/v1/me/hub-assistant`
+- Run once: `POST /api/v1/me/hub-assistant:run`
+- Recover pending interrupts: `POST /api/v1/me/hub-assistant/interrupts:recover`
 - Default run mode: read-only
-- Built-in runs are conversation-backed and must include `conversationId`
+- Hub Assistant runs are conversation-backed and must include `conversationId`
 - To explicitly enable write tools for one run, send:
   `{"conversationId": "...", "message": "...", "allow_write_tools": true}`
-- Current built-in tool set:
+- Current Hub Assistant tool set:
   - default read-only:
-    `self.agents.list`, `self.agents.get`,
-    `self.jobs.list`, `self.jobs.get`,
-    `self.sessions.list`, `self.sessions.get`
+    `hub_assistant.agents.list`, `hub_assistant.agents.get`,
+    `hub_assistant.jobs.list`, `hub_assistant.jobs.get`,
+    `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
   - write-enabled only:
-    `self.agents.update_config`, `self.jobs.pause`
+    `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
 
 Required environment variables:
 
-- `SELF_MANAGEMENT_SWIVAL_PROVIDER`
-- `SELF_MANAGEMENT_SWIVAL_MODEL`
-- `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL`
+- `HUB_ASSISTANT_SWIVAL_PROVIDER`
+- `HUB_ASSISTANT_SWIVAL_MODEL`
+- `HUB_ASSISTANT_SWIVAL_MCP_BASE_URL`
 
 Optional environment variables:
 
-- `SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS`
-- `SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE`
-- `SELF_MANAGEMENT_SWIVAL_BASE_URL`
-- `SELF_MANAGEMENT_SWIVAL_API_KEY`
-- `SELF_MANAGEMENT_SWIVAL_REASONING_EFFORT`
-- `SELF_MANAGEMENT_SWIVAL_MAX_TURNS`
-- `SELF_MANAGEMENT_SWIVAL_MAX_OUTPUT_TOKENS`
-- `SELF_MANAGEMENT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS`
-- `SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT`
+- `HUB_ASSISTANT_SWIVAL_IMPORT_PATHS`
+- `HUB_ASSISTANT_SWIVAL_TOOL_EXECUTABLE`
+- `HUB_ASSISTANT_SWIVAL_BASE_URL`
+- `HUB_ASSISTANT_SWIVAL_API_KEY`
+- `HUB_ASSISTANT_SWIVAL_REASONING_EFFORT`
+- `HUB_ASSISTANT_SWIVAL_MAX_TURNS`
+- `HUB_ASSISTANT_SWIVAL_MAX_OUTPUT_TOKENS`
+- `HUB_ASSISTANT_SWIVAL_DELEGATED_TOKEN_TTL_SECONDS`
+- `HUB_ASSISTANT_SWIVAL_RUNTIME_ROOT`
 
 Recommended Gemini configuration (aligned with upstream `swival`):
 
 ```bash
 export GEMINI_API_KEY=...
-export SELF_MANAGEMENT_SWIVAL_PROVIDER=google
-export SELF_MANAGEMENT_SWIVAL_MODEL=gemini-3.1-pro-preview
-export SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL=http://127.0.0.1:8000
+export HUB_ASSISTANT_SWIVAL_PROVIDER=google
+export HUB_ASSISTANT_SWIVAL_MODEL=gemini-3.1-pro-preview
+export HUB_ASSISTANT_SWIVAL_MCP_BASE_URL=http://127.0.0.1:8000
 ```
 
 Notes:
@@ -146,43 +146,43 @@ Notes:
   intend to run into the backend Python environment so `uv run python -c "import swival"`
   succeeds directly.
 - If you currently ship a locally patched `swival` through `uv tool install`,
-  set `SELF_MANAGEMENT_SWIVAL_TOOL_EXECUTABLE` to that tool binary (prefer an
+  set `HUB_ASSISTANT_SWIVAL_TOOL_EXECUTABLE` to that tool binary (prefer an
   absolute path). The backend will resolve the tool-managed virtualenv's
   `site-packages` and import `swival` from there as a compatibility fallback.
-- `SELF_MANAGEMENT_SWIVAL_IMPORT_PATHS` remains available as a last-resort
+- `HUB_ASSISTANT_SWIVAL_IMPORT_PATHS` remains available as a last-resort
   development escape hatch, but it is less stable than installing an exact
   wheel into the backend environment or resolving from an explicitly managed
   tool executable.
-- For Gemini, prefer `SELF_MANAGEMENT_SWIVAL_PROVIDER=google` instead of `generic`.
+- For Gemini, prefer `HUB_ASSISTANT_SWIVAL_PROVIDER=google` instead of `generic`.
 - Let `swival` resolve the API key from `GEMINI_API_KEY` or `OPENAI_API_KEY`.
-- `SELF_MANAGEMENT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
+- `HUB_ASSISTANT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
   overriding the default Google OpenAI-compatible endpoint.
-- `SELF_MANAGEMENT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
-  built-in agent no longer derives its MCP target from request headers.
-- `SELF_MANAGEMENT_SWIVAL_RUNTIME_ROOT` controls where the built-in runtime keeps
+- `HUB_ASSISTANT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
+  Hub Assistant no longer derives its MCP target from request headers.
+- `HUB_ASSISTANT_SWIVAL_RUNTIME_ROOT` controls where the Hub Assistant runtime keeps
   swival's per-user working state. Each authenticated user gets a dedicated
   subdirectory under this root, and the runtime no longer uses the shared
   backend repository directory as its `base_dir`.
-- The built-in profile now reports `configured=true` only when the required
+- The Hub Assistant profile now reports `configured=true` only when the required
   runtime settings are present and `swival` is actually importable from the
   backend process.
-- Built-in agent write tools are disabled by default and only become available
+- Hub Assistant write tools are disabled by default and only become available
   for runs that explicitly set `allow_write_tools=true`.
-- Built-in runs now bind their `conversationId` to the normal sessions domain:
+- Hub Assistant runs now bind their `conversationId` to the normal sessions domain:
   the thread, user/agent messages, and permission interrupt lifecycle events are
   persisted under `/me/conversations`, rather than existing only in process
   memory.
-- When the built-in agent returns a permission interrupt, `reply=once` enables
+- When the Hub Assistant returns a permission interrupt, `reply=once` enables
   write tools only for the resumed turn, while `reply=always` enables
-  auto-approved write tools for the current built-in conversation until the
+  auto-approved write tools for the current Hub Assistant conversation until the
   server-side swival session expires.
 - The swival runtime object itself is still process-local and TTL-managed; this
   PR persists the durable session history and interrupt lifecycle, not full
   cross-process swival runtime restoration.
 - If the in-memory swival runtime expires, the backend now best-effort
-  rehydrates the next built-in session from persisted user/agent turns in the
+  rehydrates the next Hub Assistant session from persisted user/agent turns in the
   same durable conversation before resuming.
-- The built-in runtime applies a compatibility shim for older `swival` MCP
+- The Hub Assistant runtime applies a compatibility shim for older `swival` MCP
   adapters that still emit private `_mcp_*` tool metadata rejected by Gemini's
   OpenAI-compatible endpoint.
 
@@ -199,12 +199,12 @@ Current direction:
 Feature-owned areas already organized under `app/features/`:
 
 - `app/features/auth/`
+- `app/features/agents/`
 - `app/features/extension_capabilities/`
+- `app/features/external_sessions/`
 - `app/features/hub_agents/`
 - `app/features/invitations/`
 - `app/features/invoke/`
-- `app/features/opencode_sessions/`
-- `app/features/personal_agents/`
 - `app/features/schedules/`
 - `app/features/sessions/`
 - `app/features/shortcuts/`
@@ -217,8 +217,8 @@ Backend tests are being grouped under `backend/tests/<group_name>/` so related c
 
 Current layout direction:
 
-- Feature directories such as `tests/invoke/`, `tests/sessions/`, and `tests/hub_agents/`
-- Shared capability directories such as `tests/client/`, `tests/runtime/`, `tests/proxy/`, and `tests/shared/`
+- Feature directories such as `tests/agents/`, `tests/hub_assistant/`, `tests/invoke/`, and `tests/sessions/`
+- Shared capability directories such as `tests/client/`, `tests/extensions/`, `tests/runtime/`, and `tests/proxy/`
 - Shared fixtures remain at the `backend/tests/` root, and reusable helpers live under `backend/tests/support/`
 
 ## Incremental mypy Gate
@@ -263,7 +263,7 @@ Recent examples:
 
 - `app/features/schedules/job.py` keeps scheduler claim/finalize work in short sessions and releases DB state before remote invoke.
 - `app/features/invoke/route_runner.py` keeps session recovery in short transactions instead of tying invoke lifetime to request-scoped DB state.
-- `app/features/opencode_sessions/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
+- `app/features/external_sessions/opencode/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
 
 ## A2A Outbound Allowlist
 

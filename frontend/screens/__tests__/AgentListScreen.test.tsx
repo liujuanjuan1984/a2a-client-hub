@@ -27,14 +27,14 @@ const buildMockAgents = () =>
       lastHealthCheckAt: "2026-04-13T12:00:00.000Z",
     },
     {
-      id: "self-management-assistant",
-      source: "builtin" as const,
+      id: "hub-assistant",
+      source: "hub_assistant" as const,
       name: "A2A Client Hub Assistant",
-      cardUrl: "builtin://self-management-assistant",
+      cardUrl: "hub-assistant://hub-assistant",
       status: "idle" as const,
       enabled: true,
       healthStatus: "healthy" as const,
-      description: "Built-in self-management assistant",
+      description: "Hub Assistant",
       resources: ["agents", "sessions"],
     },
     {
@@ -176,7 +176,7 @@ describe("AgentListScreen", () => {
     jest.clearAllMocks();
   });
 
-  it("renders personal, shared, and built-in agents in one list", async () => {
+  it("renders personal, shared, and Hub Assistants in one list", async () => {
     let tree;
     await act(async () => {
       tree = create(<AgentListScreen />);
@@ -270,7 +270,7 @@ describe("AgentListScreen", () => {
     expect(mockBatchMutate).toHaveBeenCalledTimes(1);
   });
 
-  it("opens chat for the built-in agent from the unified list", async () => {
+  it("opens chat for the Hub Assistant from the unified list", async () => {
     await act(async () => {
       create(<AgentListScreen />);
     });
@@ -285,9 +285,7 @@ describe("AgentListScreen", () => {
       (chatButtons[0]?.onPress as (() => void) | undefined)?.();
     });
 
-    expect(mockSetActiveAgent).toHaveBeenCalledWith(
-      "self-management-assistant",
-    );
+    expect(mockSetActiveAgent).toHaveBeenCalledWith("hub-assistant");
     expect(mockPush).toHaveBeenCalled();
   });
 });

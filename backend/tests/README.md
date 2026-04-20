@@ -1,25 +1,25 @@
 # Backend Test Layout
 
-Backend tests are organized by either feature or shared concern.
+Backend tests are organized by either business feature or shared concern.
 
 ## Feature Groups
 
-- `api/`
+- `agents/`
 - `auth/`
-- `shortcuts/`
-- `personal_agents/`
-- `hub_agents/`
+- `external_sessions/`
+- `hub_access/`
+- `hub_assistant/`
 - `invoke/`
 - `schedules/`
 - `sessions/`
-- `extensions/`
+- `shortcuts/`
 
 ## Shared Concern Groups
 
 - `client/`
+- `extensions/`
 - `proxy/`
 - `runtime/`
-- `shared/`
 
 ## Root Files
 

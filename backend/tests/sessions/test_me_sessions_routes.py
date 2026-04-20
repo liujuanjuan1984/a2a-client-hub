@@ -9,11 +9,11 @@ from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.features.schedules.service import a2a_schedule_service
-from app.features.self_management_shared.constants import (
-    SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
-    SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+from app.features.hub_assistant.shared.constants import (
+    HUB_ASSISTANT_INTERNAL_ID,
+    HUB_ASSISTANT_PUBLIC_ID,
 )
+from app.features.schedules.service import a2a_schedule_service
 from app.features.sessions import router as me_sessions
 from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now
@@ -238,19 +238,19 @@ async def test_me_sessions_query_supports_agent_id_filter(
     assert payload["items"][0]["agent_id"] == str(agent_a.id)
 
 
-async def test_me_sessions_query_supports_built_in_agent_public_id_filter(
+async def test_me_sessions_query_supports_hub_assistant_public_id_filter(
     async_db_session,
     async_session_maker,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     now = utc_now()
 
-    built_in_session = ConversationThread(
+    hub_assistant_session = ConversationThread(
         id=uuid4(),
         user_id=user.id,
         source=ConversationThread.SOURCE_MANUAL,
-        agent_id=SELF_MANAGEMENT_BUILT_IN_AGENT_INTERNAL_ID,
-        agent_source="builtin",
+        agent_id=HUB_ASSISTANT_INTERNAL_ID,
+        agent_source="hub_assistant",
         title="Built-in Session",
         last_active_at=now,
         status=ConversationThread.STATUS_ACTIVE,
@@ -265,7 +265,7 @@ async def test_me_sessions_query_supports_built_in_agent_public_id_filter(
         last_active_at=now - timedelta(minutes=1),
         status=ConversationThread.STATUS_ACTIVE,
     )
-    async_db_session.add(built_in_session)
+    async_db_session.add(hub_assistant_session)
     async_db_session.add(other_session)
     await async_db_session.commit()
 
@@ -279,7 +279,7 @@ async def test_me_sessions_query_supports_built_in_agent_public_id_filter(
             json={
                 "page": 1,
                 "size": 20,
-                "agent_id": SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID,
+                "agent_id": HUB_ASSISTANT_PUBLIC_ID,
             },
         )
 
@@ -287,8 +287,8 @@ async def test_me_sessions_query_supports_built_in_agent_public_id_filter(
     payload = resp.json()
     assert payload["pagination"]["total"] == 1
     assert len(payload["items"]) == 1
-    assert payload["items"][0]["conversationId"] == str(built_in_session.id)
-    assert payload["items"][0]["agent_id"] == SELF_MANAGEMENT_BUILT_IN_AGENT_PUBLIC_ID
+    assert payload["items"][0]["conversationId"] == str(hub_assistant_session.id)
+    assert payload["items"][0]["agent_id"] == HUB_ASSISTANT_PUBLIC_ID
 
 
 async def test_me_sessions_cancel_returns_accepted_for_inflight_task(

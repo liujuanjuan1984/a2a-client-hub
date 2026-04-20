@@ -5,8 +5,8 @@ from typing import Any, Dict, Mapping, Optional
 
 from pydantic import ValidationError
 
+from app.features.agents.personal.runtime import A2ARuntime
 from app.features.invoke.shared_metadata import merge_preferred_session_binding_metadata
-from app.features.personal_agents.runtime import A2ARuntime
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport

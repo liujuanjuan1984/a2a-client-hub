@@ -34,12 +34,12 @@ def _called_names(node: ast.AST) -> set[str]:
 def test_high_risk_routes_use_shared_external_call_boundary_helpers() -> None:
     expectations = [
         (
-            _APP_ROOT / "features/hub_agents/router.py",
-            "validate_hub_agent_card",
+            _APP_ROOT / "features/agents/shared/router.py",
+            "validate_shared_agent_card",
             "load_for_external_call",
         ),
         (
-            _APP_ROOT / "features/personal_agents/router.py",
+            _APP_ROOT / "features/agents/personal/router.py",
             "validate_agent_card",
             "load_for_external_call",
         ),
