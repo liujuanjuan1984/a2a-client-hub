@@ -36,9 +36,6 @@ from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 # ruff: noqa: F401
 
 
-
-
-
 async def _consume_stream(response: StreamingResponse) -> None:
     async for _ in response.body_iterator:
         pass

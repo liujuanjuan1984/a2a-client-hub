@@ -73,9 +73,6 @@ from app.integrations.a2a_extensions.types import (
 # ruff: noqa: F401
 
 
-
-
-
 def _session_query_snapshot(
     ext: ResolvedExtension,
     *,

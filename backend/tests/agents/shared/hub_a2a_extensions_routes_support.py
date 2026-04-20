@@ -24,8 +24,6 @@ from tests.support.utils import create_user
 # ruff: noqa: F401
 
 
-
-
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
