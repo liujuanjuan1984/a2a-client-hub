@@ -417,27 +417,13 @@ def create_user_refresh_token(
     )
 
 
-def _get_hub_assistant_operation_ids(claims: VerifiedJwtClaims) -> frozenset[str]:
+def get_hub_assistant_operation_ids(claims: VerifiedJwtClaims) -> frozenset[str]:
+    """Return Hub Assistant operation ids carried by the JWT."""
+
     raw_operations = claims.raw_payload.get(HUB_ASSISTANT_OPERATION_IDS_CLAIM)
     if not isinstance(raw_operations, list):
         return frozenset()
     return frozenset(str(item).strip() for item in raw_operations if str(item).strip())
-
-
-def get_hub_assistant_allowed_operations(
-    claims: VerifiedJwtClaims,
-) -> frozenset[str]:
-    """Return operation ids already allowed by a delegated access token."""
-
-    return _get_hub_assistant_operation_ids(claims)
-
-
-def get_hub_assistant_interrupt_requested_operations(
-    claims: VerifiedJwtClaims,
-) -> frozenset[str]:
-    """Return operation ids requested by a pending write-approval interrupt."""
-
-    return _get_hub_assistant_operation_ids(claims)
 
 
 def get_hub_assistant_conversation_id(claims: VerifiedJwtClaims) -> str | None:

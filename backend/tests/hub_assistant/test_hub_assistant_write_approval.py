@@ -19,8 +19,8 @@ from tests.hub_assistant.hub_assistant_support import (
     create_user,
     dispatch_due_hub_assistant_tasks,
     get_hub_assistant_interrupt_message,
-    get_hub_assistant_interrupt_requested_operations,
     get_hub_assistant_interrupt_tool_names,
+    get_hub_assistant_operation_ids,
     hub_assistant_agent_router,
     hub_assistant_agent_service_module,
     hub_assistant_service,
@@ -107,7 +107,7 @@ async def test_hub_assistant_read_only_run_can_raise_permission_interrupt(
     assert get_hub_assistant_interrupt_tool_names(claims) == (
         "hub_assistant.jobs.pause",
     )
-    assert get_hub_assistant_interrupt_requested_operations(claims) == frozenset(
+    assert get_hub_assistant_operation_ids(claims) == frozenset(
         {"hub_assistant.jobs.pause"}
     )
 
@@ -121,7 +121,7 @@ async def test_hub_assistant_permission_reply_once_resumes_with_write_tools(
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     conversation_id = _new_conversation_id()
-    interrupt = hub_assistant_service._build_permission_interrupt(
+    interrupt = hub_assistant_service._runtime.build_permission_interrupt(
         current_user=user,
         conversation_id=conversation_id,
         message="Pause my job",
@@ -218,7 +218,7 @@ async def test_hub_assistant_permission_reply_reject_returns_no_change_result(
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     conversation_id = _new_conversation_id()
-    interrupt = hub_assistant_service._build_permission_interrupt(
+    interrupt = hub_assistant_service._runtime.build_permission_interrupt(
         current_user=user,
         conversation_id=conversation_id,
         message="Pause my job",
@@ -644,7 +644,7 @@ async def test_hub_assistant_permission_reply_route_rejects_other_user_interrupt
     owner = await create_user(async_db_session)
     other_user = await create_user(async_db_session)
     conversation_id = _new_conversation_id()
-    interrupt = hub_assistant_service._build_permission_interrupt(
+    interrupt = hub_assistant_service._runtime.build_permission_interrupt(
         current_user=owner,
         conversation_id=conversation_id,
         message="Pause my job",
@@ -752,7 +752,7 @@ async def test_hub_assistant_permission_reply_always_enables_session_scoped_writ
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     conversation_id = _new_conversation_id()
-    interrupt = hub_assistant_service._build_permission_interrupt(
+    interrupt = hub_assistant_service._runtime.build_permission_interrupt(
         current_user=user,
         conversation_id=conversation_id,
         message="Pause my job",
@@ -798,7 +798,7 @@ async def test_hub_assistant_requests_additional_approval_for_new_write_operatio
     _install_fake_swival(monkeypatch)
     user = await create_user(async_db_session)
     conversation_id = _new_conversation_id()
-    interrupt = hub_assistant_service._build_permission_interrupt(
+    interrupt = hub_assistant_service._runtime.build_permission_interrupt(
         current_user=user,
         conversation_id=conversation_id,
         message="Pause my job",
@@ -875,7 +875,7 @@ async def test_hub_assistant_runtime_patches_private_swival_mcp_tool_fields(
     monkeypatch.setitem(sys.modules, "swival", swival_module)
     monkeypatch.setitem(sys.modules, "swival.mcp_client", mcp_module)
 
-    session_cls = hub_assistant_service._load_swival_session_cls()
+    session_cls = hub_assistant_service._runtime.load_swival_session_cls()
 
     assert session_cls is _FakeSwivalSession
     schema, _original_name = mcp_module._mcp_tool_to_openai(

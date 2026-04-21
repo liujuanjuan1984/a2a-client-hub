@@ -15,8 +15,8 @@ from app.core.security import (
     HUB_ASSISTANT_INTERRUPT_TOKEN_TYPE,
     get_hub_assistant_interrupt_conversation_id,
     get_hub_assistant_interrupt_message,
-    get_hub_assistant_interrupt_requested_operations,
     get_hub_assistant_interrupt_tool_names,
+    get_hub_assistant_operation_ids,
     verify_jwt_token_claims,
 )
 from app.db.models.agent_message import AgentMessage
@@ -30,7 +30,6 @@ from app.features.hub_assistant.models import (
     ExecutedHubAssistantRun,
     HubAssistantConfigError,
     HubAssistantContinuation,
-    HubAssistantPermissionInterrupt,
     HubAssistantProfile,
     HubAssistantRecoveredPermissionInterrupt,
     HubAssistantRunResult,
@@ -100,7 +99,7 @@ class HubAssistantService:
     def is_configured(self) -> bool:
         return (
             self._runtime.has_required_runtime_configuration()
-            and self._is_swival_importable()
+            and self._runtime.is_swival_importable()
         )
 
     async def run(
@@ -294,7 +293,7 @@ class HubAssistantService:
                 else (
                     frozenset(
                         definition.operation_id
-                        for definition in self._list_write_tool_definitions()
+                        for definition in self._runtime.list_write_tool_definitions()
                     )
                     if allow_write_tools
                     else runtime_state.auto_approve_write_operation_ids
@@ -303,7 +302,7 @@ class HubAssistantService:
             runtime_write_tools_enabled = allow_write_tools or bool(
                 runtime_allowed_write_operation_ids
             )
-            tool_definitions = self._select_run_tool_definitions(
+            tool_definitions = self._runtime.select_run_tool_definitions(
                 allow_write_tools=runtime_write_tools_enabled,
                 delegated_write_operation_ids=runtime_allowed_write_operation_ids,
             )
@@ -331,11 +330,12 @@ class HubAssistantService:
 
         answer = cast(str | None, getattr(result, "answer", None))
         exhausted = bool(getattr(result, "exhausted", False))
-        if not runtime_write_tools_enabled and self._answer_requests_write_approval(
-            answer
+        if (
+            not runtime_write_tools_enabled
+            and self._runtime.answer_requests_write_approval(answer)
         ):
-            requested_write_operation_ids = self._extract_requested_write_operation_ids(
-                answer
+            requested_write_operation_ids = (
+                self._runtime.extract_requested_write_operation_ids(answer)
             )
             if not requested_write_operation_ids:
                 await self._runtime.invalidate_runtime_session(runtime_state)
@@ -343,7 +343,7 @@ class HubAssistantService:
                     "swival Hub Assistant requested write approval without "
                     "declaring any write operations"
                 )
-            interrupt = self._build_permission_interrupt(
+            interrupt = self._runtime.build_permission_interrupt(
                 current_user=current_user,
                 conversation_id=local_session_id,
                 message=message,
@@ -353,7 +353,7 @@ class HubAssistantService:
             return ExecutedHubAssistantRun(
                 result=HubAssistantRunResult(
                     status=HubAssistantRunStatus.INTERRUPTED,
-                    answer=self._strip_write_approval_metadata(answer),
+                    answer=self._runtime.strip_write_approval_metadata(answer),
                     exhausted=exhausted,
                     runtime="swival",
                     resources=profile.resources,
@@ -368,9 +368,12 @@ class HubAssistantService:
                 local_session_id=local_session_id,
                 local_source=local_source,
             )
-        if runtime_write_tools_enabled and self._answer_requests_write_approval(answer):
-            requested_write_operation_ids = self._extract_requested_write_operation_ids(
-                answer
+        if (
+            runtime_write_tools_enabled
+            and self._runtime.answer_requests_write_approval(answer)
+        ):
+            requested_write_operation_ids = (
+                self._runtime.extract_requested_write_operation_ids(answer)
             )
             if not requested_write_operation_ids:
                 await self._runtime.invalidate_runtime_session(runtime_state)
@@ -389,7 +392,7 @@ class HubAssistantService:
                     "swival Hub Assistant requested write approval after write "
                     "tools were enabled"
                 )
-            interrupt = self._build_permission_interrupt(
+            interrupt = self._runtime.build_permission_interrupt(
                 current_user=current_user,
                 conversation_id=local_session_id,
                 message=message,
@@ -399,7 +402,7 @@ class HubAssistantService:
             return ExecutedHubAssistantRun(
                 result=HubAssistantRunResult(
                     status=HubAssistantRunStatus.INTERRUPTED,
-                    answer=self._strip_write_approval_metadata(answer),
+                    answer=self._runtime.strip_write_approval_metadata(answer),
                     exhausted=exhausted,
                     runtime="swival",
                     resources=profile.resources,
@@ -464,9 +467,7 @@ class HubAssistantService:
             raise HubAssistantUnavailableError(
                 "The write approval request is missing the original prompt."
             )
-        requested_operation_ids = get_hub_assistant_interrupt_requested_operations(
-            claims
-        )
+        requested_operation_ids = get_hub_assistant_operation_ids(claims)
         if not requested_operation_ids:
             raise HubAssistantUnavailableError(
                 "The write approval request is missing the requested operations."
@@ -786,59 +787,6 @@ class HubAssistantService:
                 request.observed_target_agent_message_anchors
             ),
         )
-
-    def _answer_requests_write_approval(self, answer: str | None) -> bool:
-        return self._runtime.answer_requests_write_approval(answer)
-
-    def _strip_write_approval_metadata(self, answer: str | None) -> str | None:
-        return self._runtime.strip_write_approval_metadata(answer)
-
-    def _list_write_tool_definitions(
-        self,
-    ) -> tuple[HubAssistantToolDefinition, ...]:
-        return self._runtime.list_write_tool_definitions()
-
-    def _extract_requested_write_operation_ids(
-        self, answer: str | None
-    ) -> tuple[str, ...]:
-        return self._runtime.extract_requested_write_operation_ids(answer)
-
-    def _build_permission_interrupt(
-        self,
-        *,
-        current_user: Any,
-        conversation_id: str,
-        message: str,
-        answer: str | None,
-        requested_write_operation_ids: tuple[str, ...],
-    ) -> HubAssistantPermissionInterrupt:
-        return self._runtime.build_permission_interrupt(
-            current_user=current_user,
-            conversation_id=conversation_id,
-            message=message,
-            answer=answer,
-            requested_write_operation_ids=requested_write_operation_ids,
-        )
-
-    def _select_run_tool_definitions(
-        self,
-        *,
-        allow_write_tools: bool,
-        delegated_write_operation_ids: frozenset[str] = frozenset(),
-    ) -> tuple[HubAssistantToolDefinition, ...]:
-        return self._runtime.select_run_tool_definitions(
-            allow_write_tools=allow_write_tools,
-            delegated_write_operation_ids=delegated_write_operation_ids,
-        )
-
-    def _load_swival_session_cls(self) -> type[Any]:
-        return self._runtime.load_swival_session_cls()
-
-    def _resolve_swival_base_dir(self, current_user: Any) -> str:
-        return self._runtime.resolve_swival_base_dir(current_user)
-
-    def _is_swival_importable(self) -> bool:
-        return self._runtime.is_swival_importable()
 
 
 hub_assistant_service = HubAssistantService()

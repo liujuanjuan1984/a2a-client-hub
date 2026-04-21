@@ -12,11 +12,10 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.security import (
-    get_hub_assistant_allowed_operations,
     get_hub_assistant_conversation_id,
     get_hub_assistant_interrupt_message,
-    get_hub_assistant_interrupt_requested_operations,
     get_hub_assistant_interrupt_tool_names,
+    get_hub_assistant_operation_ids,
     verify_jwt_token_claims,
 )
 from app.db.models.agent_message import AgentMessage
@@ -216,11 +215,10 @@ __all__ = [
     "create_test_client",
     "create_user",
     "dispatch_due_hub_assistant_tasks",
-    "get_hub_assistant_allowed_operations",
     "get_hub_assistant_conversation_id",
     "get_hub_assistant_interrupt_message",
-    "get_hub_assistant_interrupt_requested_operations",
     "get_hub_assistant_interrupt_tool_names",
+    "get_hub_assistant_operation_ids",
     "hub_assistant_agent_router",
     "hub_assistant_agent_service_module",
     "hub_assistant_service",
