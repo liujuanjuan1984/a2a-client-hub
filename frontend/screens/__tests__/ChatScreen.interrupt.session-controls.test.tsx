@@ -22,7 +22,7 @@ const mockInvokeAgent = jest.fn();
 const mockInvokeHubAgent = jest.fn();
 const mockGetHubAssistantProfile = jest.fn();
 const mockRunHubAssistant = jest.fn();
-const mockRecoverHubAssistantInterrupts = jest.fn();
+const mockRecoverHubAssistantPermissionInterrupts = jest.fn();
 const mockReplyHubAssistantPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
 const mockMergeConversationMessages = jest.fn();
@@ -165,7 +165,7 @@ jest.mock("@/components/chat/ChatTimelinePanel", () => ({
         {!props.pendingInterrupt ? null : (
           <>
             <Text>
-              Agent is waiting for authorization/input. Resolve the action card
+              Agent is waiting for permission/input. Resolve the action card
               first.
             </Text>
             {props.pendingInterrupt.type === "permission" ? (
@@ -497,11 +497,11 @@ jest.mock("@/lib/api/hubAssistant", () => ({
   getHubAssistantProfile: (...args: unknown[]) =>
     mockGetHubAssistantProfile(...args),
   runHubAssistant: (...args: unknown[]) => mockRunHubAssistant(...args),
-  recoverHubAssistantInterrupts: (...args: unknown[]) =>
-    mockRecoverHubAssistantInterrupts(...args),
+  recoverHubAssistantPermissionInterrupts: (...args: unknown[]) =>
+    mockRecoverHubAssistantPermissionInterrupts(...args),
   replyHubAssistantPermissionInterrupt: (...args: unknown[]) =>
     mockReplyHubAssistantPermissionInterrupt(...args),
-  toPendingRuntimeInterrupt: (interrupt: {
+  toPendingRuntimePermissionInterrupt: (interrupt: {
     requestId: string;
     type: "permission";
     phase: "asked";
@@ -582,7 +582,7 @@ describe("ChatScreen interrupt handling", () => {
       mockInvokeHubAgent,
       mockGetHubAssistantProfile,
       mockRunHubAssistant,
-      mockRecoverHubAssistantInterrupts,
+      mockRecoverHubAssistantPermissionInterrupts,
       mockReplyHubAssistantPermissionInterrupt,
       mockAddConversationMessage,
       mockMergeConversationMessages,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from app.features.hub_assistant.shared.constants import HUB_ASSISTANT_PUBLIC_ID
@@ -62,7 +62,7 @@ class HubAssistantRunStatus(str, Enum):
 
 
 @dataclass(frozen=True)
-class HubAssistantInterrupt:
+class HubAssistantPermissionInterrupt:
     """Permission interrupt emitted by a read-only Hub Assistant run."""
 
     request_id: str
@@ -103,17 +103,17 @@ class HubAssistantRunResult:
     resources: tuple[str, ...]
     tool_names: tuple[str, ...]
     write_tools_enabled: bool
-    interrupt: HubAssistantInterrupt | None = None
+    interrupt: HubAssistantPermissionInterrupt | None = None
     continuation: HubAssistantContinuation | None = None
 
 
 @dataclass(frozen=True)
-class HubAssistantRecoveredInterrupt:
-    """One unresolved persisted interrupt recovered from durable session history."""
+class HubAssistantRecoveredPermissionInterrupt:
+    """One unresolved permission interrupt recovered from durable session history."""
 
     request_id: str
     session_id: str
-    type: str
+    type: Literal["permission"]
     details: dict[str, Any]
 
 

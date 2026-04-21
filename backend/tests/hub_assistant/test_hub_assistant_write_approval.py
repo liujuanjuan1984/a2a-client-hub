@@ -18,8 +18,8 @@ from tests.hub_assistant.hub_assistant_support import (
     create_test_client,
     create_user,
     dispatch_due_hub_assistant_tasks,
-    get_hub_assistant_allowed_operations,
     get_hub_assistant_interrupt_message,
+    get_hub_assistant_interrupt_requested_operations,
     get_hub_assistant_interrupt_tool_names,
     hub_assistant_agent_router,
     hub_assistant_agent_service_module,
@@ -107,7 +107,7 @@ async def test_hub_assistant_read_only_run_can_raise_permission_interrupt(
     assert get_hub_assistant_interrupt_tool_names(claims) == (
         "hub_assistant.jobs.pause",
     )
-    assert get_hub_assistant_allowed_operations(claims) == frozenset(
+    assert get_hub_assistant_interrupt_requested_operations(claims) == frozenset(
         {"hub_assistant.jobs.pause"}
     )
 
@@ -126,7 +126,7 @@ async def test_hub_assistant_permission_reply_once_resumes_with_write_tools(
         conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
-        allowed_write_operation_ids=("hub_assistant.jobs.pause",),
+        requested_write_operation_ids=("hub_assistant.jobs.pause",),
     )
 
     outcome = await hub_assistant_service.reply_permission_interrupt(
@@ -223,7 +223,7 @@ async def test_hub_assistant_permission_reply_reject_returns_no_change_result(
         conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
-        allowed_write_operation_ids=("hub_assistant.jobs.pause",),
+        requested_write_operation_ids=("hub_assistant.jobs.pause",),
     )
 
     outcome = await hub_assistant_service.reply_permission_interrupt(
@@ -492,7 +492,7 @@ async def test_hub_assistant_recovery_skips_invalid_interrupt_requests(
         ),
     )
 
-    recovered = await hub_assistant_service.recover_pending_interrupts(
+    recovered = await hub_assistant_service.recover_pending_permission_interrupts(
         db=async_db_session,
         current_user=user,
         conversation_id=conversation_id,
@@ -550,7 +550,7 @@ async def test_hub_assistant_recovery_skips_interrupts_for_other_conversations(
         lambda _claims: str(uuid4()),
     )
 
-    recovered = await hub_assistant_service.recover_pending_interrupts(
+    recovered = await hub_assistant_service.recover_pending_permission_interrupts(
         db=async_db_session,
         current_user=user,
         conversation_id=conversation_id,
@@ -649,7 +649,7 @@ async def test_hub_assistant_permission_reply_route_rejects_other_user_interrupt
         conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
-        allowed_write_operation_ids=("hub_assistant.jobs.pause",),
+        requested_write_operation_ids=("hub_assistant.jobs.pause",),
     )
 
     async with create_test_client(
@@ -757,7 +757,7 @@ async def test_hub_assistant_permission_reply_always_enables_session_scoped_writ
         conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
-        allowed_write_operation_ids=("hub_assistant.jobs.pause",),
+        requested_write_operation_ids=("hub_assistant.jobs.pause",),
     )
 
     always_outcome = await hub_assistant_service.reply_permission_interrupt(
@@ -803,7 +803,7 @@ async def test_hub_assistant_requests_additional_approval_for_new_write_operatio
         conversation_id=conversation_id,
         message="Pause my job",
         answer="Need approval",
-        allowed_write_operation_ids=("hub_assistant.jobs.pause",),
+        requested_write_operation_ids=("hub_assistant.jobs.pause",),
     )
 
     await hub_assistant_service.reply_permission_interrupt(

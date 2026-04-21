@@ -236,7 +236,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
     content, interrupt = deserialize_interrupt_event_block_content(
         interrupt_call["content"]
     )
-    assert content == "Agent requested authorization: read.\nTargets: /repo/.env"
+    assert content == "Agent requested permission: read.\nTargets: /repo/.env"
     assert interrupt is not None
     assert interrupt["requestId"] == "perm-1"
     assert interrupt["type"] == "permission"

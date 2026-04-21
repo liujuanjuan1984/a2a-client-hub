@@ -230,7 +230,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks?.[0]?.type).toBe("interrupt_event");
     expect(blocks?.[0]?.content).toBe(
-      "Agent requested authorization: read.\nTargets: /repo/.env",
+      "Agent requested permission: read.\nTargets: /repo/.env",
     );
     expect(blocks?.[0]?.interrupt).toEqual({
       requestId: "perm-1",
@@ -279,7 +279,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks?.[0]?.type).toBe("interrupt_event");
     expect(blocks?.[0]?.content).toBe(
-      "Agent requested authorization: write.\nTargets: /repo/config.yml",
+      "Agent requested permission: write.\nTargets: /repo/config.yml",
     );
     expect(blocks?.[0]?.interrupt).toEqual({
       requestId: "perm-2",

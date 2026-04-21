@@ -23,7 +23,7 @@ const mockInvokeAgent = jest.fn();
 const mockInvokeHubAgent = jest.fn();
 const mockGetHubAssistantProfile = jest.fn();
 const mockRunHubAssistant = jest.fn();
-const mockRecoverHubAssistantInterrupts = jest.fn();
+const mockRecoverHubAssistantPermissionInterrupts = jest.fn();
 const mockReplyHubAssistantPermissionInterrupt = jest.fn();
 const mockAddConversationMessage = jest.fn();
 const mockMergeConversationMessages = jest.fn();
@@ -166,7 +166,7 @@ jest.mock("@/components/chat/ChatTimelinePanel", () => ({
         {!props.pendingInterrupt ? null : (
           <>
             <Text>
-              Agent is waiting for authorization/input. Resolve the action card
+              Agent is waiting for permission/input. Resolve the action card
               first.
             </Text>
             {props.pendingInterrupt.type === "permission" ? (
@@ -498,11 +498,11 @@ jest.mock("@/lib/api/hubAssistant", () => ({
   getHubAssistantProfile: (...args: unknown[]) =>
     mockGetHubAssistantProfile(...args),
   runHubAssistant: (...args: unknown[]) => mockRunHubAssistant(...args),
-  recoverHubAssistantInterrupts: (...args: unknown[]) =>
-    mockRecoverHubAssistantInterrupts(...args),
+  recoverHubAssistantPermissionInterrupts: (...args: unknown[]) =>
+    mockRecoverHubAssistantPermissionInterrupts(...args),
   replyHubAssistantPermissionInterrupt: (...args: unknown[]) =>
     mockReplyHubAssistantPermissionInterrupt(...args),
-  toPendingRuntimeInterrupt: (interrupt: {
+  toPendingRuntimePermissionInterrupt: (interrupt: {
     requestId: string;
     type: "permission";
     phase: "asked";
@@ -583,7 +583,7 @@ describe("ChatScreen interrupt handling", () => {
       mockInvokeHubAgent,
       mockGetHubAssistantProfile,
       mockRunHubAssistant,
-      mockRecoverHubAssistantInterrupts,
+      mockRecoverHubAssistantPermissionInterrupts,
       mockReplyHubAssistantPermissionInterrupt,
       mockAddConversationMessage,
       mockMergeConversationMessages,
@@ -669,7 +669,7 @@ describe("ChatScreen interrupt handling", () => {
       ...baseSession(),
       agentId: HUB_ASSISTANT_AGENT_ID,
     };
-    mockRecoverHubAssistantInterrupts.mockResolvedValue({
+    mockRecoverHubAssistantPermissionInterrupts.mockResolvedValue({
       items: [
         {
           requestId: "perm-hub_assistant-1",
@@ -695,7 +695,7 @@ describe("ChatScreen interrupt handling", () => {
       await Promise.resolve();
     });
 
-    expect(mockRecoverHubAssistantInterrupts).toHaveBeenCalledWith({
+    expect(mockRecoverHubAssistantPermissionInterrupts).toHaveBeenCalledWith({
       conversationId,
     });
     expect(mockRecoverInterrupts).not.toHaveBeenCalled();
@@ -748,7 +748,7 @@ describe("ChatScreen interrupt handling", () => {
     expect(
       root.findByProps({
         children:
-          "Agent is waiting for authorization/input. Resolve the action card first.",
+          "Agent is waiting for permission/input. Resolve the action card first.",
       }),
     ).toBeTruthy();
     act(() => {
@@ -1001,7 +1001,7 @@ describe("ChatScreen interrupt handling", () => {
     expect(
       root.findByProps({
         children:
-          "Agent is waiting for authorization/input. Resolve the action card first.",
+          "Agent is waiting for permission/input. Resolve the action card first.",
       }),
     ).toBeTruthy();
 

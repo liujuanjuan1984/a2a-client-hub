@@ -10,7 +10,7 @@ describe("InterruptEventBlock", () => {
     const block: MessageBlock = {
       id: "interrupt-asked-1",
       type: "interrupt_event",
-      content: "Agent requested authorization: read.\nTargets: /repo/.env",
+      content: "Agent requested permission: read.\nTargets: /repo/.env",
       isFinished: true,
       interrupt: {
         requestId: "perm-1",
@@ -35,7 +35,7 @@ describe("InterruptEventBlock", () => {
     );
 
     expect(screen.getByText("Interrupt")).toBeTruthy();
-    expect(screen.getByText("Authorization requested")).toBeTruthy();
+    expect(screen.getByText("Permission requested")).toBeTruthy();
     expect(screen.getByText("Action Required")).toBeTruthy();
     expect(screen.getByText("Permission")).toBeTruthy();
     expect(screen.getByText("read")).toBeTruthy();
@@ -46,7 +46,7 @@ describe("InterruptEventBlock", () => {
     const block: MessageBlock = {
       id: "interrupt-resolved-1",
       type: "interrupt_event",
-      content: "Authorization request was handled. Agent resumed.",
+      content: "Permission request was handled. Agent resumed.",
       isFinished: true,
       interrupt: {
         requestId: "perm-2",
@@ -66,10 +66,10 @@ describe("InterruptEventBlock", () => {
       />,
     );
 
-    expect(screen.getByText("Authorization update")).toBeTruthy();
+    expect(screen.getByText("Permission update")).toBeTruthy();
     expect(screen.getByText("Handled")).toBeTruthy();
     expect(
-      screen.getByText("Authorization request was handled. Agent resumed."),
+      screen.getByText("Permission request was handled. Agent resumed."),
     ).toBeTruthy();
   });
 
@@ -77,7 +77,7 @@ describe("InterruptEventBlock", () => {
     const block: MessageBlock = {
       id: "interrupt-expired-1",
       type: "interrupt_event",
-      content: "Authorization request expired. Interrupt closed.",
+      content: "Permission request expired. Interrupt closed.",
       isFinished: true,
       interrupt: {
         requestId: "perm-3",
@@ -97,10 +97,10 @@ describe("InterruptEventBlock", () => {
       />,
     );
 
-    expect(screen.getByText("Authorization update")).toBeTruthy();
+    expect(screen.getByText("Permission update")).toBeTruthy();
     expect(screen.getByText("Expired")).toBeTruthy();
     expect(
-      screen.getByText("Authorization request expired. Interrupt closed."),
+      screen.getByText("Permission request expired. Interrupt closed."),
     ).toBeTruthy();
   });
 

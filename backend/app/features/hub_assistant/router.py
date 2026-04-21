@@ -13,13 +13,13 @@ from app.db.models.user import User
 from app.db.transaction import commit_safely
 from app.features.hub_assistant.schemas import (
     HubAssistantContinuation,
-    HubAssistantInterrupt,
-    HubAssistantInterruptDetails,
-    HubAssistantInterruptRecoveryRequest,
-    HubAssistantInterruptRecoveryResponse,
-    HubAssistantInterruptReplyRequest,
+    HubAssistantPermissionInterruptDetails,
+    HubAssistantPermissionInterruptRecoveryRequest,
+    HubAssistantPermissionInterruptRecoveryResponse,
+    HubAssistantPermissionInterruptReplyRequest,
+    HubAssistantPermissionInterruptResponse,
     HubAssistantProfileResponse,
-    HubAssistantRecoveredInterrupt,
+    HubAssistantRecoveredPermissionInterrupt,
     HubAssistantRunRequest,
     HubAssistantRunResponse,
     HubAssistantToolResponse,
@@ -59,11 +59,11 @@ def _to_run_response(
 ) -> HubAssistantRunResponse:
     interrupt = None
     if result.interrupt is not None:
-        interrupt = HubAssistantInterrupt(
+        interrupt = HubAssistantPermissionInterruptResponse(
             requestId=result.interrupt.request_id,
             type="permission",
             phase="asked",
-            details=HubAssistantInterruptDetails(
+            details=HubAssistantPermissionInterruptDetails(
                 permission=result.interrupt.permission,
                 patterns=list(result.interrupt.patterns),
                 displayMessage=result.interrupt.display_message,
@@ -175,15 +175,15 @@ async def run_hub_assistant(
 
 @router.post(
     "/interrupts:recover",
-    response_model=HubAssistantInterruptRecoveryResponse,
+    response_model=HubAssistantPermissionInterruptRecoveryResponse,
 )
-async def recover_hub_assistant_interrupts(
-    payload: HubAssistantInterruptRecoveryRequest,
+async def recover_hub_assistant_permission_interrupts(
+    payload: HubAssistantPermissionInterruptRecoveryRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-) -> HubAssistantInterruptRecoveryResponse:
+) -> HubAssistantPermissionInterruptRecoveryResponse:
     try:
-        items = await hub_assistant_service.recover_pending_interrupts(
+        items = await hub_assistant_service.recover_pending_permission_interrupts(
             db=db,
             current_user=current_user,
             conversation_id=payload.conversation_id,
@@ -195,14 +195,14 @@ async def recover_hub_assistant_interrupts(
         ) from exc
     await commit_safely(db)
 
-    return HubAssistantInterruptRecoveryResponse(
+    return HubAssistantPermissionInterruptRecoveryResponse(
         items=[
-            HubAssistantRecoveredInterrupt(
+            HubAssistantRecoveredPermissionInterrupt(
                 requestId=item.request_id,
                 sessionId=item.session_id,
                 type="permission",
                 phase="asked",
-                details=HubAssistantInterruptDetails(
+                details=HubAssistantPermissionInterruptDetails(
                     permission=item.details.get("permission"),
                     patterns=list(item.details.get("patterns") or []),
                     displayMessage=item.details.get("displayMessage")
@@ -219,7 +219,7 @@ async def recover_hub_assistant_interrupts(
     response_model=HubAssistantRunResponse,
 )
 async def reply_hub_assistant_permission_interrupt(
-    payload: HubAssistantInterruptReplyRequest,
+    payload: HubAssistantPermissionInterruptReplyRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> HubAssistantRunResponse:

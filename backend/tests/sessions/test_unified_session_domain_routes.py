@@ -1351,7 +1351,7 @@ async def test_messages_query_keeps_interrupt_event_blocks_inline_on_agent_messa
         "text",
     ]
     assert returned_message["blocks"][1]["content"].startswith(
-        "Agent requested authorization: read."
+        "Agent requested permission: read."
     )
     interrupt = returned_message["blocks"][1]["interrupt"]
     assert interrupt["requestId"] == "perm-inline-1"

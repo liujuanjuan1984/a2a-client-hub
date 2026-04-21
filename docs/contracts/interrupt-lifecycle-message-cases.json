@@ -23,7 +23,7 @@
       "phase": "resolved",
       "resolution": "replied"
     },
-    "content": "Authorization request was handled. Agent resumed."
+    "content": "Permission request was handled. Agent resumed."
   },
   {
     "name": "permissions_asked_with_display_message_and_payload",

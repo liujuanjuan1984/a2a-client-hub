@@ -51,7 +51,7 @@ export function InterruptActionCard({
     return (
       <View className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
         <Text className="text-xs font-semibold uppercase tracking-wide text-amber-300">
-          Authorization Required
+          Permission Required
         </Text>
         {remainingInterruptCount > 0 ? (
           <Text className="mt-2 text-xs text-amber-200">

@@ -15,6 +15,7 @@ from app.core.security import (
     get_hub_assistant_allowed_operations,
     get_hub_assistant_conversation_id,
     get_hub_assistant_interrupt_message,
+    get_hub_assistant_interrupt_requested_operations,
     get_hub_assistant_interrupt_tool_names,
     verify_jwt_token_claims,
 )
@@ -218,6 +219,7 @@ __all__ = [
     "get_hub_assistant_allowed_operations",
     "get_hub_assistant_conversation_id",
     "get_hub_assistant_interrupt_message",
+    "get_hub_assistant_interrupt_requested_operations",
     "get_hub_assistant_interrupt_tool_names",
     "hub_assistant_agent_router",
     "hub_assistant_agent_service_module",

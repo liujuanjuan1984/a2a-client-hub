@@ -100,7 +100,7 @@ export const ChatComposer = memo(function ChatComposer({
       {pendingInterrupt ? (
         <View className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
           <Text className="text-xs text-amber-200">
-            Agent is waiting for authorization/input. Resolve the action card
+            Agent is waiting for permission/input. Resolve the action card
             first.
           </Text>
           {pendingInterruptCount > 1 ? (

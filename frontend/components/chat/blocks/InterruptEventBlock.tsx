@@ -56,7 +56,7 @@ const resolveInterruptTitle = (block: MessageBlock): string => {
   }
   if (interrupt.phase === "resolved") {
     if (interrupt.type === "permission") {
-      return "Authorization update";
+      return "Permission update";
     }
     if (interrupt.type === "permissions") {
       return "Permissions update";
@@ -67,7 +67,7 @@ const resolveInterruptTitle = (block: MessageBlock): string => {
     return "Question update";
   }
   if (interrupt.type === "permission") {
-    return "Authorization requested";
+    return "Permission requested";
   }
   if (interrupt.type === "permissions") {
     return "Permissions approval requested";

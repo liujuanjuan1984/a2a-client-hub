@@ -8,10 +8,10 @@ import {
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import {
   getHubAssistantProfile,
-  recoverHubAssistantInterrupts,
+  recoverHubAssistantPermissionInterrupts,
   replyHubAssistantPermissionInterrupt,
   runHubAssistant,
-  toPendingRuntimeInterrupt,
+  toPendingRuntimePermissionInterrupt,
 } from "@/lib/api/hubAssistant";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
 import {
@@ -122,7 +122,7 @@ export function useChatScreenHubAssistantController({
       };
 
       try {
-        const result = await recoverHubAssistantInterrupts({
+        const result = await recoverHubAssistantPermissionInterrupts({
           conversationId: resolvedSessionId,
         });
         replaceRecoveredInterrupts(nextConversationId, result.items, {
@@ -198,7 +198,7 @@ export function useChatScreenHubAssistantController({
           agentMessageId,
         });
         const nextInterrupt = result.interrupt
-          ? toPendingRuntimeInterrupt(result.interrupt)
+          ? toPendingRuntimePermissionInterrupt(result.interrupt)
           : null;
 
         updateConversationMessage(nextConversationId, agentMessageId, {
@@ -293,7 +293,7 @@ export function useChatScreenHubAssistantController({
 
         const resolution = reply === "reject" ? "rejected" : "replied";
         const nextInterrupt = result.interrupt
-          ? toPendingRuntimeInterrupt(result.interrupt)
+          ? toPendingRuntimePermissionInterrupt(result.interrupt)
           : null;
 
         if (result.status === "accepted") {

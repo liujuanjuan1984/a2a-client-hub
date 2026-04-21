@@ -156,12 +156,12 @@ export function useChatInterruptController({
         if (interrupt.resolution === "expired") {
           return {
             title: "Interrupt resolved",
-            message: "Authorization request expired and was closed.",
+            message: "Permission request expired and was closed.",
           };
         }
         return {
           title: "Interrupt resolved",
-          message: "Authorization request was handled.",
+          message: "Permission request was handled.",
         };
       }
       if (interrupt.type === "permissions") {

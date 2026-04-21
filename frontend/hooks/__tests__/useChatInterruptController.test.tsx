@@ -198,7 +198,7 @@ describe("useChatInterruptController", () => {
         pendingQuestionCount: 0,
         clearPendingInterrupt,
         onPermissionReplyOverride,
-        permissionReplySuccessMessage: "Authorization request handled.",
+        permissionReplySuccessMessage: "Permission request handled.",
       }),
     );
 
@@ -218,7 +218,7 @@ describe("useChatInterruptController", () => {
     );
     expect(mockedToast.success).toHaveBeenCalledWith(
       "Action submitted",
-      "Authorization request handled.",
+      "Permission request handled.",
     );
   });
 
@@ -246,7 +246,7 @@ describe("useChatInterruptController", () => {
         pendingQuestionCount: 0,
         clearPendingInterrupt,
         onPermissionReplyOverride,
-        permissionReplySuccessMessage: "Authorization request handled.",
+        permissionReplySuccessMessage: "Permission request handled.",
       }),
     );
 
@@ -266,7 +266,7 @@ describe("useChatInterruptController", () => {
     );
     expect(mockedToast.success).toHaveBeenCalledWith(
       "Action submitted",
-      "Authorization request handled.",
+      "Permission request handled.",
     );
   });
 

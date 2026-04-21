@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.security import (
     HUB_ASSISTANT_INTERRUPT_TOKEN_TYPE,
-    get_hub_assistant_allowed_operations,
     get_hub_assistant_interrupt_conversation_id,
     get_hub_assistant_interrupt_message,
+    get_hub_assistant_interrupt_requested_operations,
     get_hub_assistant_interrupt_tool_names,
     verify_jwt_token_claims,
 )
@@ -30,9 +30,9 @@ from app.features.hub_assistant.models import (
     ExecutedHubAssistantRun,
     HubAssistantConfigError,
     HubAssistantContinuation,
-    HubAssistantInterrupt,
+    HubAssistantPermissionInterrupt,
     HubAssistantProfile,
-    HubAssistantRecoveredInterrupt,
+    HubAssistantRecoveredPermissionInterrupt,
     HubAssistantRunResult,
     HubAssistantRunStatus,
     HubAssistantUnavailableError,
@@ -134,13 +134,13 @@ class HubAssistantService:
         )
         return executed.result
 
-    async def recover_pending_interrupts(
+    async def recover_pending_permission_interrupts(
         self,
         *,
         db: AsyncSession,
         current_user: Any,
         conversation_id: str,
-    ) -> list[HubAssistantRecoveredInterrupt]:
+    ) -> list[HubAssistantRecoveredPermissionInterrupt]:
         resolved_conversation_id = parse_conversation_id(conversation_id)
         recoverable_conversation = cast(
             ConversationThread | None,
@@ -202,10 +202,12 @@ class HubAssistantService:
             if phase == "resolved":
                 asked_interrupts.pop(request_id, None)
 
-        recovered: list[HubAssistantRecoveredInterrupt] = []
+        recovered: list[HubAssistantRecoveredPermissionInterrupt] = []
         for request_id in ordered_request_ids:
             interrupt = asked_interrupts.get(request_id)
             if interrupt is None:
+                continue
+            if interrupt.get("type") != "permission":
                 continue
             claims = verify_jwt_token_claims(
                 request_id,
@@ -226,10 +228,10 @@ class HubAssistantService:
                 expired_request_ids.append(request_id)
                 continue
             recovered.append(
-                HubAssistantRecoveredInterrupt(
+                HubAssistantRecoveredPermissionInterrupt(
                     request_id=request_id,
                     session_id=str(resolved_conversation_id),
-                    type=cast(str, interrupt["type"]),
+                    type="permission",
                     details=cast(dict[str, Any], interrupt.get("details") or {}),
                 )
             )
@@ -252,7 +254,7 @@ class HubAssistantService:
         conversation_id: str,
         message: str,
         allow_write_tools: bool,
-        allowed_write_operation_ids: frozenset[str] = frozenset(),
+        approved_write_operation_ids: frozenset[str] = frozenset(),
     ) -> ExecutedHubAssistantRun:
         if not self.is_configured():
             raise HubAssistantConfigError(
@@ -286,9 +288,9 @@ class HubAssistantService:
 
         tool_definitions = cast(tuple[HubAssistantToolDefinition, ...], ())
         async with runtime_state.get_lock():
-            effective_write_operation_ids = (
-                allowed_write_operation_ids
-                if allowed_write_operation_ids
+            runtime_allowed_write_operation_ids = (
+                approved_write_operation_ids
+                if approved_write_operation_ids
                 else (
                     frozenset(
                         definition.operation_id
@@ -298,19 +300,19 @@ class HubAssistantService:
                     else runtime_state.auto_approve_write_operation_ids
                 )
             )
-            effective_write_tools = allow_write_tools or bool(
-                effective_write_operation_ids
+            runtime_write_tools_enabled = allow_write_tools or bool(
+                runtime_allowed_write_operation_ids
             )
             tool_definitions = self._select_run_tool_definitions(
-                allow_write_tools=effective_write_tools,
-                delegated_write_operation_ids=effective_write_operation_ids,
+                allow_write_tools=runtime_write_tools_enabled,
+                delegated_write_operation_ids=runtime_allowed_write_operation_ids,
             )
             session = await self._runtime.ensure_conversation_session(
                 db=db,
                 runtime_state=runtime_state,
                 current_user=current_user,
                 conversation_id=local_session_id,
-                delegated_write_operation_ids=effective_write_operation_ids,
+                delegated_write_operation_ids=runtime_allowed_write_operation_ids,
             )
             try:
                 result = await asyncio.to_thread(session.ask, message)
@@ -329,7 +331,9 @@ class HubAssistantService:
 
         answer = cast(str | None, getattr(result, "answer", None))
         exhausted = bool(getattr(result, "exhausted", False))
-        if not effective_write_tools and self._answer_requests_write_approval(answer):
+        if not runtime_write_tools_enabled and self._answer_requests_write_approval(
+            answer
+        ):
             requested_write_operation_ids = self._extract_requested_write_operation_ids(
                 answer
             )
@@ -344,7 +348,7 @@ class HubAssistantService:
                 conversation_id=local_session_id,
                 message=message,
                 answer=answer,
-                allowed_write_operation_ids=requested_write_operation_ids,
+                requested_write_operation_ids=requested_write_operation_ids,
             )
             return ExecutedHubAssistantRun(
                 result=HubAssistantRunResult(
@@ -364,7 +368,7 @@ class HubAssistantService:
                 local_session_id=local_session_id,
                 local_source=local_source,
             )
-        if effective_write_tools and self._answer_requests_write_approval(answer):
+        if runtime_write_tools_enabled and self._answer_requests_write_approval(answer):
             requested_write_operation_ids = self._extract_requested_write_operation_ids(
                 answer
             )
@@ -374,12 +378,12 @@ class HubAssistantService:
                     "swival Hub Assistant requested write approval without "
                     "declaring any write operations"
                 )
-            missing_write_operation_ids = tuple(
+            additional_requested_write_operation_ids = tuple(
                 operation_id
                 for operation_id in requested_write_operation_ids
-                if operation_id not in effective_write_operation_ids
+                if operation_id not in runtime_allowed_write_operation_ids
             )
-            if not missing_write_operation_ids:
+            if not additional_requested_write_operation_ids:
                 await self._runtime.invalidate_runtime_session(runtime_state)
                 raise HubAssistantUnavailableError(
                     "swival Hub Assistant requested write approval after write "
@@ -390,7 +394,7 @@ class HubAssistantService:
                 conversation_id=local_session_id,
                 message=message,
                 answer=answer,
-                allowed_write_operation_ids=missing_write_operation_ids,
+                requested_write_operation_ids=additional_requested_write_operation_ids,
             )
             return ExecutedHubAssistantRun(
                 result=HubAssistantRunResult(
@@ -420,7 +424,7 @@ class HubAssistantService:
                 tool_names=tuple(
                     definition.tool_name for definition in tool_definitions
                 ),
-                write_tools_enabled=effective_write_tools,
+                write_tools_enabled=runtime_write_tools_enabled,
             ),
             profile=profile,
             local_session=local_session,
@@ -460,10 +464,12 @@ class HubAssistantService:
             raise HubAssistantUnavailableError(
                 "The write approval request is missing the original prompt."
             )
-        approved_operation_ids = get_hub_assistant_allowed_operations(claims)
-        if not approved_operation_ids:
+        requested_operation_ids = get_hub_assistant_interrupt_requested_operations(
+            claims
+        )
+        if not requested_operation_ids:
             raise HubAssistantUnavailableError(
-                "The write approval request is missing the approved operations."
+                "The write approval request is missing the requested operations."
             )
 
         if reply == "reject":
@@ -510,7 +516,7 @@ class HubAssistantService:
             approved_operation_ids = (
                 runtime_state.auto_approve_write_operation_ids
                 | runtime_state.delegated_write_operation_ids
-                | approved_operation_ids
+                | requested_operation_ids
             )
             if reply == "always":
                 runtime_state.auto_approve_write_operation_ids = approved_operation_ids
@@ -694,7 +700,7 @@ class HubAssistantService:
                 conversation_id=request.hub_assistant_conversation_id,
                 message=request.message,
                 allow_write_tools=True,
-                allowed_write_operation_ids=request.approved_operation_ids,
+                approved_write_operation_ids=request.approved_operation_ids,
             )
             await self._persistence.persist_follow_up_agent_message(
                 db=db,
@@ -804,14 +810,14 @@ class HubAssistantService:
         conversation_id: str,
         message: str,
         answer: str | None,
-        allowed_write_operation_ids: tuple[str, ...],
-    ) -> HubAssistantInterrupt:
+        requested_write_operation_ids: tuple[str, ...],
+    ) -> HubAssistantPermissionInterrupt:
         return self._runtime.build_permission_interrupt(
             current_user=current_user,
             conversation_id=conversation_id,
             message=message,
             answer=answer,
-            allowed_write_operation_ids=allowed_write_operation_ids,
+            requested_write_operation_ids=requested_write_operation_ids,
         )
 
     def _select_run_tool_definitions(

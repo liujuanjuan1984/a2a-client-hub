@@ -308,7 +308,7 @@ def build_interrupt_lifecycle_message_code(event: dict[str, Any]) -> str:
 def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
     message_code = build_interrupt_lifecycle_message_code(event)
     if message_code == "permission_expired":
-        return "Authorization request expired. Interrupt closed."
+        return "Permission request expired. Interrupt closed."
     if message_code == "permissions_expired":
         return "Permissions request expired. Interrupt closed."
     if message_code == "question_expired":
@@ -316,7 +316,7 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
             return "Additional input request expired. Interrupt closed."
         return "Question request expired. Interrupt closed."
     if message_code == "permission_resolved":
-        return "Authorization request was handled. Agent resumed."
+        return "Permission request was handled. Agent resumed."
     if message_code == "permissions_resolved":
         return "Permissions request was handled. Agent resumed."
     if message_code == "question_rejected":
@@ -342,9 +342,7 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
             if isinstance(patterns, list)
             else []
         )
-        base_message = (
-            display_message or f"Agent requested authorization: {permission}."
-        )
+        base_message = display_message or f"Agent requested permission: {permission}."
         if normalized_patterns:
             return f"{base_message}\nTargets: {', '.join(normalized_patterns)}"
         return base_message
