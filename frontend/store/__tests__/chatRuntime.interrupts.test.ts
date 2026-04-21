@@ -140,7 +140,7 @@ describe("executeChatRuntime empty-content recovery", () => {
 
     expect(interruptBlockSnapshot).toMatchObject({
       type: "interrupt_event",
-      content: "Agent requested authorization: read.\nTargets: /repo/.env",
+      content: "Agent requested permission: read.\nTargets: /repo/.env",
     });
     expect(state.sessions[conversationId]?.pendingInterrupts).toEqual([]);
     expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();

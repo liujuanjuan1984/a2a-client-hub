@@ -162,7 +162,7 @@ describe("MessageBlock and MessageContentFallback", () => {
     const block: MessageBlockType = {
       id: "interrupt-1",
       type: "interrupt_event",
-      content: "Agent requested authorization: read.",
+      content: "Agent requested permission: read.",
       isFinished: true,
       createdAt: "2026-02-24T00:00:00.000Z",
       updatedAt: "2026-02-24T00:00:00.000Z",

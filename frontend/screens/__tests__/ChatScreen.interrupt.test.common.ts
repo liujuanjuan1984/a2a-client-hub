@@ -82,7 +82,7 @@ type ChatScreenInterruptHarnessDependencies = {
   mockInvokeHubAgent: jest.Mock;
   mockGetHubAssistantProfile: jest.Mock;
   mockRunHubAssistant: jest.Mock;
-  mockRecoverHubAssistantInterrupts: jest.Mock;
+  mockRecoverHubAssistantPermissionInterrupts: jest.Mock;
   mockReplyHubAssistantPermissionInterrupt: jest.Mock;
   mockAddConversationMessage: jest.Mock;
   mockMergeConversationMessages: jest.Mock;
@@ -164,7 +164,7 @@ export function resetChatScreenInterruptHarness(
     write_tools_enabled: false,
     interrupt: null,
   });
-  deps.mockRecoverHubAssistantInterrupts
+  deps.mockRecoverHubAssistantPermissionInterrupts
     .mockReset()
     .mockResolvedValue({ items: [] });
   deps.mockReplyHubAssistantPermissionInterrupt.mockReset().mockResolvedValue({

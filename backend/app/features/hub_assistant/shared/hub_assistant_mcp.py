@@ -17,8 +17,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import (
-    get_hub_assistant_allowed_operations,
     get_hub_assistant_conversation_id,
+    get_hub_assistant_operation_ids,
     verify_jwt_token_claims,
 )
 from app.db.session import AsyncSessionLocal
@@ -141,7 +141,7 @@ class HubAssistantMcpAuthMiddleware:
             await response(scope, receive, send)
             return
 
-        allowed_operation_ids = get_hub_assistant_allowed_operations(claims)
+        allowed_operation_ids = get_hub_assistant_operation_ids(claims)
         if self.require_delegated_claims and not allowed_operation_ids:
             response = JSONResponse(
                 status_code=403,

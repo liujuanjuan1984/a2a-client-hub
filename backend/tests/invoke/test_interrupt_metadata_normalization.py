@@ -338,12 +338,12 @@ def test_interrupt_event_block_content_round_trips_structured_payload() -> None:
         "details": {
             "permission": "read",
             "patterns": ["/repo/.env"],
-            "display_message": "Agent requested authorization: read.",
+            "display_message": "Agent requested permission: read.",
         },
     }
 
     serialized = serialize_interrupt_event_block_content(event)
     content, interrupt = deserialize_interrupt_event_block_content(serialized)
 
-    assert content == "Agent requested authorization: read.\nTargets: /repo/.env"
+    assert content == "Agent requested permission: read.\nTargets: /repo/.env"
     assert interrupt == build_interrupt_block_view(event)

@@ -411,7 +411,7 @@ export function useChatScreenController({
       ? handleHubAssistantPermissionReply
       : null,
     permissionReplySuccessMessage: isHubAssistantAgent
-      ? "Authorization request handled."
+      ? "Permission request handled."
       : null,
   });
 

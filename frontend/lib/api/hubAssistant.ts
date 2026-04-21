@@ -23,7 +23,7 @@ export type HubAssistantProfileResponse = {
   tools: HubAssistantToolResponse[];
 };
 
-type HubAssistantInterruptResponse = {
+type HubAssistantPermissionInterruptResponse = {
   requestId: string;
   type: "permission";
   phase: "asked";
@@ -34,7 +34,7 @@ type HubAssistantInterruptResponse = {
   };
 };
 
-type HubAssistantRecoveredInterruptResponse = {
+type HubAssistantRecoveredPermissionInterruptResponse = {
   requestId: string;
   sessionId: string;
   type: "permission";
@@ -54,7 +54,7 @@ type HubAssistantRunResponse = {
   resources: string[];
   tools: string[];
   write_tools_enabled: boolean;
-  interrupt?: HubAssistantInterruptResponse | null;
+  interrupt?: HubAssistantPermissionInterruptResponse | null;
   continuation?: {
     phase: "running";
     agentMessageId: string;
@@ -102,11 +102,11 @@ export const replyHubAssistantPermissionInterrupt = (payload: {
     body: payload,
   });
 
-export const recoverHubAssistantInterrupts = async (payload: {
+export const recoverHubAssistantPermissionInterrupts = async (payload: {
   conversationId: string;
 }) => {
   const response = await apiRequest<{
-    items?: HubAssistantRecoveredInterruptResponse[];
+    items?: HubAssistantRecoveredPermissionInterruptResponse[];
   }>("/me/hub-assistant/interrupts:recover", {
     method: "POST",
     body: payload,
@@ -123,16 +123,16 @@ export const recoverHubAssistantInterrupts = async (payload: {
 
 const buildInterruptDetails = (
   interrupt:
-    | HubAssistantInterruptResponse
-    | HubAssistantRecoveredInterruptResponse,
+    | HubAssistantPermissionInterruptResponse
+    | HubAssistantRecoveredPermissionInterruptResponse,
 ) => ({
   permission: interrupt.details.permission ?? null,
   patterns: interrupt.details.patterns ?? [],
   displayMessage: interrupt.details.displayMessage ?? null,
 });
 
-export const toPendingRuntimeInterrupt = (
-  interrupt: HubAssistantInterruptResponse,
+export const toPendingRuntimePermissionInterrupt = (
+  interrupt: HubAssistantPermissionInterruptResponse,
 ): PendingRuntimeInterrupt => ({
   requestId: interrupt.requestId,
   type: interrupt.type,
@@ -141,7 +141,7 @@ export const toPendingRuntimeInterrupt = (
 });
 
 const toRecoveredPendingRuntimeInterrupt = (
-  interrupt: HubAssistantRecoveredInterruptResponse,
+  interrupt: HubAssistantRecoveredPermissionInterruptResponse,
 ): PendingRuntimeInterrupt | null => {
   const requestId = interrupt.requestId.trim();
   const sessionId = interrupt.sessionId.trim();

@@ -26,10 +26,10 @@ type ResolvedInterruptKeyInput = {
   resolution: "replied" | "rejected" | "expired";
 };
 
-export type PermissionReplyActionMode = "ack-fast" | "transactional";
+export type InterruptActionMode = "ack-fast" | "transactional";
 
-type PermissionReplyActionResult = {
-  mode: PermissionReplyActionMode;
+export type InterruptActionResult = {
+  mode: InterruptActionMode;
   resolvedRequestId?: string;
 };
 
@@ -46,7 +46,7 @@ type UseChatInterruptControllerParams = {
     | ((input: {
         requestId: string;
         reply: "once" | "always" | "reject";
-      }) => Promise<PermissionReplyActionResult>)
+      }) => Promise<InterruptActionResult>)
     | null;
   permissionReplySuccessMessage?: string | null;
 };
@@ -156,12 +156,12 @@ export function useChatInterruptController({
         if (interrupt.resolution === "expired") {
           return {
             title: "Interrupt resolved",
-            message: "Authorization request expired and was closed.",
+            message: "Permission request expired and was closed.",
           };
         }
         return {
           title: "Interrupt resolved",
-          message: "Authorization request was handled.",
+          message: "Permission request was handled.",
         };
       }
       if (interrupt.type === "permissions") {
@@ -258,6 +258,32 @@ export function useChatInterruptController({
       clearPendingInterrupt,
       getInterruptErrorCode,
     ],
+  );
+
+  const finalizeInterruptAction = useCallback(
+    ({
+      actionResult,
+      conversationId,
+      requestId,
+      interruptType,
+      resolution,
+    }: {
+      actionResult: InterruptActionResult;
+      conversationId: string;
+      requestId: string;
+      interruptType: "permission" | "question" | "permissions" | "elicitation";
+      resolution: "replied" | "rejected";
+    }) => {
+      const resolvedRequestId = actionResult.resolvedRequestId ?? requestId;
+      if (actionResult.mode === "ack-fast") {
+        clearPendingInterrupt(conversationId, resolvedRequestId);
+      }
+      acknowledgeLocalInterruptResolution(requestId, interruptType, resolution);
+      if (actionResult.mode === "transactional") {
+        clearPendingInterrupt(conversationId, resolvedRequestId);
+      }
+    },
+    [acknowledgeLocalInterruptResolution, clearPendingInterrupt],
   );
 
   useEffect(() => {
@@ -367,8 +393,9 @@ export function useChatInterruptController({
       runInterruptAction(
         `permission:${reply}`,
         async () => {
-          let actionResult: PermissionReplyActionResult = {
-            mode: "transactional",
+          let actionResult: InterruptActionResult = {
+            mode: reply === "reject" ? "transactional" : "ack-fast",
+            resolvedRequestId: requestId,
           };
           if (onPermissionReplyOverride) {
             actionResult = await onPermissionReplyOverride({
@@ -385,18 +412,20 @@ export function useChatInterruptController({
                 ? { workingDirectory: normalizedWorkingDirectory }
                 : {}),
             });
+            actionResult = {
+              mode: reply === "reject" ? "transactional" : "ack-fast",
+              resolvedRequestId: requestId,
+            };
           } else {
             return;
           }
-          acknowledgeLocalInterruptResolution(
-            requestId,
-            "permission",
-            reply === "reject" ? "rejected" : "replied",
-          );
-          clearPendingInterrupt(
+          finalizeInterruptAction({
+            actionResult,
             conversationId,
-            actionResult.resolvedRequestId ?? requestId,
-          );
+            requestId,
+            interruptType: "permission",
+            resolution: reply === "reject" ? "rejected" : "replied",
+          });
         },
         permissionReplySuccessMessage ??
           "Permission reply delivered to upstream.",
@@ -409,9 +438,8 @@ export function useChatInterruptController({
     [
       activeAgentId,
       agentSource,
-      acknowledgeLocalInterruptResolution,
-      clearPendingInterrupt,
       conversationId,
+      finalizeInterruptAction,
       pendingInterrupt,
       runInterruptAction,
       normalizedWorkingDirectory,
@@ -474,8 +502,16 @@ export function useChatInterruptController({
             ? { workingDirectory: normalizedWorkingDirectory }
             : {}),
         });
-        acknowledgeLocalInterruptResolution(requestId, "question", "replied");
-        clearPendingInterrupt(conversationId, requestId);
+        finalizeInterruptAction({
+          actionResult: {
+            mode: "ack-fast",
+            resolvedRequestId: requestId,
+          },
+          conversationId,
+          requestId,
+          interruptType: "question",
+          resolution: "replied",
+        });
       },
       "Question answers delivered to upstream.",
       {
@@ -486,9 +522,8 @@ export function useChatInterruptController({
   }, [
     activeAgentId,
     agentSource,
-    acknowledgeLocalInterruptResolution,
-    clearPendingInterrupt,
     conversationId,
+    finalizeInterruptAction,
     pendingInterrupt,
     questionAnswers,
     runInterruptAction,
@@ -517,8 +552,16 @@ export function useChatInterruptController({
             ? { workingDirectory: normalizedWorkingDirectory }
             : {}),
         });
-        acknowledgeLocalInterruptResolution(requestId, "question", "rejected");
-        clearPendingInterrupt(conversationId, requestId);
+        finalizeInterruptAction({
+          actionResult: {
+            mode: "transactional",
+            resolvedRequestId: requestId,
+          },
+          conversationId,
+          requestId,
+          interruptType: "question",
+          resolution: "rejected",
+        });
       },
       "Question request rejected.",
       {
@@ -529,9 +572,8 @@ export function useChatInterruptController({
   }, [
     activeAgentId,
     agentSource,
-    acknowledgeLocalInterruptResolution,
-    clearPendingInterrupt,
     conversationId,
+    finalizeInterruptAction,
     pendingInterrupt,
     runInterruptAction,
     normalizedWorkingDirectory,
@@ -582,12 +624,16 @@ export function useChatInterruptController({
               ? { workingDirectory: normalizedWorkingDirectory }
               : {}),
           });
-          acknowledgeLocalInterruptResolution(
+          finalizeInterruptAction({
+            actionResult: {
+              mode: "ack-fast",
+              resolvedRequestId: requestId,
+            },
+            conversationId,
             requestId,
-            "permissions",
-            "replied",
-          );
-          clearPendingInterrupt(conversationId, requestId);
+            interruptType: "permissions",
+            resolution: "replied",
+          });
         },
         `Permissions reply delivered to upstream (${scope}).`,
         {
@@ -599,9 +645,8 @@ export function useChatInterruptController({
     [
       activeAgentId,
       agentSource,
-      acknowledgeLocalInterruptResolution,
-      clearPendingInterrupt,
       conversationId,
+      finalizeInterruptAction,
       parseStructuredResponseInput,
       pendingInterrupt,
       runInterruptAction,
@@ -646,12 +691,16 @@ export function useChatInterruptController({
               ? { workingDirectory: normalizedWorkingDirectory }
               : {}),
           });
-          acknowledgeLocalInterruptResolution(
+          finalizeInterruptAction({
+            actionResult: {
+              mode: "transactional",
+              resolvedRequestId: requestId,
+            },
+            conversationId,
             requestId,
-            "elicitation",
-            action === "accept" ? "replied" : "rejected",
-          );
-          clearPendingInterrupt(conversationId, requestId);
+            interruptType: "elicitation",
+            resolution: action === "accept" ? "replied" : "rejected",
+          });
         },
         action === "accept"
           ? "Elicitation response delivered to upstream."
@@ -665,9 +714,8 @@ export function useChatInterruptController({
     [
       activeAgentId,
       agentSource,
-      acknowledgeLocalInterruptResolution,
-      clearPendingInterrupt,
       conversationId,
+      finalizeInterruptAction,
       parseStructuredResponseInput,
       pendingInterrupt,
       runInterruptAction,

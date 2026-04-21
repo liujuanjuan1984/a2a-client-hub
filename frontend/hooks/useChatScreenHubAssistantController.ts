@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef } from "react";
 
-import { type PermissionReplyActionMode } from "@/hooks/useChatInterruptController";
+import { type InterruptActionResult } from "@/hooks/useChatInterruptController";
+import {
+  type ContinuationConvergenceEvent,
+  useContinuationConvergence,
+} from "@/hooks/useContinuationConvergence";
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import {
   getHubAssistantProfile,
-  recoverHubAssistantInterrupts,
+  recoverHubAssistantPermissionInterrupts,
   replyHubAssistantPermissionInterrupt,
   runHubAssistant,
-  toPendingRuntimeInterrupt,
+  toPendingRuntimePermissionInterrupt,
 } from "@/lib/api/hubAssistant";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
 import {
@@ -58,10 +62,6 @@ export function useChatScreenHubAssistantController({
   const lastInterruptRecoveryRef = useRef<{
     key: string;
     triggeredAt: number;
-  } | null>(null);
-  const continuationMonitorRef = useRef<{
-    key: string;
-    cancelled: boolean;
   } | null>(null);
 
   const applyHubAssistantSessionUpdate = useCallback(
@@ -122,7 +122,7 @@ export function useChatScreenHubAssistantController({
       };
 
       try {
-        const result = await recoverHubAssistantInterrupts({
+        const result = await recoverHubAssistantPermissionInterrupts({
           conversationId: resolvedSessionId,
         });
         replaceRecoveredInterrupts(nextConversationId, result.items, {
@@ -198,7 +198,7 @@ export function useChatScreenHubAssistantController({
           agentMessageId,
         });
         const nextInterrupt = result.interrupt
-          ? toPendingRuntimeInterrupt(result.interrupt)
+          ? toPendingRuntimePermissionInterrupt(result.interrupt)
           : null;
 
         updateConversationMessage(nextConversationId, agentMessageId, {
@@ -253,10 +253,7 @@ export function useChatScreenHubAssistantController({
     }: {
       requestId: string;
       reply: "once" | "always" | "reject";
-    }): Promise<{
-      mode: PermissionReplyActionMode;
-      resolvedRequestId?: string;
-    }> => {
+    }): Promise<InterruptActionResult> => {
       if (!conversationId || !activeAgentId) {
         return {
           mode: "transactional",
@@ -296,7 +293,7 @@ export function useChatScreenHubAssistantController({
 
         const resolution = reply === "reject" ? "rejected" : "replied";
         const nextInterrupt = result.interrupt
-          ? toPendingRuntimeInterrupt(result.interrupt)
+          ? toPendingRuntimePermissionInterrupt(result.interrupt)
           : null;
 
         if (result.status === "accepted") {
@@ -406,123 +403,101 @@ export function useChatScreenHubAssistantController({
     streamState,
   ]);
 
-  useEffect(() => {
-    if (
-      !conversationId ||
-      !activeAgentId ||
-      !isHubAssistantAgent ||
-      streamState !== "continuing" ||
-      !lastAgentMessageId
-    ) {
-      return;
+  const loadContinuationMessages = useCallback(async () => {
+    if (!conversationId) {
+      return [];
     }
+    const page = await listSessionMessagesPage(conversationId, {
+      before: null,
+      limit: 8,
+    });
+    return mapSessionMessagesToChatMessages(
+      Array.isArray(page?.items) ? page.items : [],
+      {
+        keepEmptyMessages: true,
+      },
+    );
+  }, [conversationId]);
 
-    const targetAgentMessageId = lastAgentMessageId;
-    const monitorKey = `${conversationId}:${targetAgentMessageId}`;
-    const previousMonitor = continuationMonitorRef.current;
-    if (previousMonitor?.key === monitorKey && !previousMonitor.cancelled) {
-      return;
-    }
-    if (previousMonitor) {
-      previousMonitor.cancelled = true;
-    }
+  const handleContinuationConverged = useCallback(
+    async (event: ContinuationConvergenceEvent) => {
+      if (!conversationId || !activeAgentId) {
+        return;
+      }
+      if (event.status === "interrupted") {
+        await recoverPendingInterrupts({
+          nextConversationId: conversationId,
+        });
+      }
+      applyHubAssistantSessionUpdate(
+        conversationId,
+        activeAgentId,
+        (current) => ({
+          ...current,
+          agentId: activeAgentId,
+          lastActiveAt: new Date().toISOString(),
+          streamState: event.status === "error" ? "error" : "idle",
+          lastStreamError:
+            event.status === "error"
+              ? event.message.content.trim() ||
+                "Hub Assistant continuation failed."
+              : null,
+        }),
+      );
+    },
+    [
+      activeAgentId,
+      applyHubAssistantSessionUpdate,
+      conversationId,
+      recoverPendingInterrupts,
+    ],
+  );
 
-    const monitor = {
-      key: monitorKey,
-      cancelled: false,
-    };
-    continuationMonitorRef.current = monitor;
-
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, ms);
+  const handleContinuationRefreshError = useCallback(
+    (error: unknown) => {
+      console.warn("[Chat] Hub Assistant continuation refresh failed", {
+        conversationId,
+        agentId: activeAgentId,
+        agentMessageId: lastAgentMessageId,
+        error:
+          error instanceof Error
+            ? error.message
+            : "hub_assistant_continuation_refresh_failed",
       });
+    },
+    [activeAgentId, conversationId, lastAgentMessageId],
+  );
 
-    const monitorContinuation = async () => {
-      let pollDelayMs = HUB_ASSISTANT_CONTINUATION_POLL_INTERVAL_MS;
-      while (!monitor.cancelled) {
-        try {
-          const page = await listSessionMessagesPage(conversationId, {
-            before: null,
-            limit: 8,
-          });
-          const mappedMessages = mapSessionMessagesToChatMessages(
-            Array.isArray(page?.items) ? page.items : [],
-            {
-              keepEmptyMessages: true,
-            },
-          );
-          mergeConversationMessages(conversationId, mappedMessages);
-
-          const currentAgentMessage = mappedMessages.find(
-            (message) =>
-              message.id === targetAgentMessageId && message.role === "agent",
-          );
-          if (
-            currentAgentMessage &&
-            currentAgentMessage.status &&
-            currentAgentMessage.status !== "streaming"
-          ) {
-            if (currentAgentMessage.status === "interrupted") {
-              await recoverPendingInterrupts({
-                nextConversationId: conversationId,
-              });
-            }
-            applyHubAssistantSessionUpdate(
-              conversationId,
-              activeAgentId,
-              (current) => ({
-                ...current,
-                agentId: activeAgentId,
-                lastActiveAt: new Date().toISOString(),
-                streamState:
-                  currentAgentMessage.status === "error" ? "error" : "idle",
-                lastStreamError:
-                  currentAgentMessage.status === "error"
-                    ? currentAgentMessage.content.trim() ||
-                      "Hub Assistant continuation failed."
-                    : null,
-              }),
-            );
-            return;
-          }
-        } catch (error) {
-          console.warn("[Chat] Hub Assistant continuation refresh failed", {
-            conversationId,
-            agentId: activeAgentId,
-            agentMessageId: targetAgentMessageId,
-            error:
-              error instanceof Error
-                ? error.message
-                : "hub_assistant_continuation_refresh_failed",
-          });
-        }
-        await sleep(pollDelayMs);
-        pollDelayMs = Math.min(
-          HUB_ASSISTANT_CONTINUATION_POLL_MAX_INTERVAL_MS,
-          Math.round(pollDelayMs * 1.5),
-        );
+  const handleContinuationMessagesLoaded = useCallback(
+    (messages: Awaited<ReturnType<typeof loadContinuationMessages>>) => {
+      if (conversationId) {
+        mergeConversationMessages(conversationId, messages);
       }
-    };
+    },
+    [conversationId],
+  );
 
-    const continuationPromise = monitorContinuation();
-    continuationPromise.catch(() => undefined);
-
-    return () => {
-      monitor.cancelled = true;
-      if (continuationMonitorRef.current === monitor) {
-        continuationMonitorRef.current = null;
-      }
-    };
-  }, [
-    activeAgentId,
-    applyHubAssistantSessionUpdate,
-    conversationId,
-    isHubAssistantAgent,
-    lastAgentMessageId,
-    recoverPendingInterrupts,
-    streamState,
-  ]);
+  useContinuationConvergence({
+    enabled: Boolean(
+      conversationId &&
+      activeAgentId &&
+      isHubAssistantAgent &&
+      streamState === "continuing" &&
+      lastAgentMessageId,
+    ),
+    source: "persisted-history",
+    monitorKey:
+      conversationId && lastAgentMessageId
+        ? `${conversationId}:${lastAgentMessageId}`
+        : null,
+    targetMessageId: lastAgentMessageId ?? null,
+    loadMessages: loadContinuationMessages,
+    onMessagesLoaded: handleContinuationMessagesLoaded,
+    onConverged: handleContinuationConverged,
+    onRefreshError: handleContinuationRefreshError,
+    initialPollDelayMs: HUB_ASSISTANT_CONTINUATION_POLL_INTERVAL_MS,
+    maxPollDelayMs: HUB_ASSISTANT_CONTINUATION_POLL_MAX_INTERVAL_MS,
+  });
 
   useEffect(() => {
     if (

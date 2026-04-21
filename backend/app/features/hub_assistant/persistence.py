@@ -17,8 +17,8 @@ from app.core.security import (
 from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.features.hub_assistant.models import (
-    HubAssistantInterrupt,
-    HubAssistantRecoveredInterrupt,
+    HubAssistantPermissionInterrupt,
+    HubAssistantRecoveredPermissionInterrupt,
     HubAssistantRunResult,
     HubAssistantRunStatus,
 )
@@ -45,13 +45,13 @@ class HubAssistantPersistenceService:
     def __init__(self, *, session_support: SessionHubSupport) -> None:
         self._session_support = session_support
 
-    async def recover_pending_interrupts(
+    async def recover_pending_permission_interrupts(
         self,
         *,
         db: AsyncSession,
         current_user: Any,
         conversation_id: str,
-    ) -> list[HubAssistantRecoveredInterrupt]:
+    ) -> list[HubAssistantRecoveredPermissionInterrupt]:
         resolved_conversation_id = parse_conversation_id(conversation_id)
         recoverable_conversation = cast(
             ConversationThread | None,
@@ -113,10 +113,12 @@ class HubAssistantPersistenceService:
             if phase == "resolved":
                 asked_interrupts.pop(request_id, None)
 
-        recovered: list[HubAssistantRecoveredInterrupt] = []
+        recovered: list[HubAssistantRecoveredPermissionInterrupt] = []
         for request_id in ordered_request_ids:
             interrupt = asked_interrupts.get(request_id)
             if interrupt is None:
+                continue
+            if interrupt.get("type") != "permission":
                 continue
             claims = verify_jwt_token_claims(
                 request_id,
@@ -137,10 +139,10 @@ class HubAssistantPersistenceService:
                 expired_request_ids.append(request_id)
                 continue
             recovered.append(
-                HubAssistantRecoveredInterrupt(
+                HubAssistantRecoveredPermissionInterrupt(
                     request_id=request_id,
                     session_id=str(resolved_conversation_id),
-                    type=cast(str, interrupt["type"]),
+                    type="permission",
                     details=cast(dict[str, Any], interrupt.get("details") or {}),
                 )
             )
@@ -240,7 +242,7 @@ class HubAssistantPersistenceService:
         db: AsyncSession,
         current_user: Any,
         local_session_id: str,
-        interrupt: HubAssistantInterrupt,
+        interrupt: HubAssistantPermissionInterrupt,
     ) -> None:
         await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
             db,

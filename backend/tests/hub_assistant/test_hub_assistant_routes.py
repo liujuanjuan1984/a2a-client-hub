@@ -482,7 +482,7 @@ async def test_hub_assistant_permission_reply_background_interrupt_persists_new_
     assert interrupted_reply["role"] == "agent"
     assert interrupted_reply["status"] == "interrupted"
 
-    recovered = await hub_assistant_service.recover_pending_interrupts(
+    recovered = await hub_assistant_service.recover_pending_permission_interrupts(
         db=async_db_session,
         current_user=user,
         conversation_id=conversation_id,
@@ -513,7 +513,7 @@ async def test_hub_assistant_can_recover_unresolved_permission_interrupts(
         allow_write_tools=False,
     )
 
-    recovered = await hub_assistant_service.recover_pending_interrupts(
+    recovered = await hub_assistant_service.recover_pending_permission_interrupts(
         db=async_db_session,
         current_user=user,
         conversation_id=conversation_id,
@@ -558,7 +558,7 @@ async def test_hub_assistant_recovery_ignores_resolved_interrupts(
         reply="reject",
     )
 
-    recovered = await hub_assistant_service.recover_pending_interrupts(
+    recovered = await hub_assistant_service.recover_pending_permission_interrupts(
         db=async_db_session,
         current_user=user,
         conversation_id=conversation_id,

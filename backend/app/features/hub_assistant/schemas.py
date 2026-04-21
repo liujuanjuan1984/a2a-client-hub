@@ -41,7 +41,7 @@ class HubAssistantRunRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
-class HubAssistantInterruptDetails(BaseModel):
+class HubAssistantPermissionInterruptDetails(BaseModel):
     """Display-safe details for a Hub Assistant permission interrupt."""
 
     permission: str | None = None
@@ -51,13 +51,13 @@ class HubAssistantInterruptDetails(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
-class HubAssistantInterrupt(BaseModel):
-    """One interrupt emitted by the Hub Assistant."""
+class HubAssistantPermissionInterruptResponse(BaseModel):
+    """One permission interrupt emitted by the Hub Assistant."""
 
     request_id: str = Field(alias="requestId")
     type: Literal["permission"]
     phase: Literal["asked"]
-    details: HubAssistantInterruptDetails
+    details: HubAssistantPermissionInterruptDetails
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
@@ -81,13 +81,13 @@ class HubAssistantRunResponse(BaseModel):
     resources: list[str]
     tools: list[str]
     write_tools_enabled: bool
-    interrupt: HubAssistantInterrupt | None = None
+    interrupt: HubAssistantPermissionInterruptResponse | None = None
     continuation: HubAssistantContinuation | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
-class HubAssistantInterruptReplyRequest(BaseModel):
+class HubAssistantPermissionInterruptReplyRequest(BaseModel):
     """Permission interrupt reply payload for the Hub Assistant."""
 
     request_id: str = Field(alias="requestId", min_length=1)
@@ -97,7 +97,7 @@ class HubAssistantInterruptReplyRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
-class HubAssistantInterruptRecoveryRequest(BaseModel):
+class HubAssistantPermissionInterruptRecoveryRequest(BaseModel):
     """Conversation-scoped recovery request for persisted Hub Assistant interrupts."""
 
     conversation_id: str = Field(alias="conversationId", min_length=1)
@@ -105,21 +105,21 @@ class HubAssistantInterruptRecoveryRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
-class HubAssistantRecoveredInterrupt(BaseModel):
+class HubAssistantRecoveredPermissionInterrupt(BaseModel):
     """One unresolved Hub Assistant permission interrupt restored from durable history."""
 
     request_id: str = Field(alias="requestId")
     session_id: str = Field(alias="sessionId")
     type: Literal["permission"]
     phase: Literal["asked"]
-    details: HubAssistantInterruptDetails
+    details: HubAssistantPermissionInterruptDetails
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
-class HubAssistantInterruptRecoveryResponse(BaseModel):
+class HubAssistantPermissionInterruptRecoveryResponse(BaseModel):
     """Recovered unresolved Hub Assistant permission interrupts for one conversation."""
 
-    items: list[HubAssistantRecoveredInterrupt]
+    items: list[HubAssistantRecoveredPermissionInterrupt]
 
     model_config = ConfigDict(extra="forbid")

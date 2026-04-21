@@ -322,13 +322,13 @@ const stringifyInterruptObject = (value: unknown): string | null => {
 const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
   const messageCode = buildInterruptEventMessageCode(interrupt);
   if (messageCode === "permission_expired") {
-    return "Authorization request expired. Interrupt closed.";
+    return "Permission request expired. Interrupt closed.";
   }
   if (messageCode === "permissions_expired") {
     return "Permissions request expired. Interrupt closed.";
   }
   if (messageCode === "permission_resolved") {
-    return "Authorization request was handled. Agent resumed.";
+    return "Permission request was handled. Agent resumed.";
   }
   if (messageCode === "permissions_resolved") {
     return "Permissions request was handled. Agent resumed.";
@@ -360,7 +360,7 @@ const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
     const permission = askedInterrupt.details.permission?.trim() || "unknown";
     const patterns = askedInterrupt.details.patterns ?? [];
     const baseMessage =
-      displayMessage || `Agent requested authorization: ${permission}.`;
+      displayMessage || `Agent requested permission: ${permission}.`;
     if (patterns.length > 0) {
       return `${baseMessage}\nTargets: ${patterns.join(", ")}`;
     }

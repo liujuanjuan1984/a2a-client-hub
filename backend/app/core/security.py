@@ -27,7 +27,7 @@ DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash("dummy-password-not-used")
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
 HUB_ASSISTANT_INTERRUPT_TOKEN_TYPE = "hub_assistant_interrupt"
-HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM = "ha_ops"
+HUB_ASSISTANT_OPERATION_IDS_CLAIM = "ha_ops"
 HUB_ASSISTANT_DELEGATED_BY_CLAIM = "ha_delegate"
 HUB_ASSISTANT_CONVERSATION_ID_CLAIM = "ha_conversation_id"
 HUB_ASSISTANT_INTERRUPT_MESSAGE_CLAIM = "ha_interrupt_message"
@@ -352,7 +352,7 @@ def create_hub_assistant_access_token(
         str(conversation_id).strip() if conversation_id is not None else ""
     )
     extra_claims: dict[str, Any] = {
-        HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
+        HUB_ASSISTANT_OPERATION_IDS_CLAIM: normalized_operations,
         HUB_ASSISTANT_DELEGATED_BY_CLAIM: delegated_by,
     }
     if normalized_conversation_id:
@@ -374,7 +374,7 @@ def create_hub_assistant_interrupt_token(
     conversation_id: str,
     message: str,
     tool_names: Sequence[str],
-    allowed_operations: Sequence[str] = (),
+    requested_operations: Sequence[str] = (),
 ) -> str:
     normalized_conversation_id = str(conversation_id).strip()
     if not normalized_conversation_id:
@@ -385,7 +385,7 @@ def create_hub_assistant_interrupt_token(
     normalized_operations = sorted(
         {
             str(operation_id).strip()
-            for operation_id in allowed_operations
+            for operation_id in requested_operations
             if str(operation_id).strip()
         }
     )
@@ -397,7 +397,7 @@ def create_hub_assistant_interrupt_token(
             HUB_ASSISTANT_INTERRUPT_CONVERSATION_ID_CLAIM: normalized_conversation_id,
             HUB_ASSISTANT_INTERRUPT_MESSAGE_CLAIM: message,
             HUB_ASSISTANT_INTERRUPT_TOOL_NAMES_CLAIM: normalized_tool_names,
-            HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM: normalized_operations,
+            HUB_ASSISTANT_OPERATION_IDS_CLAIM: normalized_operations,
         },
     )
 
@@ -417,10 +417,10 @@ def create_user_refresh_token(
     )
 
 
-def get_hub_assistant_allowed_operations(
-    claims: VerifiedJwtClaims,
-) -> frozenset[str]:
-    raw_operations = claims.raw_payload.get(HUB_ASSISTANT_ALLOWED_OPERATIONS_CLAIM)
+def get_hub_assistant_operation_ids(claims: VerifiedJwtClaims) -> frozenset[str]:
+    """Return Hub Assistant operation ids carried by the JWT."""
+
+    raw_operations = claims.raw_payload.get(HUB_ASSISTANT_OPERATION_IDS_CLAIM)
     if not isinstance(raw_operations, list):
         return frozenset()
     return frozenset(str(item).strip() for item in raw_operations if str(item).strip())

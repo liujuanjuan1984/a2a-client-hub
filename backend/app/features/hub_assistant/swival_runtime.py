@@ -26,7 +26,7 @@ from app.features.hub_access.operation_gateway import (
 )
 from app.features.hub_assistant.models import (
     ConversationRuntimeState,
-    HubAssistantInterrupt,
+    HubAssistantPermissionInterrupt,
     HubAssistantUnavailableError,
 )
 from app.features.hub_assistant.shared.hub_assistant_mcp import (
@@ -249,12 +249,12 @@ class HubAssistantSwivalRuntime:
         conversation_id: str,
         message: str,
         answer: str | None,
-        allowed_write_operation_ids: tuple[str, ...],
-    ) -> HubAssistantInterrupt:
+        requested_write_operation_ids: tuple[str, ...],
+    ) -> HubAssistantPermissionInterrupt:
         write_tool_definitions = tuple(
             definition
             for definition in self.list_write_tool_definitions()
-            if definition.operation_id in allowed_write_operation_ids
+            if definition.operation_id in requested_write_operation_ids
         )
         request_id = create_hub_assistant_interrupt_token(
             cast(Any, current_user.id),
@@ -263,13 +263,13 @@ class HubAssistantSwivalRuntime:
             tool_names=tuple(
                 definition.tool_name for definition in write_tool_definitions
             ),
-            allowed_operations=allowed_write_operation_ids,
+            requested_operations=requested_write_operation_ids,
         )
         display_message = self.strip_write_approval_metadata(answer) or (
             "This change requires explicit write approval before the Hub Assistant "
             "can continue."
         )
-        return HubAssistantInterrupt(
+        return HubAssistantPermissionInterrupt(
             request_id=request_id,
             permission="hub-assistant-write",
             patterns=tuple(

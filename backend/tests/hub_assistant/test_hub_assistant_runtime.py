@@ -15,8 +15,8 @@ from tests.hub_assistant.hub_assistant_support import (
     _reset_hub_assistant_runtime,
     cast,
     create_user,
-    get_hub_assistant_allowed_operations,
     get_hub_assistant_conversation_id,
+    get_hub_assistant_operation_ids,
     hub_assistant_agent_service_module,
     hub_assistant_service,
     pytest,
@@ -77,8 +77,8 @@ async def test_hub_assistant_profile_reports_unconfigured_without_importable_swi
     _reset_hub_assistant_runtime()
     _configure_swival_settings(monkeypatch)
     monkeypatch.setattr(
-        hub_assistant_service,
-        "_is_swival_importable",
+        hub_assistant_service._runtime,
+        "is_swival_importable",
         lambda: False,
     )
 
@@ -117,7 +117,7 @@ async def test_hub_assistant_loads_swival_from_tool_installed_site_packages(
     )
     monkeypatch.delitem(sys.modules, "swival", raising=False)
 
-    session_cls = hub_assistant_service._load_swival_session_cls()
+    session_cls = hub_assistant_service._runtime.load_swival_session_cls()
 
     assert session_cls.__name__ == "Session"
     assert str(site_packages.resolve()) in sys.path
@@ -226,7 +226,7 @@ async def test_hub_assistant_run_uses_swival_with_authenticated_mcp_server(
     assert claims is not None
     assert claims.subject == str(user.id)
     assert get_hub_assistant_conversation_id(claims) == conversation_id
-    assert get_hub_assistant_allowed_operations(claims) == frozenset(result.tool_names)
+    assert get_hub_assistant_operation_ids(claims) == frozenset(result.tool_names)
 
 
 async def test_hub_assistant_can_resume_one_durable_follow_up_run(
@@ -393,8 +393,8 @@ async def test_hub_assistant_reuses_same_swival_base_dir_for_same_user(
     )
     user = await create_user(async_db_session)
 
-    first_dir = hub_assistant_service._resolve_swival_base_dir(user)
-    second_dir = hub_assistant_service._resolve_swival_base_dir(user)
+    first_dir = hub_assistant_service._runtime.resolve_swival_base_dir(user)
+    second_dir = hub_assistant_service._runtime.resolve_swival_base_dir(user)
 
     assert first_dir == second_dir
     assert first_dir == str((tmp_path / "swival-runtime" / str(user.id)).resolve())
@@ -415,8 +415,8 @@ async def test_hub_assistant_uses_distinct_swival_base_dirs_per_user(
     first_user = await create_user(async_db_session)
     second_user = await create_user(async_db_session)
 
-    first_dir = hub_assistant_service._resolve_swival_base_dir(first_user)
-    second_dir = hub_assistant_service._resolve_swival_base_dir(second_user)
+    first_dir = hub_assistant_service._runtime.resolve_swival_base_dir(first_user)
+    second_dir = hub_assistant_service._runtime.resolve_swival_base_dir(second_user)
 
     assert first_dir != second_dir
     assert first_dir.endswith(str(first_user.id))
