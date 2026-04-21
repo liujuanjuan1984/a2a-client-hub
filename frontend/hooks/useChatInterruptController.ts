@@ -27,14 +27,11 @@ type ResolvedInterruptKeyInput = {
 };
 
 export type InterruptActionMode = "ack-fast" | "transactional";
-export type PermissionReplyActionMode = InterruptActionMode;
 
-type InterruptActionResult = {
+export type InterruptActionResult = {
   mode: InterruptActionMode;
   resolvedRequestId?: string;
 };
-
-type PermissionReplyActionResult = InterruptActionResult;
 
 type UseChatInterruptControllerParams = {
   activeAgentId?: string | null;
@@ -49,7 +46,7 @@ type UseChatInterruptControllerParams = {
     | ((input: {
         requestId: string;
         reply: "once" | "always" | "reject";
-      }) => Promise<PermissionReplyActionResult>)
+      }) => Promise<InterruptActionResult>)
     | null;
   permissionReplySuccessMessage?: string | null;
 };

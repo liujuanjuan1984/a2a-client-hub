@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
-import { type PermissionReplyActionMode } from "@/hooks/useChatInterruptController";
+import { type InterruptActionResult } from "@/hooks/useChatInterruptController";
 import {
   type ContinuationConvergenceEvent,
   useContinuationConvergence,
@@ -253,10 +253,7 @@ export function useChatScreenHubAssistantController({
     }: {
       requestId: string;
       reply: "once" | "always" | "reject";
-    }): Promise<{
-      mode: PermissionReplyActionMode;
-      resolvedRequestId?: string;
-    }> => {
+    }): Promise<InterruptActionResult> => {
       if (!conversationId || !activeAgentId) {
         return {
           mode: "transactional",
