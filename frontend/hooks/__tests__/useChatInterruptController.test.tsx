@@ -95,7 +95,7 @@ describe("useChatInterruptController", () => {
     });
   });
 
-  it("forwards working directory with permission replies", async () => {
+  it("uses ack-fast semantics for permission grants after upstream ack", async () => {
     const { result } = renderHook(() =>
       useChatInterruptController({
         activeAgentId: "agent-1",
@@ -127,6 +127,47 @@ describe("useChatInterruptController", () => {
       workingDirectory: "/workspace/app",
     });
     expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "perm-1");
+    expect(mockedToast.success).toHaveBeenCalledWith(
+      "Action submitted",
+      "Permission reply delivered to upstream.",
+    );
+  });
+
+  it("keeps permission rejects transactional after upstream ack", async () => {
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "agent-1",
+        agentSource: "personal",
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "perm-reject-1",
+          type: "permission",
+          phase: "asked",
+          details: { permission: "write", patterns: ["/workspace/**"] },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 0,
+        workingDirectory: "/workspace/app",
+        clearPendingInterrupt,
+      }),
+    );
+
+    await act(async () => {
+      result.current.handlePermissionReply("reject");
+      await Promise.resolve();
+    });
+
+    expect(mockedReplyPermissionInterrupt).toHaveBeenCalledWith({
+      source: "personal",
+      agentId: "agent-1",
+      requestId: "perm-reject-1",
+      reply: "reject",
+      workingDirectory: "/workspace/app",
+    });
+    expect(clearPendingInterrupt).toHaveBeenCalledWith(
+      "conv-1",
+      "perm-reject-1",
+    );
     expect(mockedToast.success).toHaveBeenCalledWith(
       "Action submitted",
       "Permission reply delivered to upstream.",
@@ -181,7 +222,55 @@ describe("useChatInterruptController", () => {
     );
   });
 
-  it("forwards working directory with question answers", async () => {
+  it("supports transactional permission reply overrides through the shared controller", async () => {
+    const onPermissionReplyOverride = jest.fn().mockResolvedValue({
+      mode: "transactional" as const,
+      resolvedRequestId: "perm-override-2",
+    });
+
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "hub-assistant",
+        agentSource: null,
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "perm-original-2",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "write",
+            patterns: ["hub_assistant.jobs.resume"],
+          },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 0,
+        clearPendingInterrupt,
+        onPermissionReplyOverride,
+        permissionReplySuccessMessage: "Authorization request handled.",
+      }),
+    );
+
+    await act(async () => {
+      result.current.handlePermissionReply("always");
+      await Promise.resolve();
+    });
+
+    expect(onPermissionReplyOverride).toHaveBeenCalledWith({
+      requestId: "perm-original-2",
+      reply: "always",
+    });
+    expect(mockedReplyPermissionInterrupt).not.toHaveBeenCalled();
+    expect(clearPendingInterrupt).toHaveBeenCalledWith(
+      "conv-1",
+      "perm-override-2",
+    );
+    expect(mockedToast.success).toHaveBeenCalledWith(
+      "Action submitted",
+      "Authorization request handled.",
+    );
+  });
+
+  it("uses ack-fast semantics for question answers after upstream ack", async () => {
     const { result } = renderHook(() =>
       useChatInterruptController({
         activeAgentId: "agent-1",
@@ -231,7 +320,7 @@ describe("useChatInterruptController", () => {
     );
   });
 
-  it("parses permissions JSON and routes scope-aware replies", async () => {
+  it("uses ack-fast semantics for scope-aware permissions replies", async () => {
     const { result } = renderHook(() =>
       useChatInterruptController({
         activeAgentId: "agent-1",
@@ -272,7 +361,7 @@ describe("useChatInterruptController", () => {
     expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "perm-v2-1");
   });
 
-  it("parses elicitation JSON and submits accept replies", async () => {
+  it("keeps elicitation accept replies transactional", async () => {
     const { result } = renderHook(() =>
       useChatInterruptController({
         activeAgentId: "agent-1",
