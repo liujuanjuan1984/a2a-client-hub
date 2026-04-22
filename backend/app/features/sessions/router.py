@@ -6,7 +6,7 @@ import json
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,10 +46,12 @@ from app.features.sessions.schemas import (
     SessionMessagesQueryRequest,
     SessionMessagesQueryResponse,
     SessionQueryRequest,
+    SessionUpstreamTaskResponse,
     SessionViewItem,
 )
 from app.features.sessions.service import session_hub_service
 from app.features.working_directory import merge_working_directory_metadata
+from app.integrations.a2a_client.service import get_a2a_service
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.utils.session_identity import normalize_non_empty_text
 
@@ -77,10 +79,16 @@ def _status_code_for_session_error(detail: str) -> int:
         return 404
     if detail == "upstream_resource_not_found":
         return 404
+    if detail == "task_not_found":
+        return 404
     if detail == "upstream_unauthorized":
         return 401
     if detail == "upstream_quota_exceeded":
         return 429
+    if detail == "timeout":
+        return 504
+    if detail == "agent_unavailable":
+        return 503
     if detail in {
         "append_requires_bound_session",
         "session_command_requires_bound_session",
@@ -90,13 +98,17 @@ def _status_code_for_session_error(detail: str) -> int:
         return 409
     if detail in _FORBIDDEN_ERRORS:
         return 403
-    if detail == "upstream_permission_denied":
+    if detail in {"upstream_permission_denied", "outbound_not_allowed"}:
         return 403
+    if detail == "unsupported_operation":
+        return 501
     if detail in _UPSTREAM_ERRORS:
         if detail == "upstream_bad_request":
             return 400
         if detail == "upstream_unreachable":
             return 503
+        return 502
+    if detail in {"client_reset", "upstream_payload_error"}:
         return 502
     return 400
 
@@ -783,3 +795,61 @@ async def cancel_unified_session(
     if db_mutated:
         await commit_safely(db)
     return SessionCancelResponse.model_validate(payload)
+
+
+@router.get(
+    "/{conversation_id}/upstream-tasks/{task_id}",
+    response_model=SessionUpstreamTaskResponse,
+)
+async def get_unified_session_upstream_task(
+    *,
+    conversation_id: str,
+    task_id: str,
+    history_length: int | None = Query(
+        default=None,
+        ge=0,
+        le=100,
+        alias="historyLength",
+    ),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SessionUpstreamTaskResponse:
+    current_user_id = cast(UUID, current_user.id)
+    try:
+        thread = await _get_conversation_thread_or_404(
+            db=db,
+            user_id=current_user_id,
+            conversation_id=conversation_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid_conversation_id") from exc
+
+    runtime = await _load_runtime_for_thread(
+        db=db,
+        current_user=current_user,
+        thread=thread,
+    )
+    result = await get_a2a_service().get_task(
+        resolved=runtime.resolved,
+        task_id=task_id,
+        history_length=history_length,
+        metadata=_build_session_action_metadata(thread=thread, metadata=None),
+    )
+    if not result.get("success"):
+        detail = str(result.get("error_code") or "upstream_error")
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        )
+
+    task = result.get("task")
+    if not isinstance(task, dict):
+        raise HTTPException(status_code=502, detail="upstream_payload_error")
+
+    return SessionUpstreamTaskResponse.model_validate(
+        {
+            "conversationId": str(thread.id),
+            "taskId": result.get("task_id") or task_id.strip(),
+            "task": task,
+        }
+    )

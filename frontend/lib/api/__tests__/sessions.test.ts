@@ -3,6 +3,7 @@ import {
   appendSessionMessage,
   cancelSession,
   continueSession,
+  getSessionUpstreamTask,
   runSessionCommand,
 } from "@/lib/api/sessions";
 
@@ -39,6 +40,40 @@ describe("sessions api", () => {
       cancelled: true,
       status: "accepted",
     });
+  });
+
+  it("gets upstream task by conversation and task id", async () => {
+    mockedApiRequest.mockResolvedValue({
+      conversationId: "conv-1",
+      taskId: "task-1",
+      task: {
+        id: "task-1",
+        status: { state: "working" },
+      },
+    });
+
+    const result = await getSessionUpstreamTask(" conv-1 ", " task-1 ", {
+      historyLength: 3,
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conv-1/upstream-tasks/task-1",
+      {
+        method: "GET",
+        query: { historyLength: 3 },
+      },
+    );
+    expect(result.task.status?.state).toBe("working");
+  });
+
+  it("rejects upstream task query without ids", async () => {
+    await expect(getSessionUpstreamTask(" ", "task-1")).rejects.toThrow(
+      "Conversation id is required.",
+    );
+    await expect(getSessionUpstreamTask("conv-1", " ")).rejects.toThrow(
+      "Task id is required.",
+    );
+    expect(mockedApiRequest).not.toHaveBeenCalled();
   });
 
   it("normalizes continue session payload conversation id", async () => {

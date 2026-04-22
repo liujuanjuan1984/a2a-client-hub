@@ -79,6 +79,19 @@ export type SessionCancelResult = {
   status: "accepted" | "pending" | "no_inflight" | "already_terminal";
 };
 
+export type UpstreamTaskPayload = Record<string, unknown> & {
+  id?: string;
+  status?: {
+    state?: string;
+  } | null;
+};
+
+export type SessionUpstreamTaskResult = {
+  conversationId: string;
+  taskId: string;
+  task: UpstreamTaskPayload;
+};
+
 export type SessionControlResult = {
   intent: "append" | "preempt";
   status: "accepted" | "completed" | "no_inflight" | "unavailable" | "failed";
@@ -245,6 +258,43 @@ export const cancelSession = async (
       method: "POST",
     },
   );
+
+export const getSessionUpstreamTask = async (
+  conversationId: string,
+  taskId: string,
+  options?: { historyLength?: number | null },
+): Promise<SessionUpstreamTaskResult> => {
+  const normalizedConversationId = conversationId.trim();
+  const normalizedTaskId = taskId.trim();
+  if (!normalizedConversationId) {
+    throw new Error("Conversation id is required.");
+  }
+  if (!normalizedTaskId) {
+    throw new Error("Task id is required.");
+  }
+
+  const historyLength =
+    typeof options?.historyLength === "number" &&
+    Number.isFinite(options.historyLength) &&
+    options.historyLength >= 0
+      ? Math.floor(options.historyLength)
+      : null;
+
+  return await apiRequest<SessionUpstreamTaskResult>(
+    `/me/conversations/${encodeURIComponent(
+      normalizedConversationId,
+    )}/upstream-tasks/${encodeURIComponent(normalizedTaskId)}`,
+    {
+      method: "GET",
+      query:
+        historyLength !== null
+          ? {
+              historyLength,
+            }
+          : undefined,
+    },
+  );
+};
 
 export const appendSessionMessage = async (
   conversationId: string,

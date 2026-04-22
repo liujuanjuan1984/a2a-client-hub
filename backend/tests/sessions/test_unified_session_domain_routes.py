@@ -610,6 +610,160 @@ async def test_command_route_persists_canonical_command_messages(
         )
 
 
+async def test_upstream_task_route_fetches_task_for_bound_conversation(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="task-query")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-task-1",
+        title="Task Query Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+
+    resolved = SimpleNamespace(
+        name="TaskAgent",
+        url="https://example.com/a2a",
+        headers={},
+        metadata={},
+    )
+    calls: list[dict[str, object]] = []
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=resolved)
+
+    class _FakeA2AService:
+        async def get_task(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "success": True,
+                "task_id": "task-1",
+                "task": {
+                    "id": "task-1",
+                    "status": {"state": "working"},
+                },
+            }
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(me_sessions, "get_a2a_service", lambda: _FakeA2AService())
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{session.id}/upstream-tasks/task-1",
+            params={"historyLength": 3},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload == {
+        "conversationId": str(session.id),
+        "taskId": "task-1",
+        "task": {
+            "id": "task-1",
+            "status": {"state": "working"},
+        },
+    }
+    assert calls == [
+        {
+            "resolved": resolved,
+            "task_id": "task-1",
+            "history_length": 3,
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "ses-task-1",
+            },
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("error_code", "expected_status"),
+    [
+        ("invalid_task_id", 400),
+        ("task_not_found", 404),
+        ("unsupported_operation", 501),
+        ("timeout", 504),
+    ],
+)
+async def test_upstream_task_route_maps_a2a_service_errors(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+    expected_status: int,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix=f"task-{error_code}",
+    )
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Error Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+
+    async def _fake_load_runtime_for_thread(**_kwargs):
+        return SimpleNamespace(
+            resolved=SimpleNamespace(
+                name="TaskAgent",
+                url="https://example.com/a2a",
+                headers={},
+                metadata={},
+            )
+        )
+
+    class _FakeA2AService:
+        async def get_task(self, **_kwargs):
+            return {
+                "success": False,
+                "task_id": "task-1",
+                "error": error_code,
+                "error_code": error_code,
+            }
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(me_sessions, "get_a2a_service", lambda: _FakeA2AService())
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(f"/me/conversations/{session.id}/upstream-tasks/task-1")
+
+    assert resp.status_code == expected_status
+    assert resp.json()["detail"] == error_code
+
+
 async def test_blocks_query_returns_404_when_block_not_found(
     async_db_session,
     async_session_maker,
