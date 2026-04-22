@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.db.models.conversation_upstream_task import ConversationUpstreamTask
 from app.features.invoke.service import (
     StreamFinishReason,
     StreamOutcome,
@@ -371,6 +372,81 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
         "text",
     ]
     assert agent_item["content"] == "final answer"
+
+
+@pytest.mark.asyncio
+async def test_persist_local_outcome_records_upstream_task_binding(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent_id = uuid4()
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent_id,
+        agent_source="personal",
+        title="Task Binding Stream",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    state = _FakeState(
+        local_session_id=thread.id,
+        local_source="manual",
+        context_id="ctx-task-binding",
+        metadata={},
+        stream_identity={"upstream_task_id": "task-stream-1"},
+        stream_usage={},
+    )
+
+    def _session_factory() -> _SessionContext:
+        return _SessionContext(async_db_session)
+
+    async def _commit(_db) -> None:  # noqa: ANN001
+        await async_db_session.flush()
+
+    async def _ensure_headers_adapter(**kwargs) -> None:  # noqa: ANN001
+        await ensure_local_message_headers(
+            **kwargs,
+            session_factory=_session_factory,
+            commit_fn=_commit,
+            session_hub=session_hub_service,
+        )
+
+    await persist_local_outcome(
+        state=state,
+        outcome=StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="done",
+            error_message=None,
+            error_code=None,
+            elapsed_seconds=1.0,
+            idle_seconds=0.1,
+            terminal_event_seen=True,
+        ),
+        request=_build_request(user_id=user.id, agent_id=agent_id),
+        session_factory=_session_factory,
+        commit_fn=_commit,
+        session_hub=session_hub_service,
+        ensure_headers_fn=_ensure_headers_adapter,
+    )
+
+    binding = await async_db_session.scalar(
+        select(ConversationUpstreamTask).where(
+            ConversationUpstreamTask.conversation_id == thread.id,
+            ConversationUpstreamTask.upstream_task_id == "task-stream-1",
+        )
+    )
+    assert binding is not None
+    assert binding.user_id == user.id
+    assert binding.agent_id == agent_id
+    assert binding.source == "final_metadata"
+    assert binding.status_hint == "done"
+    assert binding.latest_message_id == state.message_refs["agent_message_id"]
 
 
 @pytest.mark.asyncio

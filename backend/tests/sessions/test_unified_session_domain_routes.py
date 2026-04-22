@@ -630,6 +630,16 @@ async def test_upstream_task_route_fetches_task_for_bound_conversation(
         status=ConversationThread.STATUS_ACTIVE,
     )
     async_db_session.add(session)
+    await async_db_session.flush()
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
     await async_db_session.commit()
 
     resolved = SimpleNamespace(
@@ -727,6 +737,16 @@ async def test_upstream_task_route_maps_a2a_service_errors(
         status=ConversationThread.STATUS_ACTIVE,
     )
     async_db_session.add(session)
+    await async_db_session.flush()
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
     await async_db_session.commit()
 
     async def _fake_load_runtime_for_thread(**_kwargs):
@@ -762,6 +782,110 @@ async def test_upstream_task_route_maps_a2a_service_errors(
 
     assert resp.status_code == expected_status
     assert resp.json()["detail"] == error_code
+
+
+async def test_upstream_task_route_rejects_unbound_task_without_upstream_call(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="task-unbound"
+    )
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Unbound Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+
+    async def _runtime_should_not_load(**_kwargs):
+        raise AssertionError("unbound tasks should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _runtime_should_not_load
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{session.id}/upstream-tasks/task-unbound"
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "task_not_found"
+
+
+async def test_upstream_task_route_rejects_task_bound_to_another_conversation(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="task-cross")
+    now = utc_now()
+    first_session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Owner Session",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    second_session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Other Session",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(first_session)
+    async_db_session.add(second_session)
+    await async_db_session.flush()
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=first_session.id,
+        task_id="task-owned",
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
+    await async_db_session.commit()
+
+    async def _runtime_should_not_load(**_kwargs):
+        raise AssertionError("cross-conversation tasks should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _runtime_should_not_load
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{second_session.id}/upstream-tasks/task-owned"
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "task_not_found"
 
 
 async def test_blocks_query_returns_404_when_block_not_found(

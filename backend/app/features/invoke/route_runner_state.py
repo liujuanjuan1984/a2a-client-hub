@@ -177,6 +177,28 @@ async def record_preempt_history_event(
         await commit_fn(db)
 
 
+async def record_upstream_task_binding(
+    *,
+    state: InvokeState,
+    user_id: UUID,
+    task_id: str,
+    session_factory: Callable[[], Any] = AsyncSessionLocal,
+    commit_fn: Callable[[Any], Awaitable[None]] = commit_safely,
+    session_hub: Any = session_hub_service,
+) -> None:
+    if state.local_session_id is None:
+        return
+    async with session_factory() as db:
+        await session_hub.record_upstream_task_binding(
+            db,
+            user_id=user_id,
+            conversation_id=state.local_session_id,
+            task_id=task_id,
+            source="stream_identity",
+        )
+        await commit_fn(db)
+
+
 async def preempt_previous_invoke_if_requested(
     *,
     state: InvokeState,
@@ -238,6 +260,9 @@ async def bind_inflight_task_if_needed(
     record_preempt_history_event_fn: Callable[..., Awaitable[None]] = (
         record_preempt_history_event
     ),
+    record_upstream_task_binding_fn: Callable[..., Awaitable[None]] = (
+        record_upstream_task_binding
+    ),
 ) -> None:
     if state.local_session_id is None or state.inflight_token is None:
         return
@@ -259,6 +284,11 @@ async def bind_inflight_task_if_needed(
     )
     if bind_report.bound:
         state.upstream_task_id = normalized_task_id
+        await record_upstream_task_binding_fn(
+            state=state,
+            user_id=user_id,
+            task_id=normalized_task_id,
+        )
     if bind_report.preempt_event is not None:
         await record_preempt_history_event_fn(
             state=state,

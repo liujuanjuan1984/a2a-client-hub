@@ -286,6 +286,9 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
     async def fake_persist_local_outcome(**_kwargs):  # noqa: ANN001
         return None
 
+    async def fake_record_upstream_task_binding(**kwargs):  # noqa: ANN001
+        captured["recorded_task_id"] = kwargs["task_id"]
+
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "bind_inflight_task_id_report",
@@ -300,6 +303,11 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
         invoke_route_runner,
         "_persist_local_outcome",
         fake_persist_local_outcome,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_record_upstream_task_binding",
+        fake_record_upstream_task_binding,
     )
 
     state = invoke_route_runner._InvokeState(
@@ -323,6 +331,7 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
     await on_event({"task": {"id": "task-xyz"}})
     assert captured["bound_token"] == "token-1"
     assert captured["bound_task_id"] == "task-xyz"
+    assert captured["recorded_task_id"] == "task-xyz"
     assert state.upstream_task_id == "task-xyz"
 
     await on_finalized(
@@ -374,6 +383,9 @@ async def test_bind_inflight_task_if_needed_records_deferred_preempt_history(
     ) -> None:
         recorded_events.append(dict(event))
 
+    async def fake_record_upstream_task_binding(**_kwargs):  # noqa: ANN001
+        return None
+
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "bind_inflight_task_id_report",
@@ -383,6 +395,11 @@ async def test_bind_inflight_task_if_needed_records_deferred_preempt_history(
         invoke_route_runner,
         "_record_preempt_history_event",
         fake_record_preempt_history_event,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_record_upstream_task_binding",
+        fake_record_upstream_task_binding,
     )
 
     state = invoke_route_runner._InvokeState(

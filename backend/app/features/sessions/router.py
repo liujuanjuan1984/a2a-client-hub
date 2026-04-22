@@ -824,6 +824,15 @@ async def get_unified_session_upstream_task(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid_conversation_id") from exc
 
+    is_bound_task = await session_hub_service.verify_upstream_task_binding(
+        db,
+        user_id=current_user_id,
+        conversation_id=cast(UUID, thread.id),
+        task_id=task_id,
+    )
+    if not is_bound_task:
+        raise HTTPException(status_code=404, detail="task_not_found")
+
     runtime = await _load_runtime_for_thread(
         db=db,
         current_user=current_user,

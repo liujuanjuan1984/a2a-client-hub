@@ -62,6 +62,7 @@ from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
     normalize_transport_label,
 )
+from app.integrations.a2a_client.task_payloads import normalize_task_payload
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
@@ -459,6 +460,15 @@ class A2AClient:
                     history_length=history_length,
                     metadata=metadata,
                 )
+                normalized_task = normalize_task_payload(task)
+                if normalized_task is None:
+                    return {
+                        "success": False,
+                        "agent_url": self.agent_url,
+                        "task_id": normalized_task_id,
+                        "error": "Task payload must be a JSON object.",
+                        "error_code": "upstream_payload_error",
+                    }
                 logger.info(
                     "Fetched A2A task %s for %s",
                     normalized_task_id,
@@ -468,7 +478,7 @@ class A2AClient:
                     "success": True,
                     "agent_url": self.agent_url,
                     "task_id": normalized_task_id,
-                    "task": task,
+                    "task": normalized_task,
                 }
             except A2AClientHTTPError as exc:
                 status_code = getattr(exc, "status_code", None)
