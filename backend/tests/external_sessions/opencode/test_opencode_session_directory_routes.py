@@ -12,11 +12,11 @@ from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
 from app.features.agents.common.common import upsert_agent_credential
+from app.features.agents.personal.runtime import A2ARuntimeValidationError
+from app.features.agents.shared.runtime import SharedAgentRuntimeValidationError
 from app.features.agents.shared.service import shared_agent_service
 from app.features.external_sessions.directory import router as external_directory
 from app.features.external_sessions.directory import service as directory_service_module
-from app.features.agents.personal.runtime import A2ARuntimeValidationError
-from app.features.agents.shared.runtime import SharedAgentRuntimeValidationError
 from app.features.external_sessions.opencode import router as opencode_session_directory
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from tests.support.api_utils import create_test_client
@@ -330,7 +330,7 @@ async def test_opencode_sessions_directory_builds_personal_basic_runtime(
         user_id=user.id,
         auth_type="basic",
         basic_username="personal-user",
-        basic_password="personal-pass",
+        basic_password="personal-pass",  # pragma: allowlist secret
         shared=False,
     )
 
