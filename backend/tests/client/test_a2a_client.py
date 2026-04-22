@@ -1070,6 +1070,40 @@ async def test_get_task_returns_success_for_valid_request() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_task_normalizes_model_like_task_payload() -> None:
+    class _TaskPayload:
+        def model_dump(self, **kwargs):  # noqa: ANN001
+            assert kwargs["mode"] == "json"
+            assert kwargs["by_alias"] is True
+            return {
+                "id": "task-1",
+                "status": {"state": "working", "empty": None},
+            }
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_task_with_fallback = AsyncMock(return_value=_TaskPayload())
+
+    result = await a2a_client.get_task("task-1")
+
+    assert result["success"] is True
+    assert result["task"] == {
+        "id": "task-1",
+        "status": {"state": "working"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_task_rejects_non_object_task_payload() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_task_with_fallback = AsyncMock(return_value=["task-1"])
+
+    result = await a2a_client.get_task("task-1")
+
+    assert result["success"] is False
+    assert result["error_code"] == "upstream_payload_error"
+
+
+@pytest.mark.asyncio
 async def test_get_task_maps_http_status_error_codes() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._get_task_with_fallback = AsyncMock(

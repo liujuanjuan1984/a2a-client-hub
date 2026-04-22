@@ -16,6 +16,7 @@ from app.db.models.auth_audit_event import AuthAuditEvent
 from app.db.models.auth_legacy_refresh_revocation import AuthLegacyRefreshRevocation
 from app.db.models.auth_refresh_session import AuthRefreshSession
 from app.db.models.conversation_thread import ConversationThread
+from app.db.models.conversation_upstream_task import ConversationUpstreamTask
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "AuthLegacyRefreshRevocation",
     "AuthRefreshSession",
     "ConversationThread",
+    "ConversationUpstreamTask",
     "HubA2AAgentAllowlistEntry",
     "HubA2AUserCredential",
     "Invitation",

@@ -13,6 +13,7 @@ from app.features.sessions.history_projection import SessionHistoryProjectionSer
 from app.features.sessions.inflight_service import SessionInflightService
 from app.features.sessions.query_service import SessionQueryService
 from app.features.sessions.support import SessionHubSupport
+from app.features.sessions.upstream_tasks import conversation_upstream_task_service
 
 if TYPE_CHECKING:
     from app.features.sessions.common import (
@@ -221,6 +222,49 @@ class SessionHubService:
             db,
             user_id=user_id,
             conversation_id=conversation_id,
+        )
+
+    async def record_upstream_task_binding(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        task_id: str,
+        agent_id: UUID | None = None,
+        agent_source: str | None = None,
+        message_id: UUID | None = None,
+        source: Literal["stream_identity", "final_metadata", "metadata_backfill"] = (
+            "stream_identity"
+        ),
+        status_hint: str | None = None,
+    ) -> bool:
+        binding = await conversation_upstream_task_service.record_binding(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            task_id=task_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            message_id=message_id,
+            source=source,
+            status_hint=status_hint,
+        )
+        return binding is not None
+
+    async def verify_upstream_task_binding(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        task_id: str,
+    ) -> bool:
+        return await conversation_upstream_task_service.verify_binding(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            task_id=task_id,
         )
 
     async def ensure_local_session_for_invoke(

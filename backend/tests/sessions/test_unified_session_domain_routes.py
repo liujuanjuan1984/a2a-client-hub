@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 from types import SimpleNamespace
+from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.db.models.conversation_upstream_task import ConversationUpstreamTask
 from app.features.schedules.service import a2a_schedule_service
 from app.features.sessions import router as me_sessions
 from app.features.sessions.common import serialize_interrupt_event_block_content
@@ -608,6 +611,443 @@ async def test_command_route_persists_canonical_command_messages(
             replay_without_binding_resp.json()["agentMessage"]["id"]
             == command_payload["agentMessage"]["id"]
         )
+
+
+async def test_upstream_task_route_fetches_task_for_bound_conversation(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="task-query")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-task-1",
+        title="Task Query Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
+    await async_db_session.commit()
+
+    resolved = SimpleNamespace(
+        name="TaskAgent",
+        url="https://example.com/a2a",
+        headers={},
+        metadata={},
+    )
+    calls: list[dict[str, object]] = []
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=resolved)
+
+    class _FakeA2AService:
+        async def get_task(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "success": True,
+                "task_id": "task-1",
+                "task": {
+                    "id": "task-1",
+                    "status": {"state": "working"},
+                },
+            }
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(me_sessions, "get_a2a_service", lambda: _FakeA2AService())
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{session.id}/upstream-tasks/task-1",
+            params={"historyLength": 3},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload == {
+        "conversationId": str(session.id),
+        "taskId": "task-1",
+        "task": {
+            "id": "task-1",
+            "status": {"state": "working"},
+        },
+    }
+    assert calls == [
+        {
+            "resolved": resolved,
+            "task_id": "task-1",
+            "history_length": 3,
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "ses-task-1",
+            },
+        }
+    ]
+
+
+async def test_upstream_task_route_accepts_opaque_task_ids_with_slashes(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="task-query-slash",
+    )
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-task-slash",
+        title="Task Query Slash Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    task_id = "run/task-1/step-2"
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id=task_id,
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
+    await async_db_session.commit()
+
+    resolved = SimpleNamespace(
+        name="TaskAgent",
+        url="https://example.com/a2a",
+        headers={},
+        metadata={},
+    )
+    calls: list[dict[str, object]] = []
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=resolved)
+
+    class _FakeA2AService:
+        async def get_task(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "success": True,
+                "task_id": task_id,
+                "task": {
+                    "id": task_id,
+                    "status": {"state": "working"},
+                },
+            }
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(me_sessions, "get_a2a_service", lambda: _FakeA2AService())
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{session.id}/upstream-tasks/{quote(task_id, safe='')}"
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["taskId"] == task_id
+    assert calls[0]["task_id"] == task_id
+
+
+@pytest.mark.parametrize(
+    ("error_code", "expected_status"),
+    [
+        ("invalid_task_id", 400),
+        ("task_not_found", 404),
+        ("unsupported_operation", 501),
+        ("timeout", 504),
+    ],
+)
+async def test_upstream_task_route_maps_a2a_service_errors(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+    expected_status: int,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix=f"task-{error_code}",
+    )
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Error Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
+    await async_db_session.commit()
+
+    async def _fake_load_runtime_for_thread(**_kwargs):
+        return SimpleNamespace(
+            resolved=SimpleNamespace(
+                name="TaskAgent",
+                url="https://example.com/a2a",
+                headers={},
+                metadata={},
+            )
+        )
+
+    class _FakeA2AService:
+        async def get_task(self, **_kwargs):
+            return {
+                "success": False,
+                "task_id": "task-1",
+                "error": error_code,
+                "error_code": error_code,
+            }
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(me_sessions, "get_a2a_service", lambda: _FakeA2AService())
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(f"/me/conversations/{session.id}/upstream-tasks/task-1")
+
+    assert resp.status_code == expected_status
+    assert resp.json()["detail"] == error_code
+
+
+async def test_upstream_task_route_rejects_unbound_task_without_upstream_call(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="task-unbound"
+    )
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Unbound Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.commit()
+
+    async def _runtime_should_not_load(**_kwargs):
+        raise AssertionError("unbound tasks should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _runtime_should_not_load
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{session.id}/upstream-tasks/task-unbound"
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "task_not_found"
+
+
+async def test_upstream_task_route_rejects_task_bound_to_another_conversation(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="task-cross")
+    now = utc_now()
+    first_session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Owner Session",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    second_session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Other Session",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(first_session)
+    async_db_session.add(second_session)
+    await async_db_session.flush()
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=first_session.id,
+        task_id="task-owned",
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
+    await async_db_session.commit()
+
+    async def _runtime_should_not_load(**_kwargs):
+        raise AssertionError("cross-conversation tasks should not load runtime")
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _runtime_should_not_load
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{second_session.id}/upstream-tasks/task-owned"
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "task_not_found"
+
+
+async def test_upstream_task_binding_upsert_preserves_first_seen_and_updates_latest(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="task-upsert")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Upsert Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    first_message = AgentMessage(
+        id=uuid4(),
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        status="streaming",
+    )
+    latest_message = AgentMessage(
+        id=uuid4(),
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        status="done",
+    )
+    async_db_session.add(first_message)
+    async_db_session.add(latest_message)
+    await async_db_session.flush()
+
+    first_binding = await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-upsert-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        message_id=first_message.id,
+        source="stream_identity",
+        status_hint="streaming",
+    )
+    second_binding = await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-upsert-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        message_id=latest_message.id,
+        source="final_metadata",
+        status_hint="done",
+    )
+    await async_db_session.flush()
+
+    assert first_binding is True
+    assert second_binding is True
+    bindings = list(
+        (
+            await async_db_session.scalars(
+                select(ConversationUpstreamTask).where(
+                    ConversationUpstreamTask.conversation_id == session.id,
+                    ConversationUpstreamTask.upstream_task_id == "task-upsert-1",
+                )
+            )
+        ).all()
+    )
+    assert len(bindings) == 1
+    binding = bindings[0]
+    assert binding.first_seen_message_id == first_message.id
+    assert binding.latest_message_id == latest_message.id
+    assert binding.source == "final_metadata"
+    assert binding.status_hint == "done"
 
 
 async def test_blocks_query_returns_404_when_block_not_found(

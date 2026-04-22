@@ -312,3 +312,11 @@ class SessionCancelResponse(BaseModel):
     ]
 
     model_config = {"populate_by_name": True}
+
+
+class SessionUpstreamTaskResponse(BaseModel):
+    conversation_id: str = Field(alias="conversationId")
+    task_id: str = Field(alias="taskId")
+    task: Dict[str, Any]
+
+    model_config = {"populate_by_name": True}

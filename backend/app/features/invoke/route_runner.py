@@ -43,6 +43,7 @@ from app.features.invoke.route_runner_state import (
     preempt_previous_invoke_if_requested,
     prepare_state,
     record_preempt_history_event,
+    record_upstream_task_binding,
     register_inflight_invoke,
     unregister_inflight_invoke,
 )
@@ -196,6 +197,22 @@ async def _record_preempt_history_event(
     )
 
 
+async def _record_upstream_task_binding(
+    *,
+    state: InvokeState,
+    user_id: UUID,
+    task_id: str,
+) -> None:
+    await record_upstream_task_binding(
+        state=state,
+        user_id=user_id,
+        task_id=task_id,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+    )
+
+
 async def _preempt_previous_invoke_if_requested(
     *,
     state: InvokeState,
@@ -221,6 +238,7 @@ async def _bind_inflight_task_if_needed(
         state=state,
         user_id=user_id,
         record_preempt_history_event_fn=_record_preempt_history_event,
+        record_upstream_task_binding_fn=_record_upstream_task_binding,
     )
 
 

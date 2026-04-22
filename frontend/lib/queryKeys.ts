@@ -112,6 +112,8 @@ export const queryKeys = {
     scheduledJobs: () => ["scheduled-jobs", "list"] as const,
     scheduledJobExecutions: (taskId: string) =>
       ["scheduled-jobs", "executions", taskId] as const,
+    upstreamTask: (conversationId: string, taskId: string) =>
+      ["sessions", "upstream-task", conversationId, taskId] as const,
   },
   history: {
     chat: (conversationId: string) =>

@@ -556,6 +556,28 @@ async def persist_local_outcome(
                 user_sender=request.user_sender,
             )
         )
+        raw_task_id = (
+            state.stream_identity.get("upstream_task_id")
+            if isinstance(state.stream_identity, dict)
+            else None
+        )
+        normalized_task_id = normalize_non_empty_text(
+            raw_task_id if isinstance(raw_task_id, str) else None
+        )
+        if normalized_task_id:
+            binding_conversation_id = coerce_uuid(message_refs.get("conversation_id"))
+            binding_agent_message_id = coerce_uuid(message_refs.get("agent_message_id"))
+            await session_hub.record_upstream_task_binding(
+                persist_db,
+                user_id=request.user_id,
+                conversation_id=binding_conversation_id or state.local_session_id,
+                task_id=normalized_task_id,
+                agent_id=request.agent_id,
+                agent_source=request.agent_source,
+                message_id=binding_agent_message_id,
+                source="final_metadata",
+                status_hint=resolve_agent_status_from_outcome(outcome),
+            )
         await commit_fn(persist_db)
     state.message_refs = message_refs
     state.persisted_success = outcome.success

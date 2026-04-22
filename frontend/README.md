@@ -114,6 +114,7 @@ Message id contract:
 - The chat timeline must not merge non-canonical overlay-only messages into `messages:query` results.
 - Canonical history items also carry `kind` and optional `operationId` so command/action messages do not have to be rediscovered from ad hoc metadata parsing.
 - `append` and `commands:run` requests should send an explicit `operationId` (UUID) for idempotent retries; message ids remain canonical message identity, not operation identity.
+- Upstream A2A task state is fetched on demand via `GET /me/conversations/{conversation_id}/upstream-tasks/{task_id}`. Use `useSessionUpstreamTaskQuery` only for explicit recovery/detail views; it intentionally does not poll globally.
 - Non-text block details (`reasoning`/`tool_call`) are fetched on demand via `POST /me/conversations/{conversation_id}/blocks:query`.
 - Structured command results may be persisted as `data` blocks and should render as first-class canonical history blocks rather than overlay text fallbacks.
 - `blocks:query` detail items include `messageId` and must match the target message before cache patching.
