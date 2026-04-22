@@ -37,9 +37,6 @@ from app.features.sessions.service import session_hub_service
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
 
-# ruff: noqa: F401
-
-
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 

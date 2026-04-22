@@ -17,8 +17,6 @@ from app.integrations.a2a_client.errors import (
     A2AUpstreamTimeoutError,
 )
 
-# ruff: noqa: F401
-
 
 class _BrokenGateway:
     def stream(self, **kwargs):  # noqa: ARG002
