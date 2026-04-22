@@ -116,6 +116,7 @@ async def run_append_session_control(
         session_id=session_id,
         request_payload=build_append_request_payload(payload),
         metadata=payload.metadata,
+        working_directory=payload.working_directory,
     )
     if not result.success:
         mapped_error_code = (

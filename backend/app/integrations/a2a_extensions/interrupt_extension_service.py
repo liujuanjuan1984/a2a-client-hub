@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
+from app.features.working_directory import (
+    adapt_working_directory_metadata_for_upstream,
+)
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import ResolvedInterruptCallbackExtension
@@ -168,7 +171,14 @@ class InterruptExtensionService:
         request_id: str,
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
+            metadata=metadata,
+            working_directory=working_directory,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
+        )
         (
             resolved_request_id,
             resolved_reply,
@@ -176,7 +186,7 @@ class InterruptExtensionService:
         ) = self.prepare_reply_permission_interrupt(
             request_id=request_id,
             reply=reply,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
         params: Dict[str, Any] = {
@@ -203,7 +213,14 @@ class InterruptExtensionService:
         request_id: str,
         answers: list[list[str]],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
+            metadata=metadata,
+            working_directory=working_directory,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
+        )
         (
             resolved_request_id,
             resolved_answers,
@@ -211,7 +228,7 @@ class InterruptExtensionService:
         ) = self.prepare_reply_question_interrupt(
             request_id=request_id,
             answers=answers,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
         params: Dict[str, Any] = {
@@ -237,13 +254,20 @@ class InterruptExtensionService:
         jsonrpc_url: str,
         request_id: str,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
+            metadata=metadata,
+            working_directory=working_directory,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
+        )
         (
             resolved_request_id,
             normalized_metadata,
         ) = self.prepare_reject_question_interrupt(
             request_id=request_id,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
         params: Dict[str, Any] = {"request_id": resolved_request_id}
@@ -268,7 +292,14 @@ class InterruptExtensionService:
         permissions: Dict[str, Any],
         scope: str | None = None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
+            metadata=metadata,
+            working_directory=working_directory,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
+        )
         (
             resolved_request_id,
             resolved_permissions,
@@ -278,7 +309,7 @@ class InterruptExtensionService:
             request_id=request_id,
             permissions=permissions,
             scope=scope,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
         params: Dict[str, Any] = {
@@ -308,7 +339,14 @@ class InterruptExtensionService:
         action: str,
         content: Any = None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
+            metadata=metadata,
+            working_directory=working_directory,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
+        )
         (
             resolved_request_id,
             resolved_action,
@@ -318,7 +356,7 @@ class InterruptExtensionService:
             request_id=request_id,
             action=action,
             content=content,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
         params: Dict[str, Any] = {

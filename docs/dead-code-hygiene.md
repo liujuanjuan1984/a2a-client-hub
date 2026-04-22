@@ -37,6 +37,8 @@ High-confidence checks are the maintained hygiene path and are appropriate for l
 
 These checks are still advisory, but their signal is intentionally strong enough to support normal engineering cleanup.
 
+The frontend check uses `frontend/tsconfig.diagnostics.json` so diagnostics stay scoped to source and test-support files instead of generated output such as coverage reports, Expo caches, builds, or installed dependencies. Repository-level ripgrep diagnostics also use `.ignore` to skip generated directories and lockfiles by default; use `rg -u` when those files are the explicit target.
+
 ### Exploratory backend scan
 
 `bash scripts/check-dead-code.sh exploratory-backend` runs a lower-confidence `vulture` pass. Use it only to generate a triage list that a human reviews carefully.

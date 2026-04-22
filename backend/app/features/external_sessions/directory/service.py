@@ -1,145 +1,60 @@
-"""Service implementation for the OpenCode session directory feature.
-
-This service aggregates OpenCode sessions across all agents visible to a user.
-To avoid N+1 upstream calls on every UI visit, it maintains a DB-backed TTL cache
-per (user, agent_source, agent_id).
-"""
+"""Generic external session directory aggregation service."""
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, cast
+from typing import Any, Literal, Sequence, cast
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.logging import get_logger
+from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
+from app.db.models.hub_a2a_user_credential import HubA2AUserCredential
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import run_in_read_session, run_in_write_session
 from app.features.agents.personal.runtime import a2a_runtime_builder
 from app.features.agents.personal.service import a2a_agent_service
 from app.features.agents.shared.runtime import shared_agent_runtime_builder
 from app.features.agents.shared.service import shared_agent_service
+from app.features.external_sessions.directory.adapters import (
+    ExternalSessionDirectoryAdapter,
+)
 from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 
 logger = get_logger(__name__)
-OPENCODE_PROVIDER = "opencode"
+
+AgentSource = Literal["personal", "shared"]
+Credential = A2AAgentCredential | HubA2AUserCredential
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _as_record(value: Any) -> Optional[Dict[str, Any]]:
+def _as_record(value: Any) -> dict[str, Any] | None:
     if value and isinstance(value, dict):
-        return cast(Dict[str, Any], value)
+        return cast(dict[str, Any], value)
     return None
-
-
-def _pick_str(obj: Optional[Dict[str, Any]], keys: Iterable[str]) -> Optional[str]:
-    if not obj:
-        return None
-    for key in keys:
-        value = obj.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-def _pick_ms(obj: Optional[Dict[str, Any]], keys: Iterable[str]) -> Optional[int]:
-    if not obj:
-        return None
-    for key in keys:
-        value = obj.get(key)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        if isinstance(value, str) and value.strip().isdigit():
-            return int(value.strip())
-    return None
-
-
-def _to_iso_from_ms(value: Optional[int]) -> Optional[str]:
-    if value is None:
-        return None
-    try:
-        dt = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
-    except (OverflowError, OSError, ValueError):
-        return None
-    return dt.isoformat()
-
-
-def _extract_session_id(task: Any) -> Optional[str]:
-    obj = _as_record(task)
-    metadata = _as_record(obj.get("metadata")) if obj else {}
-    opencode = _as_record((metadata or {}).get("opencode")) or {}
-    return _pick_str(
-        opencode,
-        ["session_id", "sessionId"],
-    ) or _pick_str(obj, ["id", "session_id", "sessionId"])
-
-
-def _extract_title(task: Any) -> str:
-    obj = _as_record(task) or {}
-    metadata = _as_record(obj.get("metadata")) or {}
-    opencode = _as_record(metadata.get("opencode")) or {}
-    title = _pick_str(opencode, ["title"])
-    if title:
-        return title
-    return (
-        _pick_str(obj, ["title", "name", "label"])
-        or _extract_session_id(obj)
-        or "Session"
-    )
-
-
-def _extract_last_active_at(task: Any) -> Optional[str]:
-    obj = _as_record(task) or {}
-    # Prefer explicit fields if present.
-    direct = _pick_str(
-        obj, ["last_active_at", "updated_at", "created_at", "timestamp", "ts"]
-    )
-    if direct:
-        return direct
-    direct_ms = _pick_ms(obj, ["updated", "created", "timestamp", "ts"])
-    if direct_ms is not None:
-        return _to_iso_from_ms(direct_ms)
-
-    metadata = _as_record(obj.get("metadata")) or {}
-    opencode = _as_record(metadata.get("opencode")) or {}
-    opencode_direct = _pick_str(
-        opencode,
-        ["last_active_at", "updated_at", "created_at", "timestamp", "ts"],
-    )
-    if opencode_direct:
-        return opencode_direct
-    opencode_ms = _pick_ms(opencode, ["updated", "created", "timestamp", "ts"])
-    return _to_iso_from_ms(opencode_ms)
 
 
 def _normalize_agent_url(value: str) -> str:
     return (value or "").strip().rstrip("/")
 
 
-def _compare_last_active(a: Optional[str], b: Optional[str]) -> int:
-    """Compare ISO timestamps (best-effort).
-
-    Returns:
-        1 if a > b, -1 if a < b, 0 if equal/unknown.
-    """
+def _compare_last_active(a: str | None, b: str | None) -> int:
+    """Compare ISO timestamps (best-effort)."""
 
     if not a and not b:
         return 0
@@ -153,55 +68,64 @@ def _compare_last_active(a: Optional[str], b: Optional[str]) -> int:
     return 1 if a > b else -1
 
 
-def _prune_task_for_cache(task: Any) -> Optional[Dict[str, Any]]:
-    obj = _as_record(task)
-    if not obj:
-        return None
-    session_id = _extract_session_id(obj)
-    if not session_id:
-        return None
-
-    metadata = _as_record(obj.get("metadata")) or {}
-    opencode = _as_record(metadata.get("opencode")) or {}
-
-    # Only keep fields required for listing/sorting/binding.
-    return {
-        "id": obj.get("id"),
-        "contextId": obj.get("contextId") or obj.get("context_id") or session_id,
-        "last_active_at": _extract_last_active_at(obj),
-        "metadata": {
-            "opencode": {
-                "session_id": session_id,
-                "title": opencode.get("title"),
-            }
-        },
-    }
-
-
 @dataclass(frozen=True)
-class _AgentRef:
+class AgentRef:
     agent_id: UUID
     agent_name: str
-    agent_source: str  # personal/shared
+    agent_source: AgentSource
     agent_url: str
     auth_type: str
     auth_header: str | None
     auth_scheme: str | None
+    credential_mode: str
     extra_headers: dict[str, str] | None
 
 
 @dataclass(frozen=True)
-class _DirectoryRuntime:
+class DirectoryRuntime:
     resolved: ResolvedAgent
 
 
-class OpencodeSessionDirectoryService:
+class ExternalSessionDirectoryService:
+    """Aggregate external provider sessions across visible agents."""
+
+    def __init__(self, *, adapter: ExternalSessionDirectoryAdapter) -> None:
+        self._adapter = adapter
+
+    @property
+    def provider_key(self) -> str:
+        return self._adapter.provider_key
+
+    async def list_directory(
+        self,
+        *,
+        user_id: UUID,
+        page: int,
+        size: int,
+        refresh: bool,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        directory_items, meta = await self._build_directory_snapshot(
+            user_id=user_id,
+            refresh=refresh,
+        )
+        total = len(directory_items)
+        pages = (total + size - 1) // size if size else 0
+        offset = (page - 1) * size
+        page_items = directory_items[offset : offset + size]
+        pagination = {
+            "page": page,
+            "size": size,
+            "total": total,
+            "pages": pages,
+        }
+        return page_items, {"pagination": pagination, "meta": meta}
+
     async def _build_directory_snapshot(
         self,
         *,
         user_id: UUID,
         refresh: bool,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         agents, cache_entries = await run_in_read_session(
             lambda db: self._load_agents_and_cache_entries(db, user_id=user_id),
             session_factory=AsyncSessionLocal,
@@ -209,8 +133,8 @@ class OpencodeSessionDirectoryService:
         total_agents = len(agents)
         now = _utc_now()
 
-        expired: list[_AgentRef] = []
-        missing: list[_AgentRef] = []
+        expired: list[AgentRef] = []
+        missing: list[AgentRef] = []
         cached_agents = 0
         for agent in agents:
             entry = cache_entries.get((agent.agent_source, agent.agent_id))
@@ -226,24 +150,29 @@ class OpencodeSessionDirectoryService:
         refreshed_agents = 0
         partial_failures = 0
         if agents_to_refresh:
-            credentials_by_agent_id = await run_in_read_session(
-                lambda db: self._load_credentials_by_agent_id(
-                    db, agents=agents_to_refresh
+            credentials_by_agent_ref = await run_in_read_session(
+                lambda db: self._load_credentials_by_agent_ref(
+                    db,
+                    user_id=user_id,
+                    agents=agents_to_refresh,
                 ),
                 session_factory=AsyncSessionLocal,
             )
-            runtime_targets: list[tuple[_AgentRef, _DirectoryRuntime]] = []
+            runtime_targets: list[tuple[AgentRef, DirectoryRuntime]] = []
             for agent in agents_to_refresh:
                 try:
                     runtime = self._build_runtime_from_prefetched(
                         agent=agent,
-                        credential=credentials_by_agent_id.get(agent.agent_id),
+                        credential=credentials_by_agent_ref.get(
+                            (agent.agent_source, agent.agent_id)
+                        ),
                     )
                 except Exception as exc:  # noqa: BLE001
                     partial_failures += 1
                     logger.warning(
-                        "OpenCode sessions cache runtime build failed",
+                        "External session directory runtime build failed",
                         extra={
+                            "provider": self.provider_key,
                             "user_id": str(user_id),
                             "agent_id": str(agent.agent_id),
                             "agent_source": agent.agent_source,
@@ -253,25 +182,23 @@ class OpencodeSessionDirectoryService:
                     continue
                 runtime_targets.append((agent, runtime))
 
-            concurrency = max(1, int(settings.opencode_sessions_refresh_concurrency))
+            concurrency = max(1, int(self._adapter.refresh_concurrency))
             sem = asyncio.Semaphore(concurrency)
 
             async def _fetch_one(
-                agent: _AgentRef, runtime: _DirectoryRuntime
-            ) -> tuple[_AgentRef, ExtensionCallResult]:
+                agent: AgentRef, runtime: DirectoryRuntime
+            ) -> tuple[AgentRef, ExtensionCallResult]:
                 async with sem:
                     try:
                         extensions_service = cast(Any, get_a2a_extensions_service())
                         result = await extensions_service.list_sessions(
                             runtime=runtime,
                             page=1,
-                            size=int(settings.opencode_sessions_per_agent_size),
+                            size=int(self._adapter.per_agent_size),
                             query=None,
                         )
                         return agent, result
                     except A2AExtensionUpstreamError as exc:
-                        # Cache negative results for the TTL window to avoid
-                        # re-fetching unsupported/unavailable agents on every visit.
                         return agent, ExtensionCallResult(
                             success=False,
                             result=None,
@@ -291,9 +218,7 @@ class OpencodeSessionDirectoryService:
                 return_exceptions=True,
             )
 
-            expires_at = now + timedelta(
-                seconds=int(settings.opencode_sessions_cache_ttl_seconds)
-            )
+            expires_at = now + timedelta(seconds=int(self._adapter.cache_ttl_seconds))
             (
                 refreshed_agents,
                 write_partial_failures,
@@ -309,16 +234,35 @@ class OpencodeSessionDirectoryService:
             )
             partial_failures += write_partial_failures
 
-            # Reload cache entries after refresh attempts.
             cache_entries = await run_in_read_session(
                 lambda db: self._load_cache_entries(db, user_id=user_id, agents=agents),
                 session_factory=AsyncSessionLocal,
             )
 
-        directory_items: list[Dict[str, Any]] = []
-        # Deduplicate sessions across agents that point to the same upstream
-        # (e.g. personal + shared agent records referencing the same OpenCode A2A serve).
-        dedup: dict[tuple[str, str], Dict[str, Any]] = {}
+        directory_items = self._build_directory_items(
+            agents=agents,
+            cache_entries=cache_entries,
+        )
+
+        meta = {
+            "provider": self.provider_key,
+            "total_agents": total_agents,
+            "refreshed_agents": refreshed_agents,
+            "cached_agents": cached_agents,
+            "partial_failures": partial_failures,
+        }
+        return directory_items, meta
+
+    def _build_directory_items(
+        self,
+        *,
+        agents: list[AgentRef],
+        cache_entries: dict[
+            tuple[str, UUID],
+            ExternalSessionDirectoryCacheEntry,
+        ],
+    ) -> list[dict[str, Any]]:
+        dedup: dict[tuple[str, str], dict[str, Any]] = {}
         for agent in agents:
             entry = cache_entries.get((agent.agent_source, agent.agent_id))
             if not entry:
@@ -328,18 +272,19 @@ class OpencodeSessionDirectoryService:
             if not isinstance(tasks, list):
                 continue
             for task in tasks:
-                session_id = _extract_session_id(task)
-                if not session_id:
+                normalized = self._adapter.normalize_task(task)
+                if normalized is None:
                     continue
                 candidate = {
+                    "provider": self.provider_key,
                     "agent_id": agent.agent_id,
                     "agent_source": agent.agent_source,
                     "agent_name": agent.agent_name,
-                    "session_id": session_id,
-                    "title": _extract_title(task),
-                    "last_active_at": _extract_last_active_at(task),
+                    "session_id": normalized.session_id,
+                    "title": normalized.title,
+                    "last_active_at": normalized.last_active_at,
                 }
-                key = (_normalize_agent_url(agent.agent_url), session_id)
+                key = (_normalize_agent_url(agent.agent_url), normalized.session_id)
                 existing = dedup.get(key)
                 if existing is None:
                     dedup[key] = candidate
@@ -355,15 +300,11 @@ class OpencodeSessionDirectoryService:
                 if cmp_active < 0:
                     continue
 
-                # Prefer personal agent records when timestamps are equal/missing,
-                # to keep user-managed agent naming/credentials as the default.
                 existing_source = existing.get("agent_source")
                 if existing_source != "personal" and agent.agent_source == "personal":
                     dedup[key] = candidate
-                    continue
 
         directory_items = list(dedup.values())
-
         directory_items.sort(
             key=lambda item: (
                 item.get("last_active_at") or "",
@@ -372,50 +313,15 @@ class OpencodeSessionDirectoryService:
             ),
             reverse=True,
         )
-
-        meta = {
-            "total_agents": total_agents,
-            "refreshed_agents": refreshed_agents,
-            "cached_agents": cached_agents,
-            "partial_failures": partial_failures,
-        }
-        return directory_items, meta
-
-    async def list_directory(
-        self,
-        *,
-        user_id: UUID,
-        page: int,
-        size: int,
-        refresh: bool,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        directory_items, meta = await self._build_directory_snapshot(
-            user_id=user_id,
-            refresh=refresh,
-        )
-        # This endpoint paginates a per-request directory snapshot rather than a
-        # raw DB result set. The snapshot-level metadata (`refresh`, cache hits,
-        # and partial failures) describes the whole aggregation pass, so slicing
-        # happens only after the snapshot is assembled.
-        total = len(directory_items)
-        pages = (total + size - 1) // size if size else 0
-        offset = (page - 1) * size
-        page_items = directory_items[offset : offset + size]
-        pagination = {
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": pages,
-        }
-        return page_items, {"pagination": pagination, "meta": meta}
+        return directory_items
 
     async def _load_agents_and_cache_entries(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
-    ) -> Tuple[
-        List[_AgentRef], Dict[Tuple[str, UUID], ExternalSessionDirectoryCacheEntry]
+    ) -> tuple[
+        list[AgentRef], dict[tuple[str, UUID], ExternalSessionDirectoryCacheEntry]
     ]:
         agents = await self._list_visible_agents(db, user_id=user_id)
         cache_entries = await self._load_cache_entries(
@@ -425,10 +331,10 @@ class OpencodeSessionDirectoryService:
 
     async def _list_visible_agents(
         self, db: AsyncSession, *, user_id: UUID
-    ) -> List[_AgentRef]:
+    ) -> list[AgentRef]:
         personal_records = await a2a_agent_service.list_all_agents(db, user_id=user_id)
         personal = [
-            _AgentRef(
+            AgentRef(
                 agent_id=record.id,
                 agent_name=record.name,
                 agent_source="personal",
@@ -436,6 +342,7 @@ class OpencodeSessionDirectoryService:
                 auth_type=record.auth_type,
                 auth_header=record.auth_header,
                 auth_scheme=record.auth_scheme,
+                credential_mode=A2AAgent.CREDENTIAL_SHARED,
                 extra_headers=record.extra_headers or None,
             )
             for record in personal_records
@@ -445,7 +352,7 @@ class OpencodeSessionDirectoryService:
             db, user_id=user_id
         )
         shared = [
-            _AgentRef(
+            AgentRef(
                 agent_id=cast(UUID, agent.id),
                 agent_name=cast(str, agent.name),
                 agent_source="shared",
@@ -453,6 +360,10 @@ class OpencodeSessionDirectoryService:
                 auth_type=cast(str, agent.auth_type),
                 auth_header=cast(str | None, agent.auth_header),
                 auth_scheme=cast(str | None, agent.auth_scheme),
+                credential_mode=cast(
+                    str,
+                    getattr(agent, "credential_mode", A2AAgent.CREDENTIAL_NONE),
+                ),
                 extra_headers=cast(dict[str, str] | None, agent.extra_headers),
             )
             for agent in shared_agents
@@ -464,15 +375,15 @@ class OpencodeSessionDirectoryService:
         db: AsyncSession,
         *,
         user_id: UUID,
-        agents: List[_AgentRef],
-    ) -> Dict[Tuple[str, UUID], ExternalSessionDirectoryCacheEntry]:
+        agents: list[AgentRef],
+    ) -> dict[tuple[str, UUID], ExternalSessionDirectoryCacheEntry]:
         if not agents:
             return {}
         agent_ids = [agent.agent_id for agent in agents]
         stmt = select(ExternalSessionDirectoryCacheEntry).where(
             and_(
                 ExternalSessionDirectoryCacheEntry.user_id == user_id,
-                ExternalSessionDirectoryCacheEntry.provider == OPENCODE_PROVIDER,
+                ExternalSessionDirectoryCacheEntry.provider == self.provider_key,
                 ExternalSessionDirectoryCacheEntry.agent_id.in_(agent_ids),
             )
         )
@@ -480,45 +391,74 @@ class OpencodeSessionDirectoryService:
         entries = list(result.scalars().all())
         return {(cast(str, e.agent_source), cast(UUID, e.agent_id)): e for e in entries}
 
-    async def _load_credentials_by_agent_id(
+    async def _load_credentials_by_agent_ref(
         self,
         db: AsyncSession,
         *,
-        agents: List[_AgentRef],
-    ) -> dict[UUID, A2AAgentCredential]:
-        bearer_agent_ids = [
-            agent.agent_id for agent in agents if agent.auth_type == "bearer"
+        user_id: UUID,
+        agents: list[AgentRef],
+    ) -> dict[tuple[str, UUID], Credential]:
+        personal_ids = [
+            agent.agent_id
+            for agent in agents
+            if agent.agent_source == "personal"
+            and agent.auth_type in {"bearer", "basic"}
         ]
-        if not bearer_agent_ids:
-            return {}
+        shared_credential_ids = [
+            agent.agent_id
+            for agent in agents
+            if agent.agent_source == "shared"
+            and agent.auth_type in {"bearer", "basic"}
+            and agent.credential_mode == A2AAgent.CREDENTIAL_SHARED
+        ]
+        user_credential_ids = [
+            agent.agent_id
+            for agent in agents
+            if agent.agent_source == "shared"
+            and agent.auth_type in {"bearer", "basic"}
+            and agent.credential_mode == A2AAgent.CREDENTIAL_USER
+        ]
 
-        stmt = select(A2AAgentCredential).where(
-            A2AAgentCredential.agent_id.in_(bearer_agent_ids)
-        )
-        result = await db.execute(stmt)
-        credentials = list(result.scalars().all())
-        return {
-            cast(UUID, credential.agent_id): credential for credential in credentials
-        }
+        credentials: dict[tuple[str, UUID], Credential] = {}
+        agent_credential_ids = [*personal_ids, *shared_credential_ids]
+        if agent_credential_ids:
+            stmt = select(A2AAgentCredential).where(
+                A2AAgentCredential.agent_id.in_(agent_credential_ids)
+            )
+            result = await db.execute(stmt)
+            for credential in result.scalars().all():
+                agent_id = cast(UUID, credential.agent_id)
+                source = "personal" if agent_id in personal_ids else "shared"
+                credentials[(source, agent_id)] = credential
+
+        if user_credential_ids:
+            stmt = select(HubA2AUserCredential).where(
+                and_(
+                    HubA2AUserCredential.user_id == user_id,
+                    HubA2AUserCredential.agent_id.in_(user_credential_ids),
+                )
+            )
+            result = await db.execute(stmt)
+            for credential in result.scalars().all():
+                credentials[("shared", cast(UUID, credential.agent_id))] = credential
+
+        return credentials
 
     async def _write_cache_entry(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
-        agent: _AgentRef,
+        agent: AgentRef,
         now: datetime,
         expires_at: datetime,
         result: Any,
     ) -> bool:
         if not result.success:
-            await self._upsert_cache_entry(
+            await self._mark_cache_entry_refresh_failed(
                 db,
                 user_id=user_id,
                 agent=agent,
-                expires_at=expires_at,
-                payload={"items": []},
-                last_success_at=None,
                 last_error_code=result.error_code,
                 last_error_at=now,
             )
@@ -527,7 +467,11 @@ class OpencodeSessionDirectoryService:
         envelope = _as_record(result.result) or {}
         raw_items = envelope.get("items")
         tasks = raw_items if isinstance(raw_items, list) else []
-        pruned = [item for t in tasks if (item := _prune_task_for_cache(t)) is not None]
+        pruned = [
+            item
+            for task in tasks
+            if (item := self._adapter.prune_task_for_cache(task)) is not None
+        ]
 
         await self._upsert_cache_entry(
             db,
@@ -548,7 +492,7 @@ class OpencodeSessionDirectoryService:
         user_id: UUID,
         now: datetime,
         expires_at: datetime,
-        results: Sequence[tuple[_AgentRef, ExtensionCallResult] | BaseException],
+        results: Sequence[tuple[AgentRef, ExtensionCallResult] | BaseException],
     ) -> tuple[int, int]:
         refreshed_agents = 0
         partial_failures = 0
@@ -569,8 +513,9 @@ class OpencodeSessionDirectoryService:
             except Exception as exc:  # noqa: BLE001
                 partial_failures += 1
                 logger.warning(
-                    "OpenCode sessions cache write failed",
+                    "External session directory cache write failed",
                     extra={
+                        "provider": self.provider_key,
                         "user_id": str(user_id),
                         "agent_id": str(agent.agent_id),
                         "agent_source": agent.agent_source,
@@ -578,16 +523,19 @@ class OpencodeSessionDirectoryService:
                     },
                 )
                 continue
-            refreshed_agents += 1 if ok else 0
+            if ok:
+                refreshed_agents += 1
+            else:
+                partial_failures += 1
 
         return refreshed_agents, partial_failures
 
     def _build_runtime_from_prefetched(
         self,
         *,
-        agent: _AgentRef,
-        credential: A2AAgentCredential | None,
-    ) -> _DirectoryRuntime:
+        agent: AgentRef,
+        credential: Credential | None,
+    ) -> DirectoryRuntime:
         if agent.agent_source == "shared":
             resolved, _ = shared_agent_runtime_builder.resolve_prefetched(
                 name=agent.agent_name,
@@ -598,7 +546,7 @@ class OpencodeSessionDirectoryService:
                 auth_scheme=agent.auth_scheme,
                 credential=credential,
             )
-            return _DirectoryRuntime(resolved=resolved)
+            return DirectoryRuntime(resolved=resolved)
         resolved, _ = a2a_runtime_builder.resolve_prefetched(
             name=agent.agent_name,
             card_url=agent.agent_url,
@@ -608,23 +556,23 @@ class OpencodeSessionDirectoryService:
             auth_scheme=agent.auth_scheme,
             credential=credential,
         )
-        return _DirectoryRuntime(resolved=resolved)
+        return DirectoryRuntime(resolved=resolved)
 
     async def _upsert_cache_entry(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
-        agent: _AgentRef,
+        agent: AgentRef,
         expires_at: datetime,
-        payload: Dict[str, Any],
-        last_success_at: Optional[datetime],
-        last_error_code: Optional[str],
-        last_error_at: Optional[datetime],
+        payload: dict[str, Any],
+        last_success_at: datetime | None,
+        last_error_code: str | None,
+        last_error_at: datetime | None,
     ) -> None:
         stmt = insert(ExternalSessionDirectoryCacheEntry).values(
             user_id=user_id,
-            provider=OPENCODE_PROVIDER,
+            provider=self.provider_key,
             agent_source=agent.agent_source,
             agent_id=agent.agent_id,
             payload=payload,
@@ -647,5 +595,29 @@ class OpencodeSessionDirectoryService:
         )
         await db.execute(stmt)
 
-
-opencode_session_directory_service = OpencodeSessionDirectoryService()
+    async def _mark_cache_entry_refresh_failed(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent: AgentRef,
+        last_error_code: str | None,
+        last_error_at: datetime,
+    ) -> None:
+        stmt = (
+            update(ExternalSessionDirectoryCacheEntry)
+            .where(
+                and_(
+                    ExternalSessionDirectoryCacheEntry.user_id == user_id,
+                    ExternalSessionDirectoryCacheEntry.provider == self.provider_key,
+                    ExternalSessionDirectoryCacheEntry.agent_source
+                    == agent.agent_source,
+                    ExternalSessionDirectoryCacheEntry.agent_id == agent.agent_id,
+                )
+            )
+            .values(
+                last_error_code=last_error_code,
+                last_error_at=last_error_at,
+            )
+        )
+        await db.execute(stmt)

@@ -1,0 +1,11 @@
+# Ripgrep defaults for source diagnostics. Use `rg -u` when inspecting these.
+backend/uv.lock
+frontend/package-lock.json
+frontend/node_modules/
+frontend/coverage/
+frontend/dist/
+frontend/build/
+frontend/.expo/
+frontend/.expo-shared/
+frontend/.turbo/
+frontend/.cache/

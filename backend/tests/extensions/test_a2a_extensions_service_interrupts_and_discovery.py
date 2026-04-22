@@ -551,11 +551,11 @@ async def test_list_model_providers_uses_resolved_provider_discovery_snapshot(
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
-    monkeypatch.setattr(service._opencode_discovery, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(service._provider_discovery, "invoke_method", _fake_invoke)
 
     result = await service.list_model_providers(
         runtime=runtime,
-        session_metadata={"opencode": {"directory": "/workspace"}},
+        working_directory="/workspace",
     )
 
     assert result.success is True
@@ -600,7 +600,7 @@ async def test_list_model_providers_returns_method_not_supported_when_wire_contr
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(
-        service._opencode_discovery, "invoke_method", _unexpected_remote_call
+        service._provider_discovery, "invoke_method", _unexpected_remote_call
     )
 
     result = await service.list_model_providers(runtime=runtime)
@@ -868,7 +868,7 @@ async def test_provider_and_interrupt_share_single_card_fetch(
         lambda url, *, purpose: url,
     )
     monkeypatch.setattr(
-        service._opencode_discovery, "invoke_method", _fake_provider_invoke
+        service._provider_discovery, "invoke_method", _fake_provider_invoke
     )
     monkeypatch.setattr(
         service._interrupt_extensions, "invoke_method", _fake_interrupt_invoke

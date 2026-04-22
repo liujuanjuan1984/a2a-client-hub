@@ -14,9 +14,11 @@ from app.db.models.external_session_directory_cache import (
 from app.features.agents.common.common import upsert_agent_credential
 from app.features.agents.personal.runtime import A2ARuntimeValidationError
 from app.features.agents.shared.runtime import SharedAgentRuntimeValidationError
-from app.features.external_sessions.opencode import router as opencode_session_directory
-from app.features.external_sessions.opencode import (
-    service as opencode_session_directory_service_module,
+from app.features.agents.shared.service import shared_agent_service
+from app.features.external_sessions.directory import router as external_directory
+from app.features.external_sessions.directory import service as directory_service_module
+from app.features.external_sessions.directory.adapters import (
+    OpenCodeSessionDirectorySettings,
 )
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from tests.support.api_utils import create_test_client
@@ -25,11 +27,21 @@ from tests.support.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-async def test_opencode_sessions_directory_route_does_not_inject_request_db() -> None:
-    signature = inspect.signature(
-        opencode_session_directory.list_opencode_sessions_directory
-    )
+async def test_external_sessions_directory_route_does_not_inject_request_db() -> None:
+    signature = inspect.signature(external_directory.list_external_sessions_directory)
     assert "db" not in signature.parameters
+
+
+async def test_opencode_directory_settings_are_provider_local(monkeypatch) -> None:
+    monkeypatch.setenv("EXTERNAL_SESSION_DIRECTORY_OPENCODE_CACHE_TTL_SECONDS", "120")
+    monkeypatch.setenv("EXTERNAL_SESSION_DIRECTORY_OPENCODE_PER_AGENT_SIZE", "25")
+    monkeypatch.setenv("EXTERNAL_SESSION_DIRECTORY_OPENCODE_REFRESH_CONCURRENCY", "3")
+
+    settings = OpenCodeSessionDirectorySettings.from_env()
+
+    assert settings.cache_ttl_seconds == 120
+    assert settings.per_agent_size == 25
+    assert settings.refresh_concurrency == 3
 
 
 def _task(session_id: str, *, title: str, last_active_at: str) -> Dict[str, Any]:
@@ -47,7 +59,11 @@ def _task(session_id: str, *, title: str, last_active_at: str) -> Dict[str, Any]
 
 
 async def _create_personal_agent(
-    async_db_session, *, user_id, card_url: str, auth_type: str = "none"
+    async_db_session,
+    *,
+    user_id,
+    card_url: str,
+    auth_type: str = "none",
 ) -> A2AAgent:
     agent = A2AAgent(
         user_id=user_id,
@@ -63,7 +79,12 @@ async def _create_personal_agent(
 
 
 async def _create_hub_agent(
-    async_db_session, *, admin_user_id, card_url: str, auth_type: str = "none"
+    async_db_session,
+    *,
+    admin_user_id,
+    card_url: str,
+    auth_type: str = "none",
+    credential_mode: str | None = None,
 ) -> A2AAgent:
     agent = A2AAgent(
         user_id=admin_user_id,
@@ -72,6 +93,14 @@ async def _create_hub_agent(
         agent_scope=A2AAgent.SCOPE_SHARED,
         availability_policy="public",
         auth_type=auth_type,
+        credential_mode=(
+            credential_mode
+            or (
+                A2AAgent.CREDENTIAL_SHARED
+                if auth_type != "none"
+                else A2AAgent.CREDENTIAL_NONE
+            )
+        ),
         enabled=True,
         tags=None,
         extra_headers=None,
@@ -89,15 +118,21 @@ async def _set_agent_credential(
     *,
     agent_id,
     user_id,
-    token: str,
+    token: str | None = None,
+    auth_type: str = "bearer",
+    basic_username: str | None = None,
+    basic_password: str | None = None,
     shared: bool,
 ) -> None:
     await upsert_agent_credential(
         async_db_session,
         vault=hub_a2a_secret_vault if shared else user_llm_secret_vault,
+        auth_type=auth_type,
         agent_id=agent_id,
         user_id=user_id,
         token=token,
+        basic_username=basic_username,
+        basic_password=basic_password,
         validation_error_cls=(
             SharedAgentRuntimeValidationError if shared else A2ARuntimeValidationError
         ),
@@ -151,17 +186,17 @@ async def test_opencode_sessions_directory_caches_and_sorts(
 
     fake = FakeExtensionsService()
     monkeypatch.setattr(
-        "app.features.external_sessions.opencode.service.get_a2a_extensions_service",
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
         lambda: fake,
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -203,7 +238,7 @@ async def test_opencode_sessions_directory_caches_and_sorts(
 
         # Second call within TTL should not refresh.
         resp2 = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp2.status_code == 200
@@ -211,11 +246,269 @@ async def test_opencode_sessions_directory_caches_and_sorts(
 
         # Explicit refresh should bypass TTL.
         resp3 = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": True},
         )
         assert resp3.status_code == 200
         assert len(fake.calls) == 4
+
+
+async def test_external_sessions_directory_generic_route_preserves_opencode_provider(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    await _create_personal_agent(
+        async_db_session, user_id=user.id, card_url="https://personal.example.com"
+    )
+
+    class FakeExtensionsService:
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "items": [
+                        _task(
+                            "ses_generic",
+                            title="Generic route",
+                            last_active_at="2024-01-01T00:00:00+00:00",
+                        )
+                    ],
+                    "pagination": {"page": page, "size": size},
+                },
+                error_code=None,
+                upstream_error=None,
+                meta=None,
+            )
+
+    monkeypatch.setattr(
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
+        lambda: FakeExtensionsService(),
+    )
+
+    async with create_test_client(
+        external_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/external-sessions/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["meta"]["provider"] == "opencode"
+    assert payload["items"][0]["provider"] == "opencode"
+    assert payload["items"][0]["session_id"] == "ses_generic"
+
+
+async def test_external_sessions_directory_refresh_failure_preserves_cached_payload(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    personal = await _create_personal_agent(
+        async_db_session, user_id=user.id, card_url="https://personal.example.com"
+    )
+
+    class FakeExtensionsService:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
+            self.calls += 1
+            if self.calls == 1:
+                return ExtensionCallResult(
+                    success=True,
+                    result={
+                        "items": [
+                            _task(
+                                "ses_cached",
+                                title="Cached session",
+                                last_active_at="2024-01-03T00:00:00+00:00",
+                            )
+                        ],
+                        "pagination": {"page": page, "size": size},
+                    },
+                    error_code=None,
+                    upstream_error=None,
+                    meta=None,
+                )
+            return ExtensionCallResult(
+                success=False,
+                result=None,
+                error_code="upstream_timeout",
+                upstream_error={"message": "timeout"},
+                meta=None,
+            )
+
+    fake = FakeExtensionsService()
+    monkeypatch.setattr(
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
+        lambda: fake,
+    )
+
+    async with create_test_client(
+        external_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        first = await client.post(
+            "/me/a2a/external-sessions/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+        second = await client.post(
+            "/me/a2a/external-sessions/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": True},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["meta"]["partial_failures"] == 1
+    assert payload["meta"]["refreshed_agents"] == 0
+    assert payload["items"][0]["session_id"] == "ses_cached"
+    assert payload["items"][0]["agent_id"] == str(personal.id)
+
+    cache_entry = await async_db_session.scalar(
+        select(ExternalSessionDirectoryCacheEntry)
+    )
+    assert cache_entry is not None
+    assert cache_entry.last_error_code == "upstream_timeout"
+    assert cache_entry.payload["items"][0]["metadata"]["opencode"]["session_id"] == (
+        "ses_cached"
+    )
+
+
+async def test_external_sessions_directory_rejects_unknown_provider(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+
+    async with create_test_client(
+        external_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/external-sessions/unknown/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "external_session_provider_not_supported"
+
+
+async def test_opencode_sessions_directory_builds_personal_basic_runtime(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_personal_agent(
+        async_db_session,
+        user_id=user.id,
+        card_url="https://personal-basic.example.com",
+        auth_type="basic",
+    )
+    await _set_agent_credential(
+        async_db_session,
+        agent_id=agent.id,
+        user_id=user.id,
+        auth_type="basic",
+        basic_username="personal-user",
+        basic_password="personal-pass",  # pragma: allowlist secret
+        shared=False,
+    )
+
+    class FakeExtensionsService:
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
+            headers = runtime.resolved.headers
+            assert (
+                headers["Authorization"] == "Basic cGVyc29uYWwtdXNlcjpwZXJzb25hbC1wYXNz"
+            )
+            return ExtensionCallResult(
+                success=True,
+                result={"items": [], "pagination": {"page": page, "size": size}},
+                error_code=None,
+                upstream_error=None,
+                meta=None,
+            )
+
+    monkeypatch.setattr(
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
+        lambda: FakeExtensionsService(),
+    )
+
+    async with create_test_client(
+        external_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/external-sessions/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["meta"]["partial_failures"] == 0
+
+
+async def test_opencode_sessions_directory_builds_shared_user_credential_runtime(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_hub_agent(
+        async_db_session,
+        admin_user_id=user.id,
+        card_url="https://shared-user.example.com",
+        auth_type="bearer",
+        credential_mode=A2AAgent.CREDENTIAL_USER,
+    )
+    await shared_agent_service.upsert_user_credential(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        token="shared-user-token",
+        basic_username=None,
+        basic_password=None,
+    )
+
+    class FakeExtensionsService:
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
+            headers = runtime.resolved.headers
+            assert headers["Authorization"] == "Bearer shared-user-token"
+            return ExtensionCallResult(
+                success=True,
+                result={"items": [], "pagination": {"page": page, "size": size}},
+                error_code=None,
+                upstream_error=None,
+                meta=None,
+            )
+
+    monkeypatch.setattr(
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
+        lambda: FakeExtensionsService(),
+    )
+
+    async with create_test_client(
+        external_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/external-sessions/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["meta"]["partial_failures"] == 0
 
 
 async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
@@ -250,17 +543,17 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
             )
 
     monkeypatch.setattr(
-        "app.features.external_sessions.opencode.service.get_a2a_extensions_service",
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -305,17 +598,17 @@ async def test_opencode_sessions_directory_does_not_treat_context_id_as_session_
             )
 
     monkeypatch.setattr(
-        "app.features.external_sessions.opencode.service.get_a2a_extensions_service",
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -357,17 +650,17 @@ async def test_opencode_sessions_directory_ignores_legacy_external_session_id_al
             )
 
     monkeypatch.setattr(
-        "app.features.external_sessions.opencode.service.get_a2a_extensions_service",
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -425,7 +718,7 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
             )
 
     monkeypatch.setattr(
-        "app.features.external_sessions.opencode.service.get_a2a_extensions_service",
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
@@ -441,7 +734,7 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
         return statement.split("where", 1)[1]
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
@@ -452,7 +745,7 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
         )
         try:
             resp = await client.post(
-                "/me/a2a/opencode/sessions:query",
+                "/me/a2a/external-sessions/opencode/sessions:query",
                 json={"page": 1, "size": 50, "refresh": False},
             )
         finally:
@@ -495,12 +788,8 @@ async def test_opencode_sessions_directory_releases_short_session_before_upstrea
         async_db_session, user_id=user.id, card_url="https://personal.example.com"
     )
 
-    original_run_in_read_session = (
-        opencode_session_directory_service_module.run_in_read_session
-    )
-    original_run_in_write_session = (
-        opencode_session_directory_service_module.run_in_write_session
-    )
+    original_run_in_read_session = directory_service_module.run_in_read_session
+    original_run_in_write_session = directory_service_module.run_in_write_session
     active_session_scopes = 0
 
     async def tracked_run_in_read_session(operation, *, session_factory):
@@ -535,27 +824,27 @@ async def test_opencode_sessions_directory_releases_short_session_before_upstrea
             )
 
     monkeypatch.setattr(
-        opencode_session_directory_service_module,
+        directory_service_module,
         "run_in_read_session",
         tracked_run_in_read_session,
     )
     monkeypatch.setattr(
-        opencode_session_directory_service_module,
+        directory_service_module,
         "run_in_write_session",
         tracked_run_in_write_session,
     )
     monkeypatch.setattr(
-        "app.features.external_sessions.opencode.service.get_a2a_extensions_service",
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
 

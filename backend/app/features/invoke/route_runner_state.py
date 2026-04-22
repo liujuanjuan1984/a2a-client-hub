@@ -16,6 +16,7 @@ from app.features.invoke.session_binding import (
 )
 from app.features.invoke.stream_persistence import coerce_uuid, is_interrupt_requested
 from app.features.sessions.service import session_hub_service
+from app.features.working_directory import merge_working_directory_metadata
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.utils.session_identity import normalize_non_empty_text
 
@@ -90,7 +91,10 @@ async def prepare_state(
 
     resolved_context_id, resolved_invoke_metadata = normalize_invoke_binding_state(
         context_id=persisted_context_id,
-        metadata=payload.metadata,
+        metadata=merge_working_directory_metadata(
+            payload.metadata,
+            payload.working_directory,
+        ),
     )
     normalized_user_message_id = normalize_optional_message_id(payload.user_message_id)
     normalized_agent_message_id = normalize_optional_message_id(

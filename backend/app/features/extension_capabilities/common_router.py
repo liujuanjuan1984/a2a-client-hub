@@ -192,6 +192,7 @@ def create_extension_capability_router(
             _extensions_service().list_model_providers(
                 runtime=runtime,
                 session_metadata=payload.session_metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -227,6 +228,7 @@ def create_extension_capability_router(
                 runtime=runtime,
                 provider_id=payload.provider_id,
                 session_metadata=payload.session_metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -496,6 +498,7 @@ def create_extension_capability_router(
                 session_id=session_id,
                 request_payload=payload.request,
                 metadata=payload.metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -536,6 +539,7 @@ def create_extension_capability_router(
                 session_id=session_id,
                 request_payload=payload.request,
                 metadata=payload.metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -1057,6 +1061,7 @@ def create_extension_capability_router(
                 request_id=payload.request_id,
                 reply=payload.reply,
                 metadata=payload.metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -1095,6 +1100,7 @@ def create_extension_capability_router(
                 request_id=payload.request_id,
                 answers=payload.answers,
                 metadata=payload.metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -1131,6 +1137,7 @@ def create_extension_capability_router(
                 runtime=runtime,
                 request_id=payload.request_id,
                 metadata=payload.metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -1173,6 +1180,7 @@ def create_extension_capability_router(
                 permissions=payload.permissions,
                 scope=payload.scope,
                 metadata=payload.metadata,
+                working_directory=payload.working_directory,
             )
         )
 
@@ -1213,6 +1221,7 @@ def create_extension_capability_router(
                 action=payload.action,
                 content=payload.content,
                 metadata=payload.metadata,
+                working_directory=payload.working_directory,
             )
         )
 

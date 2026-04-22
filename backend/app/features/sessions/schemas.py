@@ -6,12 +6,11 @@ from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_PUBLIC_ID,
 )
-from app.features.working_directory import merge_working_directory_metadata
 from app.schemas.pagination import Pagination
 
 SessionSource = Literal["manual", "scheduled"]
@@ -136,17 +135,6 @@ class SessionAppendMessageRequest(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    @model_validator(mode="after")
-    def normalize_working_directory(self) -> "SessionAppendMessageRequest":
-        if self.working_directory is None:
-            return self
-        self.metadata = merge_working_directory_metadata(
-            self.metadata,
-            self.working_directory,
-        )
-        self.working_directory = None
-        return self
-
 
 class SessionAppendMessageResponse(BaseModel):
     conversation_id: str = Field(alias="conversationId")
@@ -174,17 +162,6 @@ class SessionCommandRunRequest(BaseModel):
     )
 
     model_config = {"populate_by_name": True}
-
-    @model_validator(mode="after")
-    def normalize_working_directory(self) -> "SessionCommandRunRequest":
-        if self.working_directory is None:
-            return self
-        self.metadata = merge_working_directory_metadata(
-            self.metadata,
-            self.working_directory,
-        )
-        self.working_directory = None
-        return self
 
 
 class SessionCommandRunResponse(BaseModel):

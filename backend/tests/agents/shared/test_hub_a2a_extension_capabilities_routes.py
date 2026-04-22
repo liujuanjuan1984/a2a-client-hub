@@ -1293,8 +1293,6 @@ async def test_hub_generic_model_discovery_routes_forward_working_directory(
         lambda: fake_extensions,
     )
 
-    session_metadata = {"opencode": {"directory": "/workspace"}}
-
     async with create_test_client(
         hub_extension_router.router,
         async_session_maker=async_session_maker,
@@ -1324,10 +1322,12 @@ async def test_hub_generic_model_discovery_routes_forward_working_directory(
 
     assert len(fake_extensions.calls) == 2
     assert fake_extensions.calls[0]["fn"] == "list_model_providers"
-    assert fake_extensions.calls[0]["session_metadata"] == session_metadata
+    assert fake_extensions.calls[0]["session_metadata"] is None
+    assert fake_extensions.calls[0]["working_directory"] == "/workspace"
     assert fake_extensions.calls[1]["fn"] == "list_models"
     assert fake_extensions.calls[1]["provider_id"] == "openai"
-    assert fake_extensions.calls[1]["session_metadata"] == session_metadata
+    assert fake_extensions.calls[1]["session_metadata"] is None
+    assert fake_extensions.calls[1]["working_directory"] == "/workspace"
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
         assert resolved.headers["Authorization"].endswith(

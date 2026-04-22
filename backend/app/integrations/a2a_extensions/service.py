@@ -19,8 +19,8 @@ from app.integrations.a2a_extensions.interrupt_extension_service import (
 from app.integrations.a2a_extensions.interrupt_recovery_service import (
     InterruptRecoveryService,
 )
-from app.integrations.a2a_extensions.opencode_discovery_service import (
-    OpencodeDiscoveryService,
+from app.integrations.a2a_extensions.provider_discovery_service import (
+    ProviderDiscoveryService,
 )
 from app.integrations.a2a_extensions.service_capabilities import (
     A2AExtensionCapabilityService,
@@ -53,7 +53,7 @@ class A2AExtensionsService:
         self._session_extensions = SessionExtensionService(self._support)
         self._interrupt_extensions = InterruptExtensionService(self._support)
         self._interrupt_recovery = InterruptRecoveryService(self._support)
-        self._opencode_discovery = OpencodeDiscoveryService(self._support)
+        self._provider_discovery = ProviderDiscoveryService(self._support)
         self._codex_discovery = CodexDiscoveryService(self._support)
         self._capabilities = A2AExtensionCapabilityService(
             support=self._support,
@@ -66,7 +66,7 @@ class A2AExtensionsService:
         )
         self._extension_ops = A2AExtensionOperations(
             capabilities=self._capabilities,
-            opencode_discovery=self._opencode_discovery,
+            provider_discovery=self._provider_discovery,
             codex_discovery=self._codex_discovery,
             interrupt_extensions=self._interrupt_extensions,
             interrupt_recovery=self._interrupt_recovery,
@@ -183,6 +183,7 @@ class A2AExtensionsService:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._session_extensions.prepare_prompt_session_async(
             session_id=session_id,
@@ -199,6 +200,7 @@ class A2AExtensionsService:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def append_session_control(
@@ -208,6 +210,7 @@ class A2AExtensionsService:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         if not isinstance(request_payload, dict):
             raise ValueError("request must be an object")
@@ -218,6 +221,7 @@ class A2AExtensionsService:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def command_session(
@@ -227,6 +231,7 @@ class A2AExtensionsService:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._session_extensions.prepare_session_command(
             session_id=session_id,
@@ -243,6 +248,7 @@ class A2AExtensionsService:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def get_session(
@@ -463,12 +469,14 @@ class A2AExtensionsService:
         *,
         runtime: A2ARuntime,
         session_metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         return await self._extension_ops.list_model_providers(
             runtime=runtime,
             snapshot=snapshot,
             session_metadata=session_metadata,
+            working_directory=working_directory,
         )
 
     async def list_models(
@@ -477,6 +485,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         provider_id: str | None = None,
         session_metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         return await self._extension_ops.list_models(
@@ -484,6 +493,7 @@ class A2AExtensionsService:
             snapshot=snapshot,
             provider_id=provider_id,
             session_metadata=session_metadata,
+            working_directory=working_directory,
         )
 
     async def list_codex_skills(
@@ -561,6 +571,7 @@ class A2AExtensionsService:
         request_id: str,
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._interrupt_extensions.prepare_reply_permission_interrupt(
             request_id=request_id,
@@ -574,6 +585,7 @@ class A2AExtensionsService:
             request_id=request_id,
             reply=reply,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def reply_question_interrupt(
@@ -583,6 +595,7 @@ class A2AExtensionsService:
         request_id: str,
         answers: list[list[str]],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._interrupt_extensions.prepare_reply_question_interrupt(
             request_id=request_id,
@@ -596,6 +609,7 @@ class A2AExtensionsService:
             request_id=request_id,
             answers=answers,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def reject_question_interrupt(
@@ -604,6 +618,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         request_id: str,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._interrupt_extensions.prepare_reject_question_interrupt(
             request_id=request_id,
@@ -615,6 +630,7 @@ class A2AExtensionsService:
             snapshot=snapshot,
             request_id=request_id,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def recover_interrupts(
@@ -638,6 +654,7 @@ class A2AExtensionsService:
         permissions: Dict[str, Any],
         scope: str | None = None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._interrupt_extensions.prepare_reply_permissions_interrupt(
             request_id=request_id,
@@ -653,6 +670,7 @@ class A2AExtensionsService:
             permissions=permissions,
             scope=scope,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def reply_elicitation_interrupt(
@@ -663,6 +681,7 @@ class A2AExtensionsService:
         action: str,
         content: Any = None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._interrupt_extensions.prepare_reply_elicitation_interrupt(
             request_id=request_id,
@@ -678,6 +697,7 @@ class A2AExtensionsService:
             action=action,
             content=content,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
 

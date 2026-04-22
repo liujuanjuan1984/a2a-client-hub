@@ -118,7 +118,7 @@ def test_invoke_request_rejects_empty_query_without_preempt_session_control() ->
         )
 
 
-def test_invoke_request_maps_working_directory_to_legacy_metadata() -> None:
+def test_invoke_request_keeps_working_directory_in_stable_contract() -> None:
     payload = A2AAgentInvokeRequest.model_validate(
         {
             "query": "hello",
@@ -128,8 +128,5 @@ def test_invoke_request_maps_working_directory_to_legacy_metadata() -> None:
         }
     )
 
-    assert payload.working_directory is None
-    assert payload.metadata == {
-        "locale": "en-CA",
-        "opencode": {"directory": "/workspace/demo"},
-    }
+    assert payload.working_directory == "  /workspace/demo  "
+    assert payload.metadata == {"locale": "en-CA"}

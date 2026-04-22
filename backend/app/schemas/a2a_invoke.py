@@ -6,8 +6,6 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.features.working_directory import merge_working_directory_metadata
-
 
 class A2AAgentInvokeSessionBinding(BaseModel):
     provider: Optional[str] = Field(
@@ -109,17 +107,6 @@ class A2AAgentInvokeRequest(BaseModel):
         if isinstance(value, dict) and ("contextId" in value or "context_id" in value):
             raise ValueError("contextId is server-managed and must not be provided")
         return value
-
-    @model_validator(mode="after")
-    def normalize_working_directory(self) -> "A2AAgentInvokeRequest":
-        if self.working_directory is None:
-            return self
-        self.metadata = merge_working_directory_metadata(
-            self.metadata,
-            self.working_directory,
-        )
-        self.working_directory = None
-        return self
 
     @model_validator(mode="after")
     def validate_query_for_session_control(self) -> "A2AAgentInvokeRequest":

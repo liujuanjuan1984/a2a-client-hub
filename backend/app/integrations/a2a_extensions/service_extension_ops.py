@@ -14,8 +14,8 @@ from app.integrations.a2a_extensions.interrupt_extension_service import (
 from app.integrations.a2a_extensions.interrupt_recovery_service import (
     InterruptRecoveryService,
 )
-from app.integrations.a2a_extensions.opencode_discovery_service import (
-    OpencodeDiscoveryService,
+from app.integrations.a2a_extensions.provider_discovery_service import (
+    ProviderDiscoveryService,
 )
 from app.integrations.a2a_extensions.service_capabilities import (
     CODEX_DISCOVERY_METHODS,
@@ -31,13 +31,13 @@ class A2AExtensionOperations:
         self,
         *,
         capabilities: A2AExtensionCapabilityService,
-        opencode_discovery: OpencodeDiscoveryService,
+        provider_discovery: ProviderDiscoveryService,
         codex_discovery: CodexDiscoveryService,
         interrupt_extensions: InterruptExtensionService,
         interrupt_recovery: InterruptRecoveryService,
     ) -> None:
         self._capabilities = capabilities
-        self._opencode_discovery = opencode_discovery
+        self._provider_discovery = provider_discovery
         self._codex_discovery = codex_discovery
         self._interrupt_extensions = interrupt_extensions
         self._interrupt_recovery = interrupt_recovery
@@ -48,6 +48,7 @@ class A2AExtensionOperations:
         runtime: A2ARuntime,
         snapshot: Any,
         session_metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         ext, jsonrpc_url = self._capabilities.require_provider_discovery_capability(
             snapshot.provider_discovery
@@ -59,11 +60,12 @@ class A2AExtensionOperations:
         )
         if preflight is not None:
             return preflight
-        return await self._opencode_discovery.list_model_providers(
+        return await self._provider_discovery.list_model_providers(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             session_metadata=session_metadata,
+            working_directory=working_directory,
         )
 
     async def list_models(
@@ -73,6 +75,7 @@ class A2AExtensionOperations:
         snapshot: Any,
         provider_id: str | None,
         session_metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         ext, jsonrpc_url = self._capabilities.require_provider_discovery_capability(
             snapshot.provider_discovery
@@ -84,12 +87,13 @@ class A2AExtensionOperations:
         )
         if preflight is not None:
             return preflight
-        return await self._opencode_discovery.list_models(
+        return await self._provider_discovery.list_models(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             provider_id=provider_id,
             session_metadata=session_metadata,
+            working_directory=working_directory,
         )
 
     async def run_codex_discovery(
@@ -154,6 +158,7 @@ class A2AExtensionOperations:
         request_id: str,
         reply: str,
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         (
             resolved_request_id,
@@ -174,6 +179,7 @@ class A2AExtensionOperations:
             request_id=resolved_request_id,
             reply=resolved_reply,
             metadata=normalized_metadata,
+            working_directory=working_directory,
         )
 
     async def reply_question_interrupt(
@@ -184,6 +190,7 @@ class A2AExtensionOperations:
         request_id: str,
         answers: list[list[str]],
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         (
             resolved_request_id,
@@ -204,6 +211,7 @@ class A2AExtensionOperations:
             request_id=resolved_request_id,
             answers=resolved_answers,
             metadata=normalized_metadata,
+            working_directory=working_directory,
         )
 
     async def reject_question_interrupt(
@@ -213,6 +221,7 @@ class A2AExtensionOperations:
         snapshot: Any,
         request_id: str,
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         (
             resolved_request_id,
@@ -230,6 +239,7 @@ class A2AExtensionOperations:
             jsonrpc_url=jsonrpc_url,
             request_id=resolved_request_id,
             metadata=normalized_metadata,
+            working_directory=working_directory,
         )
 
     async def recover_interrupts(
@@ -258,6 +268,7 @@ class A2AExtensionOperations:
         permissions: Dict[str, Any],
         scope: str | None,
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         (
             resolved_request_id,
@@ -281,6 +292,7 @@ class A2AExtensionOperations:
             permissions=resolved_permissions,
             scope=resolved_scope,
             metadata=normalized_metadata,
+            working_directory=working_directory,
         )
 
     async def reply_elicitation_interrupt(
@@ -292,6 +304,7 @@ class A2AExtensionOperations:
         action: str,
         content: Any,
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         (
             resolved_request_id,
@@ -315,4 +328,5 @@ class A2AExtensionOperations:
             action=resolved_action,
             content=resolved_content,
             metadata=normalized_metadata,
+            working_directory=working_directory,
         )
