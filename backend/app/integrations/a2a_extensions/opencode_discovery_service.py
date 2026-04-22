@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
+from app.features.working_directory import adapt_working_directory_metadata_for_provider
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
@@ -101,10 +102,19 @@ class OpencodeDiscoveryService:
         ext: ResolvedProviderDiscoveryExtension,
         jsonrpc_url: str,
         session_metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         params: Dict[str, Any] = {}
+        adapted_session_metadata = adapt_working_directory_metadata_for_provider(
+            session_metadata,
+            working_directory,
+            metadata_namespace=ext.metadata_namespace,
+        )
         normalized_metadata = self._support.normalize_extension_metadata(
-            _extract_provider_private_metadata(session_metadata, ext.metadata_namespace)
+            _extract_provider_private_metadata(
+                adapted_session_metadata,
+                ext.metadata_namespace,
+            )
         )
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
@@ -124,13 +134,22 @@ class OpencodeDiscoveryService:
         jsonrpc_url: str,
         provider_id: str | None = None,
         session_metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         resolved_provider_id = (provider_id or "").strip()
         params: Dict[str, Any] = {}
         if resolved_provider_id:
             params["provider_id"] = resolved_provider_id
+        adapted_session_metadata = adapt_working_directory_metadata_for_provider(
+            session_metadata,
+            working_directory,
+            metadata_namespace=ext.metadata_namespace,
+        )
         normalized_metadata = self._support.normalize_extension_metadata(
-            _extract_provider_private_metadata(session_metadata, ext.metadata_namespace)
+            _extract_provider_private_metadata(
+                adapted_session_metadata,
+                ext.metadata_namespace,
+            )
         )
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata

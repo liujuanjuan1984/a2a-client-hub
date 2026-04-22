@@ -76,6 +76,7 @@ from app.features.invoke.stream_persistence import (
 )
 from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
+from app.features.working_directory import adapt_working_directory_metadata_for_provider
 from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.runtime.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
@@ -100,6 +101,16 @@ _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
+
+
+def _build_upstream_invoke_metadata(
+    payload: A2AAgentInvokeRequest,
+) -> dict[str, Any]:
+    return adapt_working_directory_metadata_for_provider(
+        payload.metadata,
+        payload.working_directory,
+        metadata_namespace="opencode",
+    )
 
 
 async def _close_open_transaction(db: AsyncSession) -> None:
@@ -605,7 +616,7 @@ async def run_http_invoke(
                 resolved=runtime.resolved,
                 query=payload.query,
                 context_id=state.context_id,
-                metadata=payload.metadata,
+                metadata=_build_upstream_invoke_metadata(payload),
                 validate_message=validate_message,
                 logger=logger,
                 log_extra=stream_log_extra,
@@ -631,7 +642,7 @@ async def run_http_invoke(
             resolved=runtime.resolved,
             query=payload.query,
             context_id=state.context_id,
-            metadata=payload.metadata,
+            metadata=_build_upstream_invoke_metadata(payload),
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -757,7 +768,7 @@ async def run_background_invoke(
             resolved=runtime.resolved,
             query=payload.query,
             context_id=state.context_id,
-            metadata=payload.metadata,
+            metadata=_build_upstream_invoke_metadata(payload),
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -886,7 +897,7 @@ async def run_ws_invoke(
             resolved=runtime.resolved,
             query=payload.query,
             context_id=state.context_id,
-            metadata=payload.metadata,
+            metadata=_build_upstream_invoke_metadata(payload),
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,

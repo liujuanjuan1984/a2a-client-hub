@@ -49,6 +49,7 @@ from app.features.sessions.schemas import (
     SessionViewItem,
 )
 from app.features.sessions.service import session_hub_service
+from app.features.working_directory import merge_working_directory_metadata
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.utils.session_identity import normalize_non_empty_text
 
@@ -265,8 +266,9 @@ def _build_session_action_metadata(
     *,
     thread: ConversationThread,
     metadata: dict[str, Any] | None,
+    working_directory: str | None = None,
 ) -> dict[str, Any]:
-    next_metadata = dict(metadata or {})
+    next_metadata = merge_working_directory_metadata(metadata, working_directory)
     provider = normalize_non_empty_text(cast(str | None, thread.external_provider))
     external_session_id = normalize_non_empty_text(
         cast(str | None, thread.external_session_id)
@@ -466,7 +468,9 @@ async def append_unified_session_message(
         metadata=_build_session_action_metadata(
             thread=thread,
             metadata=payload.metadata,
+            working_directory=payload.working_directory,
         ),
+        working_directory=payload.working_directory,
     )
     if not result.success:
         raise HTTPException(
@@ -482,7 +486,9 @@ async def append_unified_session_message(
             content=payload.content.strip(),
             metadata={
                 **_build_session_action_metadata(
-                    thread=thread, metadata=payload.metadata
+                    thread=thread,
+                    metadata=payload.metadata,
+                    working_directory=payload.working_directory,
                 ),
                 "message_kind": "session_append_user",
                 "operation_id": operation_id,
@@ -607,6 +613,7 @@ async def run_unified_session_command(
     metadata = _build_session_action_metadata(
         thread=thread,
         metadata=payload.metadata,
+        working_directory=payload.working_directory,
     )
     extensions_service = cast(Any, get_a2a_extensions_service())
     result = await extensions_service.command_session(
@@ -614,6 +621,7 @@ async def run_unified_session_command(
         session_id=external_session_id,
         request_payload=request_payload,
         metadata=metadata,
+        working_directory=payload.working_directory,
     )
     if not result.success:
         raise HTTPException(

@@ -17,7 +17,6 @@ from app.features.agents.shared.runtime import SharedAgentRuntimeValidationError
 from app.features.agents.shared.service import shared_agent_service
 from app.features.external_sessions.directory import router as external_directory
 from app.features.external_sessions.directory import service as directory_service_module
-from app.features.external_sessions.opencode import router as opencode_session_directory
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
@@ -25,10 +24,8 @@ from tests.support.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-async def test_opencode_sessions_directory_route_does_not_inject_request_db() -> None:
-    signature = inspect.signature(
-        opencode_session_directory.list_opencode_sessions_directory
-    )
+async def test_external_sessions_directory_route_does_not_inject_request_db() -> None:
+    signature = inspect.signature(external_directory.list_external_sessions_directory)
     assert "db" not in signature.parameters
 
 
@@ -179,12 +176,12 @@ async def test_opencode_sessions_directory_caches_and_sorts(
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -226,7 +223,7 @@ async def test_opencode_sessions_directory_caches_and_sorts(
 
         # Second call within TTL should not refresh.
         resp2 = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp2.status_code == 200
@@ -234,7 +231,7 @@ async def test_opencode_sessions_directory_caches_and_sorts(
 
         # Explicit refresh should bypass TTL.
         resp3 = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": True},
         )
         assert resp3.status_code == 200
@@ -354,12 +351,12 @@ async def test_opencode_sessions_directory_builds_personal_basic_runtime(
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
 
@@ -407,12 +404,12 @@ async def test_opencode_sessions_directory_builds_shared_user_credential_runtime
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
 
@@ -457,12 +454,12 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -512,12 +509,12 @@ async def test_opencode_sessions_directory_does_not_treat_context_id_as_session_
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -564,12 +561,12 @@ async def test_opencode_sessions_directory_ignores_legacy_external_session_id_al
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
         assert resp.status_code == 200
@@ -643,7 +640,7 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
         return statement.split("where", 1)[1]
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
@@ -654,7 +651,7 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
         )
         try:
             resp = await client.post(
-                "/me/a2a/opencode/sessions:query",
+                "/me/a2a/external-sessions/opencode/sessions:query",
                 json={"page": 1, "size": 50, "refresh": False},
             )
         finally:
@@ -748,12 +745,12 @@ async def test_opencode_sessions_directory_releases_short_session_before_upstrea
     )
 
     async with create_test_client(
-        opencode_session_directory.router,
+        external_directory.router,
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/a2a/opencode/sessions:query",
+            "/me/a2a/external-sessions/opencode/sessions:query",
             json={"page": 1, "size": 50, "refresh": False},
         )
 

@@ -555,7 +555,7 @@ async def test_list_model_providers_uses_resolved_provider_discovery_snapshot(
 
     result = await service.list_model_providers(
         runtime=runtime,
-        session_metadata={"opencode": {"directory": "/workspace"}},
+        working_directory="/workspace",
     )
 
     assert result.success is True

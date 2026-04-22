@@ -474,6 +474,7 @@ class _FakeExtensionsService:
         request_id: str,
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -482,6 +483,7 @@ class _FakeExtensionsService:
                 "request_id": request_id,
                 "reply": reply,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -517,6 +519,7 @@ class _FakeExtensionsService:
         permissions: Dict[str, Any],
         scope: str | None = None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -526,6 +529,7 @@ class _FakeExtensionsService:
                 "permissions": permissions,
                 "scope": scope,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -541,6 +545,7 @@ class _FakeExtensionsService:
         session_id: str,
         request_payload,
         metadata,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -549,6 +554,7 @@ class _FakeExtensionsService:
                 "session_id": session_id,
                 "request_payload": request_payload,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -564,6 +570,7 @@ class _FakeExtensionsService:
         session_id: str,
         request_payload,
         metadata,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -572,6 +579,7 @@ class _FakeExtensionsService:
                 "session_id": session_id,
                 "request_payload": request_payload,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -587,6 +595,7 @@ class _FakeExtensionsService:
         session_id: str,
         request_payload,
         metadata,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -595,6 +604,7 @@ class _FakeExtensionsService:
                 "session_id": session_id,
                 "request_payload": request_payload,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -616,6 +626,7 @@ class _FakeExtensionsService:
         request_id: str,
         answers,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -624,6 +635,7 @@ class _FakeExtensionsService:
                 "request_id": request_id,
                 "answers": answers,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -640,6 +652,7 @@ class _FakeExtensionsService:
         action: str,
         content=None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -649,6 +662,7 @@ class _FakeExtensionsService:
                 "action": action,
                 "content": content,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -662,12 +676,14 @@ class _FakeExtensionsService:
         *,
         runtime,
         session_metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
                 "fn": "list_model_providers",
                 "runtime": runtime,
                 "session_metadata": session_metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -694,6 +710,7 @@ class _FakeExtensionsService:
         runtime,
         provider_id: str | None = None,
         session_metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -701,6 +718,7 @@ class _FakeExtensionsService:
                 "runtime": runtime,
                 "provider_id": provider_id,
                 "session_metadata": session_metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -837,6 +855,7 @@ class _FakeExtensionsService:
         runtime,
         request_id: str,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -844,6 +863,7 @@ class _FakeExtensionsService:
                 "runtime": runtime,
                 "request_id": request_id,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -902,6 +922,7 @@ class _FakePermissionReplyErrorService:
         request_id: str,
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -910,6 +931,7 @@ class _FakePermissionReplyErrorService:
                 "request_id": request_id,
                 "reply": reply,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -934,6 +956,7 @@ class _FakePermissionsReplyErrorService:
         permissions: Dict[str, Any],
         scope: str | None = None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -943,6 +966,7 @@ class _FakePermissionsReplyErrorService:
                 "permissions": permissions,
                 "scope": scope,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -967,6 +991,7 @@ class _FakeElicitationReplyErrorService:
         action: str,
         content=None,
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -976,6 +1001,7 @@ class _FakeElicitationReplyErrorService:
                 "action": action,
                 "content": content,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -1002,7 +1028,13 @@ class _FakeExtensionsExceptionService:
         raise self.error
 
     async def reply_question_interrupt(
-        self, *, runtime, request_id: str, answers, metadata=None
+        self,
+        *,
+        runtime,
+        request_id: str,
+        answers,
+        metadata=None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -1011,6 +1043,7 @@ class _FakeExtensionsExceptionService:
                 "request_id": request_id,
                 "answers": answers,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(
@@ -1020,7 +1053,12 @@ class _FakeExtensionsExceptionService:
         )
 
     async def reject_question_interrupt(
-        self, *, runtime, request_id: str, metadata=None
+        self,
+        *,
+        runtime,
+        request_id: str,
+        metadata=None,
+        working_directory: str | None = None,
     ):
         self.calls.append(
             {
@@ -1028,6 +1066,7 @@ class _FakeExtensionsExceptionService:
                 "runtime": runtime,
                 "request_id": request_id,
                 "metadata": metadata,
+                "working_directory": working_directory,
             }
         )
         return _FakeExtensionResult(

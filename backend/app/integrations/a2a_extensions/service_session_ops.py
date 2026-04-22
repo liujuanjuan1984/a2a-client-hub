@@ -300,11 +300,13 @@ class A2AExtensionSessionOperations:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._session_extensions.prepare_prompt_session_async(
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
+            working_directory=working_directory,
         )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
@@ -320,6 +322,7 @@ class A2AExtensionSessionOperations:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def append_session_control(
@@ -330,6 +333,7 @@ class A2AExtensionSessionOperations:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         if not isinstance(request_payload, dict):
             raise ValueError("request must be an object")
@@ -370,6 +374,7 @@ class A2AExtensionSessionOperations:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata_for_upstream,
+            working_directory=working_directory,
         )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
@@ -385,6 +390,7 @@ class A2AExtensionSessionOperations:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata_for_upstream,
+            working_directory=working_directory,
         )
 
     async def command_session(
@@ -396,11 +402,13 @@ class A2AExtensionSessionOperations:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]],
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
         self._session_extensions.prepare_session_command(
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
+            working_directory=working_directory,
         )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
@@ -416,6 +424,7 @@ class A2AExtensionSessionOperations:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
+            working_directory=working_directory,
         )
 
     async def get_session(

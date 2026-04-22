@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.features.agents.personal.runtime import A2ARuntime
 from app.features.invoke.shared_metadata import merge_preferred_session_binding_metadata
+from app.features.working_directory import adapt_working_directory_metadata_for_provider
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
@@ -23,6 +24,20 @@ _MISSING = object()
 class SessionExtensionService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
+
+    @staticmethod
+    def _adapt_metadata_for_extension(
+        *,
+        ext: ResolvedExtension,
+        metadata: Optional[Dict[str, Any]],
+        working_directory: str | None,
+    ) -> Optional[Dict[str, Any]]:
+        adapted = adapt_working_directory_metadata_for_provider(
+            metadata,
+            working_directory,
+            metadata_namespace=ext.provider,
+        )
+        return adapted or None
 
     @staticmethod
     def prepare_session_lookup(*, session_id: str) -> str:
@@ -50,7 +65,9 @@ class SessionExtensionService:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> tuple[str, Dict[str, Any]]:
+        _ = working_directory
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
             raise ValueError("session_id is required")
@@ -144,7 +161,9 @@ class SessionExtensionService:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> tuple[str, Dict[str, Any]]:
+        _ = working_directory
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
             raise ValueError("session_id is required")
@@ -1013,11 +1032,17 @@ class SessionExtensionService:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
+        metadata_for_upstream = self._adapt_metadata_for_extension(
+            ext=ext,
+            metadata=metadata,
+            working_directory=working_directory,
+        )
         resolved_session_id, params = self.prepare_prompt_session_async(
             session_id=session_id,
             request_payload=request_payload,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
         jsonrpc_url = self._support.ensure_outbound_allowed(
@@ -1048,11 +1073,17 @@ class SessionExtensionService:
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
+        working_directory: str | None = None,
     ) -> ExtensionCallResult:
+        metadata_for_upstream = self._adapt_metadata_for_extension(
+            ext=ext,
+            metadata=metadata,
+            working_directory=working_directory,
+        )
         resolved_session_id, params = self.prepare_session_command(
             session_id=session_id,
             request_payload=request_payload,
-            metadata=metadata,
+            metadata=metadata_for_upstream,
         )
 
         jsonrpc_url = self._support.ensure_outbound_allowed(

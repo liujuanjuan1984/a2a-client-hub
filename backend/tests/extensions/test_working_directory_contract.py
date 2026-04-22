@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.features.working_directory import adapt_working_directory_metadata_for_provider
 from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
     A2AExtensionSessionCommandRequest,
@@ -7,7 +8,7 @@ from app.schemas.a2a_extension import (
 )
 
 
-def test_permission_reply_request_maps_working_directory_to_legacy_metadata() -> None:
+def test_permission_reply_request_keeps_working_directory_stable() -> None:
     payload = A2AExtensionPermissionReplyRequest.model_validate(
         {
             "request_id": "perm-1",
@@ -17,14 +18,11 @@ def test_permission_reply_request_maps_working_directory_to_legacy_metadata() ->
         }
     )
 
-    assert payload.working_directory is None
-    assert payload.metadata == {
-        "provider": "opencode",
-        "opencode": {"directory": "/workspace/demo"},
-    }
+    assert payload.working_directory == "  /workspace/demo  "
+    assert payload.metadata == {"provider": "opencode"}
 
 
-def test_session_command_request_removes_empty_working_directory() -> None:
+def test_session_command_request_keeps_empty_working_directory_stable() -> None:
     payload = A2AExtensionSessionCommandRequest.model_validate(
         {
             "request": {"command": "/review", "arguments": ""},
@@ -38,15 +36,16 @@ def test_session_command_request_removes_empty_working_directory() -> None:
         }
     )
 
-    assert payload.working_directory is None
+    assert payload.working_directory == "   "
     assert payload.metadata == {
         "opencode": {
+            "directory": "/workspace/demo",
             "project": "alpha",
         }
     }
 
 
-def test_model_discovery_request_maps_working_directory_to_legacy_metadata() -> None:
+def test_model_discovery_request_keeps_working_directory_stable() -> None:
     payload = A2AModelDiscoveryRequest.model_validate(
         {
             "provider_id": "openai",
@@ -54,7 +53,30 @@ def test_model_discovery_request_maps_working_directory_to_legacy_metadata() -> 
         }
     )
 
-    assert payload.working_directory is None
-    assert payload.session_metadata == {
+    assert payload.working_directory == "  /workspace/demo  "
+    assert payload.session_metadata is None
+
+
+def test_provider_adapter_maps_stable_working_directory_to_provider_metadata() -> None:
+    metadata = adapt_working_directory_metadata_for_provider(
+        {"workingDirectory": "/workspace/demo", "locale": "en-CA"},
+        None,
+        metadata_namespace="opencode",
+    )
+
+    assert metadata == {
+        "locale": "en-CA",
         "opencode": {"directory": "/workspace/demo"},
     }
+
+
+def test_provider_adapter_removes_provider_directory_for_empty_stable_override() -> (
+    None
+):
+    metadata = adapt_working_directory_metadata_for_provider(
+        {"opencode": {"directory": "/workspace/demo", "project": "alpha"}},
+        "   ",
+        metadata_namespace="opencode",
+    )
+
+    assert metadata == {"opencode": {"project": "alpha"}}
