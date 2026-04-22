@@ -818,22 +818,6 @@ class Settings(BaseSettings):
         description="Allowlisted hosts for all outbound A2A HTTP requests (agent card + transports + extensions).",
     )
 
-    # External session directory provider settings
-    external_session_directory_opencode_cache_ttl_seconds: int = Field(
-        default=90,
-        alias="EXTERNAL_SESSION_DIRECTORY_OPENCODE_CACHE_TTL_SECONDS",
-        description="TTL (seconds) for cached OpenCode directory listings per agent.",
-    )
-    external_session_directory_opencode_per_agent_size: int = Field(
-        default=50,
-        alias="EXTERNAL_SESSION_DIRECTORY_OPENCODE_PER_AGENT_SIZE",
-        description="Maximum number of OpenCode directory items fetched per agent during refresh.",
-    )
-    external_session_directory_opencode_refresh_concurrency: int = Field(
-        default=4,
-        alias="EXTERNAL_SESSION_DIRECTORY_OPENCODE_REFRESH_CONCURRENCY",
-        description="Maximum concurrent upstream refreshes for the OpenCode directory provider.",
-    )
     hub_assistant_swival_import_paths: list[str] = Field(
         default_factory=list,
         alias="HUB_ASSISTANT_SWIVAL_IMPORT_PATHS",
@@ -1024,51 +1008,6 @@ class Settings(BaseSettings):
         if value > 86400:
             raise ValueError(
                 "HUB_ASSISTANT_TASK_RUNNING_TIMEOUT_SECONDS must not exceed 86400"
-            )
-        return value
-
-    @field_validator("external_session_directory_opencode_cache_ttl_seconds")
-    @classmethod
-    def validate_external_session_directory_opencode_cache_ttl_seconds(
-        cls, value: int
-    ) -> int:
-        if value <= 0:
-            raise ValueError(
-                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_CACHE_TTL_SECONDS must be positive"
-            )
-        if value > 3600:
-            raise ValueError(
-                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_CACHE_TTL_SECONDS must not exceed 3600"
-            )
-        return value
-
-    @field_validator("external_session_directory_opencode_per_agent_size")
-    @classmethod
-    def validate_external_session_directory_opencode_per_agent_size(
-        cls, value: int
-    ) -> int:
-        if value <= 0:
-            raise ValueError(
-                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_PER_AGENT_SIZE must be positive"
-            )
-        if value > 200:
-            raise ValueError(
-                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_PER_AGENT_SIZE must not exceed 200"
-            )
-        return value
-
-    @field_validator("external_session_directory_opencode_refresh_concurrency")
-    @classmethod
-    def validate_external_session_directory_opencode_refresh_concurrency(
-        cls, value: int
-    ) -> int:
-        if value <= 0:
-            raise ValueError(
-                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_REFRESH_CONCURRENCY must be positive"
-            )
-        if value > 20:
-            raise ValueError(
-                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_REFRESH_CONCURRENCY must not exceed 20"
             )
         return value
 

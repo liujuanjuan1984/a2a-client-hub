@@ -17,6 +17,9 @@ from app.features.agents.shared.runtime import SharedAgentRuntimeValidationError
 from app.features.agents.shared.service import shared_agent_service
 from app.features.external_sessions.directory import router as external_directory
 from app.features.external_sessions.directory import service as directory_service_module
+from app.features.external_sessions.directory.adapters import (
+    OpenCodeSessionDirectorySettings,
+)
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
@@ -27,6 +30,18 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 async def test_external_sessions_directory_route_does_not_inject_request_db() -> None:
     signature = inspect.signature(external_directory.list_external_sessions_directory)
     assert "db" not in signature.parameters
+
+
+async def test_opencode_directory_settings_are_provider_local(monkeypatch) -> None:
+    monkeypatch.setenv("EXTERNAL_SESSION_DIRECTORY_OPENCODE_CACHE_TTL_SECONDS", "120")
+    monkeypatch.setenv("EXTERNAL_SESSION_DIRECTORY_OPENCODE_PER_AGENT_SIZE", "25")
+    monkeypatch.setenv("EXTERNAL_SESSION_DIRECTORY_OPENCODE_REFRESH_CONCURRENCY", "3")
+
+    settings = OpenCodeSessionDirectorySettings.from_env()
+
+    assert settings.cache_ttl_seconds == 120
+    assert settings.per_agent_size == 25
+    assert settings.refresh_concurrency == 3
 
 
 def _task(session_id: str, *, title: str, last_active_at: str) -> Dict[str, Any]:

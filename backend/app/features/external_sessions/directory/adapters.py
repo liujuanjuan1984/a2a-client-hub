@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Protocol, cast
-
-from app.core.config import settings
 
 
 def _as_record(value: Any) -> dict[str, Any] | None:
@@ -49,6 +48,48 @@ def _to_iso_from_ms(value: int | None) -> str | None:
     return dt.isoformat()
 
 
+def _read_int_env(name: str, *, default: int, maximum: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = int(raw_value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    if value > maximum:
+        raise ValueError(f"{name} must not exceed {maximum}")
+    return value
+
+
+@dataclass(frozen=True)
+class OpenCodeSessionDirectorySettings:
+    cache_ttl_seconds: int = 90
+    per_agent_size: int = 50
+    refresh_concurrency: int = 4
+
+    @classmethod
+    def from_env(cls) -> "OpenCodeSessionDirectorySettings":
+        return cls(
+            cache_ttl_seconds=_read_int_env(
+                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_CACHE_TTL_SECONDS",
+                default=90,
+                maximum=3600,
+            ),
+            per_agent_size=_read_int_env(
+                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_PER_AGENT_SIZE",
+                default=50,
+                maximum=200,
+            ),
+            refresh_concurrency=_read_int_env(
+                "EXTERNAL_SESSION_DIRECTORY_OPENCODE_REFRESH_CONCURRENCY",
+                default=4,
+                maximum=20,
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class NormalizedExternalSession:
     session_id: str
@@ -83,15 +124,15 @@ class OpenCodeSessionDirectoryAdapter:
 
     @property
     def cache_ttl_seconds(self) -> int:
-        return int(settings.external_session_directory_opencode_cache_ttl_seconds)
+        return OpenCodeSessionDirectorySettings.from_env().cache_ttl_seconds
 
     @property
     def per_agent_size(self) -> int:
-        return int(settings.external_session_directory_opencode_per_agent_size)
+        return OpenCodeSessionDirectorySettings.from_env().per_agent_size
 
     @property
     def refresh_concurrency(self) -> int:
-        return int(settings.external_session_directory_opencode_refresh_concurrency)
+        return OpenCodeSessionDirectorySettings.from_env().refresh_concurrency
 
     def normalize_task(self, task: Any) -> NormalizedExternalSession | None:
         session_id = self._extract_session_id(task)
