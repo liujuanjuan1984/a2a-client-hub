@@ -701,7 +701,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
     provider_discovery: bool = Field(
         ...,
         alias="providerDiscovery",
-        description="Whether the agent exposes OpenCode provider/model discovery",
+        description="Whether the agent exposes provider/model discovery",
     )
     interrupt_recovery: bool = Field(
         ...,
