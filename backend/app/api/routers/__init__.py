@@ -14,6 +14,7 @@ ROUTER_MODULES: Final[tuple[str, ...]] = (
     "app.features.schedules.router",
     "app.features.extension_capabilities.personal_router",
     "app.features.extension_capabilities.hub_router",
+    "app.features.external_sessions.directory.router",
     "app.features.external_sessions.opencode.router",
     "app.features.sessions.router",
     "app.features.hub_assistant.router",

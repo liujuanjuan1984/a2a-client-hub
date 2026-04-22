@@ -83,7 +83,7 @@ class SharedAgentRuntimeBuilder:
         self,
         *,
         agent: A2AAgent,
-        credential: Optional[A2AAgentCredential],
+        credential: Optional[A2AAgentCredential | HubA2AUserCredential],
     ) -> SharedAgentRuntime:
         resolved, _ = self.resolve_prefetched(
             name=cast(str, agent.name),
@@ -115,7 +115,7 @@ class SharedAgentRuntimeBuilder:
         auth_type: str,
         auth_header: str | None,
         auth_scheme: str | None,
-        credential: Optional[A2AAgentCredential],
+        credential: Optional[A2AAgentCredential | HubA2AUserCredential],
     ) -> tuple[ResolvedAgent, Optional[str]]:
         return build_resolved_runtime_agent(
             name=name,
