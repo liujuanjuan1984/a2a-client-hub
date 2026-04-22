@@ -17,11 +17,9 @@ from app.integrations.a2a_client.errors import (
     A2AUpstreamTimeoutError,
 )
 
-# ruff: noqa: F401
-
 
 class _BrokenGateway:
-    def stream(self, **kwargs):  # noqa: ARG002
+    def stream(self, **kwargs):
         return _FailingAsyncIterator(RuntimeError("stream failed"))
 
 
@@ -29,7 +27,7 @@ class _DumpableEvent:
     def __init__(self, payload: dict):
         self._payload = payload
 
-    def model_dump(self, exclude_none: bool = True):  # noqa: ARG002
+    def model_dump(self, exclude_none: bool = True):
         _ = exclude_none
         return self._payload
 
@@ -38,7 +36,7 @@ class _GatewayWithEvents:
     def __init__(self, events: list[dict]):
         self._events = events
 
-    async def stream(self, **kwargs):  # noqa: ARG002
+    async def stream(self, **kwargs):
         for event in self._events:
             yield _DumpableEvent(event)
 
@@ -48,7 +46,7 @@ class _GatewayWithDelayedEvents:
         self._events = events
         self._delay_seconds = delay_seconds
 
-    async def stream(self, **kwargs):  # noqa: ARG002
+    async def stream(self, **kwargs):
         for event in self._events:
             await asyncio.sleep(self._delay_seconds)
             yield _DumpableEvent(event)
@@ -58,7 +56,7 @@ class _GatewayWithSingleEventThenPending:
     def __init__(self, first_event: dict):
         self._first_event = first_event
 
-    async def stream(self, **kwargs):  # noqa: ARG002
+    async def stream(self, **kwargs):
         yield _DumpableEvent(self._first_event)
         await asyncio.Future()
 
@@ -72,12 +70,12 @@ class _DummyWebSocket:
 
 
 class _DisconnectingWebSocket:
-    async def send_text(self, payload: str) -> None:  # noqa: ARG002
+    async def send_text(self, payload: str) -> None:
         raise WebSocketDisconnect(code=1001)
 
 
 class _ClosedWebSocket:
-    async def send_text(self, payload: str) -> None:  # noqa: ARG002
+    async def send_text(self, payload: str) -> None:
         raise RuntimeError('Cannot call "send" once a close message has been sent.')
 
 
@@ -99,19 +97,19 @@ class _FailingAsyncIterator:
 
 
 class _BrokenGatewayWithSessionNotFound:
-    def stream(self, **kwargs):  # noqa: ARG001
+    def stream(self, **kwargs):
         return _FailingAsyncIterator(
             _SessionNotFoundError("session not found", "session_not_found")
         )
 
 
 class _GatewayWithUnstructuredError:
-    def stream(self, **kwargs):  # noqa: ARG001
+    def stream(self, **kwargs):
         return _FailingAsyncIterator(RuntimeError("session missing"))
 
 
 class _GatewayWithStructuredProtocolError:
-    def stream(self, **kwargs):  # noqa: ARG001
+    def stream(self, **kwargs):
         return _FailingAsyncIterator(
             A2APeerProtocolError(
                 "project_id/channel_id required",
@@ -126,7 +124,7 @@ class _GatewayWithStructuredProtocolError:
 
 
 class _GatewayWithTimeoutError:
-    def stream(self, **kwargs):  # noqa: ARG001
+    def stream(self, **kwargs):
         return _FailingAsyncIterator(
             A2AUpstreamTimeoutError("Timed out before completing the request")
         )

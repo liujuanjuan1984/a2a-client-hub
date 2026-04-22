@@ -65,7 +65,7 @@ async def fetch_and_validate_agent_card(
     diagnostics_card: AgentCard | None = None
     try:
         diagnostics_card = AgentCard.model_validate(card_payload)
-    except Exception:  # noqa: BLE001
+    except Exception:
         diagnostics_card = None
 
     session_query = (

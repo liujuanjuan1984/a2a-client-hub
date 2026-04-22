@@ -51,7 +51,7 @@ def create_schema(schema_name: str | None = None) -> bool:
             connection.commit()
             print(f"Schema '{target_schema_name}' created successfully!")
             return True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"Error creating schema: {exc}")
         return False
 
@@ -96,7 +96,7 @@ def drop_schema(*, force: bool = False, schema_name: str | None = None) -> bool:
             connection.commit()
             print(f"Schema '{target_schema_name}' dropped successfully!")
             return True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"Error dropping schema: {exc}")
         return False
 

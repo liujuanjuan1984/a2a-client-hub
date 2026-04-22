@@ -509,7 +509,7 @@ class UnifiedAgentCatalogService:
                 )
                 reason_code = AgentHealthReasonCode.CLIENT_RESET_REQUIRED
                 error_message = self._normalize_health_error(str(exc))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 health_status, consecutive_failures = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                     if snapshot is not None

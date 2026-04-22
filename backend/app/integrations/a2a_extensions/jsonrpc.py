@@ -89,7 +89,7 @@ class JsonRpcClient:
 
         try:
             data = resp.json()
-        except ValueError as exc:  # noqa: PERF203 - explicit JSON parse path
+        except ValueError as exc:
             raise ValueError("Invalid JSON-RPC response (not JSON)") from exc
 
         if not isinstance(data, dict):

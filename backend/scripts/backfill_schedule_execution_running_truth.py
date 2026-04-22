@@ -83,7 +83,7 @@ def _utc_now() -> datetime:
 def _get_settings() -> Any:
     global _SETTINGS
     if _SETTINGS is None:
-        from app.core.config import settings as app_settings  # noqa: WPS433
+        from app.core.config import settings as app_settings
 
         _SETTINGS = app_settings
     return _SETTINGS

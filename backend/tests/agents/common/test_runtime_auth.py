@@ -18,7 +18,7 @@ class _Vault:
         self.is_configured = is_configured
         self._decrypt_outcome = decrypt_outcome
 
-    def decrypt(self, token: str):  # noqa: ARG002
+    def decrypt(self, token: str):
         if isinstance(self._decrypt_outcome, Exception):
             raise self._decrypt_outcome
         return self._decrypt_outcome

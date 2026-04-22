@@ -258,7 +258,7 @@ class A2AClient:
                     "content": content,
                     "raw": final_payload,
                 }
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
                 if isinstance(translated_error, A2AClientResetRequiredError):
                     logger.warning(
@@ -335,7 +335,7 @@ class A2AClient:
                 )
                 async for payload in self._stream_with_fallback(request):
                     yield payload
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
             if translated_error is not None:
                 raise translated_error from exc
@@ -412,7 +412,7 @@ class A2AClient:
                     "error": str(exc),
                     "error_code": getattr(exc, "error_code", "unsupported_operation"),
                 }
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
                 if isinstance(translated_error, A2AClientResetRequiredError):
                     raise translated_error from exc
@@ -516,7 +516,7 @@ class A2AClient:
                     "error": str(exc),
                     "error_code": getattr(exc, "error_code", "unsupported_operation"),
                 }
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
                 if isinstance(translated_error, A2AClientResetRequiredError):
                     raise translated_error from exc
@@ -741,7 +741,7 @@ class A2AClient:
                     )
                     yield payload
                 return
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 if (
                     not yielded_payload
                     and not did_reset_adapter
@@ -780,7 +780,7 @@ class A2AClient:
                             )
                             yield payload
                         return
-                    except Exception as retry_exc:  # noqa: BLE001
+                    except Exception as retry_exc:
                         exc = retry_exc
                 last_error = exc
                 should_downgrade_to_blocking = (
@@ -860,7 +860,7 @@ class A2AClient:
                     dialect=dialect,
                 )
                 return result
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 if not did_reset_adapter and self._should_reset_adapter_after_error(
                     dialect=dialect,
                     adapter=adapter,
@@ -894,7 +894,7 @@ class A2AClient:
                             dialect=dialect,
                         )
                         return result
-                    except Exception as retry_exc:  # noqa: BLE001
+                    except Exception as retry_exc:
                         exc = retry_exc
                 last_error = exc
                 if not self._should_try_alternate_dialect(

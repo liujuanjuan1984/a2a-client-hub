@@ -511,7 +511,7 @@ class A2AAgentService(AgentValidationMixin):
                     error=error_message,
                     reason_code=reason_code,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 next_status, failure_count = self._resolve_failure_status(
                     snapshot.consecutive_health_check_failures
                 )

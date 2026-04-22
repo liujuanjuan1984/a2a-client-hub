@@ -158,7 +158,7 @@ class A2AExtensionSupport:
                     "status_code": (exc.response.status_code if exc.response else None),
                 },
             ) from exc
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="upstream_error",

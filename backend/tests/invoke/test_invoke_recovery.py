@@ -31,7 +31,7 @@ def _capture_warning(
 ):
     def _warn(
         *,
-        logger,  # noqa: ANN001, ARG001
+        logger,
         message: str,
         log_extra: dict[str, object],
         extra: dict[str, object] | None = None,
@@ -41,7 +41,7 @@ def _capture_warning(
     return _warn
 
 
-async def _return_false(**kwargs) -> bool:  # noqa: ANN003, ARG001
+async def _return_false(**kwargs) -> bool:
     return False
 
 
@@ -117,7 +117,7 @@ async def test_validate_provider_aware_continue_session_validates_with_extension
     observed: dict[str, object] = {}
 
     class _ExtensionsService:
-        async def continue_session(self, *, runtime, session_id):  # noqa: ARG002
+        async def continue_session(self, *, runtime, session_id):
             observed["session_id"] = session_id
             return ExtensionCallResult(success=True, result={"ok": True})
 
@@ -145,7 +145,7 @@ async def test_validate_provider_aware_continue_session_returns_failed_for_expli
     warnings: list[tuple[str, dict[str, object]]] = []
 
     class _ExtensionsService:
-        async def continue_session(self, *, runtime, session_id):  # noqa: ARG002
+        async def continue_session(self, *, runtime, session_id):
             return ExtensionCallResult(
                 success=False,
                 error_code="session_not_found",
@@ -175,7 +175,7 @@ async def test_validate_provider_aware_continue_session_skips_when_extension_is_
     None
 ):
     class _ExtensionsService:
-        async def continue_session(self, *, runtime, session_id):  # noqa: ARG002
+        async def continue_session(self, *, runtime, session_id):
             raise A2AExtensionNotSupportedError("not supported")
 
     result = await validate_provider_aware_continue_session(
@@ -269,7 +269,7 @@ async def test_finalize_outbound_invoke_payload_injects_bound_invoke_metadata() 
     )
 
     class _ExtensionsService:
-        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+        async def resolve_invoke_metadata(self, *, runtime):
             return _invoke_metadata_extension()
 
     finalized = await finalize_outbound_invoke_payload(
@@ -313,7 +313,7 @@ async def test_finalize_outbound_invoke_payload_prefers_request_override_over_bo
     )
 
     class _ExtensionsService:
-        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+        async def resolve_invoke_metadata(self, *, runtime):
             return _invoke_metadata_extension()
 
     finalized = await finalize_outbound_invoke_payload(
@@ -354,7 +354,7 @@ async def test_finalize_outbound_invoke_payload_applies_agent_defaults_after_bin
     )
 
     class _ExtensionsService:
-        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+        async def resolve_invoke_metadata(self, *, runtime):
             return _invoke_metadata_extension()
 
     finalized = await finalize_outbound_invoke_payload(
@@ -399,7 +399,7 @@ async def test_finalize_outbound_invoke_payload_raises_when_declared_fields_are_
     )
 
     class _ExtensionsService:
-        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+        async def resolve_invoke_metadata(self, *, runtime):
             return _invoke_metadata_extension()
 
     with pytest.raises(InvokeMetadataBindingRequiredError) as exc_info:
@@ -434,7 +434,7 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_binding_and_
     )
 
     class _UnsupportedInvokeMetadataService:
-        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+        async def resolve_invoke_metadata(self, *, runtime):
             raise A2AExtensionNotSupportedError("Invoke metadata extension not found")
 
     finalized = await finalize_outbound_invoke_payload(
@@ -472,7 +472,7 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure()
     warnings: list[tuple[str, dict[str, object]]] = []
 
     class _FailingExtensionsService:
-        async def resolve_session_binding(self, *, runtime):  # noqa: ARG002
+        async def resolve_session_binding(self, *, runtime):
             raise A2AExtensionUpstreamError(
                 message="card fetch failed",
                 error_code="upstream_unavailable",

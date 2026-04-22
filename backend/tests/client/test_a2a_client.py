@@ -1072,7 +1072,7 @@ async def test_get_task_returns_success_for_valid_request() -> None:
 @pytest.mark.asyncio
 async def test_get_task_normalizes_model_like_task_payload() -> None:
     class _TaskPayload:
-        def model_dump(self, **kwargs):  # noqa: ANN001
+        def model_dump(self, **kwargs):
             assert kwargs["mode"] == "json"
             assert kwargs["by_alias"] is True
             return {

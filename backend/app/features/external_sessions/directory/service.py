@@ -167,7 +167,7 @@ class ExternalSessionDirectoryService:
                             (agent.agent_source, agent.agent_id)
                         ),
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     partial_failures += 1
                     logger.warning(
                         "External session directory runtime build failed",
@@ -205,7 +205,7 @@ class ExternalSessionDirectoryService:
                             error_code=exc.error_code,
                             upstream_error=exc.upstream_error,
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         return agent, ExtensionCallResult(
                             success=False,
                             result=None,
@@ -510,7 +510,7 @@ class ExternalSessionDirectoryService:
                     expires_at=expires_at,
                     result=result,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 partial_failures += 1
                 logger.warning(
                     "External session directory cache write failed",

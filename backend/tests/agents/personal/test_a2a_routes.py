@@ -76,10 +76,10 @@ class _FakeGateway:
     async def fetch_agent_card_detail(
         self,
         *,
-        resolved,  # noqa: ARG002
-        raise_on_failure: bool,  # noqa: ARG002
-        policy=None,  # noqa: ARG002
-        card_fetch_timeout=None,  # noqa: ARG002
+        resolved,
+        raise_on_failure: bool,
+        policy=None,
+        card_fetch_timeout=None,
     ):
         self.calls.append({"card_fetch": True})
         return _FakeCard(
@@ -105,7 +105,7 @@ class _FakeExtensionsService:
     def __init__(self, *, invoke_metadata_ext: Any | None = None) -> None:
         self.invoke_metadata_ext = invoke_metadata_ext
 
-    async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+    async def resolve_invoke_metadata(self, *, runtime):
         if self.invoke_metadata_ext is None:
             raise A2AExtensionNotSupportedError(
                 "invoke metadata extension not configured"

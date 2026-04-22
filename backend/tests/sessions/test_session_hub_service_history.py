@@ -485,7 +485,7 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
             self.begin_nested_called = 0
             self._message = type("Message", (), {"message_metadata": {}})()
 
-        async def scalar(self, _stmt):  # noqa: ANN001
+        async def scalar(self, _stmt):
             return self._message
 
         def begin_nested(self) -> _Nested:
@@ -498,7 +498,7 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
         async def rollback(self) -> None:
             self.rollback_called = True
 
-    async def _find_none(*_args, **_kwargs):  # noqa: ANN001
+    async def _find_none(*_args, **_kwargs):
         return None
 
     existing_block = type(
@@ -510,10 +510,10 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
         },
     )()
 
-    async def _find_existing(*_args, **_kwargs):  # noqa: ANN001
+    async def _find_existing(*_args, **_kwargs):
         return existing_block
 
-    async def _raise_unique_conflict(*_args, **_kwargs):  # noqa: ANN001
+    async def _raise_unique_conflict(*_args, **_kwargs):
         raise IntegrityError(
             "insert ix_agent_message_blocks_message_id_block_seq",
             {},
@@ -581,7 +581,7 @@ async def test_append_agent_message_block_update_block_id_conflict_uses_block_lo
             self.begin_nested_called = 0
             self._message = type("Message", (), {"message_metadata": {}})()
 
-        async def scalar(self, _stmt):  # noqa: ANN001
+        async def scalar(self, _stmt):
             return self._message
 
         def begin_nested(self) -> _Nested:
@@ -594,7 +594,7 @@ async def test_append_agent_message_block_update_block_id_conflict_uses_block_lo
         async def rollback(self) -> None:
             self.rollback_called = True
 
-    async def _find_none(*_args, **_kwargs):  # noqa: ANN001
+    async def _find_none(*_args, **_kwargs):
         return None
 
     existing_block = type(
@@ -617,12 +617,12 @@ async def test_append_agent_message_block_update_block_id_conflict_uses_block_lo
 
     block_id_lookup_calls = 0
 
-    async def _find_by_block_id(*_args, **_kwargs):  # noqa: ANN001
+    async def _find_by_block_id(*_args, **_kwargs):
         nonlocal block_id_lookup_calls
         block_id_lookup_calls += 1
         return None if block_id_lookup_calls == 1 else existing_block
 
-    async def _raise_block_id_conflict(*_args, **_kwargs):  # noqa: ANN001
+    async def _raise_block_id_conflict(*_args, **_kwargs):
         raise IntegrityError(
             "insert ix_agent_message_blocks_message_id_block_id",
             {},

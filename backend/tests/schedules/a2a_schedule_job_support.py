@@ -40,9 +40,6 @@ from app.runtime.ops_metrics import ops_metrics
 from app.utils.timezone_util import utc_now
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
-# ruff: noqa: F401
-
-
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 _create_agent = create_a2a_agent
@@ -50,7 +47,7 @@ _create_schedule_task = create_schedule_task
 
 
 def _mock_runtime_builder():
-    async def _build(_db, user_id, agent_id):  # noqa: ARG001
+    async def _build(_db, user_id, agent_id):
         return SimpleNamespace(
             agent_enabled=True,
             resolved=SimpleNamespace(

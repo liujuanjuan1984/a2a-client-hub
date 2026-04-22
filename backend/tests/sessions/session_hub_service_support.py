@@ -22,9 +22,6 @@ from app.utils.idempotency_key import (
 from app.utils.timezone_util import utc_now
 from tests.support.utils import create_user
 
-# ruff: noqa: F401
-
-
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
