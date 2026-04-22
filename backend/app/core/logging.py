@@ -31,7 +31,7 @@ class ActorContextTokens:
 class RequestIdFilter(logging.Filter):
     """Inject the current request id into every log record."""
 
-    def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
+    def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = _request_id_var.get() or "-"
         record.user_id = _user_id_var.get() or "-"
         record.principal_user_id = _principal_user_id_var.get() or "-"
@@ -72,7 +72,7 @@ class JsonFormatter(logging.Formatter):
         "admin_mode",
     }
 
-    def format(self, record: logging.LogRecord) -> str:  # noqa: D401
+    def format(self, record: logging.LogRecord) -> str:
         log_entry: Dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc)
             .isoformat()
@@ -108,7 +108,7 @@ class TextFormatter(logging.Formatter):
 
     reserved_fields = JsonFormatter.reserved_fields
 
-    def format(self, record: logging.LogRecord) -> str:  # noqa: D401
+    def format(self, record: logging.LogRecord) -> str:
         timestamp = datetime.fromtimestamp(record.created, tz=timezone.utc).strftime(
             "%Y-%m-%d %H:%M:%S"
         )

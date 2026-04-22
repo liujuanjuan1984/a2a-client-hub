@@ -169,9 +169,7 @@ async def test_preempt_inflight_invoke_report_marks_completed_when_task_cancelle
     calls: dict[str, str] = {}
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             calls["task_id"] = str(task_id)
             calls["reason"] = str((metadata or {}).get("source"))
             return {"success": True}
@@ -221,9 +219,7 @@ async def test_preempt_inflight_invoke_report_marks_accepted_when_task_not_bound
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             calls["task_id"] = str(task_id)
             calls["reason"] = str((metadata or {}).get("source"))
             return {"success": True}
@@ -276,9 +272,7 @@ async def test_bind_inflight_task_id_report_finalizes_pending_preempt_event(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": True}
 
     token = await session_hub_service.register_inflight_invoke(
@@ -335,9 +329,7 @@ async def test_bind_inflight_task_id_report_marks_pending_preempt_failed(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": False, "error_code": "timeout"}
 
     token = await session_hub_service.register_inflight_invoke(
@@ -394,17 +386,13 @@ async def test_preempt_inflight_invoke_keeps_old_token_when_new_inflight_registe
     old_calls: dict[str, str] = {}
 
     class _OldGateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             old_calls["task_id"] = str(task_id)
             old_calls["reason"] = str((metadata or {}).get("source"))
             return {"success": True}
 
     class _NewGateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": True}
 
     old_token = await session_hub_service.register_inflight_invoke(
@@ -458,9 +446,7 @@ async def test_cancel_session_accepts_pending_cancel_when_task_not_bound(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": True}
 
     await session_hub_service.register_inflight_invoke(
@@ -499,9 +485,7 @@ async def test_cancel_session_accepts_and_unregisters_inflight_task(async_db_ses
     captured: dict[str, str] = {}
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             captured["task_id"] = str(task_id)
             captured["resolved_name"] = str(getattr(resolved, "name", ""))
             return {"success": True}
@@ -559,15 +543,11 @@ async def test_cancel_session_returns_accepted_when_partial_upstream_failures_ex
     await async_db_session.flush()
 
     class _FailGateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": False, "error_code": "timeout"}
 
     class _OkGateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": True}
 
     failed_token = await session_hub_service.register_inflight_invoke(
@@ -624,15 +604,11 @@ async def test_preempt_inflight_invoke_returns_true_when_partial_failures_exist(
     await async_db_session.flush()
 
     class _FailGateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": False, "error_code": "upstream_error"}
 
     class _OkGateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": True}
 
     failed_token = await session_hub_service.register_inflight_invoke(
@@ -685,9 +661,7 @@ async def test_cancel_session_treats_terminal_upstream_task_as_idempotent(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": False, "error_code": "task_not_cancelable"}
 
     token = await session_hub_service.register_inflight_invoke(
@@ -731,9 +705,7 @@ async def test_cancel_session_raises_upstream_error_for_retryable_failures(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": False, "error_code": "timeout"}
 
     token = await session_hub_service.register_inflight_invoke(

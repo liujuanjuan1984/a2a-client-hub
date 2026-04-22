@@ -52,7 +52,7 @@ def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
 
 def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
-        def model_dump(self, **kwargs):  # noqa: ARG002
+        def model_dump(self, **kwargs):
             return {
                 "seq": 12,
                 "metadata": {
@@ -273,7 +273,7 @@ def test_ensure_outbound_stream_contract_normalizes_message_payloads():
         "role": "agent",
     }
 
-    a2a_invoke_service._ensure_outbound_stream_contract(  # noqa: SLF001
+    a2a_invoke_service._ensure_outbound_stream_contract(
         payload,
         event_sequence=4,
     )
@@ -375,7 +375,7 @@ def test_extract_usage_hints_from_serialized_event():
 
 def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
-        def model_dump(self, **kwargs):  # noqa: ARG002
+        def model_dump(self, **kwargs):
             return {
                 "metadata": {
                     "shared": {
@@ -435,7 +435,7 @@ def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata
 
 def test_coerce_payload_to_dict_raises_exception(caplog):
     class MockUnserializablePayload:
-        def model_dump(self, exclude_none=True):  # noqa: ARG002
+        def model_dump(self, exclude_none=True):
             _ = exclude_none
             raise ValueError("Cannot serialize this mock payload")
 

@@ -41,9 +41,7 @@ _create_agent = create_a2a_agent
     ],
 )
 async def test_status_code_for_session_error(detail: str, expected_status: int) -> None:
-    assert (
-        me_sessions._status_code_for_session_error(detail) == expected_status
-    )  # noqa: SLF001
+    assert me_sessions._status_code_for_session_error(detail) == expected_status
 
 
 async def test_me_sessions_scheduled_list_detail_and_messages(
@@ -308,9 +306,7 @@ async def test_me_sessions_cancel_returns_accepted_for_inflight_task(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": True}
 
     token = await session_hub_service.register_inflight_invoke(
@@ -359,9 +355,7 @@ async def test_me_sessions_cancel_accepts_pending_when_task_id_not_bound(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001, ARG002
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": True}
 
     await session_hub_service.register_inflight_invoke(
@@ -426,9 +420,7 @@ async def test_me_sessions_cancel_maps_upstream_error_to_bad_gateway(
     await async_db_session.flush()
 
     class _Gateway:
-        async def cancel_task(
-            self, *, resolved, task_id, metadata=None
-        ):  # noqa: ANN001
+        async def cancel_task(self, *, resolved, task_id, metadata=None):
             return {"success": False, "error_code": "upstream_error"}
 
     token = await session_hub_service.register_inflight_invoke(

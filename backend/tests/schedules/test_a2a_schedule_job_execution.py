@@ -322,7 +322,7 @@ async def test_execute_claimed_task_runtime_failure_does_not_create_conversation
     )
     task_id = task.id
 
-    async def _build(_db, user_id, agent_id):  # noqa: ARG001
+    async def _build(_db, user_id, agent_id):
         raise RuntimeError("runtime build failed")
 
     monkeypatch.setattr(

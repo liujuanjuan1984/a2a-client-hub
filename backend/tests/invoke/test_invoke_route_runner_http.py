@@ -36,15 +36,15 @@ async def test_prepare_state_reuses_persisted_context_id_when_payload_missing(
             return None
 
     async def fake_ensure_local_session_for_invoke(
-        db,  # noqa: ARG001
-        **kwargs,  # noqa: ARG001
+        db,
+        **kwargs,
     ) -> tuple[SimpleNamespace, str]:
         return (
             SimpleNamespace(id=local_session_id, context_id="  ctx-persisted  "),
             "manual",
         )
 
-    async def fake_commit_safely(db):  # noqa: ARG001
+    async def fake_commit_safely(db):
         return None
 
     monkeypatch.setattr(
@@ -67,7 +67,7 @@ async def test_prepare_state_reuses_persisted_context_id_when_payload_missing(
         }
     )
 
-    state = await invoke_route_runner._prepare_state(  # noqa: SLF001
+    state = await invoke_route_runner._prepare_state(
         user_id=uuid4(),
         agent_id=uuid4(),
         agent_source="shared",
@@ -170,7 +170,7 @@ async def test_close_open_transaction_commits_read_only_session() -> None:
             self.rolled_back += 1
 
     session = _ReadOnlySession()
-    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+    await invoke_route_runner._close_open_transaction(session)
     assert session.committed == 1
     assert session.rolled_back == 0
 
@@ -193,7 +193,7 @@ async def test_close_open_transaction_does_not_commit_when_session_has_pending_w
             self.committed += 1
 
     session = _DirtySession()
-    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+    await invoke_route_runner._close_open_transaction(session)
     assert session.committed == 0
 
 
@@ -213,7 +213,7 @@ async def test_close_open_transaction_delegates_to_shared_helper(
         fake_prepare_for_external_call,
     )
 
-    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+    await invoke_route_runner._close_open_transaction(session)
 
     assert calls == [session]
 
@@ -226,7 +226,7 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke(**kwargs):
         async def iterator():
             started.set()
             await release.wait()
@@ -265,7 +265,7 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
         "validate_message": lambda _: [],
         "logger": SimpleNamespace(info=lambda *args, **kwargs: None),
         "invoke_log_message": "test invoke",
-        "invoke_log_extra_builder": lambda request, runtime: {},  # noqa: ARG001
+        "invoke_log_extra_builder": lambda request, runtime: {},
     }
 
     first_response = await invoke_route_runner.run_http_invoke_route(
@@ -296,7 +296,7 @@ async def test_run_http_invoke_route_stream_releases_inflight_guard_even_if_stre
     invoke_route_runner._invoke_inflight_keys.clear()
     stream_started = asyncio.Event()
 
-    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):
         async def iterator():
             stream_started.set()
             yield "data: {}\n\n"
@@ -340,7 +340,7 @@ async def test_run_http_invoke_route_stream_releases_inflight_guard_even_if_stre
         validate_message=lambda _: [],
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
         invoke_log_message="test invoke",
-        invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+        invoke_log_extra_builder=lambda request, runtime: {},
     )
 
     assert isinstance(response, StreamingResponse)
@@ -363,7 +363,7 @@ async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
 ) -> None:
     invoke_route_runner._invoke_inflight_keys.clear()
 
-    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):
         raise ValueError("message_id_conflict")
 
     monkeypatch.setattr(
@@ -404,7 +404,7 @@ async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
             validate_message=lambda _: [],
             logger=SimpleNamespace(info=lambda *args, **kwargs: None),
             invoke_log_message="test invoke",
-            invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+            invoke_log_extra_builder=lambda request, runtime: {},
         )
 
     assert exc_info.value.status_code == 409
@@ -418,7 +418,7 @@ async def test_run_http_invoke_route_stream_maps_interrupt_failure_to_http_confl
 ) -> None:
     invoke_route_runner._invoke_inflight_keys.clear()
 
-    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):
         raise ValueError("invoke_interrupt_failed")
 
     monkeypatch.setattr(
@@ -459,7 +459,7 @@ async def test_run_http_invoke_route_stream_maps_interrupt_failure_to_http_confl
             validate_message=lambda _: [],
             logger=SimpleNamespace(info=lambda *args, **kwargs: None),
             invoke_log_message="test invoke",
-            invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+            invoke_log_extra_builder=lambda request, runtime: {},
         )
 
     assert exc_info.value.status_code == 409
@@ -478,7 +478,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         return invoke_route_runner._InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
@@ -490,14 +490,14 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
         )
 
     async def fake_record_local_invoke_messages(
-        db,  # noqa: ARG001
+        db,
         *,
         response_metadata=None,
-        **kwargs,  # noqa: ARG001
+        **kwargs,
     ):
         captured["response_metadata"] = response_metadata
 
-    async def fake_commit_safely(db):  # noqa: ARG001
+    async def fake_commit_safely(db):
         return None
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
@@ -514,7 +514,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     )
 
     class _Gateway:
-        async def stream(self, **kwargs):  # noqa: ARG002
+        async def stream(self, **kwargs):
             yield {
                 "kind": "artifact-update",
                 "artifact": {
@@ -591,7 +591,7 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
             source="upstream_a2a",
         )
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         return invoke_route_runner._InvokeState(
             local_session_id=None,
             local_source=None,
@@ -642,9 +642,9 @@ async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_c
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _Gateway:
-        async def stream(self, **kwargs):  # noqa: ARG002
+        async def stream(self, **kwargs):
             yield SimpleNamespace(
-                model_dump=lambda exclude_none=True: {  # noqa: ARG005
+                model_dump=lambda exclude_none=True: {
                     "kind": "message",
                     "message_id": "msg-run-http-invoke-1",
                     "task_id": "task-run-http-invoke-1",
@@ -656,7 +656,7 @@ async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_c
                 }
             )
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         return invoke_route_runner._InvokeState(
             local_session_id=None,
             local_source=None,
@@ -666,16 +666,16 @@ async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_c
             stream_usage={},
         )
 
-    async def fake_persist_stream_block_update(**kwargs):  # noqa: ARG001
+    async def fake_persist_stream_block_update(**kwargs):
         return None
 
-    async def fake_persist_interrupt_lifecycle_event(**kwargs):  # noqa: ARG001
+    async def fake_persist_interrupt_lifecycle_event(**kwargs):
         return None
 
-    async def fake_flush_stream_buffer(**kwargs):  # noqa: ARG001
+    async def fake_flush_stream_buffer(**kwargs):
         return None
 
-    async def fake_persist_local_outcome(**kwargs):  # noqa: ARG001
+    async def fake_persist_local_outcome(**kwargs):
         return None
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
@@ -735,7 +735,7 @@ async def test_run_http_invoke_returns_structured_error_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _Gateway:
-        async def stream(self, **kwargs):  # noqa: ARG002
+        async def stream(self, **kwargs):
             if kwargs:
                 await asyncio.sleep(0)
             for event in ():
@@ -745,7 +745,7 @@ async def test_run_http_invoke_returns_structured_error_details(
         resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
     )
 
-    async def fake_consume_stream(**kwargs):  # noqa: ARG001
+    async def fake_consume_stream(**kwargs):
         return StreamOutcome(
             success=False,
             finish_reason=StreamFinishReason.UPSTREAM_ERROR,
@@ -767,7 +767,7 @@ async def test_run_http_invoke_returns_structured_error_details(
         fake_consume_stream,
     )
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         return invoke_route_runner._InvokeState(
             local_session_id=None,
             local_source=None,
@@ -835,12 +835,8 @@ def test_is_interrupt_requested_from_metadata_extensions() -> None:
         }
     )
 
-    assert (
-        invoke_route_runner._is_interrupt_requested(payload_interrupt) is True
-    )  # noqa: SLF001
-    assert (
-        invoke_route_runner._is_interrupt_requested(payload_normal) is False
-    )  # noqa: SLF001
+    assert invoke_route_runner._is_interrupt_requested(payload_interrupt) is True
+    assert invoke_route_runner._is_interrupt_requested(payload_normal) is False
 
 
 @pytest.mark.asyncio
@@ -867,10 +863,10 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
 
     async def fake_preempt_inflight_invoke_report(
         *,
-        user_id,  # noqa: ANN001, ARG001
-        conversation_id,  # noqa: ANN001, ARG001
-        reason,  # noqa: ANN001
-        pending_event,  # noqa: ANN001
+        user_id,
+        conversation_id,
+        reason,
+        pending_event,
     ) -> PreemptedInvokeReport:
         called.append(str(reason))
         recorded_events.append(dict(pending_event))
@@ -893,9 +889,9 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
 
     async def fake_record_preempt_history_event(
         *,
-        state,  # noqa: ANN001, ARG001
-        user_id,  # noqa: ANN001, ARG001
-        event,  # noqa: ANN001
+        state,
+        user_id,
+        event,
     ) -> None:
         recorded_events.append(dict(event))
 
@@ -912,7 +908,7 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
             "metadata": {},
         }
     )
-    await invoke_route_runner._preempt_previous_invoke_if_requested(  # noqa: SLF001
+    await invoke_route_runner._preempt_previous_invoke_if_requested(
         state=state,
         payload=payload_normal,
         user_id=uuid4(),
@@ -927,7 +923,7 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
             "metadata": {"extensions": {"interrupt": True}},
         }
     )
-    await invoke_route_runner._preempt_previous_invoke_if_requested(  # noqa: SLF001
+    await invoke_route_runner._preempt_previous_invoke_if_requested(
         state=state,
         payload=payload_interrupt,
         user_id=uuid4(),
@@ -958,10 +954,10 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
 async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+    async def fake_finalize_outbound_invoke_payload(**kwargs):
         return kwargs["payload"]
 
-    async def fake_append_session_control(**kwargs):  # noqa: ARG001
+    async def fake_append_session_control(**kwargs):
         return SimpleNamespace(
             success=True,
             result={"ok": True, "session_id": "ses-upstream-next"},
@@ -1025,7 +1021,7 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
 async def test_run_http_invoke_append_requires_bound_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+    async def fake_finalize_outbound_invoke_payload(**kwargs):
         return kwargs["payload"]
 
     monkeypatch.setattr(
@@ -1070,10 +1066,10 @@ async def test_run_http_invoke_append_requires_bound_session(
 async def test_run_http_invoke_append_turn_forbidden_returns_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+    async def fake_finalize_outbound_invoke_payload(**kwargs):
         return kwargs["payload"]
 
-    async def fake_append_session_control(**kwargs):  # noqa: ARG001
+    async def fake_append_session_control(**kwargs):
         return SimpleNamespace(
             success=False,
             result=None,
@@ -1144,13 +1140,13 @@ async def test_run_http_invoke_append_turn_forbidden_returns_failed(
 async def test_run_http_invoke_preempt_only_returns_completed_session_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+    async def fake_finalize_outbound_invoke_payload(**kwargs):
         return kwargs["payload"]
 
-    async def fake_find_latest_agent_message_id(**kwargs):  # noqa: ARG001
+    async def fake_find_latest_agent_message_id(**kwargs):
         return "22222222-2222-4222-8222-222222222222"
 
-    async def fake_preempt_inflight_invoke_report(**kwargs):  # noqa: ARG001
+    async def fake_preempt_inflight_invoke_report(**kwargs):
         return SimpleNamespace(
             attempted=True,
             status="completed",
@@ -1229,13 +1225,13 @@ async def test_run_http_invoke_preempt_only_returns_completed_session_control(
 async def test_run_http_invoke_preempt_only_returns_no_inflight_when_idle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_finalize_outbound_invoke_payload(**kwargs):  # noqa: ARG001
+    async def fake_finalize_outbound_invoke_payload(**kwargs):
         return kwargs["payload"]
 
-    async def fake_find_latest_agent_message_id(**kwargs):  # noqa: ARG001
+    async def fake_find_latest_agent_message_id(**kwargs):
         return None
 
-    async def fake_preempt_inflight_invoke_report(**kwargs):  # noqa: ARG001
+    async def fake_preempt_inflight_invoke_report(**kwargs):
         return SimpleNamespace(
             attempted=False,
             status="none",

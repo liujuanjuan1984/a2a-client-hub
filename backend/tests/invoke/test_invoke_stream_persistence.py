@@ -197,10 +197,10 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
     def _session_factory() -> _SessionContext:
         return _SessionContext(async_db_session)
 
-    async def _commit(_db) -> None:  # noqa: ANN001
+    async def _commit(_db) -> None:
         await async_db_session.flush()
 
-    async def _ensure_headers_adapter(**kwargs) -> None:  # noqa: ANN001
+    async def _ensure_headers_adapter(**kwargs) -> None:
         await ensure_local_message_headers(
             **kwargs,
             session_factory=_session_factory,
@@ -405,10 +405,10 @@ async def test_persist_local_outcome_records_upstream_task_binding(
     def _session_factory() -> _SessionContext:
         return _SessionContext(async_db_session)
 
-    async def _commit(_db) -> None:  # noqa: ANN001
+    async def _commit(_db) -> None:
         await async_db_session.flush()
 
-    async def _ensure_headers_adapter(**kwargs) -> None:  # noqa: ANN001
+    async def _ensure_headers_adapter(**kwargs) -> None:
         await ensure_local_message_headers(
             **kwargs,
             session_factory=_session_factory,
@@ -478,10 +478,10 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
     def _session_factory() -> _SessionContext:
         return _SessionContext(async_db_session)
 
-    async def _commit(_db) -> None:  # noqa: ANN001
+    async def _commit(_db) -> None:
         await async_db_session.flush()
 
-    async def _ensure_headers_adapter(**kwargs) -> None:  # noqa: ANN001
+    async def _ensure_headers_adapter(**kwargs) -> None:
         await ensure_local_message_headers(
             **kwargs,
             session_factory=_session_factory,

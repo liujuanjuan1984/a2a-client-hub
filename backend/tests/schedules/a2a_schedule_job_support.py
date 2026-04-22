@@ -47,7 +47,7 @@ _create_schedule_task = create_schedule_task
 
 
 def _mock_runtime_builder():
-    async def _build(_db, user_id, agent_id):  # noqa: ARG001
+    async def _build(_db, user_id, agent_id):
         return SimpleNamespace(
             agent_enabled=True,
             resolved=SimpleNamespace(

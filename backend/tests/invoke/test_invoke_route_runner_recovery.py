@@ -32,7 +32,7 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     rebound_conversation_id = str(uuid4())
     attempts: list[dict[str, object]] = []
 
-    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke(**kwargs):
         payload = kwargs["payload"]
         attempts.append(
             {
@@ -63,9 +63,9 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
 
     async def fake_continue_session(
         *_,
-        user_id: object,  # noqa: ARG002
+        user_id: object,
         conversation_id: str,
-        **__,  # noqa: ARG001
+        **__,
     ) -> tuple[dict[str, object], bool]:
         assert conversation_id == original_conversation_id
         return (
@@ -84,7 +84,7 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+    async def fake_validate_provider_aware_continue_session(**kwargs):
         return "validated"
 
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
@@ -152,7 +152,7 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
     )
     attempt = 0
 
-    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke(**kwargs):
         nonlocal attempt
         attempt += 1
         return A2AAgentInvokeResponse(
@@ -165,9 +165,9 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
 
     async def fake_continue_session(
         *_,
-        user_id: object,  # noqa: ARG002
+        user_id: object,
         conversation_id: str,
-        **__,  # noqa: ARG001
+        **__,
     ) -> tuple[dict[str, object], bool]:
         assert conversation_id
         return (
@@ -186,7 +186,7 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+    async def fake_validate_provider_aware_continue_session(**kwargs):
         return "validated"
 
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
@@ -251,7 +251,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     prepare_payloads: list[dict[str, object]] = []
     stream_calls = 0
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         payload = kwargs["payload"]
         prepare_payloads.append(
             {
@@ -274,7 +274,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             user_message_id=None,
         )
 
-    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
+    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):
         nonlocal stream_calls
         stream_calls += 1
         if stream_calls == 1 and on_error_metadata:
@@ -289,9 +289,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
 
     async def fake_continue_session(
         *_,
-        user_id: object,  # noqa: ARG002
+        user_id: object,
         conversation_id: str,
-        **__,  # noqa: ARG001
+        **__,
     ) -> tuple[dict[str, object], bool]:
         assert conversation_id == original_conversation_id
         return (
@@ -310,10 +310,10 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         return False
 
-    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+    async def fake_validate_provider_aware_continue_session(**kwargs):
         return "validated"
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
@@ -341,7 +341,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",
-        lambda **kwargs: None,  # noqa: ARG005
+        lambda **kwargs: None,
     )
 
     payload = A2AAgentInvokeRequest.model_validate(
@@ -407,7 +407,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     stream_calls = 0
     observed_error_codes: list[str] = []
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         payload = kwargs["payload"]
         prepare_payloads.append(
             {
@@ -430,7 +430,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             user_message_id=None,
         )
 
-    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
+    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):
         nonlocal stream_calls
         stream_calls += 1
         if on_error_metadata:
@@ -446,9 +446,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
 
     async def fake_continue_session(
         *_,
-        user_id: object,  # noqa: ARG002
+        user_id: object,
         conversation_id: str,
-        **__,  # noqa: ARG001
+        **__,
     ) -> tuple[dict[str, object], bool]:
         assert conversation_id == original_conversation_id
         return (
@@ -467,10 +467,10 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         return False
 
-    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+    async def fake_validate_provider_aware_continue_session(**kwargs):
         return "validated"
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
@@ -498,7 +498,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",
-        lambda **kwargs: None,  # noqa: ARG005
+        lambda **kwargs: None,
     )
 
     payload = A2AAgentInvokeRequest.model_validate(
@@ -566,7 +566,7 @@ async def test_run_http_invoke_route_aborts_retry_when_provider_aware_recovery_f
     )
     attempt = 0
 
-    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke(**kwargs):
         nonlocal attempt
         attempt += 1
         return A2AAgentInvokeResponse(
@@ -579,9 +579,9 @@ async def test_run_http_invoke_route_aborts_retry_when_provider_aware_recovery_f
 
     async def fake_continue_session(
         *_,
-        user_id: object,  # noqa: ARG002
+        user_id: object,
         conversation_id: str,
-        **__,  # noqa: ARG001
+        **__,
     ) -> tuple[dict[str, object], bool]:
         assert conversation_id
         return (
@@ -600,7 +600,7 @@ async def test_run_http_invoke_route_aborts_retry_when_provider_aware_recovery_f
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+    async def fake_validate_provider_aware_continue_session(**kwargs):
         return "failed"
 
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
@@ -661,7 +661,7 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
         resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
     )
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         return invoke_route_runner._InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
@@ -672,7 +672,7 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
             user_message_id=None,
         )
 
-    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
+    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):
         if on_error_metadata:
             result = on_error_metadata(
                 {
@@ -685,9 +685,9 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
 
     async def fake_continue_session(
         *_,
-        user_id: object,  # noqa: ARG002
+        user_id: object,
         conversation_id: str,
-        **__,  # noqa: ARG001
+        **__,
     ) -> tuple[dict[str, object], bool]:
         assert conversation_id
         return (
@@ -706,10 +706,10 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         return False
 
-    async def fake_validate_provider_aware_continue_session(**kwargs):  # noqa: ARG001
+    async def fake_validate_provider_aware_continue_session(**kwargs):
         return "failed"
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
@@ -737,7 +737,7 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",
-        lambda **kwargs: None,  # noqa: ARG005
+        lambda **kwargs: None,
     )
 
     payload = A2AAgentInvokeRequest.model_validate(
@@ -883,7 +883,7 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
     error_code: str,
     expected_status: int,
 ) -> None:
-    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke(**kwargs):
         return A2AAgentInvokeResponse(
             success=False,
             error="synthetic upstream error",
@@ -897,9 +897,9 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
 
         async def fake_continue_session(
             *_,
-            user_id: object,  # noqa: ARG002
+            user_id: object,
             conversation_id: str,
-            **__,  # noqa: ARG001
+            **__,
         ) -> tuple[dict[str, object], bool]:
             return (
                 {"conversationId": conversation_id},
@@ -962,7 +962,7 @@ async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_wi
     )
     resolve_calls = 0
 
-    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+    async def fake_run_http_invoke(**kwargs):
         return A2AAgentInvokeResponse(
             success=True,
             content="ok",
@@ -970,7 +970,7 @@ async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_wi
             agent_url="https://example.com/a2a",
         )
 
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         nonlocal resolve_calls
         resolve_calls += 1
         return False
@@ -1012,7 +1012,7 @@ async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_wi
 async def test_finalize_outbound_invoke_payload_applies_declared_contract_from_session_binding_intent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         return False
 
     monkeypatch.setattr(
@@ -1075,7 +1075,7 @@ async def test_finalize_outbound_invoke_payload_applies_declared_contract_from_s
 async def test_finalize_outbound_invoke_payload_normalizes_legacy_binding_metadata_for_compat_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         return True
 
     monkeypatch.setattr(
@@ -1126,7 +1126,7 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_session_bind
     resolve_calls = 0
     warnings: list[tuple[str, dict[str, object]]] = []
 
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         nonlocal resolve_calls
         resolve_calls += 1
         return False
@@ -1138,7 +1138,7 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_session_bind
     )
 
     class _UnsupportedInvokeMetadataService:
-        async def resolve_invoke_metadata(self, *, runtime):  # noqa: ARG002
+        async def resolve_invoke_metadata(self, *, runtime):
             raise A2AExtensionNotSupportedError("Invoke metadata extension not found")
 
     from app.features.invoke import recovery as invoke_recovery
@@ -1204,7 +1204,7 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure_a
     warnings: list[tuple[str, dict[str, object]]] = []
 
     class _FailingExtensionsService:
-        async def resolve_session_binding(self, *, runtime):  # noqa: ARG002
+        async def resolve_session_binding(self, *, runtime):
             raise A2AExtensionUpstreamError(
                 message="card fetch failed",
                 error_code="upstream_unavailable",
@@ -1377,10 +1377,10 @@ async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_with
     websocket = _NoopWebSocket()
     resolve_calls = 0
 
-    async def fake_run_ws_invoke(**kwargs):  # noqa: ARG001
+    async def fake_run_ws_invoke(**kwargs):
         return None
 
-    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):
         nonlocal resolve_calls
         resolve_calls += 1
         return False

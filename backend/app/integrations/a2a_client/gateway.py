@@ -402,7 +402,7 @@ class A2AGateway:
                 "error": str(exc),
                 "error_code": error_code,
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             elapsed = time.monotonic() - start_time
             logger.error(
                 "A2A task cancel failed unexpectedly",
@@ -570,7 +570,7 @@ class A2AGateway:
                 "error": str(exc),
                 "error_code": error_code,
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             elapsed = time.monotonic() - start_time
             logger.error(
                 "A2A task get failed unexpectedly",

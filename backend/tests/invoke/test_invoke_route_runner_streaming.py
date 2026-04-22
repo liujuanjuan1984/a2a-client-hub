@@ -32,7 +32,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
             return None
 
     async def fake_record_local_invoke_messages(
-        db,  # noqa: ARG001
+        db,
         **kwargs,
     ) -> dict[str, object]:
         captured.update(kwargs)
@@ -42,7 +42,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
             "agent_message_id": uuid4(),
         }
 
-    async def fake_commit_safely(db):  # noqa: ARG001
+    async def fake_commit_safely(db):
         return None
 
     monkeypatch.setattr(
@@ -124,7 +124,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
     captured_calls: list[tuple[str, object]] = []
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -134,19 +134,15 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_append_agent_message_block_updates(
-        _db, **kwargs  # noqa: ANN001
-    ) -> list[object]:
+    async def fake_append_agent_message_block_updates(_db, **kwargs) -> list[object]:
         captured_calls.append(("flush", kwargs))
         return [object()]
 
-    async def fake_append_agent_message_block_update(
-        _db, **kwargs  # noqa: ANN001
-    ) -> object:
+    async def fake_append_agent_message_block_update(_db, **kwargs) -> object:
         captured_calls.append(("interrupt", kwargs))
         return object()
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
     monkeypatch.setattr(
@@ -265,10 +261,10 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
 
     async def fake_bind_inflight_task_id_report(
         *,
-        user_id,  # noqa: ANN001, ARG001
-        conversation_id,  # noqa: ANN001, ARG001
-        token,  # noqa: ANN001
-        task_id,  # noqa: ANN001
+        user_id,
+        conversation_id,
+        token,
+        task_id,
     ) -> BindInflightTaskReport:
         captured["bound_token"] = token
         captured["bound_task_id"] = task_id
@@ -276,17 +272,17 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
 
     async def fake_unregister_inflight_invoke(
         *,
-        user_id,  # noqa: ANN001, ARG001
-        conversation_id,  # noqa: ANN001, ARG001
-        token,  # noqa: ANN001
+        user_id,
+        conversation_id,
+        token,
     ) -> bool:
         captured["unregistered_token"] = token
         return True
 
-    async def fake_persist_local_outcome(**_kwargs):  # noqa: ANN001
+    async def fake_persist_local_outcome(**_kwargs):
         return None
 
-    async def fake_record_upstream_task_binding(**kwargs):  # noqa: ANN001
+    async def fake_record_upstream_task_binding(**kwargs):
         captured["recorded_task_id"] = kwargs["task_id"]
 
     monkeypatch.setattr(
@@ -368,22 +364,22 @@ async def test_bind_inflight_task_if_needed_records_deferred_preempt_history(
 
     async def fake_bind_inflight_task_id_report(
         *,
-        user_id,  # noqa: ANN001, ARG001
-        conversation_id,  # noqa: ANN001, ARG001
-        token,  # noqa: ANN001, ARG001
-        task_id,  # noqa: ANN001, ARG001
+        user_id,
+        conversation_id,
+        token,
+        task_id,
     ) -> BindInflightTaskReport:
         return BindInflightTaskReport(bound=True, preempt_event=preempt_event)
 
     async def fake_record_preempt_history_event(
         *,
-        state,  # noqa: ANN001, ARG001
-        user_id,  # noqa: ANN001, ARG001
-        event,  # noqa: ANN001
+        state,
+        user_id,
+        event,
     ) -> None:
         recorded_events.append(dict(event))
 
-    async def fake_record_upstream_task_binding(**_kwargs):  # noqa: ANN001
+    async def fake_record_upstream_task_binding(**_kwargs):
         return None
 
     monkeypatch.setattr(
@@ -412,7 +408,7 @@ async def test_bind_inflight_task_if_needed_records_deferred_preempt_history(
         inflight_token="token-1",
     )
 
-    await invoke_route_runner._bind_inflight_task_if_needed(  # noqa: SLF001
+    await invoke_route_runner._bind_inflight_task_if_needed(
         state=state,
         user_id=uuid4(),
     )
@@ -429,7 +425,7 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
     agent_message_id = str(uuid4())
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -439,14 +435,14 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_updates(_db, **kwargs):
         captured.update(kwargs)
         return [object()]
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
-    async def fake_ensure_local_message_headers(**_kwargs):  # noqa: ANN001
+    async def fake_ensure_local_message_headers(**_kwargs):
         return None
 
     monkeypatch.setattr(
@@ -490,7 +486,7 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         },
     }
 
-    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+    await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload=event_payload,
         request=_build_persistence_request(transport="ws"),
@@ -512,7 +508,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     captured: dict[str, object] = {}
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -522,11 +518,11 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_updates(_db, **kwargs):
         captured.update(kwargs)
         return [object()]
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
     monkeypatch.setattr(
@@ -572,7 +568,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         },
     }
 
-    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+    await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload=event_payload,
         request=_build_persistence_request(transport="http_json"),
@@ -608,7 +604,7 @@ async def test_persist_stream_block_update_normalizes_message_events(
     captured: dict[str, object] = {}
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -618,11 +614,11 @@ async def test_persist_stream_block_update_normalizes_message_events(
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_updates(_db, **kwargs):
         captured.update(kwargs)
         return [object()]
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
     monkeypatch.setattr(
@@ -661,7 +657,7 @@ async def test_persist_stream_block_update_normalizes_message_events(
         "parts": [{"kind": "text", "text": "root text"}],
     }
 
-    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+    await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload=event_payload,
         request=_build_persistence_request(transport="http_sse"),
@@ -684,7 +680,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
     flushed_batches: list[list[dict[str, object]]] = []
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -694,12 +690,12 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_updates(_db, **kwargs):
         updates = kwargs.get("updates") or []
         flushed_batches.append(list(updates))
         return [object() for _ in updates]
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
     monkeypatch.setattr(
@@ -729,7 +725,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
         persisted_block_count=0,
     )
 
-    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+    await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload={
             "kind": "artifact-update",
@@ -747,7 +743,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
     assert flushed_batches == []
     assert len(state.chunk_buffer) == 1
 
-    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+    await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload={
             "kind": "artifact-update",
@@ -777,7 +773,7 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
     captured: dict[str, object] = {}
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -787,11 +783,11 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_updates(_db, **kwargs):
         captured.update(kwargs)
         return [object()]
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
     monkeypatch.setattr(
@@ -834,7 +830,7 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
         },
     }
 
-    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+    await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload=event_payload,
         request=_build_persistence_request(transport="http_json"),
@@ -860,7 +856,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     captured_outcome: dict[str, object] = {}
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -870,17 +866,15 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_updates(_db, **kwargs):
         updates = kwargs.get("updates") or []
         captured_flushes.append(list(updates))
         return [object() for _ in updates]
 
-    async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:  # noqa: ANN001
+    async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:
         return True
 
-    async def fake_record_local_invoke_messages(
-        _db, **kwargs  # noqa: ANN001
-    ) -> dict[str, object]:
+    async def fake_record_local_invoke_messages(_db, **kwargs) -> dict[str, object]:
         captured_outcome.update(kwargs)
         return {
             "conversation_id": kwargs["local_session_id"],
@@ -888,7 +882,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
             "agent_message_id": uuid4(),
         }
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
     monkeypatch.setattr(
@@ -993,7 +987,7 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
     captured_outcome: dict[str, object] = {}
 
     class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+        async def scalar(self, *_args, **_kwargs):
             return object()
 
     class _DummySessionContext:
@@ -1003,18 +997,14 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:  # noqa: ANN001
+    async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:
         return False
 
-    async def fake_append_agent_message_block_update(
-        _db, **kwargs
-    ) -> object:  # noqa: ANN001
+    async def fake_append_agent_message_block_update(_db, **kwargs) -> object:
         captured_chunk.update(kwargs)
         return object()
 
-    async def fake_record_local_invoke_messages(
-        _db, **kwargs  # noqa: ANN001
-    ) -> dict[str, object]:
+    async def fake_record_local_invoke_messages(_db, **kwargs) -> dict[str, object]:
         captured_outcome.update(kwargs)
         return {
             "conversation_id": kwargs["local_session_id"],
@@ -1022,7 +1012,7 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
             "agent_message_id": uuid4(),
         }
 
-    async def fake_commit_safely(_db):  # noqa: ANN001
+    async def fake_commit_safely(_db):
         return None
 
     monkeypatch.setattr(
@@ -1064,7 +1054,7 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
         persisted_block_count=0,
     )
 
-    await invoke_route_runner._persist_local_outcome(  # noqa: SLF001
+    await invoke_route_runner._persist_local_outcome(
         state=state,
         outcome=StreamOutcome(
             success=True,
@@ -1106,7 +1096,7 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         return invoke_route_runner._InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
@@ -1118,7 +1108,7 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
         )
 
     async def fake_record_local_invoke_messages(
-        db,  # noqa: ARG001
+        db,
         **kwargs,
     ) -> dict[str, object]:
         captured.update(kwargs)
@@ -1128,7 +1118,7 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
             "agent_message_id": uuid4(),
         }
 
-    async def fake_commit_safely(db):  # noqa: ARG001
+    async def fake_commit_safely(db):
         return None
 
     def fake_stream_sse(**kwargs):
@@ -1208,7 +1198,7 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
         async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+    async def fake_prepare_state(**kwargs):
         return invoke_route_runner._InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
@@ -1220,7 +1210,7 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
         )
 
     async def fake_record_local_invoke_messages(
-        db,  # noqa: ARG001
+        db,
         **kwargs,
     ) -> dict[str, object]:
         captured.update(kwargs)
@@ -1230,7 +1220,7 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
             "agent_message_id": uuid4(),
         }
 
-    async def fake_commit_safely(db):  # noqa: ARG001
+    async def fake_commit_safely(db):
         return None
 
     async def fake_stream_ws(**kwargs):

@@ -416,7 +416,7 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
 
 
 async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
     caplog,
 ) -> None:
@@ -448,7 +448,7 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused
 
 
 async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_contention(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
     caplog,
 ) -> None:
@@ -496,7 +496,7 @@ async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_cont
 
 
 async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
 ) -> None:
     ensure_workers_mock = AsyncMock()
@@ -631,7 +631,7 @@ async def test_try_hold_dispatch_leader_lock_invalidates_connection_on_unlock_fa
 
 
 async def test_dispatch_due_a2a_schedules_skips_cycle_when_enqueue_db_connection_refused(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
     caplog,
 ) -> None:
@@ -670,7 +670,7 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_enqueue_db_connection
 
 
 async def test_dispatch_due_a2a_schedules_stops_enqueue_when_enqueue_hits_statement_timeout(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
     caplog,
 ) -> None:
@@ -719,7 +719,7 @@ async def test_dispatch_due_a2a_schedules_stops_enqueue_when_enqueue_hits_statem
 
 
 async def test_dispatch_due_a2a_schedules_reraises_non_connectivity_errors(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
 ) -> None:
     async def _raise_unexpected(*_args, **_kwargs):
@@ -757,7 +757,7 @@ async def test_derive_recovery_timeouts_clamps_heartbeat_stale_to_invoke_timeout
 
 
 async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
 ) -> None:
     ensure_workers_mock = AsyncMock()
@@ -805,7 +805,7 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
 
 
 async def test_dispatch_due_a2a_schedules_clamps_stale_timeout_to_invoke_timeout(
-    async_db_session,  # noqa: ARG001
+    async_db_session,
     monkeypatch,
 ) -> None:
     ensure_workers_mock = AsyncMock()

@@ -225,9 +225,7 @@ def test_ensure_outbound_stream_contract_canonicalizes_kindless_artifact_updates
         }
     }
 
-    a2a_invoke_service._ensure_outbound_stream_contract(
-        payload, event_sequence=3
-    )  # noqa: SLF001
+    a2a_invoke_service._ensure_outbound_stream_contract(payload, event_sequence=3)
 
     assert payload["kind"] == "artifact-update"
     assert payload["seq"] == 3
