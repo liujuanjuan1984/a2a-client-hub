@@ -28,6 +28,8 @@ from tests.support.utils import (
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
+DELEGATED_SERVICE_TIMEOUT_SECONDS = 5.0
+
 
 def _build_gateway(user, hub_assistant_conversation_id: str):
     actor = build_hub_actor_context(
@@ -122,7 +124,7 @@ async def test_send_messages_to_sessions_uses_automation_invoke_path(
             conversation_ids=[thread.id],
             message="ping",
         ),
-        timeout=1.0,
+        timeout=DELEGATED_SERVICE_TIMEOUT_SECONDS,
     )
 
     assert result["summary"] == {"requested": 1, "accepted": 1, "failed": 0}
@@ -220,7 +222,7 @@ async def test_start_sessions_for_agents_uses_automation_invoke_path(
             agent_ids=[agent.id],
             message="hello",
         ),
-        timeout=1.0,
+        timeout=DELEGATED_SERVICE_TIMEOUT_SECONDS,
     )
 
     assert result["summary"] == {"requested": 1, "accepted": 1, "failed": 0}

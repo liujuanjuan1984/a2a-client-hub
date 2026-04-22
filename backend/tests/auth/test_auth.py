@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
@@ -556,7 +556,7 @@ async def test_logout_revokes_only_current_legacy_refresh_token(
         return result.scalar_one()
 
     user = await run_in_session(async_session_maker, fetch_user)
-    fixed_now = datetime(2026, 4, 8, 9, 30, tzinfo=timezone.utc)
+    fixed_now = utc_now().replace(microsecond=0)
     with patch("app.core.security.utc_now", return_value=fixed_now):
         first_cookie = create_user_refresh_token(user.id)
         second_cookie = create_user_refresh_token(user.id)
