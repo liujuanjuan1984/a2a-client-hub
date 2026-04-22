@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from types import SimpleNamespace
+from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
@@ -704,6 +705,86 @@ async def test_upstream_task_route_fetches_task_for_bound_conversation(
             },
         }
     ]
+
+
+async def test_upstream_task_route_accepts_opaque_task_ids_with_slashes(
+    async_db_session,
+    async_session_maker,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="task-query-slash",
+    )
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses-task-slash",
+        title="Task Query Slash Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    task_id = "run/task-1/step-2"
+    await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id=task_id,
+        agent_id=agent.id,
+        agent_source="personal",
+        source="stream_identity",
+    )
+    await async_db_session.commit()
+
+    resolved = SimpleNamespace(
+        name="TaskAgent",
+        url="https://example.com/a2a",
+        headers={},
+        metadata={},
+    )
+    calls: list[dict[str, object]] = []
+
+    async def _fake_load_runtime_for_thread(**kwargs):
+        assert kwargs["thread"].id == session.id
+        return SimpleNamespace(resolved=resolved)
+
+    class _FakeA2AService:
+        async def get_task(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "success": True,
+                "task_id": task_id,
+                "task": {
+                    "id": task_id,
+                    "status": {"state": "working"},
+                },
+            }
+
+    monkeypatch.setattr(
+        me_sessions, "_load_runtime_for_thread", _fake_load_runtime_for_thread
+    )
+    monkeypatch.setattr(me_sessions, "get_a2a_service", lambda: _FakeA2AService())
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/conversations/{session.id}/upstream-tasks/{quote(task_id, safe='')}"
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["taskId"] == task_id
+    assert calls[0]["task_id"] == task_id
 
 
 @pytest.mark.parametrize(

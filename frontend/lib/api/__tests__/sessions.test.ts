@@ -66,6 +66,26 @@ describe("sessions api", () => {
     expect(result.task.status?.state).toBe("working");
   });
 
+  it("encodes opaque upstream task ids as a single path parameter", async () => {
+    mockedApiRequest.mockResolvedValue({
+      conversationId: "conv-1",
+      taskId: "run/task-1/step-2",
+      task: {
+        id: "run/task-1/step-2",
+      },
+    });
+
+    await getSessionUpstreamTask("conv-1", "run/task-1/step-2");
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conv-1/upstream-tasks/run%2Ftask-1%2Fstep-2",
+      {
+        method: "GET",
+        query: undefined,
+      },
+    );
+  });
+
   it("rejects upstream task query without ids", async () => {
     await expect(getSessionUpstreamTask(" ", "task-1")).rejects.toThrow(
       "Conversation id is required.",

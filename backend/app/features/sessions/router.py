@@ -798,7 +798,7 @@ async def cancel_unified_session(
 
 
 @router.get(
-    "/{conversation_id}/upstream-tasks/{task_id}",
+    "/{conversation_id}/upstream-tasks/{task_id:path}",
     response_model=SessionUpstreamTaskResponse,
 )
 async def get_unified_session_upstream_task(
