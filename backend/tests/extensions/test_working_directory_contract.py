@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from app.features.working_directory import adapt_working_directory_metadata_for_provider
+from app.features.working_directory import (
+    adapt_working_directory_metadata_for_extension,
+    adapt_working_directory_metadata_for_provider,
+)
 from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
     A2AExtensionSessionCommandRequest,
@@ -90,3 +93,13 @@ def test_provider_adapter_does_not_read_legacy_provider_directory() -> None:
     )
 
     assert metadata == {"opencode": {"project": "alpha"}}
+
+
+def test_extension_adapter_returns_none_for_empty_metadata() -> None:
+    metadata = adapt_working_directory_metadata_for_extension(
+        None,
+        None,
+        provider="opencode",
+    )
+
+    assert metadata is None

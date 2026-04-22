@@ -306,7 +306,6 @@ class A2AExtensionSessionOperations:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
-            working_directory=working_directory,
         )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
@@ -374,7 +373,6 @@ class A2AExtensionSessionOperations:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata_for_upstream,
-            working_directory=working_directory,
         )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
@@ -408,7 +406,6 @@ class A2AExtensionSessionOperations:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
-            working_directory=working_directory,
         )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,

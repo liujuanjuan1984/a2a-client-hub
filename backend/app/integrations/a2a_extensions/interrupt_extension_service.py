@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
-from app.features.working_directory import adapt_working_directory_metadata_for_provider
+from app.features.working_directory import (
+    adapt_working_directory_metadata_for_extension,
+)
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import ResolvedInterruptCallbackExtension
@@ -13,29 +15,13 @@ class InterruptExtensionService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
 
-    @staticmethod
-    def _adapt_metadata_for_extension(
-        *,
-        ext: ResolvedInterruptCallbackExtension,
-        metadata: Optional[Dict[str, Any]],
-        working_directory: str | None,
-    ) -> Optional[Dict[str, Any]]:
-        adapted = adapt_working_directory_metadata_for_provider(
-            metadata,
-            working_directory,
-            metadata_namespace=ext.provider,
-        )
-        return adapted or None
-
     def prepare_reply_permission_interrupt(
         self,
         *,
         request_id: str,
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
-        working_directory: str | None = None,
     ) -> tuple[str, str, Optional[Dict[str, Any]]]:
-        _ = working_directory
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
@@ -51,9 +37,7 @@ class InterruptExtensionService:
         request_id: str,
         answers: list[list[str]],
         metadata: Optional[Dict[str, Any]] = None,
-        working_directory: str | None = None,
     ) -> tuple[str, list[list[str]], Optional[Dict[str, Any]]]:
-        _ = working_directory
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
@@ -65,9 +49,7 @@ class InterruptExtensionService:
         *,
         request_id: str,
         metadata: Optional[Dict[str, Any]] = None,
-        working_directory: str | None = None,
     ) -> tuple[str, Optional[Dict[str, Any]]]:
-        _ = working_directory
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
@@ -81,9 +63,7 @@ class InterruptExtensionService:
         permissions: Dict[str, Any],
         scope: str | None = None,
         metadata: Optional[Dict[str, Any]] = None,
-        working_directory: str | None = None,
     ) -> tuple[str, Dict[str, Any], str | None, Optional[Dict[str, Any]]]:
-        _ = working_directory
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
@@ -110,9 +90,7 @@ class InterruptExtensionService:
         action: str,
         content: Any = None,
         metadata: Optional[Dict[str, Any]] = None,
-        working_directory: str | None = None,
     ) -> tuple[str, str, Any, Optional[Dict[str, Any]]]:
-        _ = working_directory
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
@@ -195,10 +173,10 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = self._adapt_metadata_for_extension(
-            ext=ext,
+        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
             metadata=metadata,
             working_directory=working_directory,
+            provider=ext.provider,
         )
         (
             resolved_request_id,
@@ -236,10 +214,10 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = self._adapt_metadata_for_extension(
-            ext=ext,
+        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
             metadata=metadata,
             working_directory=working_directory,
+            provider=ext.provider,
         )
         (
             resolved_request_id,
@@ -276,10 +254,10 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = self._adapt_metadata_for_extension(
-            ext=ext,
+        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
             metadata=metadata,
             working_directory=working_directory,
+            provider=ext.provider,
         )
         (
             resolved_request_id,
@@ -313,10 +291,10 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = self._adapt_metadata_for_extension(
-            ext=ext,
+        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
             metadata=metadata,
             working_directory=working_directory,
+            provider=ext.provider,
         )
         (
             resolved_request_id,
@@ -359,10 +337,10 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = self._adapt_metadata_for_extension(
-            ext=ext,
+        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
             metadata=metadata,
             working_directory=working_directory,
+            provider=ext.provider,
         )
         (
             resolved_request_id,

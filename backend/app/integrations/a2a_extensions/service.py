@@ -189,7 +189,6 @@ class A2AExtensionsService:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
-            working_directory=working_directory,
         )
         snapshot, capability = await self._resolve_session_extension_runtime(
             runtime=runtime
@@ -238,7 +237,6 @@ class A2AExtensionsService:
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
-            working_directory=working_directory,
         )
         snapshot, capability = await self._resolve_session_extension_runtime(
             runtime=runtime
@@ -579,7 +577,6 @@ class A2AExtensionsService:
             request_id=request_id,
             reply=reply,
             metadata=metadata,
-            working_directory=working_directory,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         return await self._extension_ops.reply_permission_interrupt(
@@ -604,7 +601,6 @@ class A2AExtensionsService:
             request_id=request_id,
             answers=answers,
             metadata=metadata,
-            working_directory=working_directory,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         return await self._extension_ops.reply_question_interrupt(
@@ -627,7 +623,6 @@ class A2AExtensionsService:
         self._interrupt_extensions.prepare_reject_question_interrupt(
             request_id=request_id,
             metadata=metadata,
-            working_directory=working_directory,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         return await self._extension_ops.reject_question_interrupt(
@@ -666,7 +661,6 @@ class A2AExtensionsService:
             permissions=permissions,
             scope=scope,
             metadata=metadata,
-            working_directory=working_directory,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         return await self._extension_ops.reply_permissions_interrupt(
@@ -694,7 +688,6 @@ class A2AExtensionsService:
             action=action,
             content=content,
             metadata=metadata,
-            working_directory=working_directory,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
         return await self._extension_ops.reply_elicitation_interrupt(

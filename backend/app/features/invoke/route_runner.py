@@ -103,16 +103,6 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
 )
 
 
-def _build_upstream_invoke_metadata(
-    payload: A2AAgentInvokeRequest,
-) -> dict[str, Any]:
-    return adapt_working_directory_metadata_for_provider(
-        payload.metadata,
-        payload.working_directory,
-        metadata_namespace="opencode",
-    )
-
-
 async def _close_open_transaction(db: AsyncSession) -> None:
     await prepare_for_external_call(db)
 
@@ -602,6 +592,11 @@ async def run_http_invoke(
         transport="http_sse" if stream else "http_json",
         stream_enabled=stream,
     )
+    upstream_metadata = adapt_working_directory_metadata_for_provider(
+        payload.metadata,
+        payload.working_directory,
+        metadata_namespace="opencode",
+    )
 
     if stream:
         on_event, on_finalized = _build_consume_stream_callbacks(
@@ -616,7 +611,7 @@ async def run_http_invoke(
                 resolved=runtime.resolved,
                 query=payload.query,
                 context_id=state.context_id,
-                metadata=_build_upstream_invoke_metadata(payload),
+                metadata=upstream_metadata,
                 validate_message=validate_message,
                 logger=logger,
                 log_extra=stream_log_extra,
@@ -642,7 +637,7 @@ async def run_http_invoke(
             resolved=runtime.resolved,
             query=payload.query,
             context_id=state.context_id,
-            metadata=_build_upstream_invoke_metadata(payload),
+            metadata=upstream_metadata,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -754,6 +749,11 @@ async def run_background_invoke(
         user_sender=user_sender,
         extra_persisted_metadata=extra_persisted_metadata,
     )
+    upstream_metadata = adapt_working_directory_metadata_for_provider(
+        payload.metadata,
+        payload.working_directory,
+        metadata_namespace="opencode",
+    )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
@@ -768,7 +768,7 @@ async def run_background_invoke(
             resolved=runtime.resolved,
             query=payload.query,
             context_id=state.context_id,
-            metadata=_build_upstream_invoke_metadata(payload),
+            metadata=upstream_metadata,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -884,6 +884,11 @@ async def run_ws_invoke(
         transport="ws",
         stream_enabled=True,
     )
+    upstream_metadata = adapt_working_directory_metadata_for_provider(
+        payload.metadata,
+        payload.working_directory,
+        metadata_namespace="opencode",
+    )
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
         request=persistence_request,
@@ -897,7 +902,7 @@ async def run_ws_invoke(
             resolved=runtime.resolved,
             query=payload.query,
             context_id=state.context_id,
-            metadata=_build_upstream_invoke_metadata(payload),
+            metadata=upstream_metadata,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,

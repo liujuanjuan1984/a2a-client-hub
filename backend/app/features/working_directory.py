@@ -66,3 +66,18 @@ def adapt_working_directory_metadata_for_provider(
     else:
         next_metadata.pop(normalized_namespace, None)
     return next_metadata
+
+
+def adapt_working_directory_metadata_for_extension(
+    metadata: Mapping[str, Any] | None,
+    working_directory: str | None,
+    *,
+    provider: str,
+) -> dict[str, Any] | None:
+    """Adapt Hub-stable metadata for an extension upstream call."""
+    adapted = adapt_working_directory_metadata_for_provider(
+        metadata,
+        working_directory,
+        metadata_namespace=provider,
+    )
+    return adapted or None
