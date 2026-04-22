@@ -21,7 +21,7 @@ def _extract_provider_private_metadata(
     return {metadata_namespace: dict(section)}
 
 
-class OpencodeDiscoveryService:
+class ProviderDiscoveryService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
 

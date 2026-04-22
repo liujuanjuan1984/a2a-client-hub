@@ -14,8 +14,8 @@ from app.integrations.a2a_extensions.interrupt_extension_service import (
 from app.integrations.a2a_extensions.interrupt_recovery_service import (
     InterruptRecoveryService,
 )
-from app.integrations.a2a_extensions.opencode_discovery_service import (
-    OpencodeDiscoveryService,
+from app.integrations.a2a_extensions.provider_discovery_service import (
+    ProviderDiscoveryService,
 )
 from app.integrations.a2a_extensions.service_capabilities import (
     CODEX_DISCOVERY_METHODS,
@@ -31,13 +31,13 @@ class A2AExtensionOperations:
         self,
         *,
         capabilities: A2AExtensionCapabilityService,
-        opencode_discovery: OpencodeDiscoveryService,
+        provider_discovery: ProviderDiscoveryService,
         codex_discovery: CodexDiscoveryService,
         interrupt_extensions: InterruptExtensionService,
         interrupt_recovery: InterruptRecoveryService,
     ) -> None:
         self._capabilities = capabilities
-        self._opencode_discovery = opencode_discovery
+        self._provider_discovery = provider_discovery
         self._codex_discovery = codex_discovery
         self._interrupt_extensions = interrupt_extensions
         self._interrupt_recovery = interrupt_recovery
@@ -60,7 +60,7 @@ class A2AExtensionOperations:
         )
         if preflight is not None:
             return preflight
-        return await self._opencode_discovery.list_model_providers(
+        return await self._provider_discovery.list_model_providers(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -87,7 +87,7 @@ class A2AExtensionOperations:
         )
         if preflight is not None:
             return preflight
-        return await self._opencode_discovery.list_models(
+        return await self._provider_discovery.list_models(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,

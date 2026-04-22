@@ -6,11 +6,11 @@ from a2a.types import AgentCard
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.opencode_discovery_service import (
-    OpencodeDiscoveryService,
-)
 from app.integrations.a2a_extensions.opencode_provider_discovery import (
     resolve_opencode_provider_discovery,
+)
+from app.integrations.a2a_extensions.provider_discovery_service import (
+    ProviderDiscoveryService,
 )
 from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_PROVIDER_DISCOVERY_URI,
@@ -112,7 +112,7 @@ class _FakeSupport:
 
 @pytest.mark.asyncio
 async def test_list_model_providers_extracts_provider_private_metadata() -> None:
-    service = OpencodeDiscoveryService(_FakeSupport())
+    service = ProviderDiscoveryService(_FakeSupport())
     captured: dict = {}
     runtime = object()
     ext = ResolvedProviderDiscoveryExtension(
@@ -149,7 +149,7 @@ async def test_list_model_providers_extracts_provider_private_metadata() -> None
 
 @pytest.mark.asyncio
 async def test_list_models_omits_provider_private_metadata_when_unavailable() -> None:
-    service = OpencodeDiscoveryService(_FakeSupport())
+    service = ProviderDiscoveryService(_FakeSupport())
     captured: dict = {}
     runtime = object()
     ext = ResolvedProviderDiscoveryExtension(

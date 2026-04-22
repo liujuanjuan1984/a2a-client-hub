@@ -19,8 +19,8 @@ from app.integrations.a2a_extensions.interrupt_extension_service import (
 from app.integrations.a2a_extensions.interrupt_recovery_service import (
     InterruptRecoveryService,
 )
-from app.integrations.a2a_extensions.opencode_discovery_service import (
-    OpencodeDiscoveryService,
+from app.integrations.a2a_extensions.provider_discovery_service import (
+    ProviderDiscoveryService,
 )
 from app.integrations.a2a_extensions.service_capabilities import (
     A2AExtensionCapabilityService,
@@ -53,7 +53,7 @@ class A2AExtensionsService:
         self._session_extensions = SessionExtensionService(self._support)
         self._interrupt_extensions = InterruptExtensionService(self._support)
         self._interrupt_recovery = InterruptRecoveryService(self._support)
-        self._opencode_discovery = OpencodeDiscoveryService(self._support)
+        self._provider_discovery = ProviderDiscoveryService(self._support)
         self._codex_discovery = CodexDiscoveryService(self._support)
         self._capabilities = A2AExtensionCapabilityService(
             support=self._support,
@@ -66,7 +66,7 @@ class A2AExtensionsService:
         )
         self._extension_ops = A2AExtensionOperations(
             capabilities=self._capabilities,
-            opencode_discovery=self._opencode_discovery,
+            provider_discovery=self._provider_discovery,
             codex_discovery=self._codex_discovery,
             interrupt_extensions=self._interrupt_extensions,
             interrupt_recovery=self._interrupt_recovery,
