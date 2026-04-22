@@ -16,7 +16,6 @@ Use this index to find the right document instead of repeating the same guidance
 - Architecture overview and API examples: [`architecture-and-api.md`](architecture-and-api.md)
 - Compatibility notes and non-goals: [`compatibility-and-non-goals.md`](compatibility-and-non-goals.md)
 - Authentication and session model: [`authentication.md`](authentication.md)
-- Hub Assistant delegated fan-out assessment: [`hub-assistant-delegated-fanout-assessment.md`](hub-assistant-delegated-fanout-assessment.md)
 - Release automation and version synchronization: [`release-workflow.md`](release-workflow.md)
 - Production security baseline: [`security-baseline.md`](security-baseline.md)
 - Dead-code hygiene workflow and triage boundaries: [`dead-code-hygiene.md`](dead-code-hygiene.md)
