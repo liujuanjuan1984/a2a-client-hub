@@ -263,7 +263,7 @@ Recent examples:
 
 - `app/features/schedules/job.py` keeps scheduler claim/finalize work in short sessions and releases DB state before remote invoke.
 - `app/features/invoke/route_runner.py` keeps session recovery in short transactions instead of tying invoke lifetime to request-scoped DB state.
-- `app/features/external_sessions/opencode/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
+- `app/features/external_sessions/directory/service.py` loads cache inputs, performs upstream directory refreshes, and writes cache updates in separate short sessions instead of spanning one session across the whole aggregation flow.
 
 ## A2A Outbound Allowlist
 
@@ -344,11 +344,9 @@ Endpoints:
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body: `{ "workingDirectory": "/workspace/app" }`
-    - legacy compatibility: `{ "session_metadata": { "opencode": { "directory": "/workspace/app" } } }`
 - Discover generic models:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models:list`
     - body: `{ "provider_id": "openai", "workingDirectory": "/workspace/app" }`
-    - legacy compatibility: `{ "provider_id": "openai", "session_metadata": { "opencode": { "directory": "/workspace/app" } } }`
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20&directory=services/api&roots=true&start=40&search=planner`
@@ -480,9 +478,9 @@ The backend now exposes a unified conversation read model for manual, scheduled,
   - `contextId` (A2A context id)
   - `<metadata_key>` (strict upstream session-binding key from `urn:opencode-a2a:opencode-session-binding/v1`, e.g. `opencode_session_id`)
 
-Hub-facing request contracts now accept `workingDirectory` directly. The backend
-adapts that field to legacy provider-private metadata such as
-`metadata.opencode.directory` when upstream extensions still require it.
+Hub-facing request contracts accept `workingDirectory` directly. The backend
+keeps provider-private working-directory metadata as an outbound adapter detail
+when upstream extensions still require it.
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example `550e8400-e29b-41d4-a716-446655440000`.
 
