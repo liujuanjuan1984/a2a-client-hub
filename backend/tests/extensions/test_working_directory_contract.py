@@ -80,3 +80,13 @@ def test_provider_adapter_removes_provider_directory_for_empty_stable_override()
     )
 
     assert metadata == {"opencode": {"project": "alpha"}}
+
+
+def test_provider_adapter_does_not_read_legacy_provider_directory() -> None:
+    metadata = adapt_working_directory_metadata_for_provider(
+        {"opencode": {"directory": "/workspace/demo", "project": "alpha"}},
+        None,
+        metadata_namespace="opencode",
+    )
+
+    assert metadata == {"opencode": {"project": "alpha"}}

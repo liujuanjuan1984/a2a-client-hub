@@ -139,8 +139,8 @@ async def test_list_model_providers_extracts_provider_private_metadata() -> None
         jsonrpc_url=ext.jsonrpc.url,
         session_metadata={
             "shared": {"model": {"providerID": "openai", "modelID": "gpt-5"}},
-            "opencode": {"directory": "/workspace"},
         },
+        working_directory="/workspace",
     )
 
     assert result == {"ok": True}

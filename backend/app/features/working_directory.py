@@ -8,20 +8,13 @@ from app.utils.session_identity import normalize_non_empty_text
 
 
 def extract_working_directory(metadata: Mapping[str, Any] | None) -> str | None:
-    """Resolve a working directory from stable or legacy metadata shapes."""
+    """Resolve a working directory from the stable Hub metadata shape."""
     if not isinstance(metadata, Mapping):
         return None
 
-    direct = normalize_non_empty_text(
+    return normalize_non_empty_text(
         metadata.get("workingDirectory") or metadata.get("working_directory")
     )
-    if direct:
-        return direct
-
-    opencode = metadata.get("opencode")
-    if not isinstance(opencode, Mapping):
-        return None
-    return normalize_non_empty_text(opencode.get("directory"))
 
 
 def merge_working_directory_metadata(
