@@ -9,6 +9,7 @@ cd "${FRONTEND_DIR}"
 
 OUTPUT="$(
   ./node_modules/.bin/ts-prune \
+    -p tsconfig.diagnostics.json \
     -i '^(app/|lib/storage/mmkv.web.ts|test-utils/mockMmkv.ts)' \
     | rg -v 'used in module' \
     || true

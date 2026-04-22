@@ -10,8 +10,9 @@ from fastapi import Depends, HTTPException, Response, status
 from app.api.deps import get_current_user
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
-from app.features.external_sessions.directory.adapters import (
-    opencode_session_directory_adapter,
+from app.features.external_sessions.directory.registry import (
+    ExternalSessionDirectoryRegistry,
+    get_external_session_directory_registry,
 )
 from app.features.external_sessions.directory.schemas import (
     ExternalSessionDirectoryItem,
@@ -28,18 +29,13 @@ router = StrictAPIRouter(
     tags=["external-sessions"],
 )
 
-_DIRECTORY_SERVICES: dict[str, ExternalSessionDirectoryService] = {
-    opencode_session_directory_adapter.provider_key: ExternalSessionDirectoryService(
-        adapter=opencode_session_directory_adapter
-    )
-}
 
-
-def get_external_session_directory_service(
+def _resolve_external_session_directory_service(
+    *,
     provider: str,
+    registry: ExternalSessionDirectoryRegistry,
 ) -> ExternalSessionDirectoryService:
-    normalized_provider = provider.strip().lower()
-    service = _DIRECTORY_SERVICES.get(normalized_provider)
+    service = registry.get_service(provider)
     if service is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -59,10 +55,16 @@ async def list_external_sessions_directory(
     payload: ExternalSessionDirectoryQueryRequest,
     response: Response,
     current_user: User = Depends(get_current_user),
+    registry: ExternalSessionDirectoryRegistry = Depends(
+        get_external_session_directory_registry
+    ),
 ) -> ExternalSessionDirectoryListResponse:
     response.headers["Cache-Control"] = "no-store"
     current_user_id = cast(UUID, current_user.id)
-    service = get_external_session_directory_service(provider)
+    service = _resolve_external_session_directory_service(
+        provider=provider,
+        registry=registry,
+    )
 
     items, extra = await service.list_directory(
         user_id=current_user_id,

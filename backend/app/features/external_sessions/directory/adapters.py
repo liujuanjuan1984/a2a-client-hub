@@ -83,15 +83,15 @@ class OpenCodeSessionDirectoryAdapter:
 
     @property
     def cache_ttl_seconds(self) -> int:
-        return int(settings.opencode_sessions_cache_ttl_seconds)
+        return int(settings.external_session_directory_opencode_cache_ttl_seconds)
 
     @property
     def per_agent_size(self) -> int:
-        return int(settings.opencode_sessions_per_agent_size)
+        return int(settings.external_session_directory_opencode_per_agent_size)
 
     @property
     def refresh_concurrency(self) -> int:
-        return int(settings.opencode_sessions_refresh_concurrency)
+        return int(settings.external_session_directory_opencode_refresh_concurrency)
 
     def normalize_task(self, task: Any) -> NormalizedExternalSession | None:
         session_id = self._extract_session_id(task)

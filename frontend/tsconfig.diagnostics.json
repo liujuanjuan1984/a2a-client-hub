@@ -1,0 +1,38 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "hooks/**/*.ts",
+    "hooks/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "screens/**/*.ts",
+    "screens/**/*.tsx",
+    "services/**/*.ts",
+    "services/**/*.tsx",
+    "store/**/*.ts",
+    "store/**/*.tsx",
+    "test-utils/**/*.ts",
+    "test-utils/**/*.tsx",
+    "theme/**/*.ts",
+    "theme/**/*.tsx",
+    "index.ts",
+    "jest.preload.ts",
+    "jest.setup.ts",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "coverage",
+    "dist",
+    "build",
+    ".expo",
+    ".expo-shared",
+    ".turbo",
+    ".cache"
+  ]
+}
