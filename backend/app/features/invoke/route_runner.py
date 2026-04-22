@@ -85,6 +85,7 @@ from app.schemas.a2a_invoke import (
 )
 from app.schemas.ws_ticket import WsTicketResponse
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
+from app.utils.payload_extract import extract_provider_and_external_session_id
 
 _invoke_inflight_keys = invoke_guard._invoke_inflight_keys
 _InvokeState = InvokeState
@@ -101,6 +102,19 @@ _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
+
+
+def _adapt_invoke_metadata_for_upstream(
+    payload: A2AAgentInvokeRequest,
+) -> dict[str, Any] | None:
+    provider, _external_session_id = extract_provider_and_external_session_id(
+        {"metadata": payload.metadata or {}}
+    )
+    return adapt_working_directory_metadata_for_upstream(
+        payload.metadata,
+        payload.working_directory,
+        metadata_namespace=provider or "opencode",
+    )
 
 
 async def _close_open_transaction(db: AsyncSession) -> None:
@@ -592,11 +606,7 @@ async def run_http_invoke(
         transport="http_sse" if stream else "http_json",
         stream_enabled=stream,
     )
-    upstream_metadata = adapt_working_directory_metadata_for_upstream(
-        payload.metadata,
-        payload.working_directory,
-        metadata_namespace="opencode",
-    )
+    upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
 
     if stream:
         on_event, on_finalized = _build_consume_stream_callbacks(
@@ -749,11 +759,7 @@ async def run_background_invoke(
         user_sender=user_sender,
         extra_persisted_metadata=extra_persisted_metadata,
     )
-    upstream_metadata = adapt_working_directory_metadata_for_upstream(
-        payload.metadata,
-        payload.working_directory,
-        metadata_namespace="opencode",
-    )
+    upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
 
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
@@ -884,11 +890,7 @@ async def run_ws_invoke(
         transport="ws",
         stream_enabled=True,
     )
-    upstream_metadata = adapt_working_directory_metadata_for_upstream(
-        payload.metadata,
-        payload.working_directory,
-        metadata_namespace="opencode",
-    )
+    upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
         request=persistence_request,

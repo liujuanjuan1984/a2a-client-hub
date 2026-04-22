@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.features.invoke.route_runner import _adapt_invoke_metadata_for_upstream
 from app.features.working_directory import (
     adapt_working_directory_metadata_for_upstream,
 )
@@ -8,6 +9,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionSessionCommandRequest,
     A2AModelDiscoveryRequest,
 )
+from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 
 
 def test_permission_reply_request_keeps_working_directory_stable() -> None:
@@ -103,3 +105,30 @@ def test_extension_adapter_returns_none_for_empty_metadata() -> None:
     )
 
     assert metadata is None
+
+
+def test_invoke_upstream_adapter_uses_bound_provider_namespace() -> None:
+    payload = A2AAgentInvokeRequest(
+        query="Continue",
+        metadata={
+            "shared": {
+                "session": {
+                    "provider": "codex",
+                    "id": "ses-1",
+                }
+            }
+        },
+        workingDirectory="/workspace/demo",
+    )
+
+    metadata = _adapt_invoke_metadata_for_upstream(payload)
+
+    assert metadata == {
+        "shared": {
+            "session": {
+                "provider": "codex",
+                "id": "ses-1",
+            }
+        },
+        "codex": {"directory": "/workspace/demo"},
+    }
