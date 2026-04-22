@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Sequence, cast
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -455,13 +455,10 @@ class ExternalSessionDirectoryService:
         result: Any,
     ) -> bool:
         if not result.success:
-            await self._upsert_cache_entry(
+            await self._mark_cache_entry_refresh_failed(
                 db,
                 user_id=user_id,
                 agent=agent,
-                expires_at=expires_at,
-                payload={"items": []},
-                last_success_at=None,
                 last_error_code=result.error_code,
                 last_error_at=now,
             )
@@ -526,7 +523,10 @@ class ExternalSessionDirectoryService:
                     },
                 )
                 continue
-            refreshed_agents += 1 if ok else 0
+            if ok:
+                refreshed_agents += 1
+            else:
+                partial_failures += 1
 
         return refreshed_agents, partial_failures
 
@@ -592,5 +592,32 @@ class ExternalSessionDirectoryService:
                 "last_error_at": last_error_at,
                 "refreshed_at": _utc_now(),
             },
+        )
+        await db.execute(stmt)
+
+    async def _mark_cache_entry_refresh_failed(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent: AgentRef,
+        last_error_code: str | None,
+        last_error_at: datetime,
+    ) -> None:
+        stmt = (
+            update(ExternalSessionDirectoryCacheEntry)
+            .where(
+                and_(
+                    ExternalSessionDirectoryCacheEntry.user_id == user_id,
+                    ExternalSessionDirectoryCacheEntry.provider == self.provider_key,
+                    ExternalSessionDirectoryCacheEntry.agent_source
+                    == agent.agent_source,
+                    ExternalSessionDirectoryCacheEntry.agent_id == agent.agent_id,
+                )
+            )
+            .values(
+                last_error_code=last_error_code,
+                last_error_at=last_error_at,
+            )
         )
         await db.execute(stmt)

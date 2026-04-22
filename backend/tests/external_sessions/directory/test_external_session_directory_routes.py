@@ -304,6 +304,85 @@ async def test_external_sessions_directory_generic_route_preserves_opencode_prov
     assert payload["items"][0]["session_id"] == "ses_generic"
 
 
+async def test_external_sessions_directory_refresh_failure_preserves_cached_payload(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    personal = await _create_personal_agent(
+        async_db_session, user_id=user.id, card_url="https://personal.example.com"
+    )
+
+    class FakeExtensionsService:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
+            self.calls += 1
+            if self.calls == 1:
+                return ExtensionCallResult(
+                    success=True,
+                    result={
+                        "items": [
+                            _task(
+                                "ses_cached",
+                                title="Cached session",
+                                last_active_at="2024-01-03T00:00:00+00:00",
+                            )
+                        ],
+                        "pagination": {"page": page, "size": size},
+                    },
+                    error_code=None,
+                    upstream_error=None,
+                    meta=None,
+                )
+            return ExtensionCallResult(
+                success=False,
+                result=None,
+                error_code="upstream_timeout",
+                upstream_error={"message": "timeout"},
+                meta=None,
+            )
+
+    fake = FakeExtensionsService()
+    monkeypatch.setattr(
+        "app.features.external_sessions.directory.service.get_a2a_extensions_service",
+        lambda: fake,
+    )
+
+    async with create_test_client(
+        external_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        first = await client.post(
+            "/me/a2a/external-sessions/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+        second = await client.post(
+            "/me/a2a/external-sessions/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": True},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["meta"]["partial_failures"] == 1
+    assert payload["meta"]["refreshed_agents"] == 0
+    assert payload["items"][0]["session_id"] == "ses_cached"
+    assert payload["items"][0]["agent_id"] == str(personal.id)
+
+    cache_entry = await async_db_session.scalar(
+        select(ExternalSessionDirectoryCacheEntry)
+    )
+    assert cache_entry is not None
+    assert cache_entry.last_error_code == "upstream_timeout"
+    assert cache_entry.payload["items"][0]["metadata"]["opencode"]["session_id"] == (
+        "ses_cached"
+    )
+
+
 async def test_external_sessions_directory_rejects_unknown_provider(
     async_db_session,
     async_session_maker,
