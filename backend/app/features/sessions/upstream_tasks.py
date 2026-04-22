@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from typing import Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.conversation_thread import ConversationThread
@@ -55,69 +56,62 @@ class ConversationUpstreamTaskService:
         if thread is None:
             return None
 
+        resolved_agent_id = agent_id or cast(UUID | None, thread.agent_id)
+        resolved_agent_source = agent_source or cast(str | None, thread.agent_source)
+        normalized_status_hint = normalize_non_empty_text(status_hint)
+        observed_at = utc_now()
+        insert_stmt = insert(ConversationUpstreamTask).values(
+            id=uuid4(),
+            user_id=user_id,
+            conversation_id=conversation_id,
+            agent_id=resolved_agent_id,
+            agent_source=resolved_agent_source,
+            upstream_task_id=normalized_task_id,
+            first_seen_message_id=message_id,
+            latest_message_id=message_id,
+            source=source,
+            status_hint=normalized_status_hint,
+            updated_at=observed_at,
+        )
+        excluded = insert_stmt.excluded
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            constraint="uq_conversation_upstream_tasks_user_conversation_task",
+            set_={
+                "agent_id": func.coalesce(
+                    excluded.agent_id,
+                    ConversationUpstreamTask.agent_id,
+                ),
+                "agent_source": func.coalesce(
+                    excluded.agent_source,
+                    ConversationUpstreamTask.agent_source,
+                ),
+                "first_seen_message_id": func.coalesce(
+                    ConversationUpstreamTask.first_seen_message_id,
+                    excluded.first_seen_message_id,
+                ),
+                "latest_message_id": func.coalesce(
+                    excluded.latest_message_id,
+                    ConversationUpstreamTask.latest_message_id,
+                ),
+                "source": excluded.source,
+                "status_hint": func.coalesce(
+                    excluded.status_hint,
+                    ConversationUpstreamTask.status_hint,
+                ),
+                "updated_at": observed_at,
+            },
+        ).returning(ConversationUpstreamTask.id)
+        binding_id = (await db.execute(upsert_stmt)).scalar_one_or_none()
+        if binding_id is None:
+            return None
         binding = cast(
             ConversationUpstreamTask | None,
             await db.scalar(
                 select(ConversationUpstreamTask).where(
-                    and_(
-                        ConversationUpstreamTask.user_id == user_id,
-                        ConversationUpstreamTask.conversation_id == conversation_id,
-                        ConversationUpstreamTask.upstream_task_id == normalized_task_id,
-                    )
+                    ConversationUpstreamTask.id == binding_id
                 )
             ),
         )
-        if binding is None:
-            binding = ConversationUpstreamTask(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                agent_id=agent_id or cast(UUID | None, thread.agent_id),
-                agent_source=agent_source or cast(str | None, thread.agent_source),
-                upstream_task_id=normalized_task_id,
-                first_seen_message_id=message_id,
-                latest_message_id=message_id,
-                source=source,
-                status_hint=normalize_non_empty_text(status_hint),
-            )
-            db.add(binding)
-            await db.flush()
-            return binding
-
-        mutated = False
-        if agent_id is not None and cast(UUID | None, binding.agent_id) != agent_id:
-            setattr(binding, "agent_id", agent_id)
-            mutated = True
-        normalized_agent_source = normalize_non_empty_text(agent_source)
-        if (
-            normalized_agent_source is not None
-            and cast(str | None, binding.agent_source) != normalized_agent_source
-        ):
-            setattr(binding, "agent_source", normalized_agent_source)
-            mutated = True
-        if (
-            message_id is not None
-            and cast(UUID | None, binding.first_seen_message_id) is None
-        ):
-            setattr(binding, "first_seen_message_id", message_id)
-            mutated = True
-        if (
-            message_id is not None
-            and cast(UUID | None, binding.latest_message_id) != message_id
-        ):
-            setattr(binding, "latest_message_id", message_id)
-            mutated = True
-        normalized_status_hint = normalize_non_empty_text(status_hint)
-        if (
-            normalized_status_hint is not None
-            and cast(str | None, binding.status_hint) != normalized_status_hint
-        ):
-            setattr(binding, "status_hint", normalized_status_hint)
-            mutated = True
-        if cast(str | None, binding.source) != source:
-            setattr(binding, "source", source)
-            mutated = True
-        if mutated:
-            setattr(binding, "updated_at", utc_now())
         return binding
 
     async def verify_binding(

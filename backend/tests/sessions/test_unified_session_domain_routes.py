@@ -5,11 +5,13 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.db.models.conversation_upstream_task import ConversationUpstreamTask
 from app.features.schedules.service import a2a_schedule_service
 from app.features.sessions import router as me_sessions
 from app.features.sessions.common import serialize_interrupt_event_block_content
@@ -886,6 +888,85 @@ async def test_upstream_task_route_rejects_task_bound_to_another_conversation(
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "task_not_found"
+
+
+async def test_upstream_task_binding_upsert_preserves_first_seen_and_updates_latest(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="task-upsert")
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Task Upsert Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    first_message = AgentMessage(
+        id=uuid4(),
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        status="streaming",
+    )
+    latest_message = AgentMessage(
+        id=uuid4(),
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        status="done",
+    )
+    async_db_session.add(first_message)
+    async_db_session.add(latest_message)
+    await async_db_session.flush()
+
+    first_binding = await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-upsert-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        message_id=first_message.id,
+        source="stream_identity",
+        status_hint="streaming",
+    )
+    second_binding = await session_hub_service.record_upstream_task_binding(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=session.id,
+        task_id="task-upsert-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        message_id=latest_message.id,
+        source="final_metadata",
+        status_hint="done",
+    )
+    await async_db_session.flush()
+
+    assert first_binding is True
+    assert second_binding is True
+    bindings = list(
+        (
+            await async_db_session.scalars(
+                select(ConversationUpstreamTask).where(
+                    ConversationUpstreamTask.conversation_id == session.id,
+                    ConversationUpstreamTask.upstream_task_id == "task-upsert-1",
+                )
+            )
+        ).all()
+    )
+    assert len(bindings) == 1
+    binding = bindings[0]
+    assert binding.first_seen_message_id == first_message.id
+    assert binding.latest_message_id == latest_message.id
+    assert binding.source == "final_metadata"
+    assert binding.status_hint == "done"
 
 
 async def test_blocks_query_returns_404_when_block_not_found(
