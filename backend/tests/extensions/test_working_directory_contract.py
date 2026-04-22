@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from app.features.working_directory import (
-    adapt_working_directory_metadata_for_extension,
-    adapt_working_directory_metadata_for_provider,
+    adapt_working_directory_metadata_for_upstream,
 )
 from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
@@ -61,7 +60,7 @@ def test_model_discovery_request_keeps_working_directory_stable() -> None:
 
 
 def test_provider_adapter_maps_stable_working_directory_to_provider_metadata() -> None:
-    metadata = adapt_working_directory_metadata_for_provider(
+    metadata = adapt_working_directory_metadata_for_upstream(
         {"workingDirectory": "/workspace/demo", "locale": "en-CA"},
         None,
         metadata_namespace="opencode",
@@ -76,7 +75,7 @@ def test_provider_adapter_maps_stable_working_directory_to_provider_metadata() -
 def test_provider_adapter_removes_provider_directory_for_empty_stable_override() -> (
     None
 ):
-    metadata = adapt_working_directory_metadata_for_provider(
+    metadata = adapt_working_directory_metadata_for_upstream(
         {"opencode": {"directory": "/workspace/demo", "project": "alpha"}},
         "   ",
         metadata_namespace="opencode",
@@ -86,7 +85,7 @@ def test_provider_adapter_removes_provider_directory_for_empty_stable_override()
 
 
 def test_provider_adapter_does_not_read_legacy_provider_directory() -> None:
-    metadata = adapt_working_directory_metadata_for_provider(
+    metadata = adapt_working_directory_metadata_for_upstream(
         {"opencode": {"directory": "/workspace/demo", "project": "alpha"}},
         None,
         metadata_namespace="opencode",
@@ -96,10 +95,11 @@ def test_provider_adapter_does_not_read_legacy_provider_directory() -> None:
 
 
 def test_extension_adapter_returns_none_for_empty_metadata() -> None:
-    metadata = adapt_working_directory_metadata_for_extension(
+    metadata = adapt_working_directory_metadata_for_upstream(
         None,
         None,
-        provider="opencode",
+        metadata_namespace="opencode",
+        empty_as_none=True,
     )
 
     assert metadata is None

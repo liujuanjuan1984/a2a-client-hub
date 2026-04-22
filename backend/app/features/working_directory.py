@@ -33,12 +33,13 @@ def merge_working_directory_metadata(
     return next_metadata
 
 
-def adapt_working_directory_metadata_for_provider(
+def adapt_working_directory_metadata_for_upstream(
     metadata: Mapping[str, Any] | None,
     working_directory: str | None,
     *,
     metadata_namespace: str,
-) -> dict[str, Any]:
+    empty_as_none: bool = False,
+) -> dict[str, Any] | None:
     """Adapt Hub-stable working-directory metadata for a provider upstream."""
     next_metadata = dict(metadata or {})
     if working_directory is None:
@@ -51,7 +52,7 @@ def adapt_working_directory_metadata_for_provider(
 
     normalized_namespace = normalize_non_empty_text(metadata_namespace)
     if not normalized_namespace:
-        return next_metadata
+        return None if empty_as_none and not next_metadata else next_metadata
 
     section_raw = next_metadata.get(normalized_namespace)
     next_section = dict(section_raw) if isinstance(section_raw, Mapping) else {}
@@ -65,19 +66,4 @@ def adapt_working_directory_metadata_for_provider(
         next_metadata[normalized_namespace] = next_section
     else:
         next_metadata.pop(normalized_namespace, None)
-    return next_metadata
-
-
-def adapt_working_directory_metadata_for_extension(
-    metadata: Mapping[str, Any] | None,
-    working_directory: str | None,
-    *,
-    provider: str,
-) -> dict[str, Any] | None:
-    """Adapt Hub-stable metadata for an extension upstream call."""
-    adapted = adapt_working_directory_metadata_for_provider(
-        metadata,
-        working_directory,
-        metadata_namespace=provider,
-    )
-    return adapted or None
+    return None if empty_as_none and not next_metadata else next_metadata

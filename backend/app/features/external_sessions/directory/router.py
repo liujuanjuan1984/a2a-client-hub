@@ -12,7 +12,7 @@ from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
 from app.features.external_sessions.directory.registry import (
     ExternalSessionDirectoryRegistry,
-    get_external_session_directory_registry,
+    external_session_directory_registry,
 )
 from app.features.external_sessions.directory.schemas import (
     ExternalSessionDirectoryItem,
@@ -55,15 +55,12 @@ async def list_external_sessions_directory(
     payload: ExternalSessionDirectoryQueryRequest,
     response: Response,
     current_user: User = Depends(get_current_user),
-    registry: ExternalSessionDirectoryRegistry = Depends(
-        get_external_session_directory_registry
-    ),
 ) -> ExternalSessionDirectoryListResponse:
     response.headers["Cache-Control"] = "no-store"
     current_user_id = cast(UUID, current_user.id)
     service = _resolve_external_session_directory_service(
         provider=provider,
-        registry=registry,
+        registry=external_session_directory_registry,
     )
 
     items, extra = await service.list_directory(

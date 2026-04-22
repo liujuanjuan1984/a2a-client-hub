@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from app.features.external_sessions.directory.adapters import (
-    ExternalSessionDirectoryAdapter,
     opencode_session_directory_adapter,
 )
 from app.features.external_sessions.directory.service import (
@@ -36,21 +35,13 @@ class ExternalSessionDirectoryRegistry:
         return tuple(sorted(self._providers))
 
 
-def create_external_session_directory_provider(
-    adapter: ExternalSessionDirectoryAdapter,
-) -> ExternalSessionDirectoryProvider:
-    return ExternalSessionDirectoryProvider(
-        provider_key=adapter.provider_key,
-        service=ExternalSessionDirectoryService(adapter=adapter),
-    )
-
-
 external_session_directory_registry = ExternalSessionDirectoryRegistry(
     providers=[
-        create_external_session_directory_provider(opencode_session_directory_adapter),
+        ExternalSessionDirectoryProvider(
+            provider_key=opencode_session_directory_adapter.provider_key,
+            service=ExternalSessionDirectoryService(
+                adapter=opencode_session_directory_adapter,
+            ),
+        ),
     ]
 )
-
-
-def get_external_session_directory_registry() -> ExternalSessionDirectoryRegistry:
-    return external_session_directory_registry

@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
 from app.features.working_directory import (
-    adapt_working_directory_metadata_for_extension,
+    adapt_working_directory_metadata_for_upstream,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
@@ -173,10 +173,11 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            provider=ext.provider,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
         )
         (
             resolved_request_id,
@@ -214,10 +215,11 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            provider=ext.provider,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
         )
         (
             resolved_request_id,
@@ -254,10 +256,11 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            provider=ext.provider,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
         )
         (
             resolved_request_id,
@@ -291,10 +294,11 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            provider=ext.provider,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
         )
         (
             resolved_request_id,
@@ -337,10 +341,11 @@ class InterruptExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            provider=ext.provider,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
         )
         (
             resolved_request_id,

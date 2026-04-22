@@ -76,7 +76,7 @@ from app.features.invoke.stream_persistence import (
 )
 from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
-from app.features.working_directory import adapt_working_directory_metadata_for_provider
+from app.features.working_directory import adapt_working_directory_metadata_for_upstream
 from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.runtime.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
@@ -592,7 +592,7 @@ async def run_http_invoke(
         transport="http_sse" if stream else "http_json",
         stream_enabled=stream,
     )
-    upstream_metadata = adapt_working_directory_metadata_for_provider(
+    upstream_metadata = adapt_working_directory_metadata_for_upstream(
         payload.metadata,
         payload.working_directory,
         metadata_namespace="opencode",
@@ -749,7 +749,7 @@ async def run_background_invoke(
         user_sender=user_sender,
         extra_persisted_metadata=extra_persisted_metadata,
     )
-    upstream_metadata = adapt_working_directory_metadata_for_provider(
+    upstream_metadata = adapt_working_directory_metadata_for_upstream(
         payload.metadata,
         payload.working_directory,
         metadata_namespace="opencode",
@@ -884,7 +884,7 @@ async def run_ws_invoke(
         transport="ws",
         stream_enabled=True,
     )
-    upstream_metadata = adapt_working_directory_metadata_for_provider(
+    upstream_metadata = adapt_working_directory_metadata_for_upstream(
         payload.metadata,
         payload.working_directory,
         metadata_namespace="opencode",

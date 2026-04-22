@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
-from app.features.working_directory import adapt_working_directory_metadata_for_provider
+from app.features.working_directory import adapt_working_directory_metadata_for_upstream
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
@@ -105,7 +105,7 @@ class OpencodeDiscoveryService:
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
         params: Dict[str, Any] = {}
-        adapted_session_metadata = adapt_working_directory_metadata_for_provider(
+        adapted_session_metadata = adapt_working_directory_metadata_for_upstream(
             session_metadata,
             working_directory,
             metadata_namespace=ext.metadata_namespace,
@@ -140,7 +140,7 @@ class OpencodeDiscoveryService:
         params: Dict[str, Any] = {}
         if resolved_provider_id:
             params["provider_id"] = resolved_provider_id
-        adapted_session_metadata = adapt_working_directory_metadata_for_provider(
+        adapted_session_metadata = adapt_working_directory_metadata_for_upstream(
             session_metadata,
             working_directory,
             metadata_namespace=ext.metadata_namespace,

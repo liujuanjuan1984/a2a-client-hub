@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from app.features.agents.personal.runtime import A2ARuntime
 from app.features.invoke.shared_metadata import merge_preferred_session_binding_metadata
 from app.features.working_directory import (
-    adapt_working_directory_metadata_for_extension,
+    adapt_working_directory_metadata_for_upstream,
 )
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
@@ -1018,10 +1018,11 @@ class SessionExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            provider=ext.provider,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
         )
         resolved_session_id, params = self.prepare_prompt_session_async(
             session_id=session_id,
@@ -1059,10 +1060,11 @@ class SessionExtensionService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        metadata_for_upstream = adapt_working_directory_metadata_for_extension(
+        metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            provider=ext.provider,
+            metadata_namespace=ext.provider,
+            empty_as_none=True,
         )
         resolved_session_id, params = self.prepare_session_command(
             session_id=session_id,
