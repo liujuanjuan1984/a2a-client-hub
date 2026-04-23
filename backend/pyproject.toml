@@ -37,8 +37,8 @@ classifiers = [
 dependencies = [
     # Core FastAPI dependencies
     "fastapi>=0.136.0",
-    "uvicorn[standard]>=0.44.0",
-    "a2a-sdk==0.3.26",
+    "uvicorn[standard]>=0.46.0",
+    "a2a-sdk==1.0.1",
     # Scheduling
     "APScheduler>=3.10.4",
     # Database dependencies
@@ -47,7 +47,7 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "asyncpg>=0.29.0",
     # Data validation and serialization
-    "pydantic[email]>=2.13.1",
+    "pydantic[email]>=2.13.3",
     "pydantic-settings>=2.1.0",
     # HTTP client and utilities
     "httpx>=0.25.0",
