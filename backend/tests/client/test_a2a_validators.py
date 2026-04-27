@@ -8,11 +8,16 @@ def valid_card_data():
     return {
         "name": "Test Agent",
         "description": "An agent for testing.",
-        "url": "https://example.com/agent",
         "version": "1.0.0",
+        "supported_interfaces": [
+            {
+                "url": "https://example.com/agent",
+                "protocol_binding": "JSONRPC",
+            }
+        ],
         "capabilities": {"streaming": True},
-        "defaultInputModes": ["text/plain"],
-        "defaultOutputModes": ["text/plain"],
+        "default_input_modes": ["text/plain"],
+        "default_output_modes": ["text/plain"],
         "skills": [{"name": "test_skill"}],
     }
 
@@ -28,11 +33,11 @@ class TestValidateAgentCard:
         [
             "name",
             "description",
-            "url",
             "version",
+            "supported_interfaces",
             "capabilities",
-            "defaultInputModes",
-            "defaultOutputModes",
+            "default_input_modes",
+            "default_output_modes",
             "skills",
         ],
     )
@@ -48,11 +53,15 @@ class TestValidateAgentCard:
     )
     def test_invalid_url(self, valid_card_data, invalid_url):
         card_data = valid_card_data.copy()
-        card_data["url"] = invalid_url
+        card_data["supported_interfaces"] = [
+            {
+                "url": invalid_url,
+                "protocol_binding": "JSONRPC",
+            }
+        ]
         result = validators.validate_agent_card(card_data)
         assert (
-            "Field 'url' must be an absolute URL starting with http:// or https://."
-            in result.errors
+            "Each supported interface must declare an absolute 'url'." in result.errors
         )
 
     def test_invalid_capabilities_type(self, valid_card_data):
@@ -61,14 +70,14 @@ class TestValidateAgentCard:
         result = validators.validate_agent_card(card_data)
         assert "Field 'capabilities' must be an object." in result.errors
 
-    @pytest.mark.parametrize("field", ["defaultInputModes", "defaultOutputModes"])
+    @pytest.mark.parametrize("field", ["default_input_modes", "default_output_modes"])
     def test_invalid_modes_type_not_array(self, valid_card_data, field):
         card_data = valid_card_data.copy()
         card_data[field] = "not-a-list"
         result = validators.validate_agent_card(card_data)
         assert f"Field '{field}' must be an array of strings." in result.errors
 
-    @pytest.mark.parametrize("field", ["defaultInputModes", "defaultOutputModes"])
+    @pytest.mark.parametrize("field", ["default_input_modes", "default_output_modes"])
     def test_invalid_modes_type_item_not_string(self, valid_card_data, field):
         card_data = valid_card_data.copy()
         card_data[field] = [123, "string"]

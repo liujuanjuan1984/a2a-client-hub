@@ -12,6 +12,8 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from app.integrations.a2a_client.protobuf import is_proto_message, to_json_like
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,12 +41,12 @@ class CompassJSONEncoder(json.JSONEncoder):
             return obj.isoformat()
         elif isinstance(obj, Decimal):
             return float(obj)
-        elif hasattr(obj, "model_dump"):
-            # Handle Pydantic models
-            return obj.model_dump()
-        elif hasattr(obj, "__dict__"):
-            # Handle objects with __dict__ attribute
-            return obj.__dict__
+        elif is_proto_message(obj):
+            return to_json_like(obj)
+
+        normalized = to_json_like(obj)
+        if normalized is not obj:
+            return normalized
 
         # Fall back to the default behavior
         return super().default(obj)

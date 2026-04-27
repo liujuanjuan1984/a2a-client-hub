@@ -19,8 +19,13 @@ def _base_card_payload() -> dict:
     return {
         "name": "example",
         "description": "example",
-        "url": "https://example.com",
         "version": "1.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://example.com/jsonrpc",
+                "protocolBinding": "JSONRPC",
+            }
+        ],
         "capabilities": {"extensions": []},
         "defaultInputModes": [],
         "defaultOutputModes": [],
@@ -60,8 +65,8 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
             },
         }
     ]
-    payload["additionalInterfaces"] = [
-        {"transport": "jsonrpc", "url": "https://api.example.com/jsonrpc"}
+    payload["supportedInterfaces"] = [
+        {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
     card = AgentCard.model_validate(payload)

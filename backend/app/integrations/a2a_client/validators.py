@@ -20,11 +20,11 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
         [
             "name",
             "description",
-            "url",
+            "supported_interfaces",
             "version",
             "capabilities",
-            "defaultInputModes",
-            "defaultOutputModes",
+            "default_input_modes",
+            "default_output_modes",
             "skills",
         ]
     )
@@ -33,18 +33,36 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
         if field_name not in card_data:
             result.errors.append(f"Required field is missing: '{field_name}'.")
 
-    if "url" in card_data and not (
-        card_data["url"].startswith("http://")
-        or card_data["url"].startswith("https://")
-    ):
-        result.errors.append(
-            "Field 'url' must be an absolute URL starting with http:// or https://."
-        )
+    supported_interfaces = card_data.get("supported_interfaces")
+    if supported_interfaces is not None:
+        if not isinstance(supported_interfaces, list) or not supported_interfaces:
+            result.errors.append(
+                "Field 'supported_interfaces' must be a non-empty array."
+            )
+        else:
+            for index, interface in enumerate(supported_interfaces):
+                if not isinstance(interface, dict):
+                    result.errors.append(
+                        f"Interface {index} in 'supported_interfaces' must be an object."
+                    )
+                    continue
+                url = interface.get("url")
+                if not isinstance(url, str) or not (
+                    url.startswith("http://") or url.startswith("https://")
+                ):
+                    result.errors.append(
+                        "Each supported interface must declare an absolute 'url'."
+                    )
+                binding = interface.get("protocol_binding")
+                if not isinstance(binding, str) or not binding.strip():
+                    result.errors.append(
+                        "Each supported interface must declare 'protocol_binding'."
+                    )
 
     if "capabilities" in card_data and not isinstance(card_data["capabilities"], dict):
         result.errors.append("Field 'capabilities' must be an object.")
 
-    for field_name in ["defaultInputModes", "defaultOutputModes"]:
+    for field_name in ["default_input_modes", "default_output_modes"]:
         if field_name in card_data:
             if not isinstance(card_data[field_name], list):
                 result.errors.append(
@@ -103,7 +121,8 @@ def _validate_message(data: dict[str, Any]) -> list[str]:
         or not data.get("parts")
     ):
         errors.append("Message object must have a non-empty 'parts' array.")
-    if "role" not in data or data.get("role") != "agent":
+    role = data.get("role")
+    if role not in {"agent", "ROLE_AGENT"}:
         errors.append("Message from agent must have 'role' set to 'agent'.")
     return errors
 

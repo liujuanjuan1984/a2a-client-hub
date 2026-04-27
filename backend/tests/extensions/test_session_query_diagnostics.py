@@ -17,8 +17,13 @@ def _base_card_payload() -> dict:
     return {
         "name": "example",
         "description": "example",
-        "url": "https://example.com",
         "version": "1.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://example.com/jsonrpc",
+                "protocolBinding": "JSONRPC",
+            }
+        ],
         "capabilities": {"extensions": []},
         "defaultInputModes": [],
         "defaultOutputModes": [],

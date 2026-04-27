@@ -9,6 +9,7 @@ from typing import AsyncGenerator, Generator
 
 import pytest
 import pytest_asyncio
+from a2a.types import AgentCard
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import create_engine, text
@@ -89,6 +90,7 @@ from setup_db_schema import create_schema, drop_schema
 
 from app.core.config import settings
 from app.db.models.base import Base
+from app.integrations.a2a_client.protobuf import parse_agent_card, protobuf_to_dict
 from app.runtime.a2a_proxy_service import A2AProxyService
 
 # Import the minimal set of models required for tests to ensure SQLAlchemy
@@ -115,6 +117,24 @@ for module_path in [
     importlib.import_module(module_path)
 
 TEST_SCHEMA = settings.schema_name
+
+
+def _agent_card_model_validate(
+    cls: type[AgentCard],
+    payload: dict[str, object],
+) -> AgentCard:
+    return parse_agent_card(dict(payload))
+
+
+def _agent_card_model_dump(self: AgentCard, **_kwargs) -> dict[str, object]:
+    return protobuf_to_dict(self)
+
+
+if not hasattr(AgentCard, "model_validate"):
+    AgentCard.model_validate = classmethod(_agent_card_model_validate)
+
+if not hasattr(AgentCard, "model_dump"):
+    AgentCard.model_dump = _agent_card_model_dump
 
 
 def _collect_truncate_targets() -> list[str]:

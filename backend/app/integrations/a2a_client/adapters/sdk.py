@@ -14,15 +14,32 @@ from a2a.client import (
     ClientCallInterceptor,
     ClientConfig,
     ClientFactory,
-    Consumer,
 )
-from a2a.client.errors import A2AClientJSONRPCError
-from a2a.types import TaskIdParams, TaskQueryParams, TransportProtocol
+from a2a.client.errors import A2AClientError, A2AClientTimeoutError
+from a2a.types import (
+    CancelTaskRequest,
+    GetExtendedAgentCardRequest,
+    GetTaskRequest,
+    SendMessageConfiguration,
+    SendMessageRequest,
+)
+from a2a.utils.constants import TransportProtocol
+from a2a.utils.errors import (
+    A2AError,
+    ExtendedAgentCardNotConfiguredError,
+    InvalidParamsError,
+    InvalidRequestError,
+    MethodNotFoundError,
+    TaskNotCancelableError,
+    TaskNotFoundError,
+    UnsupportedOperationError,
+)
 
 from app.integrations.a2a_client.adapters.base import A2AAdapter
 from app.integrations.a2a_client.errors import (
     A2APeerProtocolError,
     A2AUnsupportedOperationError,
+    A2AUpstreamTimeoutError,
 )
 from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportLease,
@@ -33,7 +50,6 @@ from app.integrations.a2a_client.http_clients import (
 from app.integrations.a2a_client.lifecycle import AdapterLifecycleSnapshot
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.selection import build_a2a_message
-from app.integrations.a2a_error_contract import build_protocol_error_from_jsonrpc_error
 from app.utils.async_cleanup import await_cancel_safe
 
 SDK_DIALECT = "sdk"
@@ -86,7 +102,6 @@ class SDKA2AAdapter(A2AAdapter):
         transport_http_client: httpx.AsyncClient,
         shared_transport_lease: SharedSDKTransportLease | None = None,
         interceptors: list[ClientCallInterceptor] | None = None,
-        consumers: list[Consumer] | None = None,
         use_client_preference: bool = False,
         supported_transports: list[TransportProtocol | str] | None = None,
     ) -> None:
@@ -95,12 +110,11 @@ class SDKA2AAdapter(A2AAdapter):
         self._shared_transport_lease = shared_transport_lease
         self._sdk_http_client = _NonClosingAsyncClientProxy(self._transport_http_client)
         self._interceptors = list(interceptors or [])
-        self._consumers = list(consumers or [])
         self._use_client_preference = use_client_preference
         self._supported_transports = list(
             supported_transports
             if supported_transports is not None
-            else [TransportProtocol.jsonrpc, TransportProtocol.http_json]
+            else [TransportProtocol.JSONRPC, TransportProtocol.HTTP_JSON]
         )
         self._client_lock = asyncio.Lock()
         self._clients: dict[bool, _SDKClientEntry] = {}
@@ -119,11 +133,18 @@ class SDKA2AAdapter(A2AAdapter):
             client = await self._get_client(streaming=False)
             try:
                 final_payload: Any = None
-                async for payload in client.send_message(build_a2a_message(request)):
+                sdk_request = SendMessageRequest(
+                    message=build_a2a_message(request),
+                    configuration=SendMessageConfiguration(
+                        accepted_output_modes=["text/plain"]
+                    ),
+                    metadata=request.metadata,
+                )
+                async for payload in client.send_message(sdk_request):
                     final_payload = payload
                 return final_payload
-            except A2AClientJSONRPCError as exc:
-                raise _map_protocol_error(exc) from exc
+            except (A2AClientError, A2AError) as exc:
+                raise _map_sdk_exception(exc) from exc
 
     async def stream_message(self, request: A2AMessageRequest) -> AsyncIterator[Any]:
         if not bool(getattr(self.descriptor, "supports_streaming", True)):
@@ -132,10 +153,17 @@ class SDKA2AAdapter(A2AAdapter):
         async with self._operation_usage(), self._transport_usage():
             client = await self._get_client(streaming=True)
             try:
-                async for payload in client.send_message(build_a2a_message(request)):
+                sdk_request = SendMessageRequest(
+                    message=build_a2a_message(request),
+                    configuration=SendMessageConfiguration(
+                        accepted_output_modes=["text/plain"]
+                    ),
+                    metadata=request.metadata,
+                )
+                async for payload in client.send_message(sdk_request):
                     yield payload
-            except A2AClientJSONRPCError as exc:
-                raise _map_protocol_error(exc) from exc
+            except (A2AClientError, A2AError) as exc:
+                raise _map_sdk_exception(exc) from exc
 
     async def get_task(
         self,
@@ -147,15 +175,12 @@ class SDKA2AAdapter(A2AAdapter):
         async with self._operation_usage(), self._transport_usage():
             client = await self._get_client(streaming=False)
             try:
-                return await client.get_task(
-                    TaskQueryParams(
-                        id=task_id,
-                        history_length=history_length,
-                        metadata=metadata,
-                    )
-                )
-            except A2AClientJSONRPCError as exc:
-                raise _map_protocol_error(exc) from exc
+                request_kwargs: dict[str, Any] = {"id": task_id}
+                if history_length is not None:
+                    request_kwargs["history_length"] = history_length
+                return await client.get_task(GetTaskRequest(**request_kwargs))
+            except (A2AClientError, A2AError) as exc:
+                raise _map_sdk_exception(exc) from exc
 
     async def cancel_task(
         self,
@@ -167,16 +192,20 @@ class SDKA2AAdapter(A2AAdapter):
             client = await self._get_client(streaming=False)
             try:
                 return await client.cancel_task(
-                    TaskIdParams(id=task_id),
+                    CancelTaskRequest(id=task_id, metadata=metadata),
                 )
-            except A2AClientJSONRPCError as exc:
-                raise _map_protocol_error(exc) from exc
+            except (A2AClientError, A2AError) as exc:
+                raise _map_sdk_exception(exc) from exc
 
     async def get_authenticated_extended_agent_card(self) -> Any:
-        raise A2AUnsupportedOperationError(
-            "The official a2a-sdk client does not expose authenticated extended "
-            "agent card retrieval."
-        )
+        async with self._operation_usage(), self._transport_usage():
+            client = await self._get_client(streaming=False)
+            try:
+                return await client.get_extended_agent_card(
+                    GetExtendedAgentCardRequest()
+                )
+            except (A2AClientError, A2AError) as exc:
+                raise _map_sdk_exception(exc) from exc
 
     async def close(self) -> None:
         await self.retire()
@@ -249,12 +278,13 @@ class SDKA2AAdapter(A2AAdapter):
                 polling=False,
                 httpx_client=cast(httpx.AsyncClient, self._sdk_http_client),
                 use_client_preference=self._use_client_preference,
-                supported_transports=list(self._supported_transports),
+                supported_protocol_bindings=_normalize_supported_transports(
+                    self._supported_transports
+                ),
             )
-            factory = ClientFactory(config=config, consumers=list(self._consumers))
+            factory = ClientFactory(config=config)
             client = factory.create(
                 self.descriptor.card,
-                consumers=None,
                 interceptors=list(self._interceptors),
             )
             self._clients[streaming] = _SDKClientEntry(config=config, client=client)
@@ -289,15 +319,55 @@ class SDKA2AAdapter(A2AAdapter):
             await self._finalize_clients()
 
 
-def _map_protocol_error(exc: A2AClientJSONRPCError) -> A2APeerProtocolError:
-    error = getattr(exc, "error", None)
-    payload = {
-        "code": getattr(error, "code", None),
-        "message": getattr(error, "message", None) or str(exc),
-        "data": getattr(error, "data", None),
-    }
-    return build_protocol_error_from_jsonrpc_error(
-        payload,
-        fallback_message=str(exc),
-        http_status=None,
+def _normalize_supported_transports(
+    supported_transports: list[TransportProtocol | str],
+) -> list[str]:
+    normalized: list[str] = []
+    for item in supported_transports:
+        candidate = item.value if isinstance(item, TransportProtocol) else str(item)
+        stripped = candidate.strip()
+        if stripped and stripped not in normalized:
+            normalized.append(stripped)
+    return normalized or [TransportProtocol.JSONRPC.value]
+
+
+def _map_sdk_exception(
+    exc: A2AClientError | A2AError,
+) -> A2AUpstreamTimeoutError | A2AUnsupportedOperationError | A2APeerProtocolError:
+    if isinstance(exc, A2AClientTimeoutError):
+        return A2AUpstreamTimeoutError(str(exc))
+
+    if isinstance(
+        exc,
+        (
+            UnsupportedOperationError,
+            MethodNotFoundError,
+            ExtendedAgentCardNotConfiguredError,
+        ),
+    ):
+        error_code = "unsupported_operation"
+        if isinstance(exc, MethodNotFoundError):
+            error_code = "method_not_found"
+        elif isinstance(exc, ExtendedAgentCardNotConfiguredError):
+            error_code = "extended_agent_card_not_configured"
+        mapped = A2AUnsupportedOperationError(str(exc))
+        mapped.error_code = error_code
+        return mapped
+
+    if isinstance(exc, TaskNotFoundError):
+        return A2APeerProtocolError(str(exc), error_code="task_not_found")
+
+    if isinstance(exc, TaskNotCancelableError):
+        return A2APeerProtocolError(str(exc), error_code="task_not_cancelable")
+
+    if isinstance(exc, InvalidParamsError):
+        return A2APeerProtocolError(str(exc), error_code="invalid_params")
+
+    if isinstance(exc, InvalidRequestError):
+        return A2APeerProtocolError(str(exc), error_code="invalid_request")
+
+    return A2APeerProtocolError(
+        str(exc),
+        error_code="peer_protocol_error",
+        data=getattr(exc, "data", None),
     )

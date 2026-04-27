@@ -415,7 +415,12 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
     )
     fetch_calls = 0
     fake_card = SimpleNamespace(
-        url="https://example.com/jsonrpc",
+        supported_interfaces=[
+            SimpleNamespace(
+                protocol_binding="JSONRPC",
+                url="https://example.com/jsonrpc",
+            )
+        ],
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(

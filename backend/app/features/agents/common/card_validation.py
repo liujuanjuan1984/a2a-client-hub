@@ -15,6 +15,7 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
 )
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
+from app.integrations.a2a_client.protobuf import parse_agent_card, to_json_like
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
 )
@@ -58,13 +59,19 @@ async def fetch_and_validate_agent_card(
             message="Agent card unavailable",
         )
 
-    card_payload = card.model_dump(exclude_none=True)
+    card_payload = to_json_like(card)
+    if not isinstance(card_payload, dict):
+        return A2AAgentCardValidationResponse(
+            success=False,
+            message="Agent card payload must be a JSON object",
+        )
     validation_result = validate_agent_card_payload(card_payload)
     validation_errors = list(validation_result.errors)
     validation_warnings = list(validation_result.warnings)
-    diagnostics_card: AgentCard | None = None
+    diagnostics_card: AgentCard | None = card if isinstance(card, AgentCard) else None
     try:
-        diagnostics_card = AgentCard.model_validate(card_payload)
+        if diagnostics_card is None:
+            diagnostics_card = parse_agent_card(card_payload)
     except Exception:
         diagnostics_card = None
 

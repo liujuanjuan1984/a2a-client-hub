@@ -24,8 +24,13 @@ def _base_card_payload() -> dict:
     return {
         "name": "example",
         "description": "example",
-        "url": "https://example.com",
         "version": "1.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://example.com/jsonrpc",
+                "protocolBinding": "JSONRPC",
+            }
+        ],
         "capabilities": {"extensions": []},
         "defaultInputModes": [],
         "defaultOutputModes": [],
@@ -78,8 +83,8 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
             },
         }
     ]
-    payload["additionalInterfaces"] = [
-        {"transport": "jsonrpc", "url": "https://api.example.com/jsonrpc"}
+    payload["supportedInterfaces"] = [
+        {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
     card = AgentCard.model_validate(payload)
@@ -115,8 +120,9 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     assert control_methods["shell"].config_key == "A2A_ENABLE_SESSION_SHELL"
 
 
-def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:
+def test_resolve_requires_jsonrpc_interface_when_missing() -> None:
     payload = _base_card_payload()
+    payload["supportedInterfaces"] = []
     payload["capabilities"]["extensions"] = [
         {
             "uri": SHARED_SESSION_QUERY_URI,
@@ -134,10 +140,11 @@ def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:
         }
     ]
     card = AgentCard.model_validate(payload)
-    resolved = resolve_session_query(card)
-    assert resolved.jsonrpc.url == "https://example.com"
-    assert resolved.jsonrpc.fallback_used is True
-    assert resolved.methods["prompt_async"] is None
+    with pytest.raises(
+        A2AExtensionContractError,
+        match="Agent card is missing a JSON-RPC interface URL",
+    ):
+        resolve_session_query(card)
 
 
 def test_resolve_rejects_missing_pagination() -> None:
