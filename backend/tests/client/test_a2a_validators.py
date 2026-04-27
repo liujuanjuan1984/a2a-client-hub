@@ -61,8 +61,7 @@ class TestValidateAgentCard:
         ]
         result = validators.validate_agent_card(card_data)
         assert (
-            "Each supported interface must declare an absolute 'url'."
-            in result.errors
+            "Each supported interface must declare an absolute 'url'." in result.errors
         )
 
     def test_invalid_capabilities_type(self, valid_card_data):
