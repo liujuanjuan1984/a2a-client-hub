@@ -98,8 +98,9 @@ def test_build_stream_metadata_from_outcome_keeps_identity_and_usage() -> None:
 
 def test_rewrite_stream_event_contract_copies_canonical_block_fields() -> None:
     payload = {
-        "kind": "artifact-update",
-        "artifact": {"metadata": {}, "parts": [{"kind": "text", "text": "draft"}]},
+        "artifactUpdate": {
+            "artifact": {"metadata": {}, "parts": [{"text": "draft"}]},
+        }
     }
 
     rewrite_stream_event_contract(
@@ -115,21 +116,15 @@ def test_rewrite_stream_event_contract_copies_canonical_block_fields() -> None:
         },
     )
 
-    assert payload["message_id"] == "msg-local-1"
-    assert payload["event_id"] == "evt-local-1"
-    assert payload["seq"] == 7
-    assert payload["block_id"] == "block-text-main"
-    assert payload["lane_id"] == "primary_text"
-    assert payload["op"] == "replace"
-    assert payload["base_seq"] == 6
-    artifact = payload["artifact"]
-    assert artifact["message_id"] == "msg-local-1"
-    assert artifact["event_id"] == "evt-local-1"
-    assert artifact["seq"] == 7
-    assert artifact["metadata"]["block_id"] == "block-text-main"
-    assert artifact["metadata"]["lane_id"] == "primary_text"
-    assert artifact["metadata"]["op"] == "replace"
-    assert artifact["metadata"]["base_seq"] == 6
+    assert payload["artifactUpdate"]["metadata"]["shared"]["stream"] == {
+        "messageId": "msg-local-1",
+        "eventId": "evt-local-1",
+        "seq": 7,
+        "blockId": "block-text-main",
+        "laneId": "primary_text",
+        "op": "replace",
+        "baseSeq": 6,
+    }
 
 
 class _SessionContext:
@@ -167,10 +162,8 @@ def _build_request(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("include_kind", [True, False])
 async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
     async_db_session,
-    include_kind: bool,
 ) -> None:
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     thread = ConversationThread(
@@ -209,87 +202,85 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
         )
 
     reasoning_event = {
-        "artifact": {
-            "parts": [{"kind": "text", "text": "thinking"}],
-            "metadata": {
-                "shared": {
-                    "stream": {
-                        "block_type": "reasoning",
-                        "message_id": "msg-stream-1",
-                        "event_id": "evt-reasoning-1",
-                        "sequence": 1,
+        "artifactUpdate": {
+            "artifact": {
+                "parts": [{"text": "thinking"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "reasoning",
+                            "messageId": "msg-stream-1",
+                            "eventId": "evt-reasoning-1",
+                            "sequence": 1,
+                        }
                     }
-                }
-            },
-        },
+                },
+            }
+        }
     }
     tool_event = {
-        "artifact": {
-            "parts": [
-                {
-                    "kind": "data",
-                    "data": {
-                        "call_id": "call-1",
-                        "tool": "bash",
-                        "status": "completed",
-                        "output": "pwd",
-                    },
-                }
-            ],
-            "metadata": {
-                "shared": {
-                    "stream": {
-                        "block_type": "tool_call",
-                        "message_id": "msg-stream-1",
-                        "event_id": "evt-tool-1",
-                        "sequence": 2,
+        "artifactUpdate": {
+            "artifact": {
+                "parts": [
+                    {
+                        "data": {
+                            "call_id": "call-1",
+                            "tool": "bash",
+                            "status": "completed",
+                            "output": "pwd",
+                        }
                     }
-                }
-            },
-        },
+                ],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "tool_call",
+                            "messageId": "msg-stream-1",
+                            "eventId": "evt-tool-1",
+                            "sequence": 2,
+                        }
+                    }
+                },
+            }
+        }
     }
     text_event = {
-        "artifact": {
-            "parts": [{"kind": "text", "text": "draft"}],
-            "metadata": {
-                "shared": {
-                    "stream": {
-                        "block_type": "text",
-                        "message_id": "msg-stream-1",
-                        "event_id": "evt-text-1",
-                        "sequence": 3,
+        "artifactUpdate": {
+            "artifact": {
+                "parts": [{"text": "draft"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "messageId": "msg-stream-1",
+                            "eventId": "evt-text-1",
+                            "sequence": 3,
+                        }
                     }
-                }
-            },
-        },
+                },
+            }
+        }
     }
     snapshot_event = {
-        "append": False,
-        "artifact": {
-            "parts": [{"kind": "text", "text": "final answer"}],
-            "metadata": {
-                "shared": {
-                    "stream": {
-                        "block_type": "text",
-                        "source": "final_snapshot",
-                        "message_id": "msg-stream-1",
-                        "event_id": "evt-text-2",
-                        "sequence": 4,
+        "artifactUpdate": {
+            "append": False,
+            "artifact": {
+                "parts": [{"text": "final answer"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "source": "final_snapshot",
+                            "messageId": "msg-stream-1",
+                            "eventId": "evt-text-2",
+                            "sequence": 4,
+                        }
                     }
-                }
+                },
+                "lastChunk": True,
             },
-            "lastChunk": True,
-        },
+        }
     }
-
-    if include_kind:
-        for event_payload in (
-            reasoning_event,
-            tool_event,
-            text_event,
-            snapshot_event,
-        ):
-            event_payload["kind"] = "artifact-update"
 
     for event_payload in (
         reasoning_event,
@@ -492,68 +483,70 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
     shared_artifact_id = "task-shared:stream"
     events = (
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "artifactId": shared_artifact_id,
-                "parts": [{"kind": "text", "text": "thinking"}],
-                "metadata": {
-                    "shared": {
-                        "stream": {
-                            "block_type": "reasoning",
-                            "message_id": "msg-stream-shared",
-                            "event_id": "evt-shared-1",
-                            "sequence": 1,
+            "artifactUpdate": {
+                "artifact": {
+                    "artifactId": shared_artifact_id,
+                    "parts": [{"text": "thinking"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "block_type": "reasoning",
+                                "messageId": "msg-stream-shared",
+                                "eventId": "evt-shared-1",
+                                "sequence": 1,
+                            }
                         }
-                    }
-                },
-            },
+                    },
+                }
+            }
         },
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "artifactId": shared_artifact_id,
-                "parts": [
-                    {
-                        "kind": "data",
-                        "data": {
-                            "call_id": "call-1",
-                            "tool": "bash",
-                            "status": "completed",
-                            "output": "pwd",
-                        },
-                    }
-                ],
-                "metadata": {
-                    "shared": {
-                        "stream": {
-                            "block_type": "tool_call",
-                            "message_id": "msg-stream-shared",
-                            "event_id": "evt-shared-2",
-                            "sequence": 2,
+            "artifactUpdate": {
+                "artifact": {
+                    "artifactId": shared_artifact_id,
+                    "parts": [
+                        {
+                            "data": {
+                                "call_id": "call-1",
+                                "tool": "bash",
+                                "status": "completed",
+                                "output": "pwd",
+                            }
                         }
-                    }
-                },
-            },
+                    ],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "block_type": "tool_call",
+                                "messageId": "msg-stream-shared",
+                                "eventId": "evt-shared-2",
+                                "sequence": 2,
+                            }
+                        }
+                    },
+                }
+            }
         },
         {
-            "kind": "artifact-update",
-            "append": False,
-            "lastChunk": True,
-            "artifact": {
-                "artifactId": shared_artifact_id,
-                "parts": [{"kind": "text", "text": "final answer"}],
-                "metadata": {
-                    "shared": {
-                        "stream": {
-                            "block_type": "text",
-                            "source": "final_snapshot",
-                            "message_id": "msg-stream-shared",
-                            "event_id": "evt-shared-3",
-                            "sequence": 3,
+            "artifactUpdate": {
+                "append": False,
+                "lastChunk": True,
+                "artifact": {
+                    "artifactId": shared_artifact_id,
+                    "parts": [{"text": "final answer"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "block_type": "text",
+                                "source": "final_snapshot",
+                                "messageId": "msg-stream-shared",
+                                "eventId": "evt-shared-3",
+                                "sequence": 3,
+                            }
                         }
-                    }
+                    },
                 },
-            },
+            }
         },
     )
 

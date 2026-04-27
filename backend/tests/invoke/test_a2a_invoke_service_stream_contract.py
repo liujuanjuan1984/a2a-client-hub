@@ -13,13 +13,18 @@ from tests.invoke.a2a_invoke_service_support import (
 def test_extract_stream_identity_hints_from_serialized_event():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
-            "seq": 9,
-            "artifact": {
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "noop"}]},
                 "metadata": {
-                    "message_id": "msg-1",
-                    "event_id": "evt-1",
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-1",
+                            "eventId": "evt-1",
+                            "seq": 9,
+                        }
+                    }
                 },
-            },
+            }
         }
     )
     assert hints == {
@@ -32,14 +37,19 @@ def test_extract_stream_identity_hints_from_serialized_event():
 def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
-            "metadata": {"taskId": "task-from-root"},
-            "artifact": {
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "noop"}]},
                 "metadata": {
-                    "message_id": "msg-1",
-                    "event_id": "evt-1",
-                    "seq": 99,
+                    "taskId": "task-from-root",
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-1",
+                            "eventId": "evt-1",
+                            "seq": 99,
+                        }
+                    },
                 },
-            },
+            }
         }
     )
     assert hints == {
@@ -54,19 +64,33 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
         def model_dump(self, **kwargs):
             return {
-                "seq": 12,
-                "metadata": {
-                    "event_id": "evt-from-raw",
-                    "message_id": "msg-from-raw",
+                "statusUpdate": {
+                    "status": {"state": "TASK_STATE_WORKING"},
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "eventId": "evt-from-raw",
+                                "messageId": "msg-from-raw",
+                                "seq": 12,
+                            }
+                        }
+                    },
                 },
             }
 
     hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
         {
-            "seq": 2,
-            "metadata": {
-                "event_id": "evt-from-result",
-                "message_id": "msg-from-result",
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_WORKING"},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "eventId": "evt-from-result",
+                            "messageId": "msg-from-result",
+                            "seq": 2,
+                        }
+                    }
+                },
             },
             "raw": _RawPayload(),
         }
@@ -81,10 +105,11 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
 def test_extract_stream_identity_hints_from_status_metadata_message_id():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
         {
-            "status": {
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_WORKING"},
                 "metadata": {
-                    "message_id": "msg-from-status-message",
-                }
+                    "shared": {"stream": {"messageId": "msg-from-status-message"}},
+                },
             }
         }
     )
@@ -96,12 +121,17 @@ def test_extract_stream_identity_hints_includes_upstream_task_id():
         {
             "task": {
                 "id": "task-abc",
-            },
-            "status": {
-                "metadata": {
-                    "message_id": "msg-1",
-                    "event_id": "evt-1",
-                }
+                "status": {
+                    "state": "TASK_STATE_WORKING",
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "messageId": "msg-1",
+                                "eventId": "evt-1",
+                            }
+                        }
+                    },
+                },
             },
         }
     )
@@ -112,12 +142,19 @@ def test_extract_stream_identity_hints_includes_upstream_task_id():
 def test_extract_stream_identity_hints_includes_nested_status_task_fallback():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
-            "status": {"task": {"id": "task-from-status"}},
-            "artifact": {
+            "statusUpdate": {
+                "status": {
+                    "state": "TASK_STATE_WORKING",
+                    "task": {"id": "task-from-status"},
+                },
                 "metadata": {
-                    "message_id": "msg-1",
-                    "event_id": "evt-1",
-                }
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-1",
+                            "eventId": "evt-1",
+                        }
+                    }
+                },
             },
         }
     )
@@ -127,19 +164,18 @@ def test_extract_stream_identity_hints_includes_nested_status_task_fallback():
 def test_extract_stream_identity_hints_reads_shared_stream_metadata():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "noop"}],
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "noop"}]},
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "message_id": "msg-shared-stream",
-                            "event_id": "evt-shared-stream",
+                            "messageId": "msg-shared-stream",
+                            "eventId": "evt-shared-stream",
                             "sequence": 12,
                         }
                     }
                 },
-            },
+            }
         }
     )
 
@@ -151,16 +187,19 @@ def test_extract_stream_identity_hints_reads_shared_stream_metadata():
 def test_extract_stream_chunk_reads_canonical_event_and_message_ids():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "hello"}],
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "hello"}]},
                 "metadata": {
-                    "block_type": "text",
-                    "event_id": "evt-nested",
-                    "message_id": "msg-nested",
-                    "source": "stream",
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "eventId": "evt-nested",
+                            "messageId": "msg-nested",
+                            "source": "stream",
+                        }
+                    },
                 },
-            },
+            }
         }
     )
 
@@ -177,18 +216,21 @@ def test_extract_stream_chunk_reads_canonical_event_and_message_ids():
 def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
-            "kind": "artifact-update",
-            "seq": 8,
-            "append": False,
-            "lastChunk": True,
-            "artifact": {
-                "parts": [{"kind": "text", "text": "done"}],
+            "artifactUpdate": {
+                "append": False,
+                "lastChunk": True,
+                "artifact": {"parts": [{"text": "done"}]},
                 "metadata": {
-                    "block_type": "text",
-                    "event_id": "evt-opt",
-                    "message_id": "msg-opt",
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "eventId": "evt-opt",
+                            "messageId": "msg-opt",
+                            "seq": 8,
+                        }
+                    },
                 },
-            },
+            }
         }
     )
 
@@ -201,16 +243,21 @@ def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
 def test_extract_stream_chunk_accepts_artifact_level_last_chunk_alias():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "last_chunk": True,
-                "parts": [{"kind": "text", "text": "done"}],
-                "metadata": {
-                    "block_type": "text",
-                    "event_id": "evt-artifact-last",
-                    "message_id": "msg-artifact-last",
+            "artifactUpdate": {
+                "artifact": {
+                    "last_chunk": True,
+                    "parts": [{"text": "done"}],
                 },
-            },
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "eventId": "evt-artifact-last",
+                            "messageId": "msg-artifact-last",
+                        }
+                    }
+                },
+            }
         }
     )
 
@@ -221,14 +268,17 @@ def test_extract_stream_chunk_accepts_artifact_level_last_chunk_alias():
 def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "hello"}],
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "hello"}]},
                 "metadata": {
-                    "block_type": "text",
-                    "event_id": "evt-nested",
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "eventId": "evt-nested",
+                        }
+                    }
                 },
-            },
+            }
         }
     )
 
@@ -240,19 +290,20 @@ def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
 def test_extract_stream_chunk_accepts_message_payloads_with_root_parts():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
-            "kind": "message",
-            "messageId": "msg-root-1",
-            "taskId": "task-root-1",
-            "parts": [{"kind": "text", "text": "hello from message"}],
-            "role": "agent",
-            "metadata": {
-                "shared": {
-                    "stream": {
-                        "event_id": "evt-root-1",
-                        "source": "assistant_text",
+            "message": {
+                "messageId": "msg-root-1",
+                "taskId": "task-root-1",
+                "parts": [{"text": "hello from message"}],
+                "role": "ROLE_AGENT",
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "eventId": "evt-root-1",
+                            "source": "assistant_text",
+                        }
                     }
-                }
-            },
+                },
+            }
         }
     )
 
@@ -265,12 +316,13 @@ def test_extract_stream_chunk_accepts_message_payloads_with_root_parts():
     assert chunk["source"] == "assistant_text"
 
 
-def test_ensure_outbound_stream_contract_normalizes_message_payloads():
+def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
     payload = {
-        "kind": "message",
-        "messageId": "msg-root-2",
-        "parts": [{"kind": "text", "text": "render me"}],
-        "role": "agent",
+        "message": {
+            "messageId": "msg-root-2",
+            "parts": [{"text": "render me"}],
+            "role": "ROLE_AGENT",
+        }
     }
 
     a2a_invoke_service._ensure_outbound_stream_contract(
@@ -278,19 +330,15 @@ def test_ensure_outbound_stream_contract_normalizes_message_payloads():
         event_sequence=4,
     )
 
-    assert payload["kind"] == "artifact-update"
-    assert payload["seq"] == 4
-    assert payload["message_id"] == "msg-root-2"
-    assert payload["event_id"] == "msg-root-2:4"
-    assert payload["append"] is False
-    assert payload["artifact"]["parts"] == [{"kind": "text", "text": "render me"}]
-    assert payload["artifact"]["metadata"]["seq"] == 4
-    assert "messageId" not in payload
-    assert "parts" not in payload
-    assert "role" not in payload
+    shared_stream = payload["message"]["metadata"]["shared"]["stream"]
+    assert shared_stream["seq"] == 4
+    assert shared_stream["eventId"] == "msg-root-2:4"
+    assert payload["message"]["parts"] == [{"text": "render me"}]
+    assert payload["message"]["role"] == "ROLE_AGENT"
+    assert payload["message"]["messageId"] == "msg-root-2"
 
 
-def test_serialize_stream_event_normalizes_message_payload_before_validation(
+def test_serialize_stream_event_keeps_canonical_message_payload_before_validation(
     monkeypatch: pytest.MonkeyPatch,
 ):
     seen_payloads: list[dict[str, object]] = []
@@ -304,33 +352,32 @@ def test_serialize_stream_event_normalizes_message_payload_before_validation(
     serialized = a2a_invoke_service.serialize_stream_event(
         _DumpableEvent(
             {
-                "kind": "message",
-                "messageId": "msg-serialize-1",
-                "role": "agent",
-                "parts": [{"kind": "text", "text": "hello"}],
+                "message": {
+                    "messageId": "msg-serialize-1",
+                    "role": "ROLE_AGENT",
+                    "parts": [{"text": "hello"}],
+                }
             }
         ),
         validate_message=_validate,
     )
 
-    assert serialized["kind"] == "artifact-update"
-    assert serialized["append"] is False
-    assert serialized["artifact"]["parts"] == [{"kind": "text", "text": "hello"}]
-    assert "messageId" not in serialized
-    assert "parts" not in serialized
-    assert "role" not in serialized
-    assert seen_payloads[0]["kind"] == "artifact-update"
+    assert serialized["message"]["messageId"] == "msg-serialize-1"
+    assert serialized["message"]["parts"] == [{"text": "hello"}]
+    assert serialized["message"]["role"] == "ROLE_AGENT"
+    assert seen_payloads[0]["message"]["messageId"] == "msg-serialize-1"
 
 
 def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "artifact_id": "task-generic:stream",
-                "parts": [{"kind": "text", "text": "hello generic"}],
-                "metadata": {"block_type": "custom_phase"},
-            },
+            "artifactUpdate": {
+                "artifact": {
+                    "artifact_id": "task-generic:stream",
+                    "parts": [{"text": "hello generic"}],
+                },
+                "metadata": {"shared": {"stream": {"block_type": "custom_phase"}}},
+            }
         }
     )
 
@@ -347,20 +394,21 @@ def test_extract_stream_chunk_ignores_non_artifact_payloads():
 def test_extract_usage_hints_from_serialized_event():
     usage = a2a_invoke_service.extract_usage_hints_from_serialized_event(
         {
-            "kind": "status-update",
-            "final": True,
-            "metadata": {
-                "shared": {
-                    "usage": {
-                        "input_tokens": 120,
-                        "outputTokens": "30",
-                        "total_tokens": 150,
-                        "reasoning_tokens": 12,
-                        "cache_tokens": 6,
-                        "cost": "0.0125",
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_COMPLETED"},
+                "metadata": {
+                    "shared": {
+                        "usage": {
+                            "input_tokens": 120,
+                            "outputTokens": "30",
+                            "total_tokens": 150,
+                            "reasoning_tokens": 12,
+                            "cache_tokens": 6,
+                            "cost": "0.0125",
+                        },
                     },
                 },
-            },
+            }
         }
     )
     assert usage == {
@@ -377,13 +425,16 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
         def model_dump(self, **kwargs):
             return {
-                "metadata": {
-                    "shared": {
-                        "usage": {
-                            "input_tokens": 66,
-                            "output_tokens": 11,
-                            "total_tokens": 77,
-                            "cost": 0.0077,
+                "statusUpdate": {
+                    "status": {"state": "TASK_STATE_COMPLETED"},
+                    "metadata": {
+                        "shared": {
+                            "usage": {
+                                "input_tokens": 66,
+                                "output_tokens": 11,
+                                "total_tokens": 77,
+                                "cost": 0.0077,
+                            },
                         },
                     },
                 }
@@ -391,13 +442,16 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
 
     usage = a2a_invoke_service.extract_usage_hints_from_invoke_result(
         {
-            "metadata": {
-                "shared": {
-                    "usage": {
-                        "input_tokens": 1,
-                        "output_tokens": 1,
-                        "total_tokens": 2,
-                        "cost": 0.0002,
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_COMPLETED"},
+                "metadata": {
+                    "shared": {
+                        "usage": {
+                            "input_tokens": 1,
+                            "output_tokens": 1,
+                            "total_tokens": 2,
+                            "cost": 0.0002,
+                        },
                     },
                 },
             },
@@ -415,15 +469,16 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
 def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata():
     usage = a2a_invoke_service.extract_usage_hints_from_serialized_event(
         {
-            "kind": "status-update",
-            "final": True,
-            "metadata": {
-                "usage": {
-                    "input_tokens": 9,
-                    "output_tokens": 3,
-                    "total_tokens": 12,
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_COMPLETED"},
+                "metadata": {
+                    "usage": {
+                        "input_tokens": 9,
+                        "output_tokens": 3,
+                        "total_tokens": 12,
+                    },
                 },
-            },
+            }
         }
     )
     assert usage == {

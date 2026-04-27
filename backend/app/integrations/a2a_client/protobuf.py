@@ -126,40 +126,18 @@ def to_protojson_like(value: Any) -> Any:
 
 
 def stream_response_to_payload(response: StreamResponse) -> dict[str, Any]:
-    """Normalize a StreamResponse into the hub's serialized event shape."""
+    """Convert a StreamResponse into canonical ProtoJSON."""
 
-    if response.HasField("artifact_update"):
-        payload = protobuf_to_dict(response.artifact_update)
-        payload["kind"] = "artifact-update"
-        return payload
-
-    if response.HasField("status_update"):
-        payload = protobuf_to_dict(response.status_update)
-        payload["kind"] = "status-update"
-        payload["final"] = is_terminal_task_state(
-            ((payload.get("status") or {}) if isinstance(payload, Mapping) else {}).get(
-                "state"
-            )
-        )
-        return payload
-
-    if response.HasField("message"):
-        payload = protobuf_to_dict(response.message)
-        payload["kind"] = "message"
-        return payload
-
-    if response.HasField("task"):
-        payload = protobuf_to_dict(response.task)
-        payload["kind"] = "task"
-        return payload
-
-    return protobuf_to_dict(response)
+    return protobuf_to_protojson_dict(response)
 
 
 def is_terminal_task_state(value: Any) -> bool:
     """Return whether the normalized task state should end the stream."""
 
-    return isinstance(value, str) and value in _TERMINAL_TASK_STATES
+    return (
+        isinstance(value, str)
+        and value.strip().lower().replace("_", "-") in _TERMINAL_TASK_STATES
+    )
 
 
 def _normalize_json_like(value: Any) -> Any:

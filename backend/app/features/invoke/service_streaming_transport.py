@@ -114,7 +114,7 @@ def stream_sse(
                 )
                 if validation_errors:
                     logger.warning(
-                        "Dropped invalid artifact-update event",
+                        "Dropped invalid stream event",
                         extra={
                             **log_extra,
                             "validation_error_count": len(validation_errors),
@@ -327,7 +327,7 @@ async def stream_ws(
             )
             if validation_errors:
                 logger.warning(
-                    "Dropped invalid artifact-update event",
+                    "Dropped invalid stream event",
                     extra={
                         **log_extra,
                         "validation_error_count": len(validation_errors),

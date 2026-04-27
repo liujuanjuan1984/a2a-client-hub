@@ -688,6 +688,31 @@ const extractSharedStreamMetadata = (
   rootMetadata: Record<string, unknown> | null,
 ) => mergeSharedMetadataSection([rootMetadata, artifactMetadata], "stream");
 
+const resolveCanonicalStreamResponse = (
+  data: Record<string, unknown>,
+): {
+  kind: "artifact-update" | "message" | "status-update" | "task" | null;
+  body: Record<string, unknown> | null;
+} => {
+  const artifactUpdate = asRecord(data.artifactUpdate);
+  if (artifactUpdate) {
+    return { kind: "artifact-update", body: artifactUpdate };
+  }
+  const message = asRecord(data.message);
+  if (message) {
+    return { kind: "message", body: message };
+  }
+  const statusUpdate = asRecord(data.statusUpdate);
+  if (statusUpdate) {
+    return { kind: "status-update", body: statusUpdate };
+  }
+  const task = asRecord(data.task);
+  if (task) {
+    return { kind: "task", body: task };
+  }
+  return { kind: null, body: null };
+};
+
 const extractToolCallView = (
   source: Record<string, unknown> | null,
 ): ToolCallView | null => {
@@ -743,12 +768,20 @@ const extractToolCallViewFromRawContent = (
 export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
 ): StreamBlockUpdate | null => {
-  const kind = pickString(data, ["kind"]);
-  if (kind && kind !== "artifact-update") {
+  const { kind, body } = resolveCanonicalStreamResponse(data);
+  if (kind !== "artifact-update" && kind !== "message") {
     return null;
   }
-  const artifact = asRecord(data.artifact);
-  const rootMetadata = asRecord(data.metadata);
+  const rootMetadata = asRecord(body?.metadata);
+  const artifact =
+    kind === "artifact-update"
+      ? asRecord(body?.artifact)
+      : Array.isArray(body?.parts)
+        ? {
+            parts: body.parts,
+            ...(rootMetadata ? { metadata: rootMetadata } : {}),
+          }
+        : null;
   const metadata = asRecord(artifact?.metadata) ?? rootMetadata;
   const sharedStream = extractSharedStreamMetadata(metadata, rootMetadata);
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
@@ -767,26 +800,26 @@ export const extractStreamBlockUpdate = (
   }
 
   const seq =
-    pickInteger(data, ["seq"]) ??
+    pickInteger(sharedStream, ["seq", "sequence"]) ??
+    pickInteger(body ?? null, ["seq"]) ??
     pickInteger(artifact ?? null, ["seq"]) ??
     pickInteger(metadata, ["seq"]) ??
-    pickInteger(rootMetadata, ["seq"]) ??
-    pickInteger(sharedStream, ["sequence", "seq"]);
+    pickInteger(rootMetadata, ["seq"]);
 
   const artifactId =
     pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ?? null;
   const taskIdHint =
-    pickString(data, ["task_id", "taskId"]) ??
+    pickString(body ?? null, ["task_id", "taskId"]) ??
     pickString(artifact ?? null, ["task_id", "taskId"]) ??
     pickString(rootMetadata, ["task_id", "taskId"]) ??
     inferTaskIdFromArtifactId(artifactId);
 
   const upstreamMessageId =
-    pickString(data, ["message_id", "messageId"]) ??
+    pickString(sharedStream, ["messageId", "message_id"]) ??
+    pickString(body ?? null, ["message_id", "messageId"]) ??
     pickString(artifact ?? null, ["message_id", "messageId"]) ??
     pickString(metadata, ["message_id", "messageId"]) ??
-    pickString(rootMetadata, ["message_id", "messageId"]) ??
-    pickString(sharedStream, ["message_id", "messageId"]);
+    pickString(rootMetadata, ["message_id", "messageId"]);
   const resolvedMessageId =
     upstreamMessageId ?? (taskIdHint ? `task:${taskIdHint}` : null);
   const resolvedArtifactId =
@@ -803,29 +836,29 @@ export const extractStreamBlockUpdate = (
     (blockType === "tool_call"
       ? dataFromParts || textFromParts
       : textFromParts) ||
-    pickRawString(data, ["delta"]) ||
+    pickRawString(body ?? null, ["delta"]) ||
     pickRawString(artifact ?? null, ["delta"]) ||
-    pickRawString(data, ["content", "text"]) ||
+    pickRawString(body ?? null, ["content", "text"]) ||
     pickRawString(artifact ?? null, ["content", "text"]) ||
     "";
 
   const append =
-    typeof data.append === "boolean"
-      ? data.append
+    typeof body?.append === "boolean"
+      ? body.append
       : typeof artifact?.append === "boolean"
         ? artifact.append
-        : true;
+        : kind !== "message";
   const done =
-    data.lastChunk === true ||
-    data.last_chunk === true ||
+    body?.lastChunk === true ||
+    body?.last_chunk === true ||
     artifact?.lastChunk === true ||
     artifact?.last_chunk === true;
   const upstreamEventId =
-    pickString(data, ["event_id", "eventId"]) ??
+    pickString(sharedStream, ["eventId", "event_id"]) ??
+    pickString(body ?? null, ["event_id", "eventId"]) ??
     pickString(artifact ?? null, ["event_id", "eventId"]) ??
     pickString(metadata, ["event_id", "eventId"]) ??
-    pickString(rootMetadata, ["event_id", "eventId"]) ??
-    pickString(sharedStream, ["event_id", "eventId"]);
+    pickString(rootMetadata, ["event_id", "eventId"]);
   const eventId = upstreamEventId
     ? upstreamEventId
     : buildFallbackEventId({
@@ -849,7 +882,7 @@ export const extractStreamBlockUpdate = (
     parseBlockOperation(pickString(metadata, ["op", "operation"])) ??
     parseBlockOperation(pickString(rootMetadata, ["op", "operation"])) ??
     parseBlockOperation(pickString(artifact ?? null, ["op", "operation"])) ??
-    parseBlockOperation(pickString(data, ["op", "operation"]));
+    parseBlockOperation(pickString(body ?? null, ["op", "operation"]));
   const op =
     explicitOp ??
     (isPrimaryTextSnapshotSource(source) || !append ? "replace" : "append");
@@ -861,23 +894,23 @@ export const extractStreamBlockUpdate = (
     pickString(metadata, ["lane_id", "laneId"]) ??
     pickString(rootMetadata, ["lane_id", "laneId"]) ??
     pickString(artifact ?? null, ["lane_id", "laneId"]) ??
-    pickString(data, ["lane_id", "laneId"]) ??
+    pickString(body ?? null, ["lane_id", "laneId"]) ??
     defaultLaneIdForBlockType(blockType);
   const blockId =
     pickString(sharedStream, ["block_id", "blockId"]) ??
     pickString(metadata, ["block_id", "blockId"]) ??
     pickString(rootMetadata, ["block_id", "blockId"]) ??
     pickString(artifact ?? null, ["block_id", "blockId"]) ??
-    pickString(data, ["block_id", "blockId"]) ??
+    pickString(body ?? null, ["block_id", "blockId"]) ??
     `${messageId}:${laneId}`;
   const baseSeq =
     pickInteger(sharedStream, ["base_seq", "baseSeq"]) ??
     pickInteger(metadata, ["base_seq", "baseSeq"]) ??
     pickInteger(rootMetadata, ["base_seq", "baseSeq"]) ??
     pickInteger(artifact ?? null, ["base_seq", "baseSeq"]) ??
-    pickInteger(data, ["base_seq", "baseSeq"]);
+    pickInteger(body ?? null, ["base_seq", "baseSeq"]);
   const role = normalizeRole(
-    pickString(data, ["role"]) ??
+    pickString(body ?? null, ["role"]) ??
       pickString(sharedStream, ["role"]) ??
       pickString(metadata, ["role"]) ??
       pickString(rootMetadata, ["role"]),
@@ -885,8 +918,8 @@ export const extractStreamBlockUpdate = (
   const toolCall =
     blockType === "tool_call"
       ? (extractToolCallView(
-          asRecord(data.tool_call) ??
-            asRecord(data.toolCall) ??
+          asRecord(body?.tool_call) ??
+            asRecord(body?.toolCall) ??
             asRecord(artifact?.tool_call) ??
             asRecord(artifact?.toolCall),
         ) ?? extractToolCallViewFromRawContent(delta))

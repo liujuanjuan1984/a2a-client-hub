@@ -33,6 +33,41 @@ from tests.schedules.a2a_schedule_job_support import (
 pytestmark = support.pytestmark
 
 
+def _message_event(
+    text: str,
+    *,
+    message_id: str,
+    event_id: str,
+    context_id: str | None = None,
+    provider: str | None = None,
+    external_session_id: str | None = None,
+) -> dict[str, object]:
+    shared: dict[str, object] = {
+        "stream": {
+            "messageId": message_id,
+            "eventId": event_id,
+        }
+    }
+    if provider or external_session_id:
+        shared["session"] = {
+            **({"provider": provider} if provider else {}),
+            **({"id": external_session_id} if external_session_id else {}),
+        }
+    message: dict[str, object] = {
+        "role": "ROLE_AGENT",
+        "messageId": message_id,
+        "parts": [{"text": text}],
+        "metadata": {"shared": shared},
+    }
+    if context_id:
+        message["contextId"] = context_id
+    return {"message": message}
+
+
+def _completed_status_event() -> dict[str, object]:
+    return {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}}
+
+
 async def test_execute_claimed_task_resets_consecutive_failures_on_success(
     async_db_session,
     async_session_maker,
@@ -60,20 +95,12 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {
-                        "kind": "artifact-update",
-                        "artifact": {
-                            "parts": [{"kind": "text", "text": "all good"}],
-                            "metadata": {
-                                "opencode": {
-                                    "block_type": "text",
-                                    "message_id": "msg-success-1",
-                                    "event_id": "evt-success-1",
-                                }
-                            },
-                        },
-                    },
-                    {"kind": "status-update", "final": True},
+                    _message_event(
+                        "all good",
+                        message_id="msg-success-1",
+                        event_id="evt-success-1",
+                    ),
+                    _completed_status_event(),
                 ]
             ),
         ),
@@ -149,8 +176,12 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {"content": "should not reach"},
-                    {"kind": "status-update", "final": True},
+                    _message_event(
+                        "should not reach",
+                        message_id="msg-timeout-first-1",
+                        event_id="evt-timeout-first-1",
+                    ),
+                    _completed_status_event(),
                 ],
                 first_event_delay=0.05,
             ),
@@ -217,21 +248,13 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
     )
 
     async def _stream(**_kwargs):
-        yield {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "partial response"}],
-                "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "message_id": "msg-timeout-partial",
-                        "event_id": "evt-timeout-partial-1",
-                    }
-                },
-            },
-        }
+        yield _message_event(
+            "partial response",
+            message_id="msg-timeout-partial",
+            event_id="evt-timeout-partial-1",
+        )
         await asyncio.sleep(0.05)
-        yield {"kind": "status-update", "final": True}
+        yield _completed_status_event()
 
     preflight_client = SimpleNamespace(close=AsyncMock())
 
@@ -656,14 +679,14 @@ async def test_execute_claimed_task_binds_external_session_identity_when_present
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {
-                        "content": "bound",
-                        "metadata": {
-                            "provider": "opencode",
-                            "externalSessionId": "ses_bind_1",
-                        },
-                    },
-                    {"kind": "status-update", "final": True},
+                    _message_event(
+                        "bound",
+                        message_id="msg-bind-1",
+                        event_id="evt-bind-1",
+                        provider="opencode",
+                        external_session_id="ses_bind_1",
+                    ),
+                    _completed_status_event(),
                 ]
             ),
         ),
@@ -726,20 +749,12 @@ async def test_execute_claimed_task_persists_readable_agent_content(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {
-                        "kind": "artifact-update",
-                        "artifact": {
-                            "parts": [{"kind": "text", "text": "Readable answer"}],
-                            "metadata": {
-                                "opencode": {
-                                    "block_type": "text",
-                                    "message_id": "msg-readable-1",
-                                    "event_id": "evt-readable-1",
-                                }
-                            },
-                        },
-                    },
-                    {"kind": "status-update", "final": True},
+                    _message_event(
+                        "Readable answer",
+                        message_id="msg-readable-1",
+                        event_id="evt-readable-1",
+                    ),
+                    _completed_status_event(),
                 ]
             ),
         ),
@@ -805,20 +820,12 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {
-                        "kind": "artifact-update",
-                        "artifact": {
-                            "parts": [{"kind": "text", "text": "ok"}],
-                            "metadata": {
-                                "opencode": {
-                                    "block_type": "text",
-                                    "message_id": "msg-new-conv-1",
-                                    "event_id": "evt-new-conv-1",
-                                }
-                            },
-                        },
-                    },
-                    {"kind": "status-update", "final": True},
+                    _message_event(
+                        "ok",
+                        message_id="msg-new-conv-1",
+                        event_id="evt-new-conv-1",
+                    ),
+                    _completed_status_event(),
                 ]
             ),
         ),

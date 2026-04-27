@@ -64,14 +64,7 @@ export const pickSharedMetadataSections = (
 
 export const getPreferredInterruptMetadata = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
-) => {
-  const canonical = getSharedMetadataSection(payloadOrMetadata, "interrupt");
-  if (canonical) {
-    return canonical;
-  }
-  const metadata = getMetadataRecord(payloadOrMetadata);
-  return asRecord(metadata?.interrupt);
-};
+) => getSharedMetadataSection(payloadOrMetadata, "interrupt");
 
 export const getPreferredSessionMetadata = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,

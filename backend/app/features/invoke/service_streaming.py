@@ -35,13 +35,12 @@ from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_client.protobuf import (
     is_terminal_task_state,
     stream_response_to_payload,
-    to_json_like,
+    to_protojson_like,
 )
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
 from app.utils.json_encoder import json_dumps
-from app.utils.payload_extract import as_dict
 
 
 class StreamTextAccumulator:
@@ -551,12 +550,11 @@ class A2AInvokeStreamingRuntime:
             payload = stream_response_to_payload(event)
         elif isinstance(event, tuple):
             resolved = event[1] if len(event) >= 2 and event[1] else event[0]
-            normalized_payload = to_json_like(resolved)
+            normalized_payload = to_protojson_like(resolved)
             payload = normalized_payload if isinstance(normalized_payload, dict) else {}
         else:
-            normalized_payload = to_json_like(event)
+            normalized_payload = to_protojson_like(event)
             payload = normalized_payload if isinstance(normalized_payload, dict) else {}
-        stream_payloads.coerce_message_event_to_artifact_update(payload)
         if settings.debug:
             payload["validation_errors"] = validate_message(payload)
         return payload
@@ -569,11 +567,10 @@ class A2AInvokeStreamingRuntime:
 
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
-        if payload.get("kind") != "status-update":
+        status_update = payload.get("statusUpdate")
+        if not isinstance(status_update, dict):
             return False
-        if payload.get("final") is True:
-            return True
-        status = payload.get("status")
+        status = status_update.get("status")
         if isinstance(status, dict):
             return is_terminal_task_state(status.get("state"))
         return False
@@ -585,59 +582,65 @@ class A2AInvokeStreamingRuntime:
         *,
         event_sequence: int,
     ) -> None:
-        payload["seq"] = event_sequence
-        stream_payloads.coerce_message_event_to_artifact_update(payload)
-        if (
-            payload.get("kind") != "artifact-update"
-            and stream_payloads.extract_stream_chunk_from_serialized_event(payload)
-            is not None
-        ):
-            payload["kind"] = "artifact-update"
-        if payload.get("kind") != "artifact-update":
+        kind = stream_payloads._resolved_stream_event_kind(payload)
+        if kind not in {"artifact-update", "message", "status-update", "task"}:
             return
 
-        artifact = as_dict(payload.get("artifact"))
-        artifact_metadata: dict[str, Any] = {}
-        if artifact:
-            artifact["seq"] = event_sequence
-            artifact_metadata = as_dict(artifact.get("metadata"))
-            artifact_metadata["seq"] = event_sequence
-            artifact["metadata"] = artifact_metadata
-            payload["artifact"] = artifact
-        root_metadata = as_dict(payload.get("metadata"))
-        shared_stream = StreamTextAccumulator._extract_shared_stream_metadata(
-            payload, artifact
-        )
+        _, body = stream_payloads._resolve_stream_response_body(payload)
+        if not body:
+            return
+
+        metadata = body.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            body["metadata"] = metadata
+
+        shared = metadata.get("shared")
+        if not isinstance(shared, dict):
+            shared = {}
+            metadata["shared"] = shared
+
+        shared_stream = shared.get("stream")
+        if not isinstance(shared_stream, dict):
+            shared_stream = {}
+            shared["stream"] = shared_stream
+
+        shared_stream["seq"] = event_sequence
 
         message_id = None
+        event_id = None
+        artifact = stream_payloads._resolve_stream_artifact(payload)
+        artifact_metadata = (
+            artifact.get("metadata") if isinstance(artifact, dict) else {}
+        )
+        artifact_shared_stream = (
+            stream_payloads.extract_shared_stream_metadata(payload, artifact)
+            if isinstance(artifact, dict)
+            else {}
+        )
         for candidate in (
-            payload,
+            shared_stream,
+            body,
+            artifact_shared_stream,
             artifact,
             artifact_metadata,
-            root_metadata,
-            shared_stream,
+            metadata,
         ):
+            if not isinstance(candidate, dict):
+                continue
             if message_id is None:
                 message_id = cls._pick_non_empty_str(
-                    candidate, ("message_id", "messageId")
+                    candidate, ("messageId", "message_id")
                 )
-        if message_id:
-            payload["message_id"] = message_id
-
-        event_id = None
-        for candidate in (
-            payload,
-            artifact,
-            artifact_metadata,
-            root_metadata,
-            shared_stream,
-        ):
             if event_id is None:
-                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
-        payload["event_id"] = event_id or (
-            f"{message_id}:{event_sequence}"
-            if message_id
-            else f"stream:{event_sequence}"
+                event_id = cls._pick_non_empty_str(candidate, ("eventId", "event_id"))
+
+        if message_id is not None:
+            shared_stream["messageId"] = message_id
+        shared_stream["eventId"] = (
+            event_id
+            or (f"{message_id}:{event_sequence}" if message_id else None)
+            or f"stream:{event_sequence}"
         )
 
     @staticmethod

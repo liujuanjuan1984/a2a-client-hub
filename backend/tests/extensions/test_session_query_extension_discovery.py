@@ -122,7 +122,9 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
 
 def test_resolve_requires_jsonrpc_interface_when_missing() -> None:
     payload = _base_card_payload()
-    payload["supportedInterfaces"] = []
+    payload["supportedInterfaces"] = [
+        {"url": "https://example.com/http-json", "protocolBinding": "HTTP+JSON"}
+    ]
     payload["capabilities"]["extensions"] = [
         {
             "uri": SHARED_SESSION_QUERY_URI,

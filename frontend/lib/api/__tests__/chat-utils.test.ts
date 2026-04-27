@@ -41,9 +41,9 @@ describe("runtime status contract", () => {
   it("canonicalizes runtime status events", () => {
     expect(
       extractRuntimeStatusEvent({
-        kind: "status-update",
-        status: { state: "TASK_STATE_INPUT_REQUIRED" },
-        final: true,
+        statusUpdate: {
+          status: { state: "TASK_STATE_INPUT_REQUIRED" },
+        },
       }),
     ).toEqual({
       state: "input-required",
@@ -58,10 +58,15 @@ describe("runtime status contract", () => {
   it("extracts shared stream turn identity from lifecycle event properties", () => {
     expect(
       extractSessionMeta({
-        kind: "artifact-update",
-        properties: {
-          thread_id: "thread-1",
-          turn_id: "turn-2",
+        artifactUpdate: {
+          metadata: {
+            shared: {
+              stream: {
+                thread_id: "thread-1",
+                turn_id: "turn-2",
+              },
+            },
+          },
         },
       }),
     ).toEqual({

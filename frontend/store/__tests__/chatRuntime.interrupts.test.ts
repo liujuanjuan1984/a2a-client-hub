@@ -17,6 +17,67 @@ import type {
   RuntimeStatusContract,
 } from "./chatRuntime.test.support";
 
+const buildStatusUpdate = ({
+  state,
+  seq,
+  messageId,
+  completionPhase,
+  interrupt,
+}: {
+  state: string;
+  seq?: number;
+  messageId?: string;
+  completionPhase?: string;
+  interrupt?: Record<string, unknown>;
+}) => ({
+  statusUpdate: {
+    status: { state },
+    metadata: {
+      shared: {
+        ...(interrupt ? { interrupt } : {}),
+        stream: {
+          ...(seq !== undefined ? { seq } : {}),
+          ...(messageId ? { messageId } : {}),
+          ...(completionPhase ? { completionPhase } : {}),
+        },
+      },
+    },
+  },
+});
+
+const buildArtifactUpdate = ({
+  agentMessageId,
+  eventId,
+  seq,
+  text,
+  source = "assistant_text",
+}: {
+  agentMessageId: string;
+  eventId: string;
+  seq: number;
+  text: string;
+  source?: string;
+}) => ({
+  artifactUpdate: {
+    append: true,
+    artifact: {
+      artifactId: `${agentMessageId}:stream:${seq}`,
+      parts: [{ text }],
+      metadata: {
+        shared: {
+          stream: {
+            block_type: "text",
+            source,
+            messageId: agentMessageId,
+            eventId,
+            seq,
+          },
+        },
+      },
+    },
+  },
+});
+
 describe("executeChatRuntime empty-content recovery", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -81,44 +142,33 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "input-required" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-inline-1",
-                type: "permission",
-                phase: "asked",
-                details: {
-                  permission: "read",
-                  patterns: ["/repo/.env"],
-                },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_INPUT_REQUIRED",
+            interrupt: {
+              requestId: "perm-inline-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
               },
             },
-          },
-        });
+          }),
+        );
 
         const agentMessage = getConversationMessages(conversationId).find(
           (message) => message.id === agentMessageId,
         );
         interruptBlockSnapshot = agentMessage?.blocks?.[0];
 
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-          message_id: agentMessageId,
-          metadata: {
-            shared: {
-              stream: {
-                message_id: agentMessageId,
-                completion_phase: "persisted",
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+            messageId: agentMessageId,
+            completionPhase: "persisted",
+          }),
+        );
         return true;
       },
     );
@@ -200,46 +250,35 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "input-required" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-1",
-                type: "permission",
-                phase: "asked",
-                details: {
-                  permission: "read",
-                  patterns: ["/repo/.env"],
-                },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_INPUT_REQUIRED",
+            interrupt: {
+              requestId: "perm-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
               },
             },
-          },
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-        });
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_WORKING",
+          }),
+        );
         pendingAfterWorking = getPendingInterruptQueue(
           state.sessions[conversationId],
         );
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-          message_id: agentMessageId,
-          metadata: {
-            shared: {
-              stream: {
-                message_id: agentMessageId,
-                completion_phase: "persisted",
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+            messageId: agentMessageId,
+            completionPhase: "persisted",
+          }),
+        );
         return true;
       },
     );
@@ -324,31 +363,27 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "approval_needed" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-contract-1",
-                type: "permission",
-                details: {
-                  permission: "read",
-                  patterns: ["/repo/.env"],
-                },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "approval_needed",
+            interrupt: {
+              requestId: "perm-contract-1",
+              type: "permission",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
               },
             },
-          },
-        });
+          }),
+        );
         pendingAfterAlias = getPendingInterruptQueue(
           state.sessions[conversationId],
         );
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+          }),
+        );
         return true;
       },
     );
@@ -438,97 +473,81 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "input-required" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-1",
-                type: "permission",
-                phase: "asked",
-                details: {
-                  permission: "read",
-                  patterns: ["/repo/.env"],
-                },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_INPUT_REQUIRED",
+            interrupt: {
+              requestId: "perm-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
               },
             },
-          },
-        });
+          }),
+        );
         queueSnapshots.push(
           getPendingInterruptQueue(state.sessions[conversationId]).map(
             (interrupt) => interrupt.requestId,
           ),
         );
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "auth-required" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-2",
-                type: "permission",
-                phase: "asked",
-                details: {
-                  permission: "write",
-                  patterns: ["/repo/src/**"],
-                },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_AUTH_REQUIRED",
+            interrupt: {
+              requestId: "perm-2",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "write",
+                patterns: ["/repo/src/**"],
               },
             },
-          },
-        });
+          }),
+        );
         queueSnapshots.push(
           getPendingInterruptQueue(state.sessions[conversationId]).map(
             (interrupt) => interrupt.requestId,
           ),
         );
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-2",
-                type: "permission",
-                phase: "resolved",
-                resolution: "replied",
-              },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_WORKING",
+            interrupt: {
+              requestId: "perm-2",
+              type: "permission",
+              phase: "resolved",
+              resolution: "replied",
             },
-          },
-        });
+          }),
+        );
         queueSnapshots.push(
           getPendingInterruptQueue(state.sessions[conversationId]).map(
             (interrupt) => interrupt.requestId,
           ),
         );
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-1",
-                type: "permission",
-                phase: "resolved",
-                resolution: "replied",
-              },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_WORKING",
+            interrupt: {
+              requestId: "perm-1",
+              type: "permission",
+              phase: "resolved",
+              resolution: "replied",
             },
-          },
-        });
+          }),
+        );
         queueSnapshots.push(
           getPendingInterruptQueue(state.sessions[conversationId]).map(
             (interrupt) => interrupt.requestId,
           ),
         );
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+          }),
+        );
         return true;
       },
     );
@@ -620,41 +639,33 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "q-other",
-                type: "question",
-                phase: "resolved",
-                resolution: "rejected",
-              },
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_WORKING",
+            interrupt: {
+              requestId: "q-other",
+              type: "question",
+              phase: "resolved",
+              resolution: "rejected",
             },
-          },
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-1",
-                type: "permission",
-                phase: "resolved",
-                resolution: "replied",
-              },
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_WORKING",
+            interrupt: {
+              requestId: "perm-1",
+              type: "permission",
+              phase: "resolved",
+              resolution: "replied",
             },
-          },
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-        });
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+          }),
+        );
         return true;
       },
     );
@@ -738,60 +749,32 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:1`,
-            parts: [{ kind: "text", text: "Hello " }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
-                },
-              },
-            },
-          },
-        });
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:3`,
-          seq: 3,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:3`,
-            parts: [{ kind: "text", text: "world" }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:3`,
-                  sequence: 3,
-                },
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            eventId: `${agentMessageId}:1`,
+            seq: 1,
+            text: "Hello ",
+          }),
+        );
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            eventId: `${agentMessageId}:3`,
+            seq: 3,
+            text: "world",
+          }),
+        );
         await new Promise((resolve) => setTimeout(resolve, 30));
         contentDuringStream =
           getConversationMessages(conversationId).find(
             (message) => message.id === agentMessageId,
           )?.content ?? "";
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+          }),
+        );
         return true;
       },
     );
@@ -867,93 +850,57 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:1`,
-            parts: [{ kind: "text", text: "Before interrupt. " }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
-                },
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            eventId: `${agentMessageId}:1`,
+            seq: 1,
+            text: "Before interrupt. ",
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_INPUT_REQUIRED",
+            interrupt: {
+              requestId: "perm-resume-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
               },
             },
-          },
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "input-required" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-resume-1",
-                type: "permission",
-                phase: "asked",
-                details: {
-                  permission: "read",
-                  patterns: ["/repo/.env"],
-                },
-              },
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_WORKING",
+            interrupt: {
+              requestId: "perm-resume-1",
+              type: "permission",
+              phase: "resolved",
+              resolution: "replied",
             },
-          },
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "perm-resume-1",
-                type: "permission",
-                phase: "resolved",
-                resolution: "replied",
-              },
-            },
-          },
-        });
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:3`,
-          seq: 3,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:3`,
-            parts: [{ kind: "text", text: "After resume." }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:3`,
-                  sequence: 3,
-                },
-              },
-            },
-          },
-        });
+          }),
+        );
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            eventId: `${agentMessageId}:3`,
+            seq: 3,
+            text: "After resume.",
+          }),
+        );
         await new Promise((resolve) => setTimeout(resolve, 30));
         contentDuringResume =
           getConversationMessages(conversationId).find(
             (message) => message.id === agentMessageId,
           )?.content ?? "";
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+          }),
+        );
         return true;
       },
     );
@@ -1034,49 +981,32 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:1`,
-            parts: [{ kind: "text", text: "Before interrupt. " }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
-                },
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            eventId: `${agentMessageId}:1`,
+            seq: 1,
+            text: "Before interrupt. ",
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_INPUT_REQUIRED",
+            seq: 2,
+            interrupt: {
+              requestId: "status-seq-interrupt-1",
+              type: "question",
+              details: {
+                questions: [
+                  {
+                    question: "Continue?",
+                    options: [{ label: "Yes", value: "yes" }],
+                  },
+                ],
               },
             },
-          },
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          seq: 2,
-          status: { state: "input-required" },
-          metadata: {
-            shared: {
-              interrupt: {
-                request_id: "status-seq-interrupt-1",
-                type: "question",
-                details: {
-                  questions: [
-                    {
-                      question: "Continue?",
-                      options: [{ label: "Yes", value: "yes" }],
-                    },
-                  ],
-                },
-              },
-            },
-          },
-        });
+          }),
+        );
         return false;
       },
     );

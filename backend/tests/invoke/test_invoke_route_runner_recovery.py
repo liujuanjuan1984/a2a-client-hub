@@ -1334,11 +1334,12 @@ def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream
         },
     )
     event_payload = {
-        "kind": "artifact-update",
-        "metadata": {"block_type": "text"},
-        "artifact": {
-            "parts": [{"kind": "text", "text": "hello"}],
-        },
+        "artifactUpdate": {
+            "metadata": {"block_type": "text"},
+            "artifact": {
+                "parts": [{"text": "hello"}],
+            },
+        }
     }
 
     invoke_route_runner._diagnose_stream_hints_contract_gap(

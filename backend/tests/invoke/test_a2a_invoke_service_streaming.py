@@ -26,6 +26,48 @@ from tests.invoke.a2a_invoke_service_support import (
 )
 
 
+def _status_update_event(
+    *,
+    state: str,
+    metadata: dict | None = None,
+) -> dict:
+    payload: dict = {"statusUpdate": {"status": {"state": state}}}
+    if metadata is not None:
+        payload["statusUpdate"]["metadata"] = metadata
+    return payload
+
+
+def _message_event(
+    *,
+    message_id: str,
+    text: str,
+    metadata: dict | None = None,
+) -> dict:
+    payload: dict = {
+        "message": {
+            "messageId": message_id,
+            "role": "ROLE_AGENT",
+            "parts": [{"text": text}],
+        }
+    }
+    if metadata is not None:
+        payload["message"]["metadata"] = metadata
+    return payload
+
+
+def _extract_stream_payloads(frames: list[str]) -> list[dict]:
+    return [
+        json.loads(line.removeprefix("data: "))
+        for line in "".join(frames).splitlines()
+        if line.startswith("data: ")
+        and (
+            '"artifactUpdate"' in line
+            or '"message"' in line
+            or '"statusUpdate"' in line
+        )
+    ]
+
+
 @pytest.mark.asyncio
 async def test_sse_error_event_contains_unified_error_code():
     response = a2a_invoke_service.stream_sse(
@@ -339,19 +381,13 @@ async def test_sse_on_complete_supports_block_type():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
             [
-                {
-                    "kind": "artifact-update",
-                    "task_id": "task-block-type",
-                    "artifact": {
-                        "artifact_id": "task-block-type:stream",
-                        "parts": [{"kind": "text", "text": "Hello alias"}],
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-block-type",
-                            "event_id": "evt-block-type-1",
-                        },
-                    },
-                }
+                _artifact_event(
+                    artifact_id="task-block-type:stream",
+                    text="Hello alias",
+                    block_type="text",
+                    message_id="msg-block-type",
+                    event_id="evt-block-type-1",
+                )
             ]
         ),
         resolved=object(),
@@ -379,14 +415,10 @@ async def test_sse_on_complete_accepts_text_parts_without_block_type():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
             [
-                {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "artifact_id": "task-generic:stream",
-                        "parts": [{"kind": "text", "text": "Hello generic"}],
-                        "metadata": {},
-                    },
-                }
+                _artifact_event(
+                    artifact_id="task-generic:stream",
+                    text="Hello generic",
+                )
             ]
         ),
         resolved=object(),
@@ -474,8 +506,8 @@ async def test_sse_drops_invalid_artifact_update_events():
         metadata=None,
         validate_message=lambda payload: (
             ["invalid artifact event"]
-            if payload.get("kind") == "artifact-update"
-            and payload.get("artifact", {}).get("artifact_id") == "task-invalid:stream"
+            if payload.get("artifactUpdate", {}).get("artifact", {}).get("artifactId")
+            == "task-invalid:stream"
             else []
         ),
         logger=logging.getLogger(__name__),
@@ -487,24 +519,12 @@ async def test_sse_drops_invalid_artifact_update_events():
         pass
 
     assert completed == ["kept"]
-    assert observed_events == [
-        {
-            "kind": "artifact-update",
-            "seq": 1,
-            "message_id": "msg-task-valid-stream",
-            "event_id": "evt-task-valid-stream",
-            "artifact": {
-                "artifact_id": "task-valid:stream",
-                "seq": 1,
-                "parts": [{"kind": "text", "text": "kept"}],
-                "metadata": {
-                    "block_type": "text",
-                    "message_id": "msg-task-valid-stream",
-                    "event_id": "evt-task-valid-stream",
-                    "seq": 1,
-                },
-            },
-        }
+    assert len(observed_events) == 1
+    assert observed_events[0]["artifactUpdate"]["artifact"]["artifactId"] == (
+        "task-valid:stream"
+    )
+    assert observed_events[0]["artifactUpdate"]["artifact"]["parts"] == [
+        {"text": "kept"}
     ]
 
 
@@ -520,26 +540,34 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-legacy-1",
-                            "event_id": "evt-legacy-1",
-                        },
-                        "content": "legacy-1",
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "messageId": "msg-legacy-1",
+                                        "eventId": "evt-legacy-1",
+                                    }
+                                }
+                            }
+                        }
+                    }
                 },
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-legacy-2",
-                            "event_id": "evt-legacy-2",
-                        },
-                        "content": "legacy-2",
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "messageId": "msg-legacy-2",
+                                        "eventId": "evt-legacy-2",
+                                    }
+                                }
+                            }
+                        }
+                    }
                 },
             ]
         ),
@@ -564,17 +592,14 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    assert getattr(warning_records[0], "artifact_update_sample", None) == {
-        "kind": "artifact-update",
-        "artifact": {
-            "metadata": {
-                "block_type": "text",
-                "message_id": "msg-legacy-1",
-                "event_id": "evt-legacy-1",
-            },
-            "content": "legacy-1",
-        },
-    }
+    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    assert isinstance(warning_sample, dict)
+    assert (
+        warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
+            "block_type"
+        ]
+        == "<max_depth_exceeded>"
+    )
 
 
 @pytest.mark.asyncio
@@ -589,13 +614,17 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                        },
-                        "content": "legacy",
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             ]
         ),
@@ -620,15 +649,14 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    assert getattr(warning_records[0], "artifact_update_sample", None) == {
-        "kind": "artifact-update",
-        "artifact": {
-            "metadata": {
-                "block_type": "text",
-            },
-            "content": "legacy",
-        },
-    }
+    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    assert isinstance(warning_sample, dict)
+    assert (
+        warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
+            "block_type"
+        ]
+        == "<max_depth_exceeded>"
+    )
 
 
 @pytest.mark.asyncio
@@ -648,7 +676,7 @@ async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(cap
                         "input": {},
                     },
                 ),
-                {"kind": "status-update", "final": True},
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -671,7 +699,7 @@ async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(cap
     ]
     assert warning_records == []
     payload = "".join(frames)
-    assert '"kind": "artifact-update"' in payload
+    assert '"artifactUpdate"' in payload
     assert '"block_type": "tool_call"' in payload
 
 
@@ -681,21 +709,27 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
 
     cache_key = "test-cache-on-event-mutation"
     upstream_event = {
-        "kind": "artifact-update",
-        "message_id": "msg-upstream-1",
-        "artifact": {
-            "artifact_id": "task-cache:stream:text",
-            "parts": [{"kind": "text", "text": "hello"}],
-            "metadata": {
-                "block_type": "text",
-                "event_id": "evt-cache-1",
-                "message_id": "msg-upstream-1",
-            },
-        },
+        "artifactUpdate": {
+            "artifact": {
+                "artifactId": "task-cache:stream:text",
+                "parts": [{"text": "hello"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "eventId": "evt-cache-1",
+                            "messageId": "msg-upstream-1",
+                        }
+                    }
+                },
+            }
+        }
     }
 
     async def _rewrite_message_id(payload: dict) -> None:
-        payload["message_id"] = "msg-local-1"
+        payload["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
+            "messageId"
+        ] = "msg-local-1"
 
     initial = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents([upstream_event]),
@@ -713,16 +747,17 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     async for chunk in initial.body_iterator:
         initial_frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
-    artifact_lines = [
-        line
-        for line in "".join(initial_frames).splitlines()
-        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+    initial_payload = next(
+        payload
+        for payload in _extract_stream_payloads(initial_frames)
+        if "artifactUpdate" in payload
+    )
+    initial_shared_stream = initial_payload["artifactUpdate"]["metadata"]["shared"][
+        "stream"
     ]
-    assert artifact_lines
-    initial_payload = json.loads(artifact_lines[0].removeprefix("data: "))
-    assert initial_payload["message_id"] == "msg-local-1"
-    assert initial_payload["seq"] == 1
-    assert initial_payload["event_id"] == "evt-cache-1"
+    assert initial_shared_stream["messageId"] == "msg-local-1"
+    assert initial_shared_stream["seq"] == 1
+    assert initial_shared_stream["eventId"] == "evt-cache-1"
 
     replay = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents([]),
@@ -740,16 +775,17 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     async for chunk in replay.body_iterator:
         replay_frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
-    replay_artifact_lines = [
-        line
-        for line in "".join(replay_frames).splitlines()
-        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+    replay_payload = next(
+        payload
+        for payload in _extract_stream_payloads(replay_frames)
+        if "artifactUpdate" in payload
+    )
+    replay_shared_stream = replay_payload["artifactUpdate"]["metadata"]["shared"][
+        "stream"
     ]
-    assert replay_artifact_lines
-    replay_payload = json.loads(replay_artifact_lines[0].removeprefix("data: "))
-    assert replay_payload["message_id"] == "msg-local-1"
-    assert replay_payload["seq"] == 1
-    assert replay_payload["event_id"] == "evt-cache-1"
+    assert replay_shared_stream["messageId"] == "msg-local-1"
+    assert replay_shared_stream["seq"] == 1
+    assert replay_shared_stream["eventId"] == "evt-cache-1"
 
     await global_stream_cache.mark_completed(cache_key)
 
@@ -760,32 +796,42 @@ async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "seq": 9,
-                    "artifact": {
-                        "artifact_id": "task-sse:stream:text:1",
-                        "parts": [{"kind": "text", "text": "hello"}],
-                        "metadata": {
-                            "block_type": "text",
-                            "event_id": "evt-sse-1",
-                            "message_id": "msg-sse-1",
-                        },
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "artifactId": "task-sse:stream:text:1",
+                            "parts": [{"text": "hello"}],
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "eventId": "evt-sse-1",
+                                        "messageId": "msg-sse-1",
+                                        "sequence": 9,
+                                    }
+                                }
+                            },
+                        }
+                    }
                 },
                 {
-                    "kind": "artifact-update",
-                    "seq": 12,
-                    "artifact": {
-                        "artifact_id": "task-sse:stream:text:2",
-                        "parts": [{"kind": "text", "text": " world"}],
-                        "metadata": {
-                            "block_type": "text",
-                            "event_id": "evt-sse-2",
-                            "message_id": "msg-sse-1",
-                        },
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "artifactId": "task-sse:stream:text:2",
+                            "parts": [{"text": " world"}],
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "eventId": "evt-sse-2",
+                                        "messageId": "msg-sse-1",
+                                        "sequence": 12,
+                                    }
+                                }
+                            },
+                        }
+                    }
                 },
-                {"kind": "status-update", "final": True},
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -800,34 +846,25 @@ async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
     async for chunk in response.body_iterator:
         frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
-    payloads = [
-        json.loads(line.removeprefix("data: "))
-        for line in "".join(frames).splitlines()
-        if line.startswith("data: ")
-        and ('"kind": "artifact-update"' in line or '"kind": "status-update"' in line)
-    ]
-    artifact_payloads = [
-        payload for payload in payloads if payload.get("kind") == "artifact-update"
-    ]
-    assert [payload["seq"] for payload in artifact_payloads] == [1, 2]
-    assert artifact_payloads[0]["artifact"]["seq"] == 1
-    assert artifact_payloads[1]["artifact"]["seq"] == 2
-    assert payloads[-1]["kind"] == "status-update"
-    assert payloads[-1]["seq"] == 3
+    payloads = _extract_stream_payloads(frames)
+    artifact_payloads = [payload for payload in payloads if "artifactUpdate" in payload]
+    assert [
+        payload["artifactUpdate"]["metadata"]["shared"]["stream"]["seq"]
+        for payload in artifact_payloads
+    ] == [1, 2]
+    assert payloads[-1]["statusUpdate"]["metadata"]["shared"]["stream"]["seq"] == 3
 
 
 @pytest.mark.asyncio
-async def test_sse_emits_canonical_artifact_update_for_upstream_message_events():
+async def test_sse_preserves_canonical_message_payload_for_upstream_message_events():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
             [
-                {
-                    "kind": "message",
-                    "messageId": "msg-upstream-sse-1",
-                    "role": "agent",
-                    "parts": [{"kind": "text", "text": "hello from raw message"}],
-                },
-                {"kind": "status-update", "final": True},
+                _message_event(
+                    message_id="msg-upstream-sse-1",
+                    text="hello from raw message",
+                ),
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -842,23 +879,16 @@ async def test_sse_emits_canonical_artifact_update_for_upstream_message_events()
     async for chunk in response.body_iterator:
         frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
-    payloads = [
-        json.loads(line.removeprefix("data: "))
-        for line in "".join(frames).splitlines()
-        if line.startswith("data: ")
-        and ('"kind": "artifact-update"' in line or '"kind": "status-update"' in line)
-    ]
-    artifact_payload = next(
-        payload for payload in payloads if payload.get("kind") == "artifact-update"
-    )
-    assert artifact_payload["message_id"] == "msg-upstream-sse-1"
-    assert artifact_payload["append"] is False
-    assert artifact_payload["artifact"]["parts"] == [
-        {"kind": "text", "text": "hello from raw message"}
-    ]
-    assert "messageId" not in artifact_payload
-    assert "parts" not in artifact_payload
-    assert "role" not in artifact_payload
+    payloads = _extract_stream_payloads(frames)
+    message_payload = next(payload for payload in payloads if "message" in payload)
+    assert message_payload["message"]["messageId"] == "msg-upstream-sse-1"
+    assert message_payload["message"]["role"] == "ROLE_AGENT"
+    assert message_payload["message"]["parts"] == [{"text": "hello from raw message"}]
+    assert message_payload["message"]["metadata"]["shared"]["stream"] == {
+        "seq": 1,
+        "messageId": "msg-upstream-sse-1",
+        "eventId": "msg-upstream-sse-1:1",
+    }
 
 
 @pytest.mark.asyncio
@@ -866,11 +896,7 @@ async def test_sse_breaks_stream_after_terminal_status_update():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
             [
-                {
-                    "kind": "status-update",
-                    "status": {"state": "input_required"},
-                    "final": True,
-                },
+                _status_update_event(state="TASK_STATE_INPUT_REQUIRED"),
                 {"content": "should-not-be-forwarded"},
             ]
         ),
@@ -887,7 +913,7 @@ async def test_sse_breaks_stream_after_terminal_status_update():
         chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
     payload = "".join(chunks)
-    assert '"kind": "status-update"' in payload
+    assert '"statusUpdate"' in payload
     assert "should-not-be-forwarded" not in payload
     assert "event: stream_end" in payload
 
@@ -896,18 +922,17 @@ async def test_sse_breaks_stream_after_terminal_status_update():
 async def test_sse_emits_persisted_completion_ack_before_stream_end():
     async def _on_finalized(_outcome):
         return {
-            "kind": "status-update",
-            "final": True,
-            "status": {"state": "completed"},
-            "message_id": "msg-persisted-sse-1",
-            "metadata": {
-                "shared": {
-                    "stream": {
-                        "message_id": "msg-persisted-sse-1",
-                        "completion_phase": "persisted",
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_COMPLETED"},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-persisted-sse-1",
+                            "completionPhase": "persisted",
+                        }
                     }
-                }
-            },
+                },
+            }
         }
 
     response = a2a_invoke_service.stream_sse(
@@ -918,11 +943,7 @@ async def test_sse_emits_persisted_completion_ack_before_stream_end():
                     text="ok",
                     block_type="text",
                 ),
-                {
-                    "kind": "status-update",
-                    "status": {"state": "completed"},
-                    "final": True,
-                },
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -940,7 +961,7 @@ async def test_sse_emits_persisted_completion_ack_before_stream_end():
         chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
     payload = "".join(chunks)
-    persisted_index = payload.index('"completion_phase": "persisted"')
+    persisted_index = payload.index('"completionPhase": "persisted"')
     stream_end_index = payload.index("event: stream_end")
     assert persisted_index < stream_end_index
 
@@ -952,11 +973,7 @@ async def test_ws_breaks_stream_after_terminal_status_update():
         websocket=websocket,
         gateway=_GatewayWithEvents(
             [
-                {
-                    "kind": "status-update",
-                    "status": {"state": "input_required"},
-                    "final": True,
-                },
+                _status_update_event(state="TASK_STATE_INPUT_REQUIRED"),
                 {"content": "should-not-be-forwarded"},
             ]
         ),
@@ -970,7 +987,7 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     )
 
     payloads = [json.loads(item) for item in websocket.sent]
-    assert payloads[0]["kind"] == "status-update"
+    assert "statusUpdate" in payloads[0]
     assert payloads[-1]["event"] == "stream_end"
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
@@ -978,20 +995,18 @@ async def test_ws_breaks_stream_after_terminal_status_update():
 
 
 @pytest.mark.asyncio
-async def test_ws_emits_canonical_artifact_update_for_upstream_message_events():
+async def test_ws_preserves_canonical_message_payload_for_upstream_message_events():
     websocket = _DummyWebSocket()
 
     await a2a_invoke_service.stream_ws(
         websocket=websocket,
         gateway=_GatewayWithEvents(
             [
-                {
-                    "kind": "message",
-                    "messageId": "msg-upstream-ws-1",
-                    "role": "agent",
-                    "parts": [{"kind": "text", "text": "hello from raw message"}],
-                },
-                {"kind": "status-update", "final": True},
+                _message_event(
+                    message_id="msg-upstream-ws-1",
+                    text="hello from raw message",
+                ),
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -1007,19 +1022,21 @@ async def test_ws_emits_canonical_artifact_update_for_upstream_message_events():
         json.loads(item)
         for item in websocket.sent
         if item.startswith("{")
-        and ('"kind": "artifact-update"' in item or '"kind": "status-update"' in item)
+        and (
+            '"artifactUpdate"' in item
+            or '"message"' in item
+            or '"statusUpdate"' in item
+        )
     ]
-    artifact_payload = next(
-        payload for payload in payloads if payload.get("kind") == "artifact-update"
-    )
-    assert artifact_payload["message_id"] == "msg-upstream-ws-1"
-    assert artifact_payload["append"] is False
-    assert artifact_payload["artifact"]["parts"] == [
-        {"kind": "text", "text": "hello from raw message"}
-    ]
-    assert "messageId" not in artifact_payload
-    assert "parts" not in artifact_payload
-    assert "role" not in artifact_payload
+    message_payload = next(payload for payload in payloads if "message" in payload)
+    assert message_payload["message"]["messageId"] == "msg-upstream-ws-1"
+    assert message_payload["message"]["role"] == "ROLE_AGENT"
+    assert message_payload["message"]["parts"] == [{"text": "hello from raw message"}]
+    assert message_payload["message"]["metadata"]["shared"]["stream"] == {
+        "seq": 1,
+        "messageId": "msg-upstream-ws-1",
+        "eventId": "msg-upstream-ws-1:1",
+    }
 
 
 @pytest.mark.asyncio
@@ -1028,18 +1045,17 @@ async def test_ws_emits_persisted_completion_ack_before_stream_end():
 
     async def _on_finalized(_outcome):
         return {
-            "kind": "status-update",
-            "final": True,
-            "status": {"state": "completed"},
-            "message_id": "msg-persisted-ws-1",
-            "metadata": {
-                "shared": {
-                    "stream": {
-                        "message_id": "msg-persisted-ws-1",
-                        "completion_phase": "persisted",
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_COMPLETED"},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-persisted-ws-1",
+                            "completionPhase": "persisted",
+                        }
                     }
-                }
-            },
+                },
+            }
         }
 
     await a2a_invoke_service.stream_ws(
@@ -1051,11 +1067,7 @@ async def test_ws_emits_persisted_completion_ack_before_stream_end():
                     text="ok",
                     block_type="text",
                 ),
-                {
-                    "kind": "status-update",
-                    "status": {"state": "completed"},
-                    "final": True,
-                },
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -1072,11 +1084,11 @@ async def test_ws_emits_persisted_completion_ack_before_stream_end():
     persisted_index = next(
         index
         for index, item in enumerate(payloads)
-        if item.get("kind") == "status-update"
-        and item.get("metadata", {})
+        if item.get("statusUpdate", {})
+        .get("metadata", {})
         .get("shared", {})
         .get("stream", {})
-        .get("completion_phase")
+        .get("completionPhase")
         == "persisted"
     )
     stream_end_index = next(
@@ -1092,21 +1104,26 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
     websocket = _DummyWebSocket()
 
     async def _rewrite_message_id(payload: dict[str, object]) -> None:
-        payload["message_id"] = "msg-local-ws-1"
+        if "artifactUpdate" not in payload:
+            return
+        payload["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
+            "messageId"
+        ] = "msg-local-ws-1"
 
     await a2a_invoke_service.stream_ws(
         websocket=websocket,
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "artifact_id": "task-ws:stream:text",
-                        "parts": [{"kind": "text", "text": "hello"}],
-                        "metadata": {"block_type": "text"},
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "artifactId": "task-ws:stream:text",
+                            "parts": [{"text": "hello"}],
+                            "metadata": {"shared": {"stream": {"block_type": "text"}}},
+                        }
+                    }
                 },
-                {"kind": "status-update", "final": True},
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -1122,12 +1139,14 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"kind": "artifact-update"' in item
+        if item.startswith("{") and '"artifactUpdate"' in item
     ]
     assert payloads
-    assert payloads[0]["message_id"] == "msg-local-ws-1"
-    assert payloads[0]["seq"] == 1
-    assert payloads[0]["event_id"] == "msg-local-ws-1:1"
+    assert payloads[0]["artifactUpdate"]["metadata"]["shared"]["stream"] == {
+        "seq": 1,
+        "messageId": "msg-local-ws-1",
+        "eventId": "msg-local-ws-1:1",
+    }
 
 
 @pytest.mark.asyncio
@@ -1139,32 +1158,42 @@ async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "seq": 9,
-                    "artifact": {
-                        "artifact_id": "task-ws:stream:text:1",
-                        "parts": [{"kind": "text", "text": "hello"}],
-                        "metadata": {
-                            "block_type": "text",
-                            "event_id": "evt-ws-1",
-                            "message_id": "msg-ws-1",
-                        },
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "artifactId": "task-ws:stream:text:1",
+                            "parts": [{"text": "hello"}],
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "eventId": "evt-ws-1",
+                                        "messageId": "msg-ws-1",
+                                        "sequence": 9,
+                                    }
+                                }
+                            },
+                        }
+                    }
                 },
                 {
-                    "kind": "artifact-update",
-                    "seq": 12,
-                    "artifact": {
-                        "artifact_id": "task-ws:stream:text:2",
-                        "parts": [{"kind": "text", "text": " world"}],
-                        "metadata": {
-                            "block_type": "text",
-                            "event_id": "evt-ws-2",
-                            "message_id": "msg-ws-1",
-                        },
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "artifactId": "task-ws:stream:text:2",
+                            "parts": [{"text": " world"}],
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "eventId": "evt-ws-2",
+                                        "messageId": "msg-ws-1",
+                                        "sequence": 12,
+                                    }
+                                }
+                            },
+                        }
+                    }
                 },
-                {"kind": "status-update", "final": True},
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -1180,16 +1209,14 @@ async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
         json.loads(item)
         for item in websocket.sent
         if item.startswith("{")
-        and ('"kind": "artifact-update"' in item or '"kind": "status-update"' in item)
+        and ('"artifactUpdate"' in item or '"statusUpdate"' in item)
     ]
-    artifact_payloads = [
-        payload for payload in payloads if payload.get("kind") == "artifact-update"
-    ]
-    assert [payload["seq"] for payload in artifact_payloads] == [1, 2]
-    assert artifact_payloads[0]["artifact"]["seq"] == 1
-    assert artifact_payloads[1]["artifact"]["seq"] == 2
-    assert payloads[-1]["kind"] == "status-update"
-    assert payloads[-1]["seq"] == 3
+    artifact_payloads = [payload for payload in payloads if "artifactUpdate" in payload]
+    assert [
+        payload["artifactUpdate"]["metadata"]["shared"]["stream"]["seq"]
+        for payload in artifact_payloads
+    ] == [1, 2]
+    assert payloads[-1]["statusUpdate"]["metadata"]["shared"]["stream"]["seq"] == 3
 
 
 @pytest.mark.asyncio
@@ -1201,28 +1228,36 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-legacy-ws-1",
-                            "event_id": "evt-legacy-ws-1",
-                        },
-                        "content": "legacy-1",
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "messageId": "msg-legacy-ws-1",
+                                        "eventId": "evt-legacy-ws-1",
+                                    }
+                                }
+                            }
+                        }
+                    }
                 },
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-legacy-ws-2",
-                            "event_id": "evt-legacy-ws-2",
-                        },
-                        "content": "legacy-2",
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "messageId": "msg-legacy-ws-2",
+                                        "eventId": "evt-legacy-ws-2",
+                                    }
+                                }
+                            }
+                        }
+                    }
                 },
-                {"kind": "status-update", "final": True},
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -1242,17 +1277,14 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    assert getattr(warning_records[0], "artifact_update_sample", None) == {
-        "kind": "artifact-update",
-        "artifact": {
-            "metadata": {
-                "block_type": "text",
-                "message_id": "msg-legacy-ws-1",
-                "event_id": "evt-legacy-ws-1",
-            },
-            "content": "legacy-1",
-        },
-    }
+    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    assert isinstance(warning_sample, dict)
+    assert (
+        warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
+            "block_type"
+        ]
+        == "<max_depth_exceeded>"
+    )
 
 
 @pytest.mark.asyncio
@@ -1473,7 +1505,7 @@ async def test_consume_stream_finalized_callback_failure_is_isolated(caplog):
                         text="ok",
                         block_type="text",
                     ),
-                    {"kind": "status-update", "final": True},
+                    _status_update_event(state="TASK_STATE_COMPLETED"),
                 ]
             ),
             resolved=object(),
@@ -1500,14 +1532,20 @@ async def test_consume_stream_accepts_single_blocking_message_payload() -> None:
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "message",
-                    "message_id": "msg-blocking-1",
-                    "task_id": "task-blocking-1",
-                    "parts": [{"type": "text", "text": "blocking-result"}],
-                    "metadata": {
-                        "event_id": "evt-blocking-1",
-                        "block_type": "text",
-                    },
+                    "message": {
+                        "messageId": "msg-blocking-1",
+                        "taskId": "task-blocking-1",
+                        "role": "ROLE_AGENT",
+                        "parts": [{"type": "text", "text": "blocking-result"}],
+                        "metadata": {
+                            "shared": {
+                                "stream": {
+                                    "eventId": "evt-blocking-1",
+                                    "block_type": "text",
+                                }
+                            }
+                        },
+                    }
                 }
             ]
         ),
@@ -1547,7 +1585,7 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
                     text="late-event",
                     block_type="text",
                 ),
-                {"kind": "status-update", "final": True},
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ],
             delay_seconds=0.5,
         ),
@@ -1575,28 +1613,36 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-legacy-consume-1",
-                            "event_id": "evt-legacy-consume-1",
-                        },
-                        "content": "legacy-1",
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "messageId": "msg-legacy-consume-1",
+                                        "eventId": "evt-legacy-consume-1",
+                                    }
+                                }
+                            }
+                        }
+                    }
                 },
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-legacy-consume-2",
-                            "event_id": "evt-legacy-consume-2",
-                        },
-                        "content": "legacy-2",
-                    },
+                    "artifactUpdate": {
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "block_type": "text",
+                                        "messageId": "msg-legacy-consume-2",
+                                        "eventId": "evt-legacy-consume-2",
+                                    }
+                                }
+                            }
+                        }
+                    }
                 },
-                {"kind": "status-update", "final": True},
+                _status_update_event(state="TASK_STATE_COMPLETED"),
             ]
         ),
         resolved=object(),
@@ -1617,17 +1663,14 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    assert getattr(warning_records[0], "artifact_update_sample", None) == {
-        "kind": "artifact-update",
-        "artifact": {
-            "metadata": {
-                "block_type": "text",
-                "message_id": "msg-legacy-consume-1",
-                "event_id": "evt-legacy-consume-1",
-            },
-            "content": "legacy-1",
-        },
-    }
+    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    assert isinstance(warning_sample, dict)
+    assert (
+        warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
+            "block_type"
+        ]
+        == "<max_depth_exceeded>"
+    )
 
 
 def test_build_artifact_update_log_sample_redacts_sensitive_fields_and_truncates():

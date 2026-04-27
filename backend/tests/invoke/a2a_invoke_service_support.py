@@ -140,26 +140,28 @@ def _artifact_event(
     message_id: str | None = None,
     event_id: str | None = None,
 ) -> dict:
-    metadata: dict[str, str] = {}
+    shared_stream: dict[str, str] = {}
     if block_type or source or message_id or event_id:
         artifact_key = artifact_id.replace(":", "-").replace("/", "-")
         if block_type:
-            metadata["block_type"] = block_type
+            shared_stream["block_type"] = block_type
         if source:
-            metadata["source"] = source
-        metadata["message_id"] = message_id or f"msg-{artifact_key}"
-        metadata["event_id"] = event_id or f"evt-{artifact_key}"
+            shared_stream["source"] = source
+        shared_stream["messageId"] = message_id or f"msg-{artifact_key}"
+        shared_stream["eventId"] = event_id or f"evt-{artifact_key}"
 
+    metadata = {"shared": {"stream": shared_stream}} if shared_stream else {}
     payload: dict = {
-        "kind": "artifact-update",
-        "artifact": {
-            "artifact_id": artifact_id,
-            "parts": [{"kind": "text", "text": text}],
-            "metadata": metadata,
-        },
+        "artifactUpdate": {
+            "artifact": {
+                "artifactId": artifact_id,
+                "parts": [{"text": text}],
+                "metadata": metadata,
+            }
+        }
     }
     if append is not None:
-        payload["append"] = append
+        payload["artifactUpdate"]["append"] = append
     return payload
 
 
@@ -173,24 +175,25 @@ def _artifact_data_event(
     message_id: str | None = None,
     event_id: str | None = None,
 ) -> dict:
-    metadata: dict[str, str] = {}
+    shared_stream: dict[str, str] = {}
     artifact_key = artifact_id.replace(":", "-").replace("/", "-")
-    metadata["block_type"] = block_type
+    shared_stream["block_type"] = block_type
     if source:
-        metadata["source"] = source
-    metadata["message_id"] = message_id or f"msg-{artifact_key}"
-    metadata["event_id"] = event_id or f"evt-{artifact_key}"
+        shared_stream["source"] = source
+    shared_stream["messageId"] = message_id or f"msg-{artifact_key}"
+    shared_stream["eventId"] = event_id or f"evt-{artifact_key}"
 
     payload: dict = {
-        "kind": "artifact-update",
-        "artifact": {
-            "artifact_id": artifact_id,
-            "parts": [{"kind": "data", "data": data}],
-            "metadata": metadata,
-        },
+        "artifactUpdate": {
+            "artifact": {
+                "artifactId": artifact_id,
+                "parts": [{"data": data}],
+                "metadata": {"shared": {"stream": shared_stream}},
+            }
+        }
     }
     if append is not None:
-        payload["append"] = append
+        payload["artifactUpdate"]["append"] = append
     return payload
 
 

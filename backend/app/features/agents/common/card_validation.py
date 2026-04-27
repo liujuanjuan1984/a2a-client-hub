@@ -17,7 +17,6 @@ from app.integrations.a2a_client.errors import (
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_client.protobuf import (
     parse_agent_card,
-    to_json_like,
     to_protojson_like,
 )
 from app.integrations.a2a_client.validators import (
@@ -63,7 +62,7 @@ async def fetch_and_validate_agent_card(
             message="Agent card unavailable",
         )
 
-    raw_card_payload = to_json_like(card)
+    raw_card_payload = to_protojson_like(card)
     if not isinstance(raw_card_payload, dict):
         return A2AAgentCardValidationResponse(
             success=False,

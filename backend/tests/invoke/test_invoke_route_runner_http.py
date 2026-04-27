@@ -516,25 +516,28 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     class _Gateway:
         async def stream(self, **kwargs):
             yield {
-                "kind": "artifact-update",
-                "artifact": {
-                    "parts": [{"kind": "text", "text": "ok"}],
-                    "metadata": {
-                        "block_type": "text",
-                        "message_id": "msg-usage-1",
-                        "event_id": "evt-usage-1",
-                        "shared": {
-                            "usage": {
-                                "input_tokens": 100,
-                                "output_tokens": 20,
-                                "total_tokens": 120,
-                                "cost": 0.01,
+                "artifactUpdate": {
+                    "artifact": {
+                        "parts": [{"text": "ok"}],
+                        "metadata": {
+                            "shared": {
+                                "stream": {
+                                    "block_type": "text",
+                                    "messageId": "msg-usage-1",
+                                    "eventId": "evt-usage-1",
+                                },
+                                "usage": {
+                                    "input_tokens": 100,
+                                    "output_tokens": 20,
+                                    "total_tokens": 120,
+                                    "cost": 0.01,
+                                },
                             },
                         },
-                    },
-                },
+                    }
+                }
             }
-            yield {"kind": "status-update", "final": True}
+            yield {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}}
 
     payload = A2AAgentInvokeRequest.model_validate(
         {
@@ -645,14 +648,20 @@ async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_c
         async def stream(self, **kwargs):
             yield SimpleNamespace(
                 model_dump=lambda exclude_none=True: {
-                    "kind": "message",
-                    "message_id": "msg-run-http-invoke-1",
-                    "task_id": "task-run-http-invoke-1",
-                    "parts": [{"type": "text", "text": "downgraded result"}],
-                    "metadata": {
-                        "event_id": "evt-run-http-invoke-1",
-                        "block_type": "text",
-                    },
+                    "message": {
+                        "messageId": "msg-run-http-invoke-1",
+                        "taskId": "task-run-http-invoke-1",
+                        "role": "ROLE_AGENT",
+                        "parts": [{"type": "text", "text": "downgraded result"}],
+                        "metadata": {
+                            "shared": {
+                                "stream": {
+                                    "eventId": "evt-run-http-invoke-1",
+                                    "block_type": "text",
+                                }
+                            }
+                        },
+                    }
                 }
             )
 

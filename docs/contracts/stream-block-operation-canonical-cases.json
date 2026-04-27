@@ -2,23 +2,26 @@
   {
     "name": "legacy_append_text_chunk_maps_to_append_operation",
     "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-1",
-      "message_id": "msg-1",
-      "event_id": "evt-1",
-      "seq": 1,
-      "append": true,
-      "artifact": {
-        "artifact_id": "task-1:stream:text",
-        "parts": [
-          {
-            "kind": "text",
-            "text": "Hello "
+      "artifactUpdate": {
+        "append": true,
+        "artifact": {
+          "artifactId": "task-1:stream:text",
+          "parts": [
+            {
+              "text": "Hello "
+            }
+          ],
+          "metadata": {
+            "shared": {
+              "stream": {
+                "block_type": "text",
+                "source": "stream",
+                "messageId": "msg-1",
+                "eventId": "evt-1",
+                "sequence": 1
+              }
+            }
           }
-        ],
-        "metadata": {
-          "block_type": "text",
-          "source": "stream"
         }
       }
     },
@@ -40,23 +43,26 @@
   {
     "name": "legacy_final_snapshot_maps_to_replace_operation",
     "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-1",
-      "message_id": "msg-1",
-      "event_id": "evt-2",
-      "seq": 2,
-      "append": false,
-      "artifact": {
-        "artifact_id": "task-1:stream:text",
-        "parts": [
-          {
-            "kind": "text",
-            "text": "Hello world"
+      "artifactUpdate": {
+        "append": false,
+        "artifact": {
+          "artifactId": "task-1:stream:text",
+          "parts": [
+            {
+              "text": "Hello world"
+            }
+          ],
+          "metadata": {
+            "shared": {
+              "stream": {
+                "block_type": "text",
+                "source": "final_snapshot",
+                "messageId": "msg-1",
+                "eventId": "evt-2",
+                "sequence": 2
+              }
+            }
           }
-        ],
-        "metadata": {
-          "block_type": "text",
-          "source": "final_snapshot"
         }
       }
     },
@@ -78,26 +84,29 @@
   {
     "name": "explicit_v2_replace_keeps_declared_target_and_base_seq",
     "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-2",
-      "message_id": "msg-2",
-      "event_id": "evt-3",
-      "seq": 9,
-      "artifact": {
-        "artifact_id": "task-2:block:text:main",
-        "parts": [
-          {
-            "kind": "text",
-            "text": "Final answer"
+      "artifactUpdate": {
+        "artifact": {
+          "artifactId": "task-2:block:text:main",
+          "parts": [
+            {
+              "text": "Final answer"
+            }
+          ],
+          "metadata": {
+            "shared": {
+              "stream": {
+                "block_type": "text",
+                "blockId": "block-text-main",
+                "laneId": "primary_text",
+                "op": "replace",
+                "baseSeq": 7,
+                "source": "canonical_v2",
+                "messageId": "msg-2",
+                "eventId": "evt-3",
+                "sequence": 9
+              }
+            }
           }
-        ],
-        "metadata": {
-          "block_type": "text",
-          "block_id": "block-text-main",
-          "lane_id": "primary_text",
-          "op": "replace",
-          "base_seq": 7,
-          "source": "canonical_v2"
         }
       }
     },
@@ -119,21 +128,25 @@
   {
     "name": "explicit_v2_finalize_accepts_empty_content",
     "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-2",
-      "message_id": "msg-2",
-      "event_id": "evt-4",
-      "seq": 10,
-      "artifact": {
-        "artifact_id": "task-2:block:text:main",
-        "parts": [],
-        "metadata": {
-          "block_type": "text",
-          "block_id": "block-text-main",
-          "lane_id": "primary_text",
-          "op": "finalize",
-          "base_seq": 9,
-          "source": "canonical_v2"
+      "artifactUpdate": {
+        "artifact": {
+          "artifactId": "task-2:block:text:main",
+          "parts": [],
+          "metadata": {
+            "shared": {
+              "stream": {
+                "block_type": "text",
+                "blockId": "block-text-main",
+                "laneId": "primary_text",
+                "op": "finalize",
+                "baseSeq": 9,
+                "source": "canonical_v2",
+                "messageId": "msg-2",
+                "eventId": "evt-4",
+                "sequence": 10
+              }
+            }
+          }
         }
       }
     },

@@ -11,15 +11,20 @@ def test_extract_binding_hints_from_serialized_event():
         metadata,
     ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(
         {
-            "contextId": "ctx-1",
-            "metadata": {
-                "provider": "OpenCode",
-                "shared": {
-                    "session": {
-                        "id": "upstream-1",
-                    }
+            "message": {
+                "messageId": "msg-1",
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "ok"}],
+                "contextId": "ctx-1",
+                "metadata": {
+                    "provider": "OpenCode",
+                    "shared": {
+                        "session": {
+                            "id": "upstream-1",
+                        }
+                    },
                 },
-            },
+            }
         }
     )
     assert context_id == "ctx-1"
@@ -31,23 +36,33 @@ def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
     class _RawPayload:
         def model_dump(self, **kwargs):
             return {
-                "contextId": "ctx-from-raw",
-                "metadata": {
-                    "provider": "opencode",
-                    "shared": {
-                        "session": {
-                            "id": "raw-upstream",
-                        }
+                "message": {
+                    "messageId": "msg-raw",
+                    "role": "ROLE_AGENT",
+                    "parts": [{"text": "ok"}],
+                    "contextId": "ctx-from-raw",
+                    "metadata": {
+                        "provider": "opencode",
+                        "shared": {
+                            "session": {
+                                "id": "raw-upstream",
+                            }
+                        },
                     },
-                },
+                }
             }
 
     context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
         {
             "success": True,
             "content": "ok",
-            "contextId": "ctx-from-result",
-            "metadata": {"externalSessionId": "result-upstream"},
+            "message": {
+                "messageId": "msg-result",
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "ok"}],
+                "contextId": "ctx-from-result",
+                "metadata": {"externalSessionId": "result-upstream"},
+            },
             "raw": _RawPayload(),
         }
     )
@@ -75,11 +90,16 @@ def test_extract_binding_hints_falls_back_to_legacy_root_session_metadata():
     context_id, metadata = (
         a2a_invoke_service.extract_binding_hints_from_serialized_event(
             {
-                "contextId": "ctx-legacy",
-                "metadata": {
-                    "provider": "OpenCode",
-                    "externalSessionId": "legacy-upstream-1",
-                },
+                "message": {
+                    "messageId": "msg-legacy",
+                    "role": "ROLE_AGENT",
+                    "parts": [{"text": "ok"}],
+                    "contextId": "ctx-legacy",
+                    "metadata": {
+                        "provider": "OpenCode",
+                        "externalSessionId": "legacy-upstream-1",
+                    },
+                }
             }
         )
     )
@@ -93,12 +113,17 @@ def test_extract_binding_hints_extracts_canonical_shared_session_id():
         {
             "success": True,
             "content": "ok",
-            "metadata": {
-                "provider": "OpenCode",
-                "shared": {
-                    "session": {
-                        "id": "nested-upstream-session",
-                    }
+            "message": {
+                "messageId": "msg-canonical",
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "ok"}],
+                "metadata": {
+                    "provider": "OpenCode",
+                    "shared": {
+                        "session": {
+                            "id": "nested-upstream-session",
+                        }
+                    },
                 },
             },
         }

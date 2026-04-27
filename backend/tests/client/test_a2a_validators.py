@@ -138,69 +138,106 @@ class TestValidateAgentCard:
 
 
 class TestValidateMessage:
-    def test_missing_kind(self):
+    def test_missing_stream_response_field(self):
         errors = validators.validate_message({})
-        assert "Response from agent is missing required 'kind' field." in errors
+        assert (
+            "Response from agent must be a canonical A2A 1.0 StreamResponse payload."
+            in errors
+        )
 
-    def test_unknown_kind(self):
-        errors = validators.validate_message({"kind": "unknown-kind"})
-        assert "Unknown message kind received: 'unknown-kind'." in errors
+    def test_multiple_stream_response_fields(self):
+        errors = validators.validate_message(
+            {
+                "message": {"parts": [{"text": "hello"}], "role": "ROLE_AGENT"},
+                "statusUpdate": {"status": {"state": "TASK_STATE_WORKING"}},
+            }
+        )
+        assert (
+            "StreamResponse payload must set exactly one of 'task', 'message', "
+            "'statusUpdate', or 'artifactUpdate'." in errors
+        )
 
     def test_valid_task(self):
-        data = {"kind": "task", "id": "123", "status": {"state": "running"}}
+        data = {"task": {"id": "123", "status": {"state": "TASK_STATE_WORKING"}}}
         errors = validators.validate_message(data)
         assert not errors
 
     def test_task_missing_id(self):
-        data = {"kind": "task", "status": {"state": "running"}}
+        data = {"task": {"status": {"state": "TASK_STATE_WORKING"}}}
         errors = validators.validate_message(data)
         assert "Task object missing required field: 'id'." in errors
 
     def test_task_missing_status(self):
-        data = {"kind": "task", "id": "123"}
+        data = {"task": {"id": "123"}}
         errors = validators.validate_message(data)
         assert "Task object missing required field: 'status.state'." in errors
 
+    def test_task_rejects_legacy_state_value(self):
+        data = {"task": {"id": "123", "status": {"state": "running"}}}
+        errors = validators.validate_message(data)
+        assert (
+            "Task object must use canonical A2A 1.0 task states (TASK_STATE_*)."
+            in errors
+        )
+
     def test_valid_status_update(self):
-        data = {"kind": "status-update", "status": {"state": "thinking"}}
+        data = {"statusUpdate": {"status": {"state": "TASK_STATE_WORKING"}}}
         errors = validators.validate_message(data)
         assert not errors
 
     def test_status_update_missing_status(self):
-        data = {"kind": "status-update"}
+        data = {"statusUpdate": {}}
         errors = validators.validate_message(data)
         assert "StatusUpdate object missing required field: 'status.state'." in errors
 
+    def test_status_update_rejects_legacy_state_value(self):
+        data = {"statusUpdate": {"status": {"state": "thinking"}}}
+        errors = validators.validate_message(data)
+        assert (
+            "StatusUpdate object must use canonical A2A 1.0 task states "
+            "(TASK_STATE_*)." in errors
+        )
+
     def test_valid_artifact_update(self):
         data = {
-            "kind": "artifact-update",
-            "message_id": "msg-1",
-            "event_id": "evt-1",
-            "seq": 1,
-            "artifact": {"parts": [{"text": "result"}]},
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "result"}]},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-1",
+                            "eventId": "evt-1",
+                            "seq": 1,
+                        }
+                    }
+                },
+            }
         }
         errors = validators.validate_message(data)
         assert not errors
 
     def test_valid_artifact_update_with_identity_in_artifact_metadata(self):
         data = {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"text": "result"}],
-                "metadata": {
-                    "opencode": {
-                        "message_id": "msg-1",
-                        "event_id": "evt-1",
-                        "seq": 1,
-                    }
+            "artifactUpdate": {
+                "artifact": {
+                    "parts": [{"text": "result"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "messageId": "msg-1",
+                                "eventId": "evt-1",
+                                "seq": 1,
+                            }
+                        }
+                    },
                 },
-            },
+            }
         }
         errors = validators.validate_message(data)
         assert not errors
 
     def test_artifact_update_missing_artifact(self):
-        data = {"kind": "artifact-update"}
+        data = {"artifactUpdate": {}}
         errors = validators.validate_message(data)
         assert "ArtifactUpdate object missing required field: 'artifact'." in errors
 
@@ -211,38 +248,53 @@ class TestValidateMessage:
     )
     def test_artifact_update_invalid_parts(self, parts_value):
         data = {
-            "kind": "artifact-update",
-            "message_id": "msg-1",
-            "event_id": "evt-1",
-            "seq": 1,
-            "artifact": {},
+            "artifactUpdate": {
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-1",
+                            "eventId": "evt-1",
+                            "seq": 1,
+                        }
+                    }
+                },
+                "artifact": {},
+            }
         }
         if parts_value is not None:
-            data["artifact"]["parts"] = parts_value
+            data["artifactUpdate"]["artifact"]["parts"] = parts_value
         errors = validators.validate_message(data)
         assert "Artifact object must have a non-empty 'parts' array." in errors
 
     def test_artifact_update_missing_message_id_and_event_id_is_allowed(self):
         data = {
-            "kind": "artifact-update",
-            "seq": 1,
-            "artifact": {"parts": [{"text": "result"}]},
+            "artifactUpdate": {
+                "metadata": {"shared": {"stream": {"seq": 1}}},
+                "artifact": {"parts": [{"text": "result"}]},
+            }
         }
         errors = validators.validate_message(data)
         assert not errors
 
     def test_artifact_update_missing_seq_is_allowed(self):
         data = {
-            "kind": "artifact-update",
-            "message_id": "msg-1",
-            "event_id": "evt-1",
-            "artifact": {"parts": [{"text": "result"}]},
+            "artifactUpdate": {
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-1",
+                            "eventId": "evt-1",
+                        }
+                    }
+                },
+                "artifact": {"parts": [{"text": "result"}]},
+            }
         }
         errors = validators.validate_message(data)
         assert not errors
 
     def test_valid_message(self):
-        data = {"kind": "message", "parts": [{"text": "hello"}], "role": "agent"}
+        data = {"message": {"parts": [{"text": "hello"}], "role": "ROLE_AGENT"}}
         errors = validators.validate_message(data)
         assert not errors
 
@@ -252,9 +304,9 @@ class TestValidateMessage:
         ids=["missing", "wrong_type", "empty"],
     )
     def test_message_invalid_parts(self, parts_value):
-        data = {"kind": "message", "role": "agent"}
+        data = {"message": {"role": "ROLE_AGENT"}}
         if parts_value is not None:
-            data["parts"] = parts_value
+            data["message"]["parts"] = parts_value
         errors = validators.validate_message(data)
         assert "Message object must have a non-empty 'parts' array." in errors
 
@@ -264,8 +316,11 @@ class TestValidateMessage:
         ids=["missing", "wrong_role_user", "wrong_role_system"],
     )
     def test_message_invalid_role(self, role_value):
-        data = {"kind": "message", "parts": [{"text": "hello"}]}
+        data = {"message": {"parts": [{"text": "hello"}]}}
         if role_value is not None:
-            data["role"] = role_value
+            data["message"]["role"] = role_value
         errors = validators.validate_message(data)
-        assert "Message from agent must have 'role' set to 'agent'." in errors
+        assert (
+            "Message from agent must have canonical A2A 1.0 role 'ROLE_AGENT'."
+            in errors
+        )

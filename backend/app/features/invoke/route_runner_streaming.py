@@ -234,11 +234,15 @@ def has_shared_section(
 ) -> bool:
     candidates = [payload]
     if include_artifact:
-        candidates.append(as_dict(payload.get("artifact")))
+        artifact_update = as_dict(payload.get("artifactUpdate"))
+        candidates.append(artifact_update)
+        candidates.append(as_dict(artifact_update.get("artifact")))
     if include_message:
         candidates.append(as_dict(payload.get("message")))
     if include_status:
-        candidates.append(as_dict(payload.get("status")))
+        status_update = as_dict(payload.get("statusUpdate"))
+        candidates.append(as_dict(status_update.get("status")))
+        candidates.append(status_update)
     if include_task:
         candidates.append(as_dict(payload.get("task")))
     if include_result:
@@ -369,10 +373,10 @@ def diagnose_stream_hints_contract_gap(
 
 def resolve_final_runtime_state(outcome: StreamOutcome) -> str:
     if outcome.success:
-        return "completed"
+        return "TASK_STATE_COMPLETED"
     if outcome.finish_reason == StreamFinishReason.CLIENT_DISCONNECT:
-        return "cancelled"
-    return "failed"
+        return "TASK_STATE_CANCELED"
+    return "TASK_STATE_FAILED"
 
 
 def build_persisted_finalization_ack_event(
@@ -388,19 +392,18 @@ def build_persisted_finalization_ack_event(
     if agent_message_id is None:
         return None
     return {
-        "kind": "status-update",
-        "final": True,
-        "status": {"state": resolve_final_runtime_state(outcome)},
-        "message_id": str(agent_message_id),
-        "metadata": {
-            "shared": {
-                "stream": {
-                    "message_id": str(agent_message_id),
-                    "completion_phase": "persisted",
-                    "finish_reason": outcome.finish_reason.value,
-                    "success": outcome.success,
+        "statusUpdate": {
+            "status": {"state": resolve_final_runtime_state(outcome)},
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "messageId": str(agent_message_id),
+                        "completionPhase": "persisted",
+                        "finishReason": outcome.finish_reason.value,
+                        "success": outcome.success,
+                    }
                 }
-            }
+            },
         },
     }
 

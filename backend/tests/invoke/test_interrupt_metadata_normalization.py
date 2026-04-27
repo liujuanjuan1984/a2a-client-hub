@@ -23,22 +23,23 @@ _MESSAGE_CASES = json.loads(
 
 def test_extract_interrupt_lifecycle_keeps_permission_display_message() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input-required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "perm-1",
-                    "type": "permission",
-                    "details": {
-                        "permission": "approval",
-                        "patterns": ["/repo/.env"],
-                        "request": {
-                            "description": "Agent wants to read the environment file."
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "request_id": "perm-1",
+                        "type": "permission",
+                        "details": {
+                            "permission": "approval",
+                            "patterns": ["/repo/.env"],
+                            "request": {
+                                "description": "Agent wants to read the environment file."
+                            },
                         },
-                    },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -56,26 +57,27 @@ def test_extract_interrupt_lifecycle_keeps_permission_display_message() -> None:
 
 def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "q-1",
-                    "type": "question",
-                    "details": {
-                        "description": "Please confirm how the agent should continue.",
-                        "questions": [
-                            {
-                                "title": "Approval",
-                                "prompt": "Proceed with deployment?",
-                                "description": "This will update the production service.",
-                                "options": [{"label": "Yes", "value": "yes"}],
-                            }
-                        ],
-                    },
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "request_id": "q-1",
+                        "type": "question",
+                        "details": {
+                            "description": "Please confirm how the agent should continue.",
+                            "questions": [
+                                {
+                                    "title": "Approval",
+                                    "prompt": "Proceed with deployment?",
+                                    "description": "This will update the production service.",
+                                    "options": [{"label": "Yes", "value": "yes"}],
+                                }
+                            ],
+                        },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -105,21 +107,22 @@ def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
 
 def test_extract_interrupt_lifecycle_keeps_permissions_display_message() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input-required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "perms-1",
-                    "type": "permissions",
-                    "details": {
-                        "display_message": "Approve the requested workspace access.",
-                        "permissions": {
-                            "fileSystem": {"write": ["/workspace/project"]}
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "request_id": "perms-1",
+                        "type": "permissions",
+                        "details": {
+                            "display_message": "Approve the requested workspace access.",
+                            "permissions": {
+                                "fileSystem": {"write": ["/workspace/project"]}
+                            },
                         },
-                    },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -136,27 +139,28 @@ def test_extract_interrupt_lifecycle_keeps_permissions_display_message() -> None
 
 def test_extract_interrupt_lifecycle_keeps_elicitation_details() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "eli-1",
-                    "type": "elicitation",
-                    "details": {
-                        "description": "Select the target folder.",
-                        "mode": "form",
-                        "server_name": "workspace-server",
-                        "requested_schema": {
-                            "type": "object",
-                            "properties": {"folder": {"type": "string"}},
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "request_id": "eli-1",
+                        "type": "elicitation",
+                        "details": {
+                            "description": "Select the target folder.",
+                            "mode": "form",
+                            "server_name": "workspace-server",
+                            "requested_schema": {
+                                "type": "object",
+                                "properties": {"folder": {"type": "string"}},
+                            },
+                            "url": "https://example.com/form",
+                            "elicitation_id": "elicitation-1",
+                            "meta": {"source": "upstream"},
                         },
-                        "url": "https://example.com/form",
-                        "elicitation_id": "elicitation-1",
-                        "meta": {"source": "upstream"},
-                    },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -181,19 +185,20 @@ def test_extract_interrupt_lifecycle_keeps_elicitation_details() -> None:
 
 def test_extract_interrupt_lifecycle_treats_auth_required_as_asked() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "auth_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "auth-1",
-                    "type": "permission",
-                    "details": {
-                        "permission": "login",
-                        "patterns": [],
-                    },
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_AUTH_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "request_id": "auth-1",
+                        "type": "permission",
+                        "details": {
+                            "permission": "login",
+                            "patterns": [],
+                        },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -210,34 +215,35 @@ def test_extract_interrupt_lifecycle_treats_auth_required_as_asked() -> None:
 
 def test_extract_interrupt_lifecycle_ignores_codex_private_permission_details() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input-required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "perm-codex-1",
-                    "type": "permission",
-                    "details": {},
-                }
-            },
-            "codex": {
-                "interrupt": {
-                    "metadata": {
-                        "method": "execCommandApproval",
-                        "raw": {
-                            "request": {
-                                "description": "Agent wants to read the environment file."
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "request_id": "perm-codex-1",
+                        "type": "permission",
+                        "details": {},
+                    }
+                },
+                "codex": {
+                    "interrupt": {
+                        "metadata": {
+                            "method": "execCommandApproval",
+                            "raw": {
+                                "request": {
+                                    "description": "Agent wants to read the environment file."
+                                },
+                                "parsedCmd": [
+                                    {
+                                        "cmd": "cat .env",
+                                        "path": "/repo/.env",
+                                        "type": "read",
+                                    }
+                                ],
                             },
-                            "parsedCmd": [
-                                {
-                                    "cmd": "cat .env",
-                                    "path": "/repo/.env",
-                                    "type": "read",
-                                }
-                            ],
                         },
                     }
-                }
+                },
             },
         },
     }
@@ -255,34 +261,35 @@ def test_extract_interrupt_lifecycle_ignores_codex_private_permission_details() 
 
 def test_extract_interrupt_lifecycle_ignores_codex_private_question_details() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "q-codex-1",
-                    "type": "question",
-                    "details": {"questions": []},
-                }
-            },
-            "codex": {
-                "interrupt": {
-                    "metadata": {
-                        "method": "item/tool/requestUserInput",
-                        "raw": {
-                            "context": {
-                                "description": "Please confirm how the agent should continue."
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "request_id": "q-codex-1",
+                        "type": "question",
+                        "details": {"questions": []},
+                    }
+                },
+                "codex": {
+                    "interrupt": {
+                        "metadata": {
+                            "method": "item/tool/requestUserInput",
+                            "raw": {
+                                "context": {
+                                    "description": "Please confirm how the agent should continue."
+                                },
+                                "questions": [
+                                    {
+                                        "header": "Deploy",
+                                        "question": "Proceed with deployment?",
+                                        "options": [{"label": "Yes", "value": "yes"}],
+                                    }
+                                ],
                             },
-                            "questions": [
-                                {
-                                    "header": "Deploy",
-                                    "question": "Proceed with deployment?",
-                                    "options": [{"label": "Yes", "value": "yes"}],
-                                }
-                            ],
                         },
                     }
-                }
+                },
             },
         },
     }

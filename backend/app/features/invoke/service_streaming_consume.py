@@ -192,12 +192,12 @@ async def consume_stream(
                 }
                 if callable(log_warning):
                     log_warning(
-                        "Dropped invalid artifact-update event",
+                        "Dropped invalid stream event",
                         extra=warning_payload,
                     )
                 elif callable(log_info):
                     log_info(
-                        "Dropped invalid artifact-update event",
+                        "Dropped invalid stream event",
                         extra=warning_payload,
                     )
                 continue

@@ -2,10 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from a2a.types import AgentCard
+from google.protobuf.descriptor import Descriptor, FieldDescriptor
+
 _SUPPORTED_PROTOCOL_BINDINGS = frozenset({"JSONRPC", "HTTP+JSON", "GRPC"})
+_CANONICAL_TASK_STATE_PREFIX = "TASK_STATE_"
+_CANONICAL_AGENT_ROLE = "ROLE_AGENT"
+_DYNAMIC_PROTO_FULL_NAMES = frozenset(
+    {
+        "google.protobuf.Struct",
+        "google.protobuf.Value",
+        "google.protobuf.ListValue",
+        "google.protobuf.Timestamp",
+        "google.protobuf.Empty",
+    }
+)
 
 _LEGACY_TOP_LEVEL_FIELD_MESSAGES = {
     "url": "Legacy field 'url' is not supported in A2A 1.0; use 'supportedInterfaces' instead.",
@@ -56,11 +71,11 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
     required_fields = (
         (("name",), "name"),
         (("description",), "description"),
-        (("supportedInterfaces", "supported_interfaces"), "supportedInterfaces"),
+        (("supportedInterfaces",), "supportedInterfaces"),
         (("version",), "version"),
         (("capabilities",), "capabilities"),
-        (("defaultInputModes", "default_input_modes"), "defaultInputModes"),
-        (("defaultOutputModes", "default_output_modes"), "defaultOutputModes"),
+        (("defaultInputModes",), "defaultInputModes"),
+        (("defaultOutputModes",), "defaultOutputModes"),
         (("skills",), "skills"),
     )
 
@@ -68,15 +83,19 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
         if _pick_first(card_data, *candidate_names) is None:
             result.errors.append(f"Required field is missing: '{display_name}'.")
 
+    for path, canonical_name in _find_noncanonical_protojson_alias_paths(
+        card_data,
+        AgentCard.DESCRIPTOR,
+    ):
+        result.errors.append(
+            f"Field '{path}' is not canonical ProtoJSON; use '{canonical_name}'."
+        )
+
     for field_name, message in _LEGACY_TOP_LEVEL_FIELD_MESSAGES.items():
         if field_name in card_data:
             result.errors.append(message)
 
-    supported_interfaces = _pick_first(
-        card_data,
-        "supportedInterfaces",
-        "supported_interfaces",
-    )
+    supported_interfaces = _pick_first(card_data, "supportedInterfaces")
     if supported_interfaces is not None:
         if not isinstance(supported_interfaces, list) or not supported_interfaces:
             result.errors.append(
@@ -96,7 +115,7 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
                     result.errors.append(
                         "Each supported interface must declare an absolute 'url'."
                     )
-                binding = _pick_first(interface, "protocolBinding", "protocol_binding")
+                binding = _pick_first(interface, "protocolBinding")
                 if not isinstance(binding, str) or not binding.strip():
                     result.errors.append(
                         "Each supported interface must declare 'protocolBinding'."
@@ -116,11 +135,7 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
         for field_name, message in _LEGACY_CAPABILITY_FIELD_MESSAGES.items():
             if field_name in capabilities:
                 result.errors.append(message)
-        extended_agent_card = _pick_first(
-            capabilities,
-            "extendedAgentCard",
-            "extended_agent_card",
-        )
+        extended_agent_card = _pick_first(capabilities, "extendedAgentCard")
         if extended_agent_card is not None and not isinstance(
             extended_agent_card, bool
         ):
@@ -132,8 +147,8 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
             result.errors.append("Field 'capabilities.streaming' must be a boolean.")
 
     for candidate_names, display_name in (
-        (("defaultInputModes", "default_input_modes"), "defaultInputModes"),
-        (("defaultOutputModes", "default_output_modes"), "defaultOutputModes"),
+        (("defaultInputModes",), "defaultInputModes"),
+        (("defaultOutputModes",), "defaultOutputModes"),
     ):
         value = _pick_first(card_data, *candidate_names)
         if value is not None:
@@ -164,6 +179,12 @@ def _validate_task(data: dict[str, Any]) -> list[str]:
         errors.append("Task object missing required field: 'id'.")
     if "status" not in data or "state" not in data.get("status", {}):
         errors.append("Task object missing required field: 'status.state'.")
+    else:
+        state = data.get("status", {}).get("state")
+        if not _is_canonical_task_state(state):
+            errors.append(
+                "Task object must use canonical A2A 1.0 task states (TASK_STATE_*)."
+            )
     return errors
 
 
@@ -171,6 +192,12 @@ def _validate_status_update(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if "status" not in data or "state" not in data.get("status", {}):
         errors.append("StatusUpdate object missing required field: 'status.state'.")
+    else:
+        state = data.get("status", {}).get("state")
+        if not _is_canonical_task_state(state):
+            errors.append(
+                "StatusUpdate object must use canonical A2A 1.0 task states (TASK_STATE_*)."
+            )
     return errors
 
 
@@ -196,29 +223,52 @@ def _validate_message(data: dict[str, Any]) -> list[str]:
     ):
         errors.append("Message object must have a non-empty 'parts' array.")
     role = data.get("role")
-    if role not in {"agent", "ROLE_AGENT"}:
-        errors.append("Message from agent must have 'role' set to 'agent'.")
+    if role != _CANONICAL_AGENT_ROLE:
+        errors.append(
+            "Message from agent must have canonical A2A 1.0 role 'ROLE_AGENT'."
+        )
     return errors
 
 
 def validate_message(data: dict[str, Any]) -> list[str]:
-    """Validate an incoming message from the agent based on its kind."""
-    if "kind" not in data:
-        return ["Response from agent is missing required 'kind' field."]
+    """Validate a canonical A2A 1.0 StreamResponse payload."""
 
-    kind = data.get("kind")
+    canonical_fields = {
+        "task": _validate_task,
+        "message": _validate_message,
+        "statusUpdate": _validate_status_update,
+        "artifactUpdate": _validate_artifact_update,
+    }
+    present_fields = [
+        field_name for field_name in canonical_fields if field_name in data
+    ]
+    if not present_fields:
+        return [
+            "Response from agent must be a canonical A2A 1.0 StreamResponse payload."
+        ]
+    if len(present_fields) > 1:
+        return [
+            "StreamResponse payload must set exactly one of 'task', 'message', "
+            "'statusUpdate', or 'artifactUpdate'."
+        ]
+
+    kind = present_fields[0]
+    payload = data.get(kind)
+    if not isinstance(payload, dict):
+        return [f"Field '{kind}' must be an object."]
+
     validators = {
         "task": _validate_task,
-        "status-update": _validate_status_update,
-        "artifact-update": _validate_artifact_update,
         "message": _validate_message,
+        "statusUpdate": _validate_status_update,
+        "artifactUpdate": _validate_artifact_update,
     }
 
     validator = validators.get(str(kind))
     if validator:
-        return validator(data)
+        return validator(payload)
 
-    return [f"Unknown message kind received: '{kind}'."]
+    return [f"Unknown StreamResponse field received: '{kind}'."]
 
 
 def _pick_first(data: dict[str, Any], *field_names: str) -> Any:
@@ -226,3 +276,92 @@ def _pick_first(data: dict[str, Any], *field_names: str) -> Any:
         if field_name in data:
             return data[field_name]
     return None
+
+
+def _is_canonical_task_state(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith(_CANONICAL_TASK_STATE_PREFIX)
+
+
+def _find_noncanonical_protojson_alias_paths(
+    payload: Any,
+    descriptor: Descriptor,
+    *,
+    path: tuple[str, ...] = (),
+) -> list[tuple[str, str]]:
+    if not isinstance(payload, Mapping):
+        return []
+
+    field_by_name = {field.name: field for field in descriptor.fields}
+    field_by_json_name = {field.json_name: field for field in descriptor.fields}
+    aliases: list[tuple[str, str]] = []
+
+    for raw_key, child in payload.items():
+        key = str(raw_key)
+        field = field_by_json_name.get(key)
+        if field is None:
+            field = field_by_name.get(key)
+            if field is None:
+                continue
+            if field.json_name != key:
+                aliases.append((_format_proto_path((*path, key)), field.json_name))
+
+        if field.type != FieldDescriptor.TYPE_MESSAGE:
+            continue
+
+        nested_descriptor = field.message_type
+        if nested_descriptor.full_name in _DYNAMIC_PROTO_FULL_NAMES:
+            continue
+
+        if field.label == FieldDescriptor.LABEL_REPEATED:
+            if nested_descriptor.GetOptions().map_entry:
+                value_field = nested_descriptor.fields_by_name.get("value")
+                if (
+                    value_field is None
+                    or value_field.type != FieldDescriptor.TYPE_MESSAGE
+                    or value_field.message_type.full_name in _DYNAMIC_PROTO_FULL_NAMES
+                    or not isinstance(child, Mapping)
+                ):
+                    continue
+                for map_key, map_value in child.items():
+                    aliases.extend(
+                        _find_noncanonical_protojson_alias_paths(
+                            map_value,
+                            value_field.message_type,
+                            path=(*path, key, str(map_key)),
+                        )
+                    )
+                continue
+
+            if not isinstance(child, list):
+                continue
+            for index, item in enumerate(child):
+                aliases.extend(
+                    _find_noncanonical_protojson_alias_paths(
+                        item,
+                        nested_descriptor,
+                        path=(*path, key, f"[{index}]"),
+                    )
+                )
+            continue
+
+        aliases.extend(
+            _find_noncanonical_protojson_alias_paths(
+                child,
+                nested_descriptor,
+                path=(*path, key),
+            )
+        )
+
+    return aliases
+
+
+def _format_proto_path(parts: tuple[str, ...]) -> str:
+    if not parts:
+        return ""
+    formatted: list[str] = []
+    for part in parts:
+        if part.startswith("[") and formatted:
+            formatted[-1] = f"{formatted[-1]}{part}"
+            continue
+        formatted.append(part)
+    return ".".join(formatted)

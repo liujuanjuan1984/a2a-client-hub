@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from app.features.invoke import stream_payloads
 from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_shared_metadata_sections,
@@ -127,28 +128,37 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
 def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     root = as_dict(payload)
 
-    artifact = as_dict(root.get("artifact"))
+    stream_kind, stream_body = stream_payloads._resolve_stream_response_body(root)
+    event_metadata = as_dict(stream_body.get("metadata"))
+    artifact = stream_payloads._resolve_stream_artifact(root)
     artifact_metadata = as_dict(artifact.get("metadata"))
-    message = as_dict(root.get("message"))
+    message = stream_body if stream_kind == "message" else as_dict(root.get("message"))
     message_metadata = as_dict(message.get("metadata"))
-    status = as_dict(root.get("status"))
+    status = (
+        as_dict(stream_body.get("status"))
+        if stream_kind == "status-update"
+        else as_dict(root.get("status"))
+    )
     status_metadata = as_dict(status.get("metadata"))
-    task = as_dict(root.get("task"))
+    task = stream_body if stream_kind == "task" else as_dict(root.get("task"))
     task_status = as_dict(task.get("status"))
     task_status_metadata = as_dict(task_status.get("metadata"))
-    result = as_dict(root.get("result"))
+    result = stream_body if stream_kind == "result" else as_dict(root.get("result"))
     result_status = as_dict(result.get("status"))
     result_status_metadata = as_dict(result_status.get("metadata"))
-    root_metadata = as_dict(root.get("metadata"))
+    root_metadata = event_metadata if stream_body else as_dict(root.get("metadata"))
     artifact_shared_stream = merge_shared_metadata_sections(
-        (root, artifact),
+        tuple(
+            candidate
+            for candidate in ((stream_body if stream_body else root), artifact)
+            if candidate
+        ),
         section=SHARED_STREAM_KEY,
     )
 
     msg_id = None
     evt_id = None
     for cand in (
-        root,
         artifact,
         artifact_metadata,
         message,
@@ -163,13 +173,14 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         result_status_metadata,
         artifact_shared_stream,
         root_metadata,
+        stream_body,
     ):
         if msg_id is None:
             msg_id = _pick_non_empty_str(cand, ("message_id", "messageId"))
         if evt_id is None:
             evt_id = _pick_non_empty_str(cand, ("event_id", "eventId"))
 
-    task_id = _pick_non_empty_str(root, ("task_id", "taskId"))
+    task_id = _pick_non_empty_str(stream_body, ("task_id", "taskId"))
     if task_id is None:
         for cand in (
             artifact,
@@ -177,25 +188,27 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
             as_dict(result.get("task")),
             as_dict(status.get("task")),
             root_metadata,
+            stream_body,
         ):
             task_id = _pick_non_empty_str(cand, ("task_id", "taskId", "id"))
             if task_id:
                 break
 
-    seq = _pick_int(root, ("seq",))
+    seq = _pick_int(stream_body, ("seq",))
     if seq is None:
         for cand in (
             artifact,
             artifact_metadata,
             root_metadata,
             artifact_shared_stream,
+            stream_body,
         ):
             seq = _pick_int(cand, ("seq", "sequence"))
             if seq is not None:
                 break
 
     usage: dict[str, Any] = {}
-    for cand in (root, artifact, message, status, task, result):
+    for cand in (stream_body, artifact, message, status, task, result):
         cand_usage = _extract_usage_from_candidate(cand)
         if cand_usage:
             usage.update(cand_usage)
@@ -205,7 +218,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     external_session_id = None
     binding_meta: dict[str, Any] = {}
 
-    for cand in (root, message, result):
+    for cand in (stream_body, message, result):
         if context_id is None:
             context_id = extract_context_id(cand)
 
