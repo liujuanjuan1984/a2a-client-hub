@@ -13,6 +13,8 @@ def test_normalize_runtime_state_maps_declared_aliases() -> None:
     assert normalize_runtime_state("canceled") == "cancelled"
     assert normalize_runtime_state("success") == "completed"
     assert normalize_runtime_state("working") == "working"
+    assert normalize_runtime_state("TASK_STATE_INPUT_REQUIRED") == "input-required"
+    assert normalize_runtime_state("TASK_STATE_CANCELED") == "cancelled"
 
 
 def test_runtime_status_contract_payload_declares_v1_contract() -> None:
@@ -46,9 +48,12 @@ def test_terminal_runtime_state_values_include_aliases() -> None:
     assert "auth_required" in values
     assert "canceled" in values
     assert "rejected" in values
+    assert "task-state-input-required" in values
+    assert "task-state-canceled" in values
 
 
 def test_is_interactive_runtime_state_accepts_declared_aliases() -> None:
     assert is_interactive_runtime_state("input_required") is True
     assert is_interactive_runtime_state("auth_required") is True
+    assert is_interactive_runtime_state("TASK_STATE_AUTH_REQUIRED") is True
     assert is_interactive_runtime_state("working") is False

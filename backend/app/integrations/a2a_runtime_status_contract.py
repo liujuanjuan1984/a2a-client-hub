@@ -55,10 +55,16 @@ NORMALIZED_RUNTIME_STATUS_ALIASES: Final[dict[str, str]] = {
 }
 
 
+def _strip_task_state_prefix(value: str) -> str:
+    if value.startswith("task-state-"):
+        return value[len("task-state-") :]
+    return value
+
+
 def normalize_runtime_state(value: str | None) -> str | None:
     if not isinstance(value, str):
         return None
-    normalized = value.strip().lower().replace("_", "-")
+    normalized = _strip_task_state_prefix(value.strip().lower().replace("_", "-"))
     if not normalized:
         return None
     return NORMALIZED_RUNTIME_STATUS_ALIASES.get(normalized, normalized)
@@ -93,10 +99,18 @@ def terminal_runtime_state_values() -> frozenset[str]:
         for alias, canonical in NORMALIZED_RUNTIME_STATUS_ALIASES.items()
         if canonical in TERMINAL_STREAM_RUNTIME_STATES
     }
+    prefixed_states = {
+        f"task-state-{state}" for state in TERMINAL_STREAM_RUNTIME_STATES
+    }
+    prefixed_alias_states = {
+        f"task-state-{alias}" for alias in (*alias_states, *normalized_alias_states)
+    }
     return frozenset(
         (
             *TERMINAL_STREAM_RUNTIME_STATES,
             *alias_states,
             *normalized_alias_states,
+            *prefixed_states,
+            *prefixed_alias_states,
         )
     )

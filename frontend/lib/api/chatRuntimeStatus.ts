@@ -343,7 +343,10 @@ export const normalizeRuntimeState = (
   contract?: RuntimeStatusContract | null,
 ) => {
   const resolvedContract = resolveRuntimeStatusContract(contract);
-  const normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  let normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  if (normalized.startsWith("task-state-")) {
+    normalized = normalized.slice("task-state-".length);
+  }
   const aliases = normalizeRuntimeAliasMap(resolvedContract);
   return aliases[normalized] ?? normalized;
 };

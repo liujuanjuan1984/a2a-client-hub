@@ -9,15 +9,15 @@ def valid_card_data():
         "name": "Test Agent",
         "description": "An agent for testing.",
         "version": "1.0.0",
-        "supported_interfaces": [
+        "supportedInterfaces": [
             {
                 "url": "https://example.com/agent",
-                "protocol_binding": "JSONRPC",
+                "protocolBinding": "JSONRPC",
             }
         ],
         "capabilities": {"streaming": True},
-        "default_input_modes": ["text/plain"],
-        "default_output_modes": ["text/plain"],
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
         "skills": [{"name": "test_skill"}],
     }
 
@@ -34,10 +34,10 @@ class TestValidateAgentCard:
             "name",
             "description",
             "version",
-            "supported_interfaces",
+            "supportedInterfaces",
             "capabilities",
-            "default_input_modes",
-            "default_output_modes",
+            "defaultInputModes",
+            "defaultOutputModes",
             "skills",
         ],
     )
@@ -53,10 +53,10 @@ class TestValidateAgentCard:
     )
     def test_invalid_url(self, valid_card_data, invalid_url):
         card_data = valid_card_data.copy()
-        card_data["supported_interfaces"] = [
+        card_data["supportedInterfaces"] = [
             {
                 "url": invalid_url,
-                "protocol_binding": "JSONRPC",
+                "protocolBinding": "JSONRPC",
             }
         ]
         result = validators.validate_agent_card(card_data)
@@ -70,14 +70,14 @@ class TestValidateAgentCard:
         result = validators.validate_agent_card(card_data)
         assert "Field 'capabilities' must be an object." in result.errors
 
-    @pytest.mark.parametrize("field", ["default_input_modes", "default_output_modes"])
+    @pytest.mark.parametrize("field", ["defaultInputModes", "defaultOutputModes"])
     def test_invalid_modes_type_not_array(self, valid_card_data, field):
         card_data = valid_card_data.copy()
         card_data[field] = "not-a-list"
         result = validators.validate_agent_card(card_data)
         assert f"Field '{field}' must be an array of strings." in result.errors
 
-    @pytest.mark.parametrize("field", ["default_input_modes", "default_output_modes"])
+    @pytest.mark.parametrize("field", ["defaultInputModes", "defaultOutputModes"])
     def test_invalid_modes_type_item_not_string(self, valid_card_data, field):
         card_data = valid_card_data.copy()
         card_data[field] = [123, "string"]
@@ -98,6 +98,42 @@ class TestValidateAgentCard:
         assert (
             "Field 'skills' array is empty. Agent must have at least one skill if it performs actions."
             in result.warnings
+        )
+
+    def test_rejects_legacy_agent_card_url_field(self, valid_card_data):
+        card_data = valid_card_data.copy()
+        card_data["url"] = "https://example.com/legacy"
+        result = validators.validate_agent_card(card_data)
+        assert (
+            "Legacy field 'url' is not supported in A2A 1.0; use "
+            "'supportedInterfaces' instead." in result.errors
+        )
+
+    def test_rejects_legacy_capability_modes(self, valid_card_data):
+        card_data = valid_card_data.copy()
+        card_data["capabilities"] = {
+            "streaming": True,
+            "inputModes": ["text/plain"],
+        }
+        result = validators.validate_agent_card(card_data)
+        assert (
+            "Legacy field 'capabilities.inputModes' is not supported in A2A 1.0; "
+            "use 'defaultInputModes' or per-skill 'inputModes' instead."
+            in result.errors
+        )
+
+    def test_rejects_unsupported_protocol_binding(self, valid_card_data):
+        card_data = valid_card_data.copy()
+        card_data["supportedInterfaces"] = [
+            {
+                "url": "https://example.com/agent",
+                "protocolBinding": "WEBSOCKET",
+            }
+        ]
+        result = validators.validate_agent_card(card_data)
+        assert (
+            "Each supported interface must declare a supported "
+            "'protocolBinding' (JSONRPC, HTTP+JSON, GRPC)." in result.errors
         )
 
 

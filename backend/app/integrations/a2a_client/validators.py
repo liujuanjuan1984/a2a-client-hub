@@ -5,6 +5,43 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+_SUPPORTED_PROTOCOL_BINDINGS = frozenset({"JSONRPC", "HTTP+JSON", "GRPC"})
+
+_LEGACY_TOP_LEVEL_FIELD_MESSAGES = {
+    "url": "Legacy field 'url' is not supported in A2A 1.0; use 'supportedInterfaces' instead.",
+    "supports_authenticated_extended_card": (
+        "Legacy field 'supports_authenticated_extended_card' is not supported in "
+        "A2A 1.0; use 'capabilities.extendedAgentCard' instead."
+    ),
+    "supportsAuthenticatedExtendedCard": (
+        "Legacy field 'supportsAuthenticatedExtendedCard' is not supported in "
+        "A2A 1.0; use 'capabilities.extendedAgentCard' instead."
+    ),
+    "examples": (
+        "Legacy field 'examples' is not supported in A2A 1.0; move examples to "
+        "individual skills."
+    ),
+}
+
+_LEGACY_CAPABILITY_FIELD_MESSAGES = {
+    "input_modes": (
+        "Legacy field 'capabilities.input_modes' is not supported in A2A 1.0; "
+        "use 'defaultInputModes' or per-skill 'inputModes' instead."
+    ),
+    "inputModes": (
+        "Legacy field 'capabilities.inputModes' is not supported in A2A 1.0; "
+        "use 'defaultInputModes' or per-skill 'inputModes' instead."
+    ),
+    "output_modes": (
+        "Legacy field 'capabilities.output_modes' is not supported in A2A 1.0; "
+        "use 'defaultOutputModes' or per-skill 'outputModes' instead."
+    ),
+    "outputModes": (
+        "Legacy field 'capabilities.outputModes' is not supported in A2A 1.0; "
+        "use 'defaultOutputModes' or per-skill 'outputModes' instead."
+    ),
+}
+
 
 @dataclass(slots=True)
 class AgentCardValidationResult:
@@ -16,67 +53,104 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
     """Validate the structure and fields of an agent card."""
     result = AgentCardValidationResult()
 
-    required_fields = frozenset(
-        [
-            "name",
-            "description",
-            "supported_interfaces",
-            "version",
-            "capabilities",
-            "default_input_modes",
-            "default_output_modes",
-            "skills",
-        ]
+    required_fields = (
+        (("name",), "name"),
+        (("description",), "description"),
+        (("supportedInterfaces", "supported_interfaces"), "supportedInterfaces"),
+        (("version",), "version"),
+        (("capabilities",), "capabilities"),
+        (("defaultInputModes", "default_input_modes"), "defaultInputModes"),
+        (("defaultOutputModes", "default_output_modes"), "defaultOutputModes"),
+        (("skills",), "skills"),
     )
 
-    for field_name in required_fields:
-        if field_name not in card_data:
-            result.errors.append(f"Required field is missing: '{field_name}'.")
+    for candidate_names, display_name in required_fields:
+        if _pick_first(card_data, *candidate_names) is None:
+            result.errors.append(f"Required field is missing: '{display_name}'.")
 
-    supported_interfaces = card_data.get("supported_interfaces")
+    for field_name, message in _LEGACY_TOP_LEVEL_FIELD_MESSAGES.items():
+        if field_name in card_data:
+            result.errors.append(message)
+
+    supported_interfaces = _pick_first(
+        card_data,
+        "supportedInterfaces",
+        "supported_interfaces",
+    )
     if supported_interfaces is not None:
         if not isinstance(supported_interfaces, list) or not supported_interfaces:
             result.errors.append(
-                "Field 'supported_interfaces' must be a non-empty array."
+                "Field 'supportedInterfaces' must be a non-empty array."
             )
         else:
             for index, interface in enumerate(supported_interfaces):
                 if not isinstance(interface, dict):
                     result.errors.append(
-                        f"Interface {index} in 'supported_interfaces' must be an object."
+                        f"Interface {index} in 'supportedInterfaces' must be an object."
                     )
                     continue
-                url = interface.get("url")
+                url = _pick_first(interface, "url")
                 if not isinstance(url, str) or not (
                     url.startswith("http://") or url.startswith("https://")
                 ):
                     result.errors.append(
                         "Each supported interface must declare an absolute 'url'."
                     )
-                binding = interface.get("protocol_binding")
+                binding = _pick_first(interface, "protocolBinding", "protocol_binding")
                 if not isinstance(binding, str) or not binding.strip():
                     result.errors.append(
-                        "Each supported interface must declare 'protocol_binding'."
+                        "Each supported interface must declare 'protocolBinding'."
+                    )
+                elif binding.strip() not in _SUPPORTED_PROTOCOL_BINDINGS:
+                    result.errors.append(
+                        "Each supported interface must declare a supported "
+                        "'protocolBinding' (JSONRPC, HTTP+JSON, GRPC)."
                     )
 
-    if "capabilities" in card_data and not isinstance(card_data["capabilities"], dict):
+    capabilities = _pick_first(card_data, "capabilities")
+    if capabilities is not None and not isinstance(capabilities, dict):
         result.errors.append("Field 'capabilities' must be an object.")
+        capabilities = None
 
-    for field_name in ["default_input_modes", "default_output_modes"]:
-        if field_name in card_data:
-            if not isinstance(card_data[field_name], list):
+    if isinstance(capabilities, dict):
+        for field_name, message in _LEGACY_CAPABILITY_FIELD_MESSAGES.items():
+            if field_name in capabilities:
+                result.errors.append(message)
+        extended_agent_card = _pick_first(
+            capabilities,
+            "extendedAgentCard",
+            "extended_agent_card",
+        )
+        if extended_agent_card is not None and not isinstance(
+            extended_agent_card, bool
+        ):
+            result.errors.append(
+                "Field 'capabilities.extendedAgentCard' must be a boolean."
+            )
+        streaming = _pick_first(capabilities, "streaming")
+        if streaming is not None and not isinstance(streaming, bool):
+            result.errors.append("Field 'capabilities.streaming' must be a boolean.")
+
+    for candidate_names, display_name in (
+        (("defaultInputModes", "default_input_modes"), "defaultInputModes"),
+        (("defaultOutputModes", "default_output_modes"), "defaultOutputModes"),
+    ):
+        value = _pick_first(card_data, *candidate_names)
+        if value is not None:
+            if not isinstance(value, list):
                 result.errors.append(
-                    f"Field '{field_name}' must be an array of strings."
+                    f"Field '{display_name}' must be an array of strings."
                 )
-            elif not all(isinstance(item, str) for item in card_data[field_name]):
-                result.errors.append(f"All items in '{field_name}' must be strings.")
+            elif not all(isinstance(item, str) for item in value):
+                result.errors.append(f"All items in '{display_name}' must be strings.")
 
-    if "skills" in card_data:
-        if not isinstance(card_data["skills"], list):
+    skills = _pick_first(card_data, "skills")
+    if skills is not None:
+        if not isinstance(skills, list):
             result.errors.append(
                 "Field 'skills' must be an array of AgentSkill objects."
             )
-        elif not card_data["skills"]:
+        elif not skills:
             result.warnings.append(
                 "Field 'skills' array is empty. Agent must have at least one skill if it performs actions."
             )
@@ -145,3 +219,10 @@ def validate_message(data: dict[str, Any]) -> list[str]:
         return validator(data)
 
     return [f"Unknown message kind received: '{kind}'."]
+
+
+def _pick_first(data: dict[str, Any], *field_names: str) -> Any:
+    for field_name in field_names:
+        if field_name in data:
+            return data[field_name]
+    return None

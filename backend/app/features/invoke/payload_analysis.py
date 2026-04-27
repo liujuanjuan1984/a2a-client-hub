@@ -42,6 +42,15 @@ def _pick_non_empty_str(
     return None
 
 
+def _normalize_a2a_role(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower().replace("_", "-")
+    if normalized.startswith("role-"):
+        normalized = normalized[len("role-") :]
+    return normalized or None
+
+
 def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
     for key in keys:
         value = payload.get(key)
@@ -394,8 +403,8 @@ def extract_preferred_text_from_payload(payload: Any) -> str | None:
             entry_root = as_dict(entry)
             if not entry_root:
                 continue
-            role = _pick_non_empty_str(entry_root, ("role",))
-            if role and role.lower() in {"agent", "assistant", "model"}:
+            role = _normalize_a2a_role(_pick_non_empty_str(entry_root, ("role",)))
+            if role in {"agent", "assistant", "model"}:
                 history_text = extract_preferred_text_from_payload(entry_root)
                 if history_text:
                     return history_text

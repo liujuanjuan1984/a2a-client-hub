@@ -505,7 +505,10 @@ const parseSerializedInterruptEventContent = (
 };
 
 const normalizeRole = (raw: string | null): ChatRole => {
-  const role = (raw ?? "").trim().toLowerCase();
+  let role = (raw ?? "").trim().toLowerCase().replace(/_/g, "-");
+  if (role.startsWith("role-")) {
+    role = role.slice("role-".length);
+  }
   if (role === "user" || role === "human" || role === "automation") {
     return "user";
   }
