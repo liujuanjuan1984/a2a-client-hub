@@ -218,19 +218,18 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   const metadata = asRecord(body.metadata);
   const shared = asRecord(metadata?.shared);
   const sharedStream = asRecord(shared?.stream);
-  const externalSessionId =
-    pickString(session, ["id", "externalSessionId"]) ?? undefined;
+  const externalSessionId = pickString(session, ["id"]) ?? undefined;
   const rawProvider = pickString(session, ["provider"]);
   const provider = rawProvider?.trim().toLowerCase() ?? undefined;
   const streamThreadId =
-    pickString(properties, ["thread_id", "threadId"]) ??
-    pickString(sharedStream, ["thread_id", "threadId"]) ??
-    pickString(body, ["thread_id", "threadId"]) ??
+    pickString(properties, ["threadId"]) ??
+    pickString(sharedStream, ["threadId"]) ??
+    pickString(body, ["threadId"]) ??
     undefined;
   const streamTurnId =
-    pickString(properties, ["turn_id", "turnId"]) ??
-    pickString(sharedStream, ["turn_id", "turnId"]) ??
-    pickString(body, ["turn_id", "turnId"]) ??
+    pickString(properties, ["turnId"]) ??
+    pickString(sharedStream, ["turnId"]) ??
+    pickString(body, ["turnId"]) ??
     undefined;
   const transport =
     typeof body.transport === "string"
@@ -239,15 +238,9 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
         ? data.transport
         : undefined;
   const inputModes =
-    coerceStringArray(body.input_modes) ??
-    coerceStringArray(body.inputModes) ??
-    coerceStringArray(data.input_modes) ??
-    coerceStringArray(data.inputModes);
+    coerceStringArray(body.inputModes) ?? coerceStringArray(data.inputModes);
   const outputModes =
-    coerceStringArray(body.output_modes) ??
-    coerceStringArray(body.outputModes) ??
-    coerceStringArray(data.output_modes) ??
-    coerceStringArray(data.outputModes);
+    coerceStringArray(body.outputModes) ?? coerceStringArray(data.outputModes);
 
   return {
     provider,
@@ -395,7 +388,7 @@ const extractRuntimeInterrupt = (
   if (!interrupt) {
     return null;
   }
-  const requestId = pickString(interrupt, ["request_id", "requestId"]);
+  const requestId = pickString(interrupt, ["requestId"]);
   const interruptType = pickString(interrupt, ["type"])?.toLowerCase();
   if (
     !requestId ||
@@ -485,14 +478,11 @@ const extractRuntimeInterrupt = (
       source: "stream",
       details: {
         displayMessage: extractInterruptDisplayMessage(details),
-        serverName:
-          pickRawString(details, ["server_name", "serverName"]) ?? null,
+        serverName: pickRawString(details, ["serverName"]) ?? null,
         mode: pickRawString(details, ["mode"]) ?? null,
-        requestedSchema:
-          details?.requested_schema ?? details?.requestedSchema ?? null,
+        requestedSchema: details?.requestedSchema ?? null,
         url: pickRawString(details, ["url"]) ?? null,
-        elicitationId:
-          pickRawString(details, ["elicitation_id", "elicitationId"]) ?? null,
+        elicitationId: pickRawString(details, ["elicitationId"]) ?? null,
         meta: asRecord(details?.meta),
       },
     };
@@ -531,9 +521,7 @@ export const extractRuntimeStatusEvent = (
     const rawCompletionPhase =
       typeof sharedStream?.completionPhase === "string"
         ? sharedStream.completionPhase
-        : typeof sharedStream?.completion_phase === "string"
-          ? sharedStream.completion_phase
-          : null;
+        : null;
     const completionPhase =
       rawCompletionPhase?.trim().toLowerCase() === "persisted"
         ? "persisted"
@@ -542,10 +530,7 @@ export const extractRuntimeStatusEvent = (
       typeof sharedStream?.messageId === "string" &&
       sharedStream.messageId.trim().length > 0
         ? sharedStream.messageId.trim()
-        : typeof sharedStream?.message_id === "string" &&
-            sharedStream.message_id.trim().length > 0
-          ? sharedStream.message_id.trim()
-          : null;
+        : null;
     const resolvedContract = resolveRuntimeStatusContract(contract);
     const state = normalizeRuntimeState(status.state, resolvedContract);
     const isFinal = resolvedContract.terminalStates

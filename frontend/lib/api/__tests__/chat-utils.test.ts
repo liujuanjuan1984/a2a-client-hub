@@ -62,8 +62,8 @@ describe("runtime status contract", () => {
           metadata: {
             shared: {
               stream: {
-                thread_id: "thread-1",
-                turn_id: "turn-2",
+                threadId: "thread-1",
+                turnId: "turn-2",
               },
             },
           },

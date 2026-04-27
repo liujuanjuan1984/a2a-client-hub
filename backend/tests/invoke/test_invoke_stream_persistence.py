@@ -203,23 +203,25 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
 
     reasoning_event = {
         "artifactUpdate": {
+            "op": "append",
             "artifact": {
                 "parts": [{"text": "thinking"}],
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "reasoning",
+                            "blockType": "reasoning",
                             "messageId": "msg-stream-1",
                             "eventId": "evt-reasoning-1",
-                            "sequence": 1,
+                            "seq": 1,
                         }
                     }
                 },
-            }
+            },
         }
     }
     tool_event = {
         "artifactUpdate": {
+            "op": "append",
             "artifact": {
                 "parts": [
                     {
@@ -234,46 +236,47 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "tool_call",
+                            "blockType": "tool_call",
                             "messageId": "msg-stream-1",
                             "eventId": "evt-tool-1",
-                            "sequence": 2,
+                            "seq": 2,
                         }
                     }
                 },
-            }
+            },
         }
     }
     text_event = {
         "artifactUpdate": {
+            "op": "append",
             "artifact": {
                 "parts": [{"text": "draft"}],
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
                             "messageId": "msg-stream-1",
                             "eventId": "evt-text-1",
-                            "sequence": 3,
+                            "seq": 3,
                         }
                     }
                 },
-            }
+            },
         }
     }
     snapshot_event = {
         "artifactUpdate": {
-            "append": False,
+            "op": "replace",
             "artifact": {
                 "parts": [{"text": "final answer"}],
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
                             "source": "final_snapshot",
                             "messageId": "msg-stream-1",
                             "eventId": "evt-text-2",
-                            "sequence": 4,
+                            "seq": 4,
                         }
                     }
                 },
@@ -484,24 +487,26 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
     events = (
         {
             "artifactUpdate": {
+                "op": "append",
                 "artifact": {
                     "artifactId": shared_artifact_id,
                     "parts": [{"text": "thinking"}],
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "reasoning",
+                                "blockType": "reasoning",
                                 "messageId": "msg-stream-shared",
                                 "eventId": "evt-shared-1",
-                                "sequence": 1,
+                                "seq": 1,
                             }
                         }
                     },
-                }
+                },
             }
         },
         {
             "artifactUpdate": {
+                "op": "append",
                 "artifact": {
                     "artifactId": shared_artifact_id,
                     "parts": [
@@ -517,19 +522,19 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "tool_call",
+                                "blockType": "tool_call",
                                 "messageId": "msg-stream-shared",
                                 "eventId": "evt-shared-2",
-                                "sequence": 2,
+                                "seq": 2,
                             }
                         }
                     },
-                }
+                },
             }
         },
         {
             "artifactUpdate": {
-                "append": False,
+                "op": "replace",
                 "lastChunk": True,
                 "artifact": {
                     "artifactId": shared_artifact_id,
@@ -537,11 +542,11 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "text",
+                                "blockType": "text",
                                 "source": "final_snapshot",
                                 "messageId": "msg-stream-shared",
                                 "eventId": "evt-shared-3",
-                                "sequence": 3,
+                                "seq": 3,
                             }
                         }
                     },

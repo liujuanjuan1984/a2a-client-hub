@@ -333,7 +333,6 @@ async def test_continue_session_returns_canonical_binding_metadata(
     assert result.success is True
     assert result.result == {
         "contextId": "ses_123",
-        "provider": "opencode",
         "metadata": {
             "contextId": "ses_123",
             "shared": {
@@ -350,7 +349,7 @@ async def test_continue_session_returns_canonical_binding_metadata(
 
 
 @pytest.mark.asyncio
-async def test_continue_session_keeps_legacy_binding_metadata_in_fallback_mode(
+async def test_continue_session_normalizes_binding_metadata_in_fallback_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -389,11 +388,8 @@ async def test_continue_session_keeps_legacy_binding_metadata_in_fallback_mode(
     assert result.success is True
     assert result.result == {
         "contextId": "ses_legacy",
-        "provider": "opencode",
         "metadata": {
             "contextId": "ses_legacy",
-            "provider": "opencode",
-            "externalSessionId": "ses_legacy",
             "shared": {
                 "session": {
                     "id": "ses_legacy",

@@ -132,22 +132,10 @@ export const extractTextFromParts = (parts: unknown[]) =>
         return null;
       }
       const typed = part as {
-        kind?: unknown;
-        type?: unknown;
         text?: unknown;
-        content?: unknown;
       };
-      const rawKind = typed.kind ?? typed.type;
-      const normalizedKind =
-        typeof rawKind === "string" ? rawKind.trim().toLowerCase() : null;
-      if (normalizedKind && normalizedKind !== "text") {
-        return null;
-      }
       if (typeof typed.text === "string") {
         return typed.text;
-      }
-      if (typeof typed.content === "string") {
-        return typed.content;
       }
       return null;
     })

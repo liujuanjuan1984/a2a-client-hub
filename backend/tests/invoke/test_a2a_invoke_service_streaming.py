@@ -303,9 +303,11 @@ async def test_sse_on_complete_ignores_non_typed_events():
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "parts": [{"kind": "unsupported_kind", "value": "foo"}]
+                    "artifactUpdate": {
+                        "op": "append",
+                        "artifact": {
+                            "parts": [{"value": "foo"}],
+                        },
                     },
                 },
                 {"content": "bar"},
@@ -406,7 +408,7 @@ async def test_sse_on_complete_supports_block_type():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_accepts_text_parts_without_block_type():
+async def test_sse_on_complete_rejects_artifact_updates_without_block_type():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -433,7 +435,7 @@ async def test_sse_on_complete_accepts_text_parts_without_block_type():
     async for _ in response.body_iterator:
         pass
 
-    assert completed == ["Hello generic"]
+    assert completed == [""]
 
 
 @pytest.mark.asyncio
@@ -447,14 +449,19 @@ async def test_sse_on_complete_ignores_artifact_updates_without_parts():
         gateway=_GatewayWithEvents(
             [
                 {
-                    "kind": "artifact-update",
-                    "artifact": {
-                        "metadata": {
-                            "block_type": "text",
-                            "message_id": "msg-legacy-no-parts",
-                            "event_id": "evt-legacy-no-parts",
+                    "artifactUpdate": {
+                        "op": "append",
+                        "artifact": {
+                            "metadata": {
+                                "shared": {
+                                    "stream": {
+                                        "blockType": "text",
+                                        "messageId": "msg-no-parts",
+                                        "eventId": "evt-no-parts",
+                                    }
+                                }
+                            },
                         },
-                        "content": "legacy-content-should-be-ignored",
                     },
                 }
             ]
@@ -541,32 +548,34 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
             [
                 {
                     "artifactUpdate": {
+                        "op": "append",
                         "artifact": {
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "messageId": "msg-legacy-1",
                                         "eventId": "evt-legacy-1",
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 },
                 {
                     "artifactUpdate": {
+                        "op": "append",
                         "artifact": {
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "messageId": "msg-legacy-2",
                                         "eventId": "evt-legacy-2",
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 },
             ]
@@ -596,7 +605,7 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
-            "block_type"
+            "blockType"
         ]
         == "<max_depth_exceeded>"
     )
@@ -615,15 +624,16 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
             [
                 {
                     "artifactUpdate": {
+                        "op": "append",
                         "artifact": {
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 }
             ]
@@ -653,7 +663,7 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
-            "block_type"
+            "blockType"
         ]
         == "<max_depth_exceeded>"
     )
@@ -700,7 +710,7 @@ async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(cap
     assert warning_records == []
     payload = "".join(frames)
     assert '"artifactUpdate"' in payload
-    assert '"block_type": "tool_call"' in payload
+    assert '"blockType": "tool_call"' in payload
 
 
 @pytest.mark.asyncio
@@ -716,7 +726,7 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
                             "eventId": "evt-cache-1",
                             "messageId": "msg-upstream-1",
                         }
@@ -803,10 +813,10 @@ async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "eventId": "evt-sse-1",
                                         "messageId": "msg-sse-1",
-                                        "sequence": 9,
+                                        "seq": 9,
                                     }
                                 }
                             },
@@ -821,10 +831,10 @@ async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "eventId": "evt-sse-2",
                                         "messageId": "msg-sse-1",
-                                        "sequence": 12,
+                                        "seq": 12,
                                     }
                                 }
                             },
@@ -1119,7 +1129,7 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
                         "artifact": {
                             "artifactId": "task-ws:stream:text",
                             "parts": [{"text": "hello"}],
-                            "metadata": {"shared": {"stream": {"block_type": "text"}}},
+                            "metadata": {"shared": {"stream": {"blockType": "text"}}},
                         }
                     }
                 },
@@ -1165,10 +1175,10 @@ async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "eventId": "evt-ws-1",
                                         "messageId": "msg-ws-1",
-                                        "sequence": 9,
+                                        "seq": 9,
                                     }
                                 }
                             },
@@ -1183,10 +1193,10 @@ async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "eventId": "evt-ws-2",
                                         "messageId": "msg-ws-1",
-                                        "sequence": 12,
+                                        "seq": 12,
                                     }
                                 }
                             },
@@ -1229,32 +1239,34 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
             [
                 {
                     "artifactUpdate": {
+                        "op": "append",
                         "artifact": {
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "messageId": "msg-legacy-ws-1",
                                         "eventId": "evt-legacy-ws-1",
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 },
                 {
                     "artifactUpdate": {
+                        "op": "append",
                         "artifact": {
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "messageId": "msg-legacy-ws-2",
                                         "eventId": "evt-legacy-ws-2",
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 },
                 _status_update_event(state="TASK_STATE_COMPLETED"),
@@ -1281,7 +1293,7 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
-            "block_type"
+            "blockType"
         ]
         == "<max_depth_exceeded>"
     )
@@ -1541,7 +1553,7 @@ async def test_consume_stream_accepts_single_blocking_message_payload() -> None:
                             "shared": {
                                 "stream": {
                                     "eventId": "evt-blocking-1",
-                                    "block_type": "text",
+                                    "blockType": "text",
                                 }
                             }
                         },
@@ -1614,32 +1626,34 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
             [
                 {
                     "artifactUpdate": {
+                        "op": "append",
                         "artifact": {
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "messageId": "msg-legacy-consume-1",
                                         "eventId": "evt-legacy-consume-1",
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 },
                 {
                     "artifactUpdate": {
+                        "op": "append",
                         "artifact": {
                             "metadata": {
                                 "shared": {
                                     "stream": {
-                                        "block_type": "text",
+                                        "blockType": "text",
                                         "messageId": "msg-legacy-consume-2",
                                         "eventId": "evt-legacy-consume-2",
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 },
                 _status_update_event(state="TASK_STATE_COMPLETED"),
@@ -1667,7 +1681,7 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
-            "block_type"
+            "blockType"
         ]
         == "<max_depth_exceeded>"
     )

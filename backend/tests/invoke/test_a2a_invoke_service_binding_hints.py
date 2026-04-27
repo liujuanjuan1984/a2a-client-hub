@@ -5,6 +5,25 @@ from tests.invoke.a2a_invoke_service_support import (
 )
 
 
+def _session_metadata(
+    *,
+    provider: str | None = None,
+    session_id: str | None = None,
+    context_id: str | None = None,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    if context_id is not None:
+        metadata["contextId"] = context_id
+    if provider is not None or session_id is not None:
+        session: dict[str, str] = {}
+        if session_id is not None:
+            session["id"] = session_id
+        if provider is not None:
+            session["provider"] = provider
+        metadata["shared"] = {"session": session}
+    return metadata
+
+
 def test_extract_binding_hints_from_serialized_event():
     (
         context_id,
@@ -17,10 +36,10 @@ def test_extract_binding_hints_from_serialized_event():
                 "parts": [{"text": "ok"}],
                 "contextId": "ctx-1",
                 "metadata": {
-                    "provider": "OpenCode",
                     "shared": {
                         "session": {
                             "id": "upstream-1",
+                            "provider": "OpenCode",
                         }
                     },
                 },
@@ -28,8 +47,10 @@ def test_extract_binding_hints_from_serialized_event():
         }
     )
     assert context_id == "ctx-1"
-    assert metadata["provider"] == "opencode"
-    assert metadata["externalSessionId"] == "upstream-1"
+    assert metadata == _session_metadata(
+        provider="opencode",
+        session_id="upstream-1",
+    )
 
 
 def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
@@ -42,10 +63,10 @@ def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
                     "parts": [{"text": "ok"}],
                     "contextId": "ctx-from-raw",
                     "metadata": {
-                        "provider": "opencode",
                         "shared": {
                             "session": {
                                 "id": "raw-upstream",
+                                "provider": "opencode",
                             }
                         },
                     },
@@ -61,14 +82,22 @@ def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
                 "role": "ROLE_AGENT",
                 "parts": [{"text": "ok"}],
                 "contextId": "ctx-from-result",
-                "metadata": {"externalSessionId": "result-upstream"},
+                "metadata": {
+                    "shared": {
+                        "session": {
+                            "id": "result-upstream",
+                        }
+                    }
+                },
             },
             "raw": _RawPayload(),
         }
     )
     assert context_id == "ctx-from-raw"
-    assert metadata["provider"] == "opencode"
-    assert metadata["externalSessionId"] == "raw-upstream"
+    assert metadata == _session_metadata(
+        provider="opencode",
+        session_id="raw-upstream",
+    )
 
 
 def test_extract_binding_hints_ignores_session_id_aliases():
@@ -83,10 +112,10 @@ def test_extract_binding_hints_ignores_session_id_aliases():
         }
     )
     assert context_id is None
-    assert metadata["provider"] == "opencode"
+    assert metadata == {}
 
 
-def test_extract_binding_hints_falls_back_to_legacy_root_session_metadata():
+def test_extract_binding_hints_ignores_legacy_root_session_metadata():
     context_id, metadata = (
         a2a_invoke_service.extract_binding_hints_from_serialized_event(
             {
@@ -104,8 +133,7 @@ def test_extract_binding_hints_falls_back_to_legacy_root_session_metadata():
         )
     )
     assert context_id == "ctx-legacy"
-    assert metadata["provider"] == "opencode"
-    assert metadata["externalSessionId"] == "legacy-upstream-1"
+    assert metadata == {}
 
 
 def test_extract_binding_hints_extracts_canonical_shared_session_id():
@@ -118,10 +146,10 @@ def test_extract_binding_hints_extracts_canonical_shared_session_id():
                 "role": "ROLE_AGENT",
                 "parts": [{"text": "ok"}],
                 "metadata": {
-                    "provider": "OpenCode",
                     "shared": {
                         "session": {
                             "id": "nested-upstream-session",
+                            "provider": "OpenCode",
                         }
                     },
                 },
@@ -129,8 +157,10 @@ def test_extract_binding_hints_extracts_canonical_shared_session_id():
         }
     )
     assert context_id is None
-    assert metadata["provider"] == "opencode"
-    assert metadata["externalSessionId"] == "nested-upstream-session"
+    assert metadata == _session_metadata(
+        provider="opencode",
+        session_id="nested-upstream-session",
+    )
 
 
 def test_extract_binding_hints_ignores_legacy_flat_opencode_session_id():
@@ -144,8 +174,7 @@ def test_extract_binding_hints_ignores_legacy_flat_opencode_session_id():
         }
     )
     assert context_id is None
-    assert "provider" not in metadata
-    assert "externalSessionId" not in metadata
+    assert metadata == {}
 
 
 def test_extract_binding_hints_ignores_legacy_flat_external_session_id_aliases():
@@ -160,8 +189,7 @@ def test_extract_binding_hints_ignores_legacy_flat_external_session_id_aliases()
         }
     )
     assert context_id is None
-    assert "provider" not in metadata
-    assert "externalSessionId" not in metadata
+    assert metadata == {}
 
 
 def test_extract_readable_content_prefers_raw_history_agent_message():

@@ -993,15 +993,11 @@ class SessionExtensionService:
             {"contextId": resolved_session_id},
             provider=ext.provider,
             external_session_id=resolved_session_id,
-            include_legacy_root=(
-                binding_meta.get("session_binding_mode") != "declared_contract"
-            ),
         )
         return ExtensionCallResult(
             success=True,
             result={
                 "contextId": resolved_session_id,
-                "provider": ext.provider,
                 "metadata": binding_metadata,
             },
             meta=meta,

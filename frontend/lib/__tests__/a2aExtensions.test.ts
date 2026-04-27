@@ -91,7 +91,14 @@ describe("assertExtensionSuccess", () => {
           request: {
             parts: [{ type: "text", text: "Continue" }],
           },
-          metadata: { provider: "opencode", externalSessionId: "ses-1" },
+          metadata: {
+            shared: {
+              session: {
+                id: "ses-1",
+                provider: "opencode",
+              },
+            },
+          },
         },
       },
     );

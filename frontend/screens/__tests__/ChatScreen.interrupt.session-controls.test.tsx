@@ -760,8 +760,8 @@ describe("ChatScreen interrupt handling", () => {
       metadata: {
         shared: {
           stream: {
-            thread_id: "thread-1",
-            turn_id: "turn-1",
+            threadId: "thread-1",
+            turnId: "turn-1",
           },
         },
       },
@@ -806,8 +806,8 @@ describe("ChatScreen interrupt handling", () => {
       metadata: {
         shared: {
           stream: {
-            thread_id: "thread-1",
-            turn_id: "turn-1",
+            threadId: "thread-1",
+            turnId: "turn-1",
           },
         },
       },
@@ -837,8 +837,8 @@ describe("ChatScreen interrupt handling", () => {
       metadata: {
         shared: {
           stream: {
-            thread_id: "thread-1",
-            turn_id: "turn-1",
+            threadId: "thread-1",
+            turnId: "turn-1",
           },
         },
       },

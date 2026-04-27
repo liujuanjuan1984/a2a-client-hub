@@ -9,6 +9,9 @@ from a2a.types import AgentCard
 from app.core.config import settings
 from app.core.http_client import get_global_http_client
 from app.features.agents.personal.runtime import A2ARuntime
+from app.features.invoke.shared_metadata import (
+    merge_preferred_session_binding_metadata,
+)
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
@@ -24,11 +27,16 @@ from app.integrations.a2a_error_contract import (
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
+from app.integrations.a2a_extensions.shared_contract import (
+    CANONICAL_EXTERNAL_SESSION_ID_KEY,
+    CANONICAL_PROVIDER_KEY,
+)
 from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
     validate_outbound_http_url,
 )
+from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 
 
 class A2AExtensionSupport:
@@ -211,7 +219,19 @@ class A2AExtensionSupport:
             return None
         if not isinstance(metadata, dict):
             raise ValueError("metadata must be an object")
-        return dict(metadata)
+        normalized = dict(metadata)
+        external_session_id = normalize_non_empty_text(
+            normalized.get(CANONICAL_EXTERNAL_SESSION_ID_KEY)
+        )
+        if external_session_id is None:
+            return normalized
+
+        provider = normalize_provider(normalized.get(CANONICAL_PROVIDER_KEY))
+        return merge_preferred_session_binding_metadata(
+            normalized,
+            provider=provider,
+            external_session_id=external_session_id,
+        )
 
     @staticmethod
     def record_extension_metric(

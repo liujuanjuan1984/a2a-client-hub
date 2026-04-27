@@ -128,11 +128,14 @@ class _FakeExtensionsService:
             success=True,
             result={
                 "contextId": session_id,
-                "provider": "opencode",
                 "metadata": {
-                    "provider": "opencode",
-                    "externalSessionId": session_id,
                     "contextId": session_id,
+                    "shared": {
+                        "session": {
+                            "id": session_id,
+                            "provider": "opencode",
+                        }
+                    },
                 },
             },
             meta={},

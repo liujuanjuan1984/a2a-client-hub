@@ -144,7 +144,7 @@ def _artifact_event(
     if block_type or source or message_id or event_id:
         artifact_key = artifact_id.replace(":", "-").replace("/", "-")
         if block_type:
-            shared_stream["block_type"] = block_type
+            shared_stream["blockType"] = block_type
         if source:
             shared_stream["source"] = source
         shared_stream["messageId"] = message_id or f"msg-{artifact_key}"
@@ -153,15 +153,16 @@ def _artifact_event(
     metadata = {"shared": {"stream": shared_stream}} if shared_stream else {}
     payload: dict = {
         "artifactUpdate": {
+            "op": (
+                "append" if append else "replace" if append is not None else "replace"
+            ),
             "artifact": {
                 "artifactId": artifact_id,
                 "parts": [{"text": text}],
                 "metadata": metadata,
-            }
+            },
         }
     }
-    if append is not None:
-        payload["artifactUpdate"]["append"] = append
     return payload
 
 
@@ -177,7 +178,7 @@ def _artifact_data_event(
 ) -> dict:
     shared_stream: dict[str, str] = {}
     artifact_key = artifact_id.replace(":", "-").replace("/", "-")
-    shared_stream["block_type"] = block_type
+    shared_stream["blockType"] = block_type
     if source:
         shared_stream["source"] = source
     shared_stream["messageId"] = message_id or f"msg-{artifact_key}"
@@ -185,15 +186,16 @@ def _artifact_data_event(
 
     payload: dict = {
         "artifactUpdate": {
+            "op": (
+                "append" if append else "replace" if append is not None else "replace"
+            ),
             "artifact": {
                 "artifactId": artifact_id,
                 "parts": [{"data": data}],
                 "metadata": {"shared": {"stream": shared_stream}},
-            }
+            },
         }
     }
-    if append is not None:
-        payload["artifactUpdate"]["append"] = append
     return payload
 
 

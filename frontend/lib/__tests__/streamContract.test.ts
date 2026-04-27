@@ -60,20 +60,18 @@ const buildBlockUpdatePayload = (input: {
   baseSeq?: number;
 }) => {
   const artifactMetadata: Record<string, unknown> = {
-    block_type: input.blockType,
+    blockType: input.blockType,
+    op: input.op ?? (input.append === false ? "replace" : "append"),
     source: input.source ?? "stream",
   };
   if (input.blockId !== undefined) {
-    artifactMetadata.block_id = input.blockId;
+    artifactMetadata.blockId = input.blockId;
   }
   if (input.laneId !== undefined) {
-    artifactMetadata.lane_id = input.laneId;
-  }
-  if (input.op !== undefined) {
-    artifactMetadata.op = input.op;
+    artifactMetadata.laneId = input.laneId;
   }
   if (input.baseSeq !== undefined) {
-    artifactMetadata.base_seq = input.baseSeq;
+    artifactMetadata.baseSeq = input.baseSeq;
   }
   const payload: Record<string, unknown> = {
     artifactUpdate: {
@@ -110,7 +108,7 @@ const mustParse = (payload: Record<string, unknown>): StreamBlockUpdate => {
 };
 
 describe("block-based stream parser and reducer", () => {
-  it("appends when incoming block_type matches the active block", () => {
+  it("appends when incoming blockType matches the active block", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
@@ -331,7 +329,7 @@ describe("block-based stream parser and reducer", () => {
           : {};
       if (event.phase === "resolved") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type:
             event.type === "permission" ||
             event.type === "permissions" ||
@@ -344,7 +342,7 @@ describe("block-based stream parser and reducer", () => {
       }
       if (event.type === "permission") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type: "permission",
           phase: "asked",
           details: {
@@ -358,17 +356,15 @@ describe("block-based stream parser and reducer", () => {
                 )
               : [],
             displayMessage:
-              typeof details.display_message === "string"
-                ? details.display_message
-                : typeof details.displayMessage === "string"
-                  ? details.displayMessage
-                  : null,
+              typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
           },
         };
       }
       if (event.type === "permissions") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type: "permissions",
           phase: "asked",
           details: {
@@ -377,42 +373,33 @@ describe("block-based stream parser and reducer", () => {
                 ? (details.permissions as Record<string, unknown>)
                 : null,
             displayMessage:
-              typeof details.display_message === "string"
-                ? details.display_message
-                : typeof details.displayMessage === "string"
-                  ? details.displayMessage
-                  : null,
+              typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
           },
         };
       }
       if (event.type === "elicitation") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type: "elicitation",
           phase: "asked",
           details: {
             displayMessage:
-              typeof details.display_message === "string"
-                ? details.display_message
-                : typeof details.displayMessage === "string"
-                  ? details.displayMessage
-                  : null,
+              typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
             serverName:
-              typeof details.server_name === "string"
-                ? details.server_name
-                : typeof details.serverName === "string"
-                  ? details.serverName
-                  : null,
+              typeof details.serverName === "string"
+                ? details.serverName
+                : null,
             mode: typeof details.mode === "string" ? details.mode : null,
-            requestedSchema:
-              details.requested_schema ?? details.requestedSchema ?? null,
+            requestedSchema: details.requestedSchema ?? null,
             url: typeof details.url === "string" ? details.url : null,
             elicitationId:
-              typeof details.elicitation_id === "string"
-                ? details.elicitation_id
-                : typeof details.elicitationId === "string"
-                  ? details.elicitationId
-                  : null,
+              typeof details.elicitationId === "string"
+                ? details.elicitationId
+                : null,
             meta:
               details.meta && typeof details.meta === "object"
                 ? (details.meta as Record<string, unknown>)
@@ -421,16 +408,14 @@ describe("block-based stream parser and reducer", () => {
         };
       }
       return {
-        requestId: String(event.request_id),
+        requestId: String(event.requestId),
         type: "question",
         phase: "asked",
         details: {
           displayMessage:
-            typeof details.display_message === "string"
-              ? details.display_message
-              : typeof details.displayMessage === "string"
-                ? details.displayMessage
-                : null,
+            typeof details.displayMessage === "string"
+              ? details.displayMessage
+              : null,
           questions: Array.isArray(details.questions)
             ? details.questions.map((question) => {
                 const item = question as Record<string, unknown>;
@@ -459,7 +444,7 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("supports overwrite semantics when append=false or final_snapshot arrives", () => {
+  it("supports overwrite semantics when explicit replace operation arrives", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
@@ -481,8 +466,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "text",
           delta: "reset",
           artifactId: "task-2:stream:text",
-          append: false,
-          source: "final_snapshot",
+          op: "replace",
           taskId: "task-2",
           seq: 2,
         }),
@@ -737,7 +721,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.baseSeq).toBe(10);
   });
 
-  it("adapts legacy final_snapshot onto the existing primary text block", () => {
+  it("replaces the declared primary text block without snapshot-source heuristics", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
@@ -763,7 +747,7 @@ describe("block-based stream parser and reducer", () => {
           artifactId: "task-5:stream:reasoning",
           taskId: "task-5",
           seq: 2,
-          append: false,
+          op: "replace",
         }),
       ),
     );
@@ -772,10 +756,11 @@ describe("block-based stream parser and reducer", () => {
       mustParse(
         buildBlockUpdatePayload({
           blockType: "text",
-          delta: "draft plan final answer",
+          delta: "final answer",
           artifactId: "task-5:stream:text:final",
-          source: "final_snapshot",
-          append: false,
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "replace",
           taskId: "task-5",
           seq: 3,
           lastChunk: true,
@@ -872,7 +857,7 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("parses block_type from canonical metadata", () => {
+  it("parses blockType from canonical metadata", () => {
     const parsed = extractStreamBlockUpdate({
       artifactUpdate: {
         taskId: "task-9",
@@ -880,7 +865,8 @@ describe("block-based stream parser and reducer", () => {
           artifactId: "task-9:stream",
           parts: [{ text: "hello" }],
           metadata: {
-            block_type: "text",
+            blockType: "text",
+            op: "append",
             shared: {
               stream: {
                 messageId: "msg-9",
@@ -896,7 +882,7 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventIdSource).toBe("upstream");
   });
 
-  it("prefers standard metadata.block_type", () => {
+  it("prefers standard metadata.blockType", () => {
     const parsed = extractStreamBlockUpdate({
       artifactUpdate: {
         taskId: "task-9",
@@ -904,7 +890,8 @@ describe("block-based stream parser and reducer", () => {
           artifactId: "task-9:stream",
           parts: [{ text: "thinking" }],
           metadata: {
-            block_type: "reasoning",
+            blockType: "reasoning",
+            op: "append",
             shared: {
               stream: {
                 messageId: "msg-9",
@@ -928,7 +915,8 @@ describe("block-based stream parser and reducer", () => {
           metadata: {
             shared: {
               stream: {
-                block_type: "tool_call",
+                blockType: "tool_call",
+                op: "append",
                 source: "tool_part_update",
                 messageId: "msg-shared",
                 eventId: "evt-shared",
@@ -958,7 +946,8 @@ describe("block-based stream parser and reducer", () => {
             },
           ],
           metadata: {
-            block_type: "interrupt_event",
+            blockType: "interrupt_event",
+            op: "replace",
             source: "interrupt_lifecycle",
             shared: {
               stream: {
@@ -1007,7 +996,8 @@ describe("block-based stream parser and reducer", () => {
           metadata: {
             shared: {
               stream: {
-                block_type: "tool_call",
+                blockType: "tool_call",
+                op: "append",
                 source: "tool_part_update",
                 messageId: "msg-data",
                 eventId: "evt-data",
@@ -1035,32 +1025,23 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("infers text block type when explicit metadata is missing", () => {
+  it("infers text block type for canonical message wrappers", () => {
     const parsed = extractStreamBlockUpdate({
-      artifactUpdate: {
-        taskId: "task-9",
-        artifact: {
-          artifactId: "task-9:stream",
-          parts: [{ text: "hello" }],
+      message: {
+        role: "ROLE_AGENT",
+        parts: [{ text: "hello" }],
+        metadata: {
+          shared: {
+            stream: {
+              messageId: "msg-message-9",
+              eventId: "evt-message-9",
+            },
+          },
         },
       },
     });
     expect(parsed?.blockType).toBe("text");
-    expect(parsed?.messageId).toBe("task:task-9");
-  });
-
-  it("accepts text parts that use type/content shape", () => {
-    const parsed = extractStreamBlockUpdate({
-      artifactUpdate: {
-        taskId: "task-11",
-        artifact: {
-          artifactId: "task-11:stream",
-          parts: [{ type: "text", content: "hello" }],
-        },
-      },
-    });
-    expect(parsed?.blockType).toBe("text");
-    expect(parsed?.delta).toBe("hello");
+    expect(parsed?.messageId).toBe("msg-message-9");
   });
 
   it("parses chunk when taskId is missing but messageId exists", () => {
@@ -1072,6 +1053,8 @@ describe("block-based stream parser and reducer", () => {
           metadata: {
             shared: {
               stream: {
+                blockType: "text",
+                op: "append",
                 messageId: "msg-only-1",
               },
             },
@@ -1083,7 +1066,7 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.taskId).toBe("msg-only-1");
   });
 
-  it("ignores unsupported block_type values", () => {
+  it("ignores unsupported blockType values", () => {
     const parsed = extractStreamBlockUpdate({
       artifactUpdate: {
         taskId: "task-8",
@@ -1091,7 +1074,8 @@ describe("block-based stream parser and reducer", () => {
           artifactId: "task-8:stream",
           parts: [{ text: "noop" }],
           metadata: {
-            block_type: "custom_phase",
+            blockType: "custom_phase",
+            op: "append",
             shared: {
               stream: {
                 messageId: "msg-8",
@@ -1106,7 +1090,7 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed).toBeNull();
   });
 
-  it("falls back to task-based message id when message_id is missing", () => {
+  it("falls back to task-based message id when messageId is missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
@@ -1124,7 +1108,7 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.messageId).toBe("task:task-1");
   });
 
-  it("uses seq-based fallback when event_id is missing", () => {
+  it("uses seq-based fallback when eventId is missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
@@ -1151,7 +1135,8 @@ describe("block-based stream parser and reducer", () => {
           artifactId: "task-1:stream",
           parts: [{ text: "hello" }],
           metadata: {
-            block_type: "text",
+            blockType: "text",
+            op: "append",
             shared: {
               stream: {
                 messageId: "msg-camel",
@@ -1180,7 +1165,7 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventIdSource).toBe("upstream");
   });
 
-  it("uses chunk-based fallback when both seq and event_id are missing", () => {
+  it("uses chunk-based fallback when both seq and eventId are missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
@@ -1462,25 +1447,12 @@ describe("block-based stream parser and reducer", () => {
     const meta = extractSessionMeta({
       statusUpdate: {
         metadata: {
-          provider: "opencode",
           shared: {
             session: {
+              provider: "opencode",
               id: "ses_upstream_1",
             },
           },
-        },
-      },
-    });
-    expect(meta.provider).toBe("opencode");
-    expect(meta.externalSessionId).toBe("ses_upstream_1");
-  });
-
-  it("falls back to legacy root session metadata when shared session metadata is missing", () => {
-    const meta = extractSessionMeta({
-      statusUpdate: {
-        metadata: {
-          provider: "opencode",
-          externalSessionId: "ses_upstream_1",
         },
       },
     });
@@ -1494,7 +1466,7 @@ describe("block-based stream parser and reducer", () => {
         status: { state: "TASK_STATE_INPUT_REQUIRED" },
         metadata: {
           interrupt: {
-            request_id: "perm-legacy-1",
+            requestId: "perm-legacy-1",
             type: "permission",
             details: {
               permission: "read",

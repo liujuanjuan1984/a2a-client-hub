@@ -61,8 +61,8 @@ class A2AExtensionSessionOperations:
         normalized_metadata = as_dict(metadata)
         shared = as_dict(normalized_metadata.get("shared"))
         stream = as_dict(shared.get("stream"))
-        thread_id = cls.pick_optional_text(stream, keys=("thread_id", "threadId"))
-        turn_id = cls.pick_optional_text(stream, keys=("turn_id", "turnId"))
+        thread_id = cls.pick_optional_text(stream, keys=("threadId",))
+        turn_id = cls.pick_optional_text(stream, keys=("turnId",))
         return thread_id, turn_id
 
     @staticmethod

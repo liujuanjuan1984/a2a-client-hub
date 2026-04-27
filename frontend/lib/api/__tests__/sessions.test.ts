@@ -100,14 +100,16 @@ describe("sessions api", () => {
     mockedApiRequest.mockResolvedValue({
       conversationId: "  conv-2  ",
       source: "manual",
-      metadata: { provider: "opencode" },
+      metadata: { shared: { session: { provider: "opencode" } } },
       workingDirectory: "  /workspace/app  ",
     });
 
     const result = await continueSession("conv-2");
 
     expect(result.conversationId).toBe("conv-2");
-    expect(result.metadata).toEqual({ provider: "opencode" });
+    expect(result.metadata).toEqual({
+      shared: { session: { provider: "opencode" } },
+    });
     expect(result.workingDirectory).toBe("/workspace/app");
   });
 
@@ -126,7 +128,7 @@ describe("sessions api", () => {
       content: "append this",
       userMessageId: "msg-user-1",
       operationId: "op-append-1",
-      metadata: { shared: { stream: { turn_id: "turn-1" } } },
+      metadata: { shared: { stream: { turnId: "turn-1" } } },
       workingDirectory: "/workspace/app",
     });
 
@@ -138,7 +140,7 @@ describe("sessions api", () => {
           content: "append this",
           userMessageId: "msg-user-1",
           operationId: "op-append-1",
-          metadata: { shared: { stream: { turn_id: "turn-1" } } },
+          metadata: { shared: { stream: { turnId: "turn-1" } } },
           workingDirectory: "/workspace/app",
         },
       },
@@ -159,7 +161,7 @@ describe("sessions api", () => {
       userMessageId: "msg-user-2",
       agentMessageId: "msg-agent-2",
       operationId: "op-command-1",
-      metadata: { provider: "opencode" },
+      metadata: { shared: { session: { provider: "opencode" } } },
       workingDirectory: "/workspace/app",
     });
 
@@ -174,7 +176,7 @@ describe("sessions api", () => {
           userMessageId: "msg-user-2",
           agentMessageId: "msg-agent-2",
           operationId: "op-command-1",
-          metadata: { provider: "opencode" },
+          metadata: { shared: { session: { provider: "opencode" } } },
           workingDirectory: "/workspace/app",
         },
       },

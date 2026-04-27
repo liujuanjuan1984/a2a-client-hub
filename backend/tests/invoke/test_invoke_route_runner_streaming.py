@@ -76,15 +76,21 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
 
     await on_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "partial response"}],
-                "metadata": {
-                    "block_type": "text",
-                    "message_id": "msg-partial-1",
-                    "event_id": "evt-partial-1",
+            "artifactUpdate": {
+                "op": "append",
+                "artifact": {
+                    "parts": [{"text": "partial response"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "blockType": "text",
+                                "messageId": "msg-partial-1",
+                                "eventId": "evt-partial-1",
+                            }
+                        }
+                    },
                 },
-            },
+            }
         }
     )
     await on_finalized(
@@ -181,7 +187,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
                 "seq": 2,
                 "block_type": "text",
                 "content": "partial",
-                "append": True,
+                "op": "append",
                 "is_finished": False,
                 "event_id": "evt-partial",
                 "source": "stream",
@@ -201,7 +207,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
                 "metadata": {
                     "shared": {
                         "interrupt": {
-                            "request_id": "perm-1",
+                            "requestId": "perm-1",
                             "type": "permission",
                             "phase": "asked",
                             "details": {
@@ -479,11 +485,11 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
 
     event_payload = {
         "artifactUpdate": {
-            "append": True,
+            "op": "append",
             "lastChunk": True,
             "artifact": {
                 "parts": [{"text": "stream"}],
-                "metadata": {"block_type": "text"},
+                "metadata": {"shared": {"stream": {"blockType": "text"}}},
             },
         }
     }
@@ -559,14 +565,14 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     event_payload = {
         "artifactUpdate": {
             "seq": 9,
-            "append": False,
+            "op": "replace",
             "lastChunk": True,
             "artifact": {
                 "parts": [{"text": "chunk-body"}],
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
                             "messageId": "msg-opt",
                             "eventId": "evt-opt",
                         }
@@ -736,18 +742,19 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
         state=state,
         event_payload={
             "artifactUpdate": {
+                "op": "append",
                 "artifact": {
                     "parts": [{"text": "alpha"}],
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "text",
+                                "blockType": "text",
                                 "messageId": "msg-alpha",
                                 "eventId": "evt-alpha",
                             }
                         }
                     },
-                }
+                },
             }
         },
         request=_build_persistence_request(transport="http_json"),
@@ -759,18 +766,19 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
         state=state,
         event_payload={
             "artifactUpdate": {
+                "op": "append",
                 "artifact": {
                     "parts": [{"text": "beta"}],
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "reasoning",
+                                "blockType": "reasoning",
                                 "messageId": "msg-beta",
                                 "eventId": "evt-beta",
                             }
                         }
                     },
-                }
+                },
             }
         },
         request=_build_persistence_request(transport="http_json"),
@@ -838,13 +846,14 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
 
     event_payload = {
         "artifactUpdate": {
+            "op": "append",
             "lastChunk": True,
             "artifact": {
                 "parts": [{"text": "chunk-body"}],
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
                         }
                     }
                 },
@@ -958,18 +967,19 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     await on_event(
         {
             "artifactUpdate": {
+                "op": "append",
                 "artifact": {
                     "parts": [{"text": "partial"}],
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "text",
+                                "blockType": "text",
                                 "messageId": "msg-partial",
                                 "eventId": "evt-partial",
                             }
                         }
                     },
-                }
+                },
             }
         }
     )

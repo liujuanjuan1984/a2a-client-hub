@@ -28,7 +28,6 @@ from app.features.invoke.recovery import (
     InvokeMetadataBindingRequiredError,
     build_rebound_invoke_payload,
     finalize_outbound_invoke_payload,
-    resolve_session_binding_outbound_mode,
     validate_provider_aware_continue_session,
 )
 from app.features.invoke.route_runner_session_control import (
@@ -78,7 +77,6 @@ from app.features.invoke.stream_persistence import (
 from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
 from app.features.working_directory import adapt_working_directory_metadata_for_upstream
-from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.runtime.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
@@ -253,20 +251,6 @@ async def _unregister_inflight_invoke(
     )
 
 
-async def _resolve_session_binding_outbound_mode(
-    *,
-    runtime: Any,
-    logger: Any,
-    log_extra: dict[str, Any],
-) -> bool:
-    return await resolve_session_binding_outbound_mode(
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-        extensions_service_getter=get_a2a_extensions_service,
-    )
-
-
 async def _try_acquire_invoke_guard(guard_key: str) -> bool:
     return await try_acquire_invoke_guard(guard_key)
 
@@ -287,7 +271,6 @@ async def _finalize_outbound_invoke_payload(
         runtime=runtime,
         logger=logger,
         log_extra=log_extra,
-        resolve_outbound_mode=_resolve_session_binding_outbound_mode,
     )
 
 

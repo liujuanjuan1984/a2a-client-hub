@@ -8,9 +8,10 @@ from typing import Any
 from app.features.invoke import stream_payloads
 from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
+    merge_preferred_session_binding_metadata,
     merge_shared_metadata_sections,
 )
-from app.integrations.a2a_client.protobuf import to_json_like
+from app.integrations.a2a_client.protobuf import to_protojson_like
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.utils.payload_extract import (
     as_dict,
@@ -176,11 +177,11 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         stream_body,
     ):
         if msg_id is None:
-            msg_id = _pick_non_empty_str(cand, ("message_id", "messageId"))
+            msg_id = _pick_non_empty_str(cand, ("messageId",))
         if evt_id is None:
-            evt_id = _pick_non_empty_str(cand, ("event_id", "eventId"))
+            evt_id = _pick_non_empty_str(cand, ("eventId",))
 
-    task_id = _pick_non_empty_str(stream_body, ("task_id", "taskId"))
+    task_id = _pick_non_empty_str(stream_body, ("taskId",))
     if task_id is None:
         for cand in (
             artifact,
@@ -190,7 +191,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
             root_metadata,
             stream_body,
         ):
-            task_id = _pick_non_empty_str(cand, ("task_id", "taskId", "id"))
+            task_id = _pick_non_empty_str(cand, ("taskId", "id"))
             if task_id:
                 break
 
@@ -242,10 +243,11 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         if external_session_id is None:
             external_session_id = m_external
 
-    if provider:
-        binding_meta["provider"] = provider
-    if external_session_id:
-        binding_meta["externalSessionId"] = external_session_id
+    binding_meta = merge_preferred_session_binding_metadata(
+        binding_meta,
+        provider=provider,
+        external_session_id=external_session_id,
+    )
 
     return PayloadAnalysis(
         usage=usage,
@@ -270,7 +272,7 @@ def coerce_payload_to_dict(payload: Any) -> dict[str, Any]:
     if isinstance(resolved_payload, dict):
         return dict(resolved_payload)
     try:
-        dumped = to_json_like(resolved_payload)
+        dumped = to_protojson_like(resolved_payload)
     except Exception as exc:
         logger.error("Failed to dump A2A payload", exc_info=True)
         raise ValueError("Payload serialization failed") from exc

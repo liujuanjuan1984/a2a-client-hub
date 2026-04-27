@@ -3,13 +3,13 @@
     "name": "permission_asked_with_display_message",
     "code": "permission_requested",
     "event": {
-      "request_id": "perm-1",
+      "requestId": "perm-1",
       "type": "permission",
       "phase": "asked",
       "details": {
         "permission": "approval",
         "patterns": ["/repo/.env"],
-        "display_message": "Agent wants to read the environment file."
+        "displayMessage": "Agent wants to read the environment file."
       }
     },
     "content": "Agent wants to read the environment file.\nTargets: /repo/.env"
@@ -18,7 +18,7 @@
     "name": "permission_resolved",
     "code": "permission_resolved",
     "event": {
-      "request_id": "perm-2",
+      "requestId": "perm-2",
       "type": "permission",
       "phase": "resolved",
       "resolution": "replied"
@@ -29,11 +29,11 @@
     "name": "permissions_asked_with_display_message_and_payload",
     "code": "permissions_requested",
     "event": {
-      "request_id": "perms-1",
+      "requestId": "perms-1",
       "type": "permissions",
       "phase": "asked",
       "details": {
-        "display_message": "Approve the requested workspace permissions.",
+        "displayMessage": "Approve the requested workspace permissions.",
         "permissions": {
           "fileSystem": {
             "write": [
@@ -49,7 +49,7 @@
     "name": "permissions_resolved",
     "code": "permissions_resolved",
     "event": {
-      "request_id": "perms-2",
+      "requestId": "perms-2",
       "type": "permissions",
       "phase": "resolved",
       "resolution": "replied"
@@ -60,11 +60,11 @@
     "name": "question_asked_with_display_message_and_details",
     "code": "question_requested",
     "event": {
-      "request_id": "q-1",
+      "requestId": "q-1",
       "type": "question",
       "phase": "asked",
       "details": {
-        "display_message": "Please confirm how the agent should continue.",
+        "displayMessage": "Please confirm how the agent should continue.",
         "questions": [
           {
             "question": "Proceed with deployment?",
@@ -79,7 +79,7 @@
     "name": "question_resolved_replied",
     "code": "question_answer_received",
     "event": {
-      "request_id": "q-2",
+      "requestId": "q-2",
       "type": "question",
       "phase": "resolved",
       "resolution": "replied"
@@ -90,7 +90,7 @@
     "name": "question_resolved_rejected",
     "code": "question_rejected",
     "event": {
-      "request_id": "q-3",
+      "requestId": "q-3",
       "type": "question",
       "phase": "resolved",
       "resolution": "rejected"
@@ -101,13 +101,13 @@
     "name": "elicitation_asked_with_context",
     "code": "elicitation_requested",
     "event": {
-      "request_id": "eli-1",
+      "requestId": "eli-1",
       "type": "elicitation",
       "phase": "asked",
       "details": {
-        "display_message": "Select the output folder.",
+        "displayMessage": "Select the output folder.",
         "mode": "form",
-        "server_name": "workspace-server",
+        "serverName": "workspace-server",
         "url": "https://example.com/form"
       }
     },
@@ -117,7 +117,7 @@
     "name": "elicitation_resolved_replied",
     "code": "elicitation_answer_received",
     "event": {
-      "request_id": "eli-2",
+      "requestId": "eli-2",
       "type": "elicitation",
       "phase": "resolved",
       "resolution": "replied"
@@ -128,7 +128,7 @@
     "name": "elicitation_resolved_rejected",
     "code": "elicitation_rejected",
     "event": {
-      "request_id": "eli-3",
+      "requestId": "eli-3",
       "type": "elicitation",
       "phase": "resolved",
       "resolution": "rejected"

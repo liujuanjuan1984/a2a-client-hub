@@ -32,6 +32,9 @@ from app.features.hub_assistant.shared.constants import (
     HUB_ASSISTANT_INTERNAL_ID,
     HUB_ASSISTANT_PUBLIC_ID,
 )
+from app.features.invoke.shared_metadata import (
+    merge_preferred_session_binding_metadata,
+)
 from app.features.invoke.stream_payloads import extract_stream_text_from_parts
 from app.features.sessions.schemas import (
     SessionAppendMessageRequest,
@@ -199,11 +202,9 @@ def _extract_session_command_result_item(
         raise HTTPException(status_code=502, detail="upstream_payload_error")
 
     upstream_message_id = None
-    for key in ("messageId", "message_id"):
-        raw_value = item.get(key)
-        if isinstance(raw_value, str) and raw_value.strip():
-            upstream_message_id = raw_value.strip()
-            break
+    raw_value = item.get("messageId")
+    if isinstance(raw_value, str) and raw_value.strip():
+        upstream_message_id = raw_value.strip()
     return response_text, response_blocks, upstream_message_id
 
 
@@ -280,35 +281,24 @@ def _build_session_action_metadata(
     metadata: dict[str, Any] | None,
     working_directory: str | None = None,
 ) -> dict[str, Any]:
-    next_metadata = merge_working_directory_metadata(metadata, working_directory)
-    provider = normalize_non_empty_text(cast(str | None, thread.external_provider))
-    external_session_id = normalize_non_empty_text(
-        cast(str | None, thread.external_session_id)
+    return merge_preferred_session_binding_metadata(
+        merge_working_directory_metadata(metadata, working_directory),
+        provider=normalize_non_empty_text(cast(str | None, thread.external_provider)),
+        external_session_id=normalize_non_empty_text(
+            cast(str | None, thread.external_session_id)
+        ),
     )
-    if provider and "provider" not in next_metadata:
-        next_metadata["provider"] = provider
-    if external_session_id and "externalSessionId" not in next_metadata:
-        next_metadata["externalSessionId"] = external_session_id
-    return next_metadata
 
 
 def _resolve_replay_external_session_id(
     thread: ConversationThread,
     message: AgentMessage | None,
 ) -> str | None:
+    _ = message
     thread_session_id = normalize_non_empty_text(
         cast(str | None, thread.external_session_id)
     )
-    if thread_session_id:
-        return thread_session_id
-    if message is None:
-        return None
-    metadata = getattr(message, "message_metadata", None)
-    if not isinstance(metadata, dict):
-        return None
-    return normalize_non_empty_text(
-        metadata.get("externalSessionId") or metadata.get("external_session_id")
-    )
+    return thread_session_id
 
 
 async def _find_operation_messages(

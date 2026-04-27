@@ -1,11 +1,12 @@
 from app.features.invoke.service import a2a_invoke_service
 
 
-def test_extract_stream_chunk_falls_back_to_text_if_parts_exist():
+def test_extract_stream_chunk_falls_back_to_text_for_message_wrapper_parts():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
-            "artifactUpdate": {
-                "artifact": {"parts": [{"text": "hello"}], "metadata": {}},
+            "message": {
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "hello"}],
             }
         }
     )
@@ -20,7 +21,7 @@ def test_extract_stream_chunk_prefers_standard_metadata_block_type():
             "artifactUpdate": {
                 "artifact": {
                     "parts": [{"text": "thinking"}],
-                    "metadata": {"block_type": "reasoning"},
+                    "metadata": {"blockType": "reasoning", "op": "append"},
                 }
             }
         }
@@ -28,22 +29,6 @@ def test_extract_stream_chunk_prefers_standard_metadata_block_type():
     assert chunk is not None
     assert chunk["block_type"] == "reasoning"
     assert chunk["content"] == "thinking"
-
-
-def test_extract_stream_chunk_accepts_type_and_content_parts_shape():
-    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
-        {
-            "artifactUpdate": {
-                "artifact": {
-                    "parts": [{"type": "text", "content": "hello"}],
-                    "metadata": {},
-                }
-            }
-        }
-    )
-    assert chunk is not None
-    assert chunk["block_type"] == "text"
-    assert chunk["content"] == "hello"
 
 
 def test_extract_stream_chunk_rejects_kindless_artifact_updates():
@@ -54,7 +39,7 @@ def test_extract_stream_chunk_rejects_kindless_artifact_updates():
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "reasoning",
+                            "blockType": "reasoning",
                             "messageId": "msg-kindless",
                             "eventId": "evt-kindless",
                             "sequence": 4,
@@ -71,12 +56,15 @@ def test_extract_stream_chunk_rejects_root_metadata_hints_outside_wrapper():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "metadata": {
-                "block_type": "text",
+                "blockType": "text",
                 "messageId": "msg-root",
                 "eventId": "evt-root",
             },
             "artifactUpdate": {
-                "artifact": {"parts": [{"text": "hello"}], "metadata": {}},
+                "artifact": {
+                    "parts": [{"text": "hello"}],
+                    "metadata": {"blockType": "text", "op": "append"},
+                },
             },
         }
     )
@@ -95,7 +83,8 @@ def test_extract_stream_chunk_prefers_shared_stream_block_type_over_text_part_ki
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "tool_call",
+                                "blockType": "tool_call",
+                                "op": "append",
                                 "source": "tool_part_update",
                                 "messageId": "msg-shared",
                                 "eventId": "evt-shared",
@@ -133,7 +122,8 @@ def test_extract_stream_chunk_reads_tool_call_content_from_data_parts():
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "tool_call",
+                                "blockType": "tool_call",
+                                "op": "append",
                                 "source": "tool_part_update",
                                 "messageId": "msg-data",
                                 "eventId": "evt-data",
@@ -173,7 +163,8 @@ def test_extract_stream_chunk_uses_message_lane_identity_when_artifact_id_is_sha
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "reasoning",
+                                "blockType": "reasoning",
+                                "op": "append",
                                 "messageId": "msg-shared-lanes",
                             }
                         }
@@ -191,7 +182,8 @@ def test_extract_stream_chunk_uses_message_lane_identity_when_artifact_id_is_sha
                     "metadata": {
                         "shared": {
                             "stream": {
-                                "block_type": "text",
+                                "blockType": "text",
+                                "op": "append",
                                 "messageId": "msg-shared-lanes",
                             }
                         }
@@ -216,7 +208,7 @@ def test_ensure_outbound_stream_contract_ignores_kindless_artifact_updates():
             "metadata": {
                 "shared": {
                     "stream": {
-                        "block_type": "text",
+                        "blockType": "text",
                         "messageId": "msg-kindless-outbound",
                         "eventId": "evt-kindless-outbound",
                     }

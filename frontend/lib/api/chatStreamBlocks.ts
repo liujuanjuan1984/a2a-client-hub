@@ -106,13 +106,7 @@ const finalizeRunningToolCallView = (
     ? { ...toolCall, status: "completed" }
     : toolCall;
 
-const PRIMARY_TEXT_SNAPSHOT_SOURCES = new Set([
-  "final_snapshot",
-  "finalize_snapshot",
-]);
 const BLOCK_OPERATION_TYPES = new Set(["append", "replace", "finalize"]);
-const REASONING_OVERLAP_WORD_PATTERN = /[\p{L}\p{N}_]+/gu;
-const MIN_REASONING_OVERLAP_WORD_LENGTH = 5;
 
 const extractDataFromParts = (parts: unknown[]) =>
   parts
@@ -121,14 +115,9 @@ const extractDataFromParts = (parts: unknown[]) =>
         return null;
       }
       const typed = part as {
-        kind?: unknown;
-        type?: unknown;
         data?: unknown;
       };
-      const rawKind = typed.kind ?? typed.type;
-      const normalizedKind =
-        typeof rawKind === "string" ? rawKind.trim().toLowerCase() : null;
-      if (normalizedKind !== "data" && !("data" in typed)) {
+      if (!("data" in typed)) {
         return null;
       }
       return serializeStructuredStreamData(typed.data);
@@ -543,111 +532,15 @@ const defaultLaneIdForBlockType = (
   blockType: StreamBlockUpdate["blockType"],
 ): string => (blockType === "text" ? "primary_text" : blockType);
 
-const isPrimaryTextSnapshotSource = (source: string | null): boolean =>
-  Boolean(source && PRIMARY_TEXT_SNAPSHOT_SOURCES.has(source));
-
-const isWordChar = (value: string | undefined): boolean =>
-  Boolean(value && /[\p{L}\p{N}_]/u.test(value));
-
-const isBoundaryAlignedReasoningOverlap = (
-  reasoningContent: string,
-  text: string,
-  overlap: number,
-): boolean => {
-  const overlapStart = reasoningContent.length - overlap;
-  const beforeOverlap =
-    overlapStart > 0 ? reasoningContent[overlapStart - 1] : undefined;
-  const afterOverlap = overlap < text.length ? text[overlap] : undefined;
-  return !isWordChar(beforeOverlap) && !isWordChar(afterOverlap);
-};
-
-const isSubstantialReasoningOverlap = (candidate: string): boolean => {
-  const tokens = candidate.match(REASONING_OVERLAP_WORD_PATTERN) ?? [];
-  return (
-    tokens.length >= 2 ||
-    tokens.some((token) => token.length >= MIN_REASONING_OVERLAP_WORD_LENGTH)
-  );
-};
-
-const trimOverlappingReasoningPrefix = (
-  blocks: MessageBlock[] | undefined,
-  text: string,
-): string => {
-  if (!text) {
-    return "";
-  }
-  const latestReasoning =
-    blocks && blocks.length > 0 ? blocks[blocks.length - 1] : undefined;
-  const reasoningContent =
-    latestReasoning?.type === "reasoning" ? latestReasoning.content : "";
-  if (!reasoningContent) {
-    return text;
-  }
-  for (
-    let overlap = Math.min(reasoningContent.length, text.length);
-    overlap > 0;
-    overlap -= 1
-  ) {
-    const candidate = reasoningContent.slice(-overlap);
-    if (
-      text.startsWith(candidate) &&
-      isBoundaryAlignedReasoningOverlap(reasoningContent, text, overlap) &&
-      isSubstantialReasoningOverlap(candidate)
-    ) {
-      return text.slice(overlap).replace(/^\s+/, "");
-    }
-  }
-  return text;
-};
-
 const findBlockIndexByBlockId = (
   blocks: MessageBlock[],
   blockId: string,
 ): number => blocks.findIndex((block) => block.blockId === blockId);
 
-const findLastTextBlockIndex = (blocks: MessageBlock[]): number => {
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    if (blocks[index]?.type === "text") {
-      return index;
-    }
-  }
-  return -1;
-};
-
 const adaptStreamBlockUpdateForReducer = (
-  current: MessageBlock[] | undefined,
+  _current: MessageBlock[] | undefined,
   update: StreamBlockUpdate,
-): StreamBlockUpdate => {
-  if (
-    !(
-      update.op === "replace" &&
-      update.blockType === "text" &&
-      isPrimaryTextSnapshotSource(update.source)
-    )
-  ) {
-    return update;
-  }
-
-  const nextDelta = trimOverlappingReasoningPrefix(current, update.delta);
-  const blocks = current ?? [];
-  if (findBlockIndexByBlockId(blocks, update.blockId) >= 0) {
-    return { ...update, delta: nextDelta };
-  }
-
-  const latestTextIndex = findLastTextBlockIndex(blocks);
-  if (latestTextIndex < 0) {
-    return { ...update, delta: nextDelta };
-  }
-
-  const latestText = blocks[latestTextIndex];
-  return {
-    ...update,
-    blockId: latestText?.blockId ?? latestText?.id ?? update.blockId,
-    laneId: latestText?.laneId ?? "primary_text",
-    baseSeq: update.baseSeq ?? latestText?.baseSeq ?? update.seq ?? null,
-    delta: nextDelta,
-  };
-};
+): StreamBlockUpdate => update;
 
 const inferTaskIdFromArtifactId = (
   artifactId: string | null,
@@ -788,13 +681,19 @@ export const extractStreamBlockUpdate = (
   const textFromParts = extractTextFromParts(parts);
   const dataFromParts = extractDataFromParts(parts);
   const rawBlockType =
-    pickString(sharedStream, ["block_type"]) ??
-    pickString(metadata, ["block_type"]) ??
-    pickString(rootMetadata, ["block_type"]);
+    pickString(sharedStream, ["blockType"]) ??
+    pickString(metadata, ["blockType"]) ??
+    pickString(rootMetadata, ["blockType"]);
   const explicitBlockType = parseBlockType(rawBlockType);
   const blockType =
     explicitBlockType ??
-    (rawBlockType === null && textFromParts ? "text" : null);
+    (kind === "message" && rawBlockType === null
+      ? dataFromParts
+        ? "tool_call"
+        : textFromParts
+          ? "text"
+          : null
+      : null);
   if (!blockType) {
     return null;
   }
@@ -806,20 +705,19 @@ export const extractStreamBlockUpdate = (
     pickInteger(metadata, ["seq"]) ??
     pickInteger(rootMetadata, ["seq"]);
 
-  const artifactId =
-    pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ?? null;
+  const artifactId = pickString(artifact ?? null, ["artifactId", "id"]) ?? null;
   const taskIdHint =
-    pickString(body ?? null, ["task_id", "taskId"]) ??
-    pickString(artifact ?? null, ["task_id", "taskId"]) ??
-    pickString(rootMetadata, ["task_id", "taskId"]) ??
+    pickString(body ?? null, ["taskId"]) ??
+    pickString(artifact ?? null, ["taskId"]) ??
+    pickString(rootMetadata, ["taskId"]) ??
     inferTaskIdFromArtifactId(artifactId);
 
   const upstreamMessageId =
-    pickString(sharedStream, ["messageId", "message_id"]) ??
-    pickString(body ?? null, ["message_id", "messageId"]) ??
-    pickString(artifact ?? null, ["message_id", "messageId"]) ??
-    pickString(metadata, ["message_id", "messageId"]) ??
-    pickString(rootMetadata, ["message_id", "messageId"]);
+    pickString(sharedStream, ["messageId"]) ??
+    pickString(body ?? null, ["messageId"]) ??
+    pickString(artifact ?? null, ["messageId"]) ??
+    pickString(metadata, ["messageId"]) ??
+    pickString(rootMetadata, ["messageId"]);
   const resolvedMessageId =
     upstreamMessageId ?? (taskIdHint ? `task:${taskIdHint}` : null);
   const resolvedArtifactId =
@@ -838,27 +736,31 @@ export const extractStreamBlockUpdate = (
       : textFromParts) ||
     pickRawString(body ?? null, ["delta"]) ||
     pickRawString(artifact ?? null, ["delta"]) ||
-    pickRawString(body ?? null, ["content", "text"]) ||
-    pickRawString(artifact ?? null, ["content", "text"]) ||
+    pickRawString(body ?? null, ["text"]) ||
+    pickRawString(artifact ?? null, ["text"]) ||
     "";
 
-  const append =
-    typeof body?.append === "boolean"
-      ? body.append
-      : typeof artifact?.append === "boolean"
-        ? artifact.append
-        : kind !== "message";
+  const explicitOp =
+    parseBlockOperation(pickString(sharedStream, ["op", "operation"])) ??
+    parseBlockOperation(pickString(metadata, ["op", "operation"])) ??
+    parseBlockOperation(pickString(rootMetadata, ["op", "operation"])) ??
+    parseBlockOperation(pickString(artifact ?? null, ["op", "operation"])) ??
+    parseBlockOperation(pickString(body ?? null, ["op", "operation"]));
+  const op = explicitOp ?? (kind === "message" ? "replace" : null);
+  if (!op) {
+    return null;
+  }
+  const append = op === "append";
   const done =
+    op === "finalize" ||
     body?.lastChunk === true ||
-    body?.last_chunk === true ||
-    artifact?.lastChunk === true ||
-    artifact?.last_chunk === true;
+    artifact?.lastChunk === true;
   const upstreamEventId =
-    pickString(sharedStream, ["eventId", "event_id"]) ??
-    pickString(body ?? null, ["event_id", "eventId"]) ??
-    pickString(artifact ?? null, ["event_id", "eventId"]) ??
-    pickString(metadata, ["event_id", "eventId"]) ??
-    pickString(rootMetadata, ["event_id", "eventId"]);
+    pickString(sharedStream, ["eventId"]) ??
+    pickString(body ?? null, ["eventId"]) ??
+    pickString(artifact ?? null, ["eventId"]) ??
+    pickString(metadata, ["eventId"]) ??
+    pickString(rootMetadata, ["eventId"]);
   const eventId = upstreamEventId
     ? upstreamEventId
     : buildFallbackEventId({
@@ -877,38 +779,29 @@ export const extractStreamBlockUpdate = (
     pickString(metadata, ["source"]) ??
     pickString(rootMetadata, ["source"]) ??
     null;
-  const explicitOp =
-    parseBlockOperation(pickString(sharedStream, ["op", "operation"])) ??
-    parseBlockOperation(pickString(metadata, ["op", "operation"])) ??
-    parseBlockOperation(pickString(rootMetadata, ["op", "operation"])) ??
-    parseBlockOperation(pickString(artifact ?? null, ["op", "operation"])) ??
-    parseBlockOperation(pickString(body ?? null, ["op", "operation"]));
-  const op =
-    explicitOp ??
-    (isPrimaryTextSnapshotSource(source) || !append ? "replace" : "append");
   if (!delta && op !== "finalize") {
     return null;
   }
   const laneId =
-    pickString(sharedStream, ["lane_id", "laneId"]) ??
-    pickString(metadata, ["lane_id", "laneId"]) ??
-    pickString(rootMetadata, ["lane_id", "laneId"]) ??
-    pickString(artifact ?? null, ["lane_id", "laneId"]) ??
-    pickString(body ?? null, ["lane_id", "laneId"]) ??
+    pickString(sharedStream, ["laneId"]) ??
+    pickString(metadata, ["laneId"]) ??
+    pickString(rootMetadata, ["laneId"]) ??
+    pickString(artifact ?? null, ["laneId"]) ??
+    pickString(body ?? null, ["laneId"]) ??
     defaultLaneIdForBlockType(blockType);
   const blockId =
-    pickString(sharedStream, ["block_id", "blockId"]) ??
-    pickString(metadata, ["block_id", "blockId"]) ??
-    pickString(rootMetadata, ["block_id", "blockId"]) ??
-    pickString(artifact ?? null, ["block_id", "blockId"]) ??
-    pickString(body ?? null, ["block_id", "blockId"]) ??
+    pickString(sharedStream, ["blockId"]) ??
+    pickString(metadata, ["blockId"]) ??
+    pickString(rootMetadata, ["blockId"]) ??
+    pickString(artifact ?? null, ["blockId"]) ??
+    pickString(body ?? null, ["blockId"]) ??
     `${messageId}:${laneId}`;
   const baseSeq =
-    pickInteger(sharedStream, ["base_seq", "baseSeq"]) ??
-    pickInteger(metadata, ["base_seq", "baseSeq"]) ??
-    pickInteger(rootMetadata, ["base_seq", "baseSeq"]) ??
-    pickInteger(artifact ?? null, ["base_seq", "baseSeq"]) ??
-    pickInteger(body ?? null, ["base_seq", "baseSeq"]);
+    pickInteger(sharedStream, ["baseSeq"]) ??
+    pickInteger(metadata, ["baseSeq"]) ??
+    pickInteger(rootMetadata, ["baseSeq"]) ??
+    pickInteger(artifact ?? null, ["baseSeq"]) ??
+    pickInteger(body ?? null, ["baseSeq"]);
   const role = normalizeRole(
     pickString(body ?? null, ["role"]) ??
       pickString(sharedStream, ["role"]) ??
@@ -918,10 +811,7 @@ export const extractStreamBlockUpdate = (
   const toolCall =
     blockType === "tool_call"
       ? (extractToolCallView(
-          asRecord(body?.tool_call) ??
-            asRecord(body?.toolCall) ??
-            asRecord(artifact?.tool_call) ??
-            asRecord(artifact?.toolCall),
+          asRecord(body?.toolCall) ?? asRecord(artifact?.toolCall),
         ) ?? extractToolCallViewFromRawContent(delta))
       : null;
   const interruptPayload =

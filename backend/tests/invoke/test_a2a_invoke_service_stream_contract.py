@@ -192,7 +192,8 @@ def test_extract_stream_chunk_reads_canonical_event_and_message_ids():
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
+                            "op": "append",
                             "eventId": "evt-nested",
                             "messageId": "msg-nested",
                             "source": "stream",
@@ -217,13 +218,13 @@ def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "artifactUpdate": {
-                "append": False,
                 "lastChunk": True,
                 "artifact": {"parts": [{"text": "done"}]},
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
+                            "op": "replace",
                             "eventId": "evt-opt",
                             "messageId": "msg-opt",
                             "seq": 8,
@@ -240,18 +241,19 @@ def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
     assert chunk["is_finished"] is True
 
 
-def test_extract_stream_chunk_accepts_artifact_level_last_chunk_alias():
+def test_extract_stream_chunk_ignores_artifact_level_last_chunk_without_finalize():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "artifactUpdate": {
                 "artifact": {
-                    "last_chunk": True,
+                    "lastChunk": True,
                     "parts": [{"text": "done"}],
                 },
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
+                            "op": "append",
                             "eventId": "evt-artifact-last",
                             "messageId": "msg-artifact-last",
                         }
@@ -262,7 +264,7 @@ def test_extract_stream_chunk_accepts_artifact_level_last_chunk_alias():
     )
 
     assert chunk is not None
-    assert chunk["is_finished"] is True
+    assert chunk["is_finished"] is False
 
 
 def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
@@ -273,7 +275,8 @@ def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
                 "metadata": {
                     "shared": {
                         "stream": {
-                            "block_type": "text",
+                            "blockType": "text",
+                            "op": "append",
                             "eventId": "evt-nested",
                         }
                     }
@@ -373,10 +376,17 @@ def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():
         {
             "artifactUpdate": {
                 "artifact": {
-                    "artifact_id": "task-generic:stream",
+                    "artifactId": "task-generic:stream",
                     "parts": [{"text": "hello generic"}],
                 },
-                "metadata": {"shared": {"stream": {"block_type": "custom_phase"}}},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "blockType": "custom_phase",
+                            "op": "append",
+                        }
+                    }
+                },
             }
         }
     )
@@ -466,7 +476,7 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
     }
 
 
-def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata():
+def test_extract_usage_hints_from_serialized_event_ignores_legacy_root_metadata():
     usage = a2a_invoke_service.extract_usage_hints_from_serialized_event(
         {
             "statusUpdate": {
@@ -481,11 +491,7 @@ def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata
             }
         }
     )
-    assert usage == {
-        "input_tokens": 9,
-        "output_tokens": 3,
-        "total_tokens": 12,
-    }
+    assert usage == {}
 
 
 def test_coerce_payload_to_dict_raises_exception(caplog):

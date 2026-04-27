@@ -52,18 +52,18 @@ const buildArtifactUpdate = ({
   source?: string;
 }) => ({
   artifactUpdate: {
-    append: true,
+    op: "append",
     artifact: {
       artifactId: `${agentMessageId}:stream:1`,
       parts: [{ text }],
       metadata: {
         shared: {
           stream: {
-            block_type: "text",
+            blockType: "text",
             source,
             messageId: agentMessageId,
             eventId,
-            sequence: seq,
+            seq,
           },
         },
       },
@@ -682,11 +682,22 @@ describe("executeChatRuntime empty-content recovery", () => {
         );
         params.callbacks.onData({
           artifactUpdate: {
-            append: true,
+            op: "append",
             taskId: "task-compat-1",
             artifact: {
               artifactId: "stream-compat-1",
-              parts: [{ type: "text", content: "Hello from stream" }],
+              parts: [{ text: "Hello from stream" }],
+              metadata: {
+                shared: {
+                  stream: {
+                    blockType: "text",
+                    source: "assistant_text",
+                    messageId: agentMessageId,
+                    eventId: `${agentMessageId}:1`,
+                    seq: 1,
+                  },
+                },
+              },
             },
           },
         });
@@ -793,7 +804,7 @@ describe("executeChatRuntime empty-content recovery", () => {
         );
         params.callbacks.onData({
           artifactUpdate: {
-            append: false,
+            op: "replace",
             artifact: {
               artifactId: `${agentMessageId}:stream`,
               parts: [
@@ -810,11 +821,11 @@ describe("executeChatRuntime empty-content recovery", () => {
               metadata: {
                 shared: {
                   stream: {
-                    block_type: "tool_call",
+                    blockType: "tool_call",
                     source: "tool_part_update",
                     messageId: agentMessageId,
                     eventId: `${agentMessageId}:1`,
-                    sequence: 1,
+                    seq: 1,
                   },
                 },
               },
@@ -919,18 +930,18 @@ describe("executeChatRuntime empty-content recovery", () => {
         );
         params.callbacks.onData({
           artifactUpdate: {
-            append: false,
+            op: "replace",
             artifact: {
               artifactId: `${agentMessageId}:stream`,
               parts: [{ text: "Reasoning in progress" }],
               metadata: {
                 shared: {
                   stream: {
-                    block_type: "reasoning",
+                    blockType: "reasoning",
                     source: "reasoning_part_update",
                     messageId: agentMessageId,
                     eventId: `${agentMessageId}:1`,
-                    sequence: 1,
+                    seq: 1,
                   },
                 },
               },

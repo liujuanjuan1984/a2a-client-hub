@@ -23,9 +23,7 @@ def pick_first_non_empty_str(
     return None
 
 
-_PROVIDER_KEYS = ("provider",)
-_EXTERNAL_KEYS = ("externalSessionId",)
-_CONTEXT_KEYS = ("contextId", "context_id")
+_CONTEXT_KEYS = ("contextId",)
 
 
 def extract_context_id(payload: Mapping[str, Any]) -> str | None:
@@ -40,12 +38,9 @@ def extract_provider_and_external_session_id(
     shared = as_dict(source.get("shared"))
     session = as_dict(shared.get("session"))
 
-    provider = normalize_provider(
-        pick_first_non_empty_str(session, ("provider",))
-        or pick_first_non_empty_str(source, _PROVIDER_KEYS)
-    )
+    provider = normalize_provider(pick_first_non_empty_str(session, ("provider",)))
     external_session_id = pick_first_non_empty_str(
         session,
-        ("id", "externalSessionId"),
-    ) or pick_first_non_empty_str(source, _EXTERNAL_KEYS)
+        ("id",),
+    )
     return provider, external_session_id

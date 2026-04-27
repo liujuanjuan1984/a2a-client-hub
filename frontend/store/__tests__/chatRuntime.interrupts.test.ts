@@ -59,14 +59,14 @@ const buildArtifactUpdate = ({
   source?: string;
 }) => ({
   artifactUpdate: {
-    append: true,
+    op: "append",
     artifact: {
       artifactId: `${agentMessageId}:stream:${seq}`,
       parts: [{ text }],
       metadata: {
         shared: {
           stream: {
-            block_type: "text",
+            blockType: "text",
             source,
             messageId: agentMessageId,
             eventId,
