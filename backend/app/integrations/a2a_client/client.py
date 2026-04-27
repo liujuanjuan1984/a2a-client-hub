@@ -14,24 +14,19 @@ import httpx
 from a2a.client import (
     A2ACardResolver,
     ClientCallInterceptor,
-    Consumer,
 )
-from a2a.client.errors import A2AClientHTTPError
-from a2a.types import AgentCard, Message, TextPart, TransportProtocol
+from a2a.client.client import ClientCallContext
+from a2a.client.interceptors import AfterArgs, BeforeArgs
+from a2a.types import AgentCard, Message
 from a2a.utils.constants import (
     AGENT_CARD_WELL_KNOWN_PATH,
-    EXTENDED_AGENT_CARD_PATH,
-    PREV_AGENT_CARD_WELL_KNOWN_PATH,
+    TransportProtocol,
 )
 
 from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.adapters import (
-    JSONRPC_PASCAL_DIALECT,
-    JSONRPC_SLASH_DIALECT,
     SDK_DIALECT,
-    JsonRpcPascalAdapter,
-    JsonRpcSlashAdapter,
     SDKA2AAdapter,
 )
 from app.integrations.a2a_client.adapters.base import A2AAdapter
@@ -58,6 +53,10 @@ from app.integrations.a2a_client.lifecycle import (
     AdapterLifecycleSnapshot,
 )
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
+from app.integrations.a2a_client.protobuf import (
+    is_proto_message,
+    to_json_like,
+)
 from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
     normalize_transport_label,
@@ -85,18 +84,17 @@ class StaticHeaderInterceptor(ClientCallInterceptor):
     def __init__(self, headers: Dict[str, str]) -> None:
         self._headers = {k: v for k, v in headers.items() if v is not None}
 
-    async def intercept(
-        self,
-        _method_name: str,
-        request_payload: Dict[str, Any],
-        http_kwargs: Dict[str, Any],
-        _agent_card: AgentCard | None,
-        _context: Any,
-    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
-        headers = dict(http_kwargs.get("headers") or {})
-        headers.update(self._headers)
-        http_kwargs["headers"] = headers
-        return request_payload, http_kwargs
+    async def before(self, args: BeforeArgs) -> None:
+        if not self._headers:
+            return
+        if args.context is None:
+            args.context = ClientCallContext()
+        if args.context.service_parameters is None:
+            args.context.service_parameters = {}
+        args.context.service_parameters.update(self._headers)
+
+    async def after(self, args: AfterArgs) -> None:
+        _ = args
 
 
 @dataclass(slots=True)
@@ -118,7 +116,6 @@ class A2AClient:
         borrowed_http_client: Optional[httpx.AsyncClient] = None,
         owned_http_client: Optional[httpx.AsyncClient] = None,
         interceptors: Optional[List[ClientCallInterceptor]] = None,
-        consumers: Optional[List[Consumer]] = None,
         use_client_preference: bool = False,
         default_headers: Optional[Dict[str, str]] = None,
         card_fetch_timeout: Optional[float] = None,
@@ -137,7 +134,6 @@ class A2AClient:
         )
 
         self._interceptors = list(interceptors or [])
-        self._consumers = list(consumers or [])
         self._use_client_preference = use_client_preference
         self._default_headers = dict(default_headers or {})
         if self._default_headers and not any(
@@ -151,8 +147,8 @@ class A2AClient:
             supported_transports
             if supported_transports is not None
             else [
-                TransportProtocol.jsonrpc,
-                TransportProtocol.http_json,
+                TransportProtocol.JSONRPC,
+                TransportProtocol.HTTP_JSON,
             ]
         )
 
@@ -376,26 +372,6 @@ class A2AClient:
                     "task_id": normalized_task_id,
                     "task": task,
                 }
-            except A2AClientHTTPError as exc:
-                status_code = getattr(exc, "status_code", None)
-                error_code = "cancel_failed"
-                if status_code == 404:
-                    error_code = "task_not_found"
-                elif status_code == 409:
-                    error_code = "task_not_cancelable"
-                logger.warning(
-                    "Failed to cancel A2A task %s for %s",
-                    normalized_task_id,
-                    redact_url_for_logging(self.agent_url),
-                    extra={"status_code": status_code},
-                )
-                return {
-                    "success": False,
-                    "agent_url": self.agent_url,
-                    "task_id": normalized_task_id,
-                    "error": str(exc),
-                    "error_code": error_code,
-                }
             except A2APeerProtocolError as exc:
                 return {
                     "success": False,
@@ -479,26 +455,6 @@ class A2AClient:
                     "agent_url": self.agent_url,
                     "task_id": normalized_task_id,
                     "task": normalized_task,
-                }
-            except A2AClientHTTPError as exc:
-                status_code = getattr(exc, "status_code", None)
-                error_code = "task_query_failed"
-                if status_code == 404:
-                    error_code = "task_not_found"
-                elif status_code in {400, 405, 409, 501}:
-                    error_code = "unsupported_operation"
-                logger.warning(
-                    "Failed to fetch A2A task %s for %s",
-                    normalized_task_id,
-                    redact_url_for_logging(self.agent_url),
-                    extra={"status_code": status_code},
-                )
-                return {
-                    "success": False,
-                    "agent_url": self.agent_url,
-                    "task_id": normalized_task_id,
-                    "error": str(exc),
-                    "error_code": error_code,
                 }
             except A2APeerProtocolError as exc:
                 return {
@@ -591,7 +547,8 @@ class A2AClient:
         """Fetch and cache the authenticated extended agent card when supported."""
 
         public_card = await self.get_agent_card()
-        if not getattr(public_card, "supports_authenticated_extended_card", False):
+        capabilities = getattr(public_card, "capabilities", None)
+        if not bool(getattr(capabilities, "extended_agent_card", False)):
             raise A2AAgentUnavailableError(
                 f"A2A agent '{redact_url_for_logging(self.agent_url)}' does not "
                 "advertise an authenticated extended agent card"
@@ -630,10 +587,10 @@ class A2AClient:
             return str(value).strip()
 
         client_set: list[TransportProtocol | str] = list(
-            self._supported_transports or [TransportProtocol.jsonrpc]
+            self._supported_transports or [TransportProtocol.JSONRPC]
         )
         if not client_set:
-            client_set = [TransportProtocol.jsonrpc]
+            client_set = [TransportProtocol.JSONRPC]
 
         supported_labels: list[str] = [
             label
@@ -641,33 +598,29 @@ class A2AClient:
             if label
         ]
         if not supported_labels:
-            supported_labels = [TransportProtocol.jsonrpc.value]
+            supported_labels = [TransportProtocol.JSONRPC.value]
 
-        preferred_transport = (
-            getattr(card, "preferred_transport", None) or TransportProtocol.jsonrpc
-        )
-        preferred_url = getattr(card, "url", "") or ""
-
-        server_set: dict[TransportProtocol | str, str] = {}
-        if preferred_transport and preferred_url:
-            server_set[preferred_transport] = preferred_url
-
-        for iface in getattr(card, "additional_interfaces", None) or []:
-            transport = getattr(iface, "transport", None)
-            interface_url = getattr(iface, "url", "") or ""
+        server_set: list[tuple[str, str]] = []
+        for iface in getattr(card, "supported_interfaces", None) or []:
+            transport = normalize_transport_label(
+                getattr(iface, "protocol_binding", None)
+            )
+            interface_url = (getattr(iface, "url", "") or "").strip()
             if transport and interface_url:
-                server_set[transport] = interface_url
+                server_set.append((transport, interface_url))
 
         if self._use_client_preference:
             for transport in client_set:
-                url = server_set.get(transport)
-                if url:
-                    return transport, url, supported_labels
+                label = _as_display_label(transport)
+                for candidate_transport, candidate_url in server_set:
+                    if candidate_transport == label:
+                        return transport, candidate_url, supported_labels
             return None, None, supported_labels
 
-        for transport, url in server_set.items():
-            if transport in client_set:
-                return transport, url, supported_labels
+        for candidate_transport, candidate_url in server_set:
+            for transport in client_set:
+                if candidate_transport == _as_display_label(transport):
+                    return transport, candidate_url, supported_labels
         return None, None, supported_labels
 
     async def close(self) -> None:
@@ -950,7 +903,6 @@ class A2AClient:
             if entry:
                 return entry.client
             descriptor = await self._get_peer_descriptor()
-            httpx_client = await self._get_http_client()
 
             if dialect == SDK_DIALECT:
                 shared_transport_lease = None
@@ -969,23 +921,8 @@ class A2AClient:
                     transport_http_client=sdk_transport_http_client,
                     shared_transport_lease=shared_transport_lease,
                     interceptors=list(self._interceptors),
-                    consumers=list(self._consumers),
                     use_client_preference=self._use_client_preference,
                     supported_transports=list(self._supported_transports),
-                )
-            elif dialect == JSONRPC_SLASH_DIALECT:
-                adapter = JsonRpcSlashAdapter(
-                    descriptor,
-                    http_client=httpx_client,
-                    timeout=self._timeout,
-                    interceptors=list(self._interceptors),
-                )
-            elif dialect == JSONRPC_PASCAL_DIALECT:
-                adapter = JsonRpcPascalAdapter(
-                    descriptor,
-                    http_client=httpx_client,
-                    timeout=self._timeout,
-                    interceptors=list(self._interceptors),
                 )
             else:
                 raise A2AUnsupportedBindingError(
@@ -1044,16 +981,13 @@ class A2AClient:
         await self._discard_adapter(dialect, expected_adapter=adapter)
 
     async def _get_preferred_dialects(self, descriptor: A2APeerDescriptor) -> list[str]:
-        if normalize_transport_label(descriptor.selected_transport) != "JSONRPC":
-            return [SDK_DIALECT]
-        choices = [JSONRPC_SLASH_DIALECT, JSONRPC_PASCAL_DIALECT]
         cached = global_dialect_cache.get(
             agent_url=descriptor.agent_url,
             card_fingerprint=descriptor.card_fingerprint,
         )
-        if cached in choices:
-            return [cached, *[dialect for dialect in choices if dialect != cached]]
-        return choices
+        if cached == SDK_DIALECT:
+            return [SDK_DIALECT]
+        return [SDK_DIALECT]
 
     @staticmethod
     def _should_try_alternate_dialect(
@@ -1062,15 +996,6 @@ class A2AClient:
         dialect: str,
         exc: Exception,
     ) -> bool:
-        if normalize_transport_label(descriptor.selected_transport) != "JSONRPC":
-            return False
-        if dialect != JSONRPC_SLASH_DIALECT:
-            return False
-        if isinstance(exc, A2APeerProtocolError):
-            return (
-                exc.error_code in {"method_not_found", "method_not_supported"}
-                or exc.code == -32601
-            )
         return False
 
     @staticmethod
@@ -1102,54 +1027,41 @@ class A2AClient:
         selected_transport: TransportProtocol | str | None,
     ) -> AgentCard:
         fallback_errors: list[Exception] = []
-        if normalize_transport_label(selected_transport) == "JSONRPC":
-            try:
-                return (
-                    await self._get_authenticated_extended_agent_card_with_jsonrpc_fallback()
-                )
-            except (
-                A2AAgentUnavailableError,
-                A2AClientResetRequiredError,
-                A2APeerProtocolError,
-                A2AUnsupportedOperationError,
-            ) as exc:
-                fallback_errors.append(exc)
-                logger.info(
-                    "Falling back to HTTP authenticated extended A2A agent card fetch",
-                    extra={
-                        "agent_url": redact_url_for_logging(self.agent_url),
-                        "selected_transport": normalize_transport_label(
-                            selected_transport
-                        ),
-                        "error": str(exc),
-                    },
-                )
+        try:
+            return (
+                await self._get_authenticated_extended_agent_card_with_jsonrpc_fallback()
+            )
+        except (
+            A2AAgentUnavailableError,
+            A2AClientResetRequiredError,
+            A2APeerProtocolError,
+            A2AUnsupportedOperationError,
+        ) as exc:
+            fallback_errors.append(exc)
+            logger.info(
+                "Falling back to HTTP authenticated extended A2A agent card fetch",
+                extra={
+                    "agent_url": redact_url_for_logging(self.agent_url),
+                    "selected_transport": normalize_transport_label(selected_transport),
+                    "error": str(exc),
+                },
+            )
 
-        for card_path, log_label in (
-            (
-                AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
-                "authenticated extended A2A agent card",
-            ),
-            (
-                EXTENDED_AGENT_CARD_PATH,
-                "authenticated extended A2A agent card compatibility route",
-            ),
-        ):
-            try:
-                return await self._fetch_card(
-                    agent_card_path_override=card_path,
-                    log_label=log_label,
-                )
-            except A2AAgentUnavailableError as exc:
-                fallback_errors.append(exc)
-                logger.info(
-                    "Authenticated extended A2A agent card fetch failed",
-                    extra={
-                        "agent_url": redact_url_for_logging(self.agent_url),
-                        "card_path": card_path,
-                        "error": str(exc),
-                    },
-                )
+        try:
+            return await self._fetch_card(
+                agent_card_path_override=AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
+                log_label="authenticated extended A2A agent card",
+            )
+        except A2AAgentUnavailableError as exc:
+            fallback_errors.append(exc)
+            logger.info(
+                "Authenticated extended A2A agent card fetch failed",
+                extra={
+                    "agent_url": redact_url_for_logging(self.agent_url),
+                    "card_path": AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
+                    "error": str(exc),
+                },
+            )
 
         if fallback_errors:
             raise A2AAgentUnavailableError(
@@ -1241,8 +1153,7 @@ class A2AClient:
 
         candidate_paths = (
             AGENT_CARD_WELL_KNOWN_PATH,
-            PREV_AGENT_CARD_WELL_KNOWN_PATH,
-            EXTENDED_AGENT_CARD_PATH,
+            AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
         )
 
         for candidate_path in candidate_paths:
@@ -1396,33 +1307,21 @@ class A2AClient:
                 return None
             collected: list[str] = []
             for part in parts:
-                text_part = None
-                if isinstance(part, TextPart):
-                    text_part = part
-                else:
-                    root = getattr(part, "root", None)
-                    if isinstance(root, TextPart):
-                        text_part = root
-                    elif isinstance(part, Mapping):
-                        text_value = part.get("text")
-                        if isinstance(text_value, str) and text_value.strip():
-                            collected.append(text_value)
-                            continue
-                        mapped_root = part.get("root")
-                        if isinstance(mapped_root, TextPart):
-                            text_part = mapped_root
-                        elif isinstance(part.get("role"), str):
-                            nested = A2AClient._extract_text_from_payload(part)
-                            if nested:
-                                collected.append(nested)
-                                continue
-                if text_part and getattr(text_part, "text", None):
-                    collected.append(text_part.text)
+                normalized = to_json_like(part)
+                if not isinstance(normalized, Mapping):
+                    continue
+                text_value = normalized.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    collected.append(text_value.strip())
+                    continue
+                nested = A2AClient._extract_text_from_payload(normalized)
+                if nested:
+                    collected.append(nested)
             if collected:
                 return "\n".join(collected)
             return None
 
-        def extract_from_mapping(payload_map: Mapping) -> Optional[str]:
+        def extract_from_mapping(payload_map: Mapping[str, Any]) -> Optional[str]:
             for key in (
                 "content",
                 "message",
@@ -1435,6 +1334,10 @@ class A2AClient:
                 "history",
                 "events",
                 "root",
+                "task",
+                "artifact",
+                "artifact_update",
+                "status_update",
             ):
                 if key not in payload_map:
                     continue
@@ -1442,104 +1345,51 @@ class A2AClient:
                 if value in (None, ""):
                     continue
                 if key == "text" and isinstance(value, (str, int, float, bool)):
-                    text: str | None = str(value).strip()
-                    if text:
-                        return text
-                if key in ("parts",):
-                    text = extract_from_parts(value)
-                    if text:
-                        return text
+                    text_value = str(value).strip()
+                    if text_value:
+                        return text_value
+                if key == "parts":
+                    parts_text = extract_from_parts(value)
+                    if parts_text:
+                        return parts_text
                 if isinstance(value, (list, tuple)) and key in (
                     "messages",
                     "artifacts",
                     "history",
                     "events",
                 ):
-                    text = extract_from_iterable(value)
-                    if text:
-                        return text
-                text = A2AClient._extract_text_from_payload(value)
-                if text:
-                    return text
+                    iterable_text = extract_from_iterable(value)
+                    if iterable_text:
+                        return iterable_text
+                nested_text = A2AClient._extract_text_from_payload(value)
+                if nested_text:
+                    return nested_text
             return None
 
-        if isinstance(payload, Message):
-            return extract_from_parts(payload.parts)
+        if payload is None:
+            return None
 
         if isinstance(payload, str):
             return payload.strip() or None
 
-        status_payload = getattr(payload, "status", None)
-        if status_payload is not None:
-            text = A2AClient._extract_text_from_payload(status_payload)
-            if text:
-                return text
-
-        message_payload = getattr(payload, "message", None)
-        if message_payload is not None:
-            text = A2AClient._extract_text_from_payload(message_payload)
-            if text:
-                return text
-
-        result_payload = getattr(payload, "result", None)
-        if result_payload is not None:
-            text = A2AClient._extract_text_from_payload(result_payload)
-            if text:
-                return text
-
-        history = getattr(payload, "history", None)
-        if isinstance(history, (list, tuple)) and history:
-            for item in reversed(history):
-                text = A2AClient._extract_text_from_payload(item)
-                if text:
-                    return text
-
-        artifacts = getattr(payload, "artifacts", None)
-        if isinstance(artifacts, (list, tuple)):
-            for artifact in artifacts:
-                artifact_parts = getattr(artifact, "parts", None)
-                if isinstance(artifact_parts, (list, tuple)):
-                    text = extract_from_parts(artifact_parts)
-                    if text:
-                        return text
-
-        text = extract_from_parts(getattr(payload, "parts", None))
-        if text:
-            return text
-
-        event_text = extract_from_iterable(getattr(payload, "events", None))
-        if event_text:
-            return event_text
+        if is_proto_message(payload):
+            return A2AClient._extract_text_from_payload(to_json_like(payload))
 
         if isinstance(payload, Mapping):
-            mapped_text = extract_from_mapping(payload)
+            mapped_text = extract_from_mapping(
+                {str(key): value for key, value in payload.items()}
+            )
             if mapped_text:
                 return mapped_text
+            return None
 
-        mapping_payload = None
-        if hasattr(payload, "dict") and callable(getattr(payload, "dict")):
-            payload_dict = payload.dict()
-            if isinstance(payload_dict, Mapping):
-                mapping_payload = payload_dict
-        elif hasattr(payload, "model_dump") and callable(
-            getattr(payload, "model_dump")
-        ):
-            payload_dict = payload.model_dump()
-            if isinstance(payload_dict, Mapping):
-                mapping_payload = payload_dict
-        elif isinstance(getattr(payload, "__dict__", None), Mapping):
-            mapping_payload = dict(payload.__dict__)
+        if isinstance(payload, (list, tuple)):
+            return extract_from_iterable(payload)
 
-        if mapping_payload is not None:
-            mapped_text = extract_from_mapping(mapping_payload)
-            if mapped_text:
-                return mapped_text
-            event_text = extract_from_iterable(mapping_payload.get("events"))
-            if event_text:
-                return event_text
-            content_text = extract_from_iterable(mapping_payload.get("parts"))
-            if content_text:
-                return content_text
+        normalized = to_json_like(payload)
+        if normalized is not payload:
+            return A2AClient._extract_text_from_payload(normalized)
+
         return None
 
 
@@ -1548,6 +1398,8 @@ def _as_plain_serializable(payload: Any) -> Any:
         return None
     if isinstance(payload, (str, int, float, bool)):
         return payload
+    if is_proto_message(payload):
+        return to_json_like(payload)
     if isinstance(payload, list):
         return [_as_plain_serializable(item) for item in payload]
     if isinstance(payload, dict):
@@ -1565,16 +1417,10 @@ def _as_plain_serializable(payload: Any) -> Any:
 
 
 def _json_fallback(value: Any) -> Any:
+    if is_proto_message(value):
+        return to_json_like(value)
     if isinstance(value, Message):
-        return {
-            "message_id": value.message_id,
-            "parts": _as_plain_serializable(value.parts),
-            "role": getattr(value.role, "value", None),
-            "context_id": value.context_id,
-            "metadata": value.metadata,
-        }
-    if isinstance(value, TextPart):
-        return {"text": value.text}
+        return to_json_like(value)
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     if hasattr(value, "dict"):

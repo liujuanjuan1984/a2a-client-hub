@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Dict, Optional
 
 from a2a.types import AgentCard
 
+from app.integrations.a2a_client.protobuf import to_json_like
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.types import JsonRpcInterface
 
 
 def as_dict(value: Any) -> Dict[str, Any]:
-    if isinstance(value, dict):
-        return dict(value)
+    normalized = to_json_like(value)
+    if isinstance(normalized, Mapping):
+        return {str(key): item for key, item in normalized.items()}
+    if isinstance(value, Mapping):
+        return {str(key): item for key, item in value.items()}
     return {}
 
 
@@ -36,6 +41,8 @@ def require_int(value: Any, *, field: str) -> int:
         raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
     if isinstance(value, int):
         return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
     if isinstance(value, str) and value.strip().lstrip("-").isdigit():
         return int(value.strip())
     raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
@@ -73,21 +80,16 @@ def build_business_code_map(value: Any) -> Dict[int, str]:
 
 def resolve_jsonrpc_interface(card: AgentCard) -> JsonRpcInterface:
     jsonrpc_url: Optional[str] = None
-    additional = getattr(card, "additional_interfaces", None) or []
-    for iface in additional:
-        transport = (getattr(iface, "transport", "") or "").strip().lower()
+    for iface in getattr(card, "supported_interfaces", None) or []:
+        transport = (getattr(iface, "protocol_binding", "") or "").strip().lower()
         url = (getattr(iface, "url", "") or "").strip()
         if transport == "jsonrpc" and url:
             jsonrpc_url = url
             break
 
-    fallback_used = False
-    if not jsonrpc_url:
-        jsonrpc_url = (getattr(card, "url", "") or "").strip()
-        fallback_used = True
     if not jsonrpc_url:
         raise A2AExtensionContractError(
             "Agent card is missing a JSON-RPC interface URL"
         )
 
-    return JsonRpcInterface(url=jsonrpc_url, fallback_used=fallback_used)
+    return JsonRpcInterface(url=jsonrpc_url, fallback_used=False)

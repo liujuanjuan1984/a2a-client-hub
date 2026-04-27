@@ -1,14 +1,12 @@
-"""Interoperability matrix tests for A2A binding and dialect selection."""
+"""Interoperability tests for the SDK-only A2A 1.0 client path."""
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call
 
-import httpx
 import pytest
-from a2a.types import TransportProtocol
+from a2a.utils.constants import TransportProtocol
 
 from app.integrations.a2a_client import client as client_module
 from app.integrations.a2a_client.adapters import sdk as sdk_module
@@ -20,7 +18,7 @@ from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AOutboundNotAllowedError,
-    A2APeerProtocolError,
+    A2AUnsupportedOperationError,
 )
 from app.utils.outbound_url import OutboundURLNotAllowedError
 
@@ -36,14 +34,37 @@ class _FakeResolver:
         return self._card_payload
 
 
+def _build_interface(
+    protocol_binding: str,
+    url: str,
+    *,
+    protocol_version: str | None = "1.0",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        protocol_binding=protocol_binding,
+        url=url,
+        protocol_version=protocol_version,
+    )
+
+
 def _build_card(**overrides: object) -> SimpleNamespace:
     payload = {
         "name": "Gateway",
-        "preferred_transport": "JSONRPC",
-        "url": "http://example-agent.internal:24020/jsonrpc",
-        "additional_interfaces": [],
-        "capabilities": SimpleNamespace(streaming=False),
-        "protocol_version": "1.0",
+        "description": "SDK-only peer",
+        "supported_interfaces": [
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc",
+            )
+        ],
+        "capabilities": SimpleNamespace(
+            streaming=False,
+            extended_agent_card=False,
+        ),
+        "version": "1.0",
+        "default_input_modes": ["text/plain"],
+        "default_output_modes": ["text/plain"],
+        "skills": [],
     }
     payload.update(overrides)
     return SimpleNamespace(**payload)
@@ -55,7 +76,7 @@ def clear_dialect_cache() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_preferred_dialects_prefers_cached_jsonrpc_variant() -> None:
+async def test_get_preferred_dialects_always_uses_sdk_even_with_stale_cache() -> None:
     descriptor = client_module.build_peer_descriptor(
         agent_url="http://example-agent.internal:24020",
         card=_build_card(),
@@ -65,69 +86,9 @@ async def test_get_preferred_dialects_prefers_cached_jsonrpc_variant() -> None:
     client_module.global_dialect_cache.set(
         agent_url=descriptor.agent_url,
         card_fingerprint=descriptor.card_fingerprint,
-        dialect=client_module.JSONRPC_PASCAL_DIALECT,
+        dialect="jsonrpc_pascal",
     )
 
-    a2a_client = A2AClient("http://example-agent.internal:24020")
-
-    dialects = await a2a_client._get_preferred_dialects(descriptor)
-
-    assert dialects == [
-        client_module.JSONRPC_PASCAL_DIALECT,
-        client_module.JSONRPC_SLASH_DIALECT,
-    ]
-
-
-@pytest.mark.asyncio
-async def test_get_preferred_dialects_ignores_cache_for_changed_card_fingerprint() -> (
-    None
-):
-    cached_descriptor = client_module.build_peer_descriptor(
-        agent_url="http://example-agent.internal:24020",
-        card=_build_card(),
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/jsonrpc",
-    )
-    refreshed_descriptor = client_module.build_peer_descriptor(
-        agent_url="http://example-agent.internal:24020",
-        card=_build_card(
-            additional_interfaces=[
-                SimpleNamespace(
-                    transport="JSONRPC",
-                    url="http://example-agent.internal:24020/jsonrpc-v2",
-                )
-            ]
-        ),
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/jsonrpc-v2",
-    )
-    client_module.global_dialect_cache.set(
-        agent_url=cached_descriptor.agent_url,
-        card_fingerprint=cached_descriptor.card_fingerprint,
-        dialect=client_module.JSONRPC_PASCAL_DIALECT,
-    )
-
-    a2a_client = A2AClient("http://example-agent.internal:24020")
-
-    dialects = await a2a_client._get_preferred_dialects(refreshed_descriptor)
-
-    assert dialects == [
-        client_module.JSONRPC_SLASH_DIALECT,
-        client_module.JSONRPC_PASCAL_DIALECT,
-    ]
-
-
-@pytest.mark.asyncio
-async def test_get_preferred_dialects_uses_sdk_for_http_json() -> None:
-    descriptor = client_module.build_peer_descriptor(
-        agent_url="http://example-agent.internal:24020",
-        card=_build_card(
-            preferred_transport="HTTP+JSON",
-            url="http://example-agent.internal:24020/http-json",
-        ),
-        selected_transport="HTTP+JSON",
-        selected_url="http://example-agent.internal:24020/http-json",
-    )
     a2a_client = A2AClient("http://example-agent.internal:24020")
 
     dialects = await a2a_client._get_preferred_dialects(descriptor)
@@ -136,22 +97,21 @@ async def test_get_preferred_dialects_uses_sdk_for_http_json() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_agent_card_ignores_non_selected_non_http_interfaces(
+async def test_get_agent_card_ignores_incompatible_non_http_interfaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     card = _build_card(
-        preferred_transport="HTTP+JSON",
-        url="http://example-agent.internal:24020/a2a/external_gateway",
-        additional_interfaces=[
-            SimpleNamespace(
-                transport="JSONRPC",
-                url="http://example-agent.internal:24020/a2a/external_gateway/",
+        supported_interfaces=[
+            _build_interface(
+                "HTTP+JSON",
+                "http://example-agent.internal:24020/a2a/external_gateway",
             ),
-            SimpleNamespace(
-                transport="GRPC",
-                url="grpc://example-agent.internal:8090",
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/a2a/external_gateway/",
             ),
-        ],
+            _build_interface("GRPC", "grpc://example-agent.internal:8090"),
+        ]
     )
     validate_calls: list[str] = []
 
@@ -195,9 +155,7 @@ async def test_get_agent_card_raises_when_no_compatible_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     card = _build_card(
-        preferred_transport="GRPC",
-        url="grpc://example-agent.internal:8090",
-        additional_interfaces=[],
+        supported_interfaces=[_build_interface("GRPC", "grpc://example-agent:8090")]
     )
     validate_calls: list[str] = []
 
@@ -236,14 +194,16 @@ async def test_get_agent_card_honors_client_preference_transport_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     card = _build_card(
-        preferred_transport="HTTP+JSON",
-        url="http://example-agent.internal:24020/http-json",
-        additional_interfaces=[
-            SimpleNamespace(
-                transport="JSONRPC",
-                url="http://example-agent.internal:24020/jsonrpc",
-            )
-        ],
+        supported_interfaces=[
+            _build_interface(
+                "HTTP+JSON",
+                "http://example-agent.internal:24020/http-json",
+            ),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc",
+            ),
+        ]
     )
     validate_calls: list[str] = []
 
@@ -294,14 +254,16 @@ def test_supported_transports_is_copied_on_init() -> None:
 
     supported_transports.insert(0, "HTTP+JSON")
     card = _build_card(
-        preferred_transport="HTTP+JSON",
-        url="http://example-agent.internal:24020/http-json",
-        additional_interfaces=[
-            SimpleNamespace(
-                transport="JSONRPC",
-                url="http://example-agent.internal:24020/jsonrpc",
-            )
-        ],
+        supported_interfaces=[
+            _build_interface(
+                "HTTP+JSON",
+                "http://example-agent.internal:24020/http-json",
+            ),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc",
+            ),
+        ]
     )
 
     selected_transport, selected_url, _ = (
@@ -317,13 +279,16 @@ async def test_get_agent_card_blocks_selected_interface_not_in_allowlist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     card = _build_card(
-        url="http://blocked-agent.internal:24020/jsonrpc",
-        additional_interfaces=[
-            SimpleNamespace(
-                transport="HTTP+JSON",
-                url="http://example-agent.internal:24020/http-json",
-            )
-        ],
+        supported_interfaces=[
+            _build_interface(
+                "JSONRPC",
+                "http://blocked-agent.internal:24020/jsonrpc",
+            ),
+            _build_interface(
+                "HTTP+JSON",
+                "http://example-agent.internal:24020/http-json",
+            ),
+        ]
     )
     monkeypatch.setattr(
         client_module.a2a_proxy_service,
@@ -340,10 +305,9 @@ async def test_get_agent_card_blocks_selected_interface_not_in_allowlist(
 
 
 @pytest.mark.asyncio
-async def test_get_agent_card_uses_sdk_exact_transport_matching_semantics(
+async def test_get_agent_card_uses_exact_transport_matching_semantics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    card = _build_card(additional_interfaces=[])
     validate_calls: list[str] = []
 
     def fake_validate_outbound_http_url(
@@ -371,7 +335,7 @@ async def test_get_agent_card_uses_sdk_exact_transport_matching_semantics(
         supported_transports=[" jsonrpc "],
     )
     a2a_client._get_http_client = AsyncMock(return_value=Mock())
-    a2a_client._build_card_resolver = Mock(return_value=_FakeResolver(card))
+    a2a_client._build_card_resolver = Mock(return_value=_FakeResolver(_build_card()))
 
     with pytest.raises(A2AAgentUnavailableError, match="no compatible transports"):
         await a2a_client.get_agent_card()
@@ -410,13 +374,13 @@ def test_build_card_resolver_rebases_standard_http_extended_card_path_from_well_
 
 
 @pytest.mark.asyncio
-async def test_get_authenticated_extended_agent_card_prefers_jsonrpc_for_jsonrpc_peer() -> (
-    None
-):
-    public_card = _build_card(supports_authenticated_extended_card=True)
+async def test_get_authenticated_extended_agent_card_prefers_sdk_route() -> None:
+    public_card = _build_card(
+        capabilities=SimpleNamespace(streaming=False, extended_agent_card=True)
+    )
     extended_card = _build_card(
         name="Extended Gateway",
-        supports_authenticated_extended_card=True,
+        capabilities=SimpleNamespace(streaming=False, extended_agent_card=True),
     )
 
     a2a_client = A2AClient("http://example-agent.internal:24020")
@@ -435,27 +399,24 @@ async def test_get_authenticated_extended_agent_card_prefers_jsonrpc_for_jsonrpc
 
 
 @pytest.mark.asyncio
-async def test_get_authenticated_extended_agent_card_falls_back_to_standard_http_before_compat_route() -> (
+async def test_get_authenticated_extended_agent_card_falls_back_to_standard_http() -> (
     None
 ):
-    public_card = _build_card(supports_authenticated_extended_card=True)
+    public_card = _build_card(
+        capabilities=SimpleNamespace(streaming=False, extended_agent_card=True)
+    )
     extended_card = _build_card(
         name="Extended Gateway",
-        supports_authenticated_extended_card=True,
+        capabilities=SimpleNamespace(streaming=False, extended_agent_card=True),
     )
 
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._agent_card = public_card
     a2a_client._peer_descriptor = SimpleNamespace(selected_transport="JSONRPC")
     a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback = AsyncMock(
-        side_effect=client_module.A2AUnsupportedOperationError("method not found")
+        side_effect=A2AUnsupportedOperationError("method not found")
     )
-    a2a_client._fetch_card = AsyncMock(
-        side_effect=[
-            client_module.A2AAgentUnavailableError("standard route unavailable"),
-            extended_card,
-        ]
-    )
+    a2a_client._fetch_card = AsyncMock(return_value=extended_card)
 
     fetched = await a2a_client.get_authenticated_extended_agent_card()
 
@@ -464,451 +425,22 @@ async def test_get_authenticated_extended_agent_card_falls_back_to_standard_http
         call(
             agent_card_path_override=client_module.AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
             log_label="authenticated extended A2A agent card",
-        ),
-        call(
-            agent_card_path_override=client_module.EXTENDED_AGENT_CARD_PATH,
-            log_label="authenticated extended A2A agent card compatibility route",
-        ),
+        )
     ]
 
 
 @pytest.mark.asyncio
-async def test_get_authenticated_extended_agent_card_uses_standard_http_for_non_jsonrpc_peer() -> (
+async def test_get_authenticated_extended_agent_card_requires_public_capability_flag() -> (
     None
 ):
-    public_card = _build_card(
-        supports_authenticated_extended_card=True,
-        preferred_transport=TransportProtocol.http_json,
-        url="http://example-agent.internal:24020/v1",
-    )
-    extended_card = _build_card(
-        name="Extended Gateway",
-        supports_authenticated_extended_card=True,
-        preferred_transport=TransportProtocol.http_json,
-        url="http://example-agent.internal:24020/v1",
-    )
-
     a2a_client = A2AClient("http://example-agent.internal:24020")
-    a2a_client._agent_card = public_card
-    a2a_client._peer_descriptor = SimpleNamespace(
-        selected_transport=TransportProtocol.http_json
-    )
-    a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback = (
-        AsyncMock()
-    )
-    a2a_client._fetch_card = AsyncMock(return_value=extended_card)
+    a2a_client._agent_card = _build_card()
 
-    fetched = await a2a_client.get_authenticated_extended_agent_card()
-
-    assert fetched is extended_card
-    a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback.assert_not_awaited()
-    a2a_client._fetch_card.assert_awaited_once_with(
-        agent_card_path_override=client_module.AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
-        log_label="authenticated extended A2A agent card",
-    )
-
-
-@pytest.mark.asyncio
-async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> None:
-    card = _build_card()
-    descriptor = client_module.build_peer_descriptor(
-        agent_url="http://example-agent.internal:24020",
-        card=card,
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/jsonrpc",
-    )
-
-    class SlashAdapter:
-        async def send_message(self, _request):
-            raise A2APeerProtocolError(
-                "Unknown method: message/send",
-                error_code="method_not_found",
-                rpc_code=-32601,
-            )
-
-    class PascalAdapter:
-        async def send_message(self, _request):
-            return {"parts": [{"text": "pascal-result"}]}
-
-    a2a_client = A2AClient("http://example-agent.internal:24020")
-    a2a_client._peer_descriptor = descriptor
-    a2a_client._get_adapter = AsyncMock(side_effect=[SlashAdapter(), PascalAdapter()])
-    a2a_client._discard_adapter = AsyncMock()
-
-    result = await a2a_client.call_agent("hello")
-
-    assert result["success"] is True
-    assert result["content"] == "pascal-result"
-    a2a_client._discard_adapter.assert_awaited_once()
-    assert a2a_client._discard_adapter.await_args.args == (
-        client_module.JSONRPC_SLASH_DIALECT,
-    )
-
-
-@pytest.mark.asyncio
-async def test_call_agent_does_not_fallback_for_non_method_not_found_jsonrpc_error() -> (
-    None
-):
-    card = _build_card()
-    descriptor = client_module.build_peer_descriptor(
-        agent_url="http://example-agent.internal:24020",
-        card=card,
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/jsonrpc",
-    )
-
-    class SlashAdapter:
-        async def send_message(self, _request):
-            raise A2APeerProtocolError(
-                "Permission denied",
-                error_code="forbidden",
-                rpc_code=-32001,
-            )
-
-    a2a_client = A2AClient("http://example-agent.internal:24020")
-    a2a_client._peer_descriptor = descriptor
-    a2a_client._get_adapter = AsyncMock(return_value=SlashAdapter())
-    a2a_client._discard_adapter = AsyncMock()
-
-    result = await a2a_client.call_agent("hello")
-
-    assert result["success"] is False
-    assert result["error"] == "Permission denied"
-    a2a_client._get_adapter.assert_awaited_once_with(
-        client_module.JSONRPC_SLASH_DIALECT
-    )
-    a2a_client._discard_adapter.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_call_agent_pascal_fallback_includes_message_id_for_http_json_preferred_peer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-    card = _build_card(
-        preferred_transport="HTTP+JSON",
-        url="http://example-agent.internal:24020/v1",
-        additional_interfaces=[
-            SimpleNamespace(
-                transport="JSONRPC",
-                url="http://example-agent.internal:24020/jsonrpc",
-            )
-        ],
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["method"] = request.method
-        captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(
-            200,
-            json={
-                "jsonrpc": "2.0",
-                "id": captured["body"]["id"],
-                "result": {"parts": [{"text": "pascal-result"}]},
-            },
-        )
-
-    def fake_validate_outbound_http_url(
-        url: str,
-        *,
-        allowed_hosts,
-        purpose: str = "outbound HTTP request",
-    ) -> str:
-        _ = allowed_hosts, purpose
-        return url
-
-    class FakeSlashAdapter:
-        def __init__(self, *_args, **_kwargs) -> None:
-            return None
-
-        async def send_message(self, _request):
-            raise A2APeerProtocolError(
-                "Unknown method: message/send",
-                error_code="method_not_found",
-                rpc_code=-32601,
-            )
-
-        async def retire(self) -> None:
-            return None
-
-        async def close(self) -> None:
-            return None
-
-    monkeypatch.setattr(
-        client_module,
-        "validate_outbound_http_url",
-        fake_validate_outbound_http_url,
-    )
-    monkeypatch.setattr(
-        client_module.a2a_proxy_service,
-        "get_effective_allowed_hosts_sync",
-        lambda: ["example-agent.internal:24020"],
-    )
-    monkeypatch.setattr(client_module, "JsonRpcSlashAdapter", FakeSlashAdapter)
-
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport) as http_client:
-        a2a_client = A2AClient(
-            "http://example-agent.internal:24020",
-            use_client_preference=True,
-        )
-        a2a_client._get_http_client = AsyncMock(return_value=http_client)
-        a2a_client._build_card_resolver = Mock(return_value=_FakeResolver(card))
-
-        result = await a2a_client.call_agent(
-            "hello",
-            context_id="ctx-1",
-            metadata={"trace_id": "trace-1"},
-        )
-
-    assert result["success"] is True
-    assert result["content"] == "pascal-result"
-    assert a2a_client._peer_descriptor is not None
-    assert a2a_client._peer_descriptor.selected_transport == "JSONRPC"
-    assert a2a_client._peer_descriptor.selected_url == (
-        "http://example-agent.internal:24020/jsonrpc"
-    )
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://example-agent.internal:24020/jsonrpc"
-    assert captured["body"]["method"] == "SendMessage"
-    message = captured["body"]["params"]["message"]
-    assert isinstance(message["messageId"], str)
-    assert message["messageId"]
-    assert message["contextId"] == "ctx-1"
-    assert message["metadata"] == {"trace_id": "trace-1"}
-
-
-@pytest.mark.asyncio
-async def test_jsonrpc_slash_stream_message_maps_application_json_method_not_found_without_replaying() -> (
-    None
-):
-    captured_requests: list[dict[str, object]] = []
-    descriptor = SimpleNamespace(
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/jsonrpc",
-        supports_streaming=True,
-        card=Mock(),
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured_requests.append(
-            {
-                "method": request.method,
-                "url": str(request.url),
-                "body": json.loads(request.content.decode("utf-8")),
-            }
-        )
-        return httpx.Response(
-            200,
-            json={
-                "jsonrpc": "2.0",
-                "id": captured_requests[-1]["body"]["id"],
-                "error": {
-                    "code": -32601,
-                    "message": "Unknown method: message/stream",
-                },
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport) as http_client:
-        adapter = client_module.JsonRpcSlashAdapter(
-            descriptor,
-            http_client=http_client,
-        )
-
-        with pytest.raises(
-            A2APeerProtocolError,
-            match="Unknown method: message/stream",
-        ) as exc_info:
-            async for _payload in adapter.stream_message(
-                client_module.A2AMessageRequest(
-                    query="hello",
-                    context_id="ctx-1",
-                )
-            ):
-                pass
-
-    assert exc_info.value.error_code == "method_not_supported"
-    assert exc_info.value.code == -32601
-    assert len(captured_requests) == 1
-    assert captured_requests[0]["body"]["method"] == "message/stream"
-
-
-@pytest.mark.asyncio
-async def test_jsonrpc_slash_get_task_maps_method_not_found_to_unsupported_operation() -> (
-    None
-):
-    descriptor = SimpleNamespace(
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/jsonrpc",
-        supports_streaming=True,
-        card=Mock(),
-    )
-
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={
-                "jsonrpc": "2.0",
-                "id": "task-get-1",
-                "error": {
-                    "code": -32601,
-                    "message": "Unknown method: tasks/get",
-                },
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport) as http_client:
-        adapter = client_module.JsonRpcSlashAdapter(
-            descriptor,
-            http_client=http_client,
-        )
-
-        with pytest.raises(client_module.A2AUnsupportedOperationError):
-            await adapter.get_task("task-1", history_length=2)
-
-
-@pytest.mark.asyncio
-async def test_jsonrpc_pascal_get_task_uses_pascal_method_and_history_length() -> None:
-    captured: dict[str, object] = {}
-    descriptor = SimpleNamespace(
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/jsonrpc",
-        supports_streaming=True,
-        card=Mock(),
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["body"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(
-            200,
-            json={
-                "jsonrpc": "2.0",
-                "id": captured["body"]["id"],
-                "result": {"id": "task-1", "status": {"state": "working"}},
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport) as http_client:
-        adapter = client_module.JsonRpcPascalAdapter(
-            descriptor,
-            http_client=http_client,
-        )
-
-        result = await adapter.get_task(
-            "task-1",
-            history_length=5,
-            metadata={"trace_id": "trace-1"},
-        )
-
-    assert result["id"] == "task-1"
-    assert captured["body"]["method"] == "GetTask"
-    assert captured["body"]["params"] == {
-        "id": "task-1",
-        "historyLength": 5,
-        "metadata": {"trace_id": "trace-1"},
-    }
-
-
-@pytest.mark.asyncio
-async def test_stream_agent_falls_back_to_pascal_jsonrpc_streaming_for_http_json_preferred_peer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_requests: list[dict[str, object]] = []
-    card = _build_card(
-        preferred_transport="HTTP+JSON",
-        url="http://example-agent.internal:24020/v1",
-        additional_interfaces=[
-            SimpleNamespace(
-                transport="JSONRPC",
-                url="http://example-agent.internal:24020/jsonrpc",
-            )
-        ],
-        capabilities=SimpleNamespace(streaming=True),
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content.decode("utf-8"))
-        captured_requests.append(
-            {
-                "method": request.method,
-                "url": str(request.url),
-                "body": body,
-            }
-        )
-        if body["method"] == "message/stream":
-            return httpx.Response(
-                200,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": body["id"],
-                    "error": {
-                        "code": -32601,
-                        "message": "Unknown method: message/stream",
-                    },
-                },
-            )
-        return httpx.Response(
-            200,
-            headers={"content-type": "text/event-stream"},
-            text=(
-                "event: TaskArtifactUpdateEvent\n"
-                'data: {"taskId":"task-1","contextId":"ctx-1","artifact":{"parts":[{"type":"text","text":"hello"}]}}\n\n'
-                "event: TaskStatusUpdateEvent\n"
-                'data: {"taskId":"task-1","contextId":"ctx-1","status":{"state":"completed"}}\n\n'
-            ),
-        )
-
-    def fake_validate_outbound_http_url(
-        url: str,
-        *,
-        allowed_hosts,
-        purpose: str = "outbound HTTP request",
-    ) -> str:
-        _ = allowed_hosts, purpose
-        return url
-
-    monkeypatch.setattr(
-        client_module,
-        "validate_outbound_http_url",
-        fake_validate_outbound_http_url,
-    )
-    monkeypatch.setattr(
-        client_module.a2a_proxy_service,
-        "get_effective_allowed_hosts_sync",
-        lambda: ["example-agent.internal:24020"],
-    )
-
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport) as http_client:
-        a2a_client = A2AClient(
-            "http://example-agent.internal:24020",
-            use_client_preference=True,
-        )
-        a2a_client._get_http_client = AsyncMock(return_value=http_client)
-        a2a_client._build_card_resolver = Mock(return_value=_FakeResolver(card))
-
-        events: list[dict[str, object]] = []
-        async for event in a2a_client.stream_agent(
-            "hello",
-            context_id="ctx-1",
-            metadata={"trace_id": "trace-1"},
-        ):
-            events.append(event)
-
-    assert a2a_client._peer_descriptor is not None
-    assert a2a_client._peer_descriptor.selected_transport == "JSONRPC"
-    assert [item["body"]["method"] for item in captured_requests] == [
-        "message/stream",
-        "SendStreamingMessage",
-    ]
-    assert events[0]["kind"] == "artifact-update"
-    assert events[1]["kind"] == "status-update"
-    assert events[1]["final"] is True
+    with pytest.raises(
+        A2AAgentUnavailableError,
+        match="does not advertise an authenticated extended agent card",
+    ):
+        await a2a_client.get_authenticated_extended_agent_card()
 
 
 @pytest.mark.asyncio
@@ -918,13 +450,13 @@ async def test_sdk_http_json_adapter_send_message_uses_sdk_transport_defaults(
     captured: dict[str, object] = {}
 
     class FakeFactory:
-        def __init__(self, *, config, consumers) -> None:
+        def __init__(self, *, config) -> None:
             captured["config"] = config
-            captured["consumers"] = consumers
 
         def create(self, *_args, **_kwargs):
             class FakeClient:
-                async def send_message(self, _message):
+                async def send_message(self, request):
+                    captured["request"] = request
                     yield {"parts": [{"text": "ignored"}]}
                     yield {"parts": [{"text": "sdk-http-json"}]}
 
@@ -941,15 +473,24 @@ async def test_sdk_http_json_adapter_send_message_uses_sdk_transport_defaults(
     )
 
     result = await adapter.send_message(
-        client_module.A2AMessageRequest(query="hello", context_id="ctx-1")
+        client_module.A2AMessageRequest(
+            query="hello",
+            context_id="ctx-1",
+            metadata={"trace_id": "trace-1"},
+        )
     )
 
     assert result == {"parts": [{"text": "sdk-http-json"}]}
     assert captured["config"].streaming is False
-    assert captured["config"].supported_transports == [
-        TransportProtocol.jsonrpc,
-        TransportProtocol.http_json,
+    assert captured["config"].supported_protocol_bindings == [
+        TransportProtocol.JSONRPC.value,
+        TransportProtocol.HTTP_JSON.value,
     ]
+    assert captured["request"].message.context_id == "ctx-1"
+    assert list(captured["request"].configuration.accepted_output_modes) == [
+        "text/plain"
+    ]
+    assert captured["request"].metadata["trace_id"] == "trace-1"
     await adapter.close()
 
 
@@ -960,13 +501,12 @@ async def test_sdk_http_json_adapter_stream_message_downgrades_when_peer_disable
     captured: dict[str, object] = {}
 
     class FakeFactory:
-        def __init__(self, *, config, consumers) -> None:
+        def __init__(self, *, config) -> None:
             captured["config"] = config
-            captured["consumers"] = consumers
 
         def create(self, *_args, **_kwargs):
             class FakeClient:
-                async def send_message(self, _message):
+                async def send_message(self, _request):
                     yield {"event": "blocking-result"}
 
                 async def close(self) -> None:
@@ -997,15 +537,14 @@ async def test_sdk_http_json_adapter_stream_message_downgrades_when_peer_disable
 
 
 @pytest.mark.asyncio
-async def test_sdk_http_json_adapter_get_task_forwards_history_length_and_metadata(
+async def test_sdk_http_json_adapter_get_task_forwards_history_length(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
 
     class FakeFactory:
-        def __init__(self, *, config, consumers) -> None:
+        def __init__(self, *, config) -> None:
             captured["config"] = config
-            captured["consumers"] = consumers
 
         def create(self, *_args, **_kwargs):
             class FakeClient:
@@ -1034,7 +573,45 @@ async def test_sdk_http_json_adapter_get_task_forwards_history_length_and_metada
     assert result == {"id": "task-1", "history_length": 7}
     assert captured["request"].id == "task-1"
     assert captured["request"].history_length == 7
-    assert captured["request"].metadata == {"trace_id": "trace-1"}
+    await adapter.close()
+
+
+@pytest.mark.asyncio
+async def test_sdk_http_json_adapter_cancel_task_forwards_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeFactory:
+        def __init__(self, *, config) -> None:
+            captured["config"] = config
+
+        def create(self, *_args, **_kwargs):
+            class FakeClient:
+                async def cancel_task(self, request):
+                    captured["request"] = request
+                    return {"id": request.id}
+
+                async def close(self) -> None:
+                    return None
+
+            return FakeClient()
+
+    monkeypatch.setattr(sdk_module, "ClientFactory", FakeFactory)
+
+    adapter = SDKA2AAdapter(
+        SimpleNamespace(card=Mock(), selected_transport="HTTP+JSON"),
+        transport_http_client=AsyncMock(),
+    )
+
+    result = await adapter.cancel_task(
+        "task-1",
+        metadata={"trace_id": "trace-1"},
+    )
+
+    assert result == {"id": "task-1"}
+    assert captured["request"].id == "task-1"
+    assert captured["request"].metadata["trace_id"] == "trace-1"
     await adapter.close()
 
 
@@ -1045,13 +622,12 @@ async def test_sdk_http_json_adapter_stream_message_uses_streaming_client_config
     captured: dict[str, object] = {}
 
     class FakeFactory:
-        def __init__(self, *, config, consumers) -> None:
+        def __init__(self, *, config) -> None:
             captured["config"] = config
-            captured["consumers"] = consumers
 
         def create(self, *_args, **_kwargs):
             class FakeClient:
-                async def send_message(self, _message):
+                async def send_message(self, _request):
                     yield {"event": "chunk-1"}
                     yield {"event": "chunk-2"}
 
@@ -1075,9 +651,9 @@ async def test_sdk_http_json_adapter_stream_message_uses_streaming_client_config
 
     assert events == [{"event": "chunk-1"}, {"event": "chunk-2"}]
     assert captured["config"].streaming is True
-    assert captured["config"].supported_transports == [
-        TransportProtocol.jsonrpc,
-        TransportProtocol.http_json,
+    assert captured["config"].supported_protocol_bindings == [
+        TransportProtocol.JSONRPC.value,
+        TransportProtocol.HTTP_JSON.value,
     ]
     await adapter.close()
 
@@ -1087,8 +663,12 @@ async def test_call_agent_retries_sdk_dialect_after_transport_reset() -> None:
     descriptor = client_module.build_peer_descriptor(
         agent_url="http://example-agent.internal:24020",
         card=_build_card(
-            preferred_transport="HTTP+JSON",
-            url="http://example-agent.internal:24020/v1",
+            supported_interfaces=[
+                _build_interface(
+                    "HTTP+JSON",
+                    "http://example-agent.internal:24020/v1",
+                )
+            ]
         ),
         selected_transport="HTTP+JSON",
         selected_url="http://example-agent.internal:24020/v1",
@@ -1141,8 +721,12 @@ async def test_call_agent_retries_retired_sdk_adapter_without_transport_invalida
     descriptor = client_module.build_peer_descriptor(
         agent_url="http://example-agent.internal:24020",
         card=_build_card(
-            preferred_transport="HTTP+JSON",
-            url="http://example-agent.internal:24020/v1",
+            supported_interfaces=[
+                _build_interface(
+                    "HTTP+JSON",
+                    "http://example-agent.internal:24020/v1",
+                )
+            ]
         ),
         selected_transport="HTTP+JSON",
         selected_url="http://example-agent.internal:24020/v1",

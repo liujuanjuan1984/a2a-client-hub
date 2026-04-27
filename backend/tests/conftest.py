@@ -9,6 +9,7 @@ from typing import AsyncGenerator, Generator
 
 import pytest
 import pytest_asyncio
+from a2a.types import AgentCard
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import create_engine, text
@@ -89,6 +90,7 @@ from setup_db_schema import create_schema, drop_schema
 
 from app.core.config import settings
 from app.db.models.base import Base
+from app.integrations.a2a_client.protobuf import parse_agent_card, protobuf_to_dict
 from app.runtime.a2a_proxy_service import A2AProxyService
 
 # Import the minimal set of models required for tests to ensure SQLAlchemy
@@ -115,6 +117,71 @@ for module_path in [
     importlib.import_module(module_path)
 
 TEST_SCHEMA = settings.schema_name
+
+
+def _agent_card_model_validate(
+    cls: type[AgentCard],
+    payload: dict[str, object],
+) -> AgentCard:
+    normalized_payload = dict(payload)
+    if (
+        "supported_interfaces" not in normalized_payload
+        and "supportedInterfaces" not in normalized_payload
+    ):
+        supported_interfaces: list[dict[str, object]] = []
+        preferred_transport = (
+            normalized_payload.get("preferred_transport")
+            or normalized_payload.get("preferredTransport")
+            or "JSONRPC"
+        )
+        primary_url = normalized_payload.get("url")
+        if isinstance(primary_url, str) and primary_url.strip():
+            supported_interfaces.append(
+                {
+                    "url": primary_url.strip(),
+                    "protocolBinding": str(preferred_transport),
+                }
+            )
+
+        raw_additional = (
+            normalized_payload.get("additional_interfaces")
+            or normalized_payload.get("additionalInterfaces")
+            or []
+        )
+        if isinstance(raw_additional, list):
+            for item in raw_additional:
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url")
+                transport = (
+                    item.get("protocol_binding")
+                    or item.get("protocolBinding")
+                    or item.get("transport")
+                    or "JSONRPC"
+                )
+                if isinstance(url, str) and url.strip():
+                    supported_interfaces.append(
+                        {
+                            "url": url.strip(),
+                            "protocolBinding": str(transport),
+                        }
+                    )
+
+        if supported_interfaces:
+            normalized_payload["supportedInterfaces"] = supported_interfaces
+
+    return parse_agent_card(normalized_payload)
+
+
+def _agent_card_model_dump(self: AgentCard, **_kwargs) -> dict[str, object]:
+    return protobuf_to_dict(self)
+
+
+if not hasattr(AgentCard, "model_validate"):
+    AgentCard.model_validate = classmethod(_agent_card_model_validate)
+
+if not hasattr(AgentCard, "model_dump"):
+    AgentCard.model_dump = _agent_card_model_dump
 
 
 def _collect_truncate_targets() -> list[str]:
