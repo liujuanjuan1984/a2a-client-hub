@@ -9,6 +9,7 @@ from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_shared_metadata_sections,
 )
+from app.integrations.a2a_client.protobuf import to_json_like
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.utils.payload_extract import (
     as_dict,
@@ -246,14 +247,13 @@ def coerce_payload_to_dict(payload: Any) -> dict[str, Any]:
             return {}
     if isinstance(resolved_payload, dict):
         return dict(resolved_payload)
-    if hasattr(resolved_payload, "model_dump"):
-        try:
-            dumped = resolved_payload.model_dump(exclude_none=True)
-        except Exception as exc:
-            logger.error("Failed to dump A2A payload", exc_info=True)
-            raise ValueError("Payload serialization failed") from exc
-        if isinstance(dumped, dict):
-            return dumped
+    try:
+        dumped = to_json_like(resolved_payload)
+    except Exception as exc:
+        logger.error("Failed to dump A2A payload", exc_info=True)
+        raise ValueError("Payload serialization failed") from exc
+    if isinstance(dumped, dict):
+        return dumped
     return {}
 
 

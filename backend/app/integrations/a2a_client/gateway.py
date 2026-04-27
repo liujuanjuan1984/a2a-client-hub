@@ -731,7 +731,9 @@ class A2AGateway:
             return None
         else:
             extended_supported = bool(
-                getattr(card, "supports_authenticated_extended_card", False)
+                getattr(
+                    getattr(card, "capabilities", None), "extended_agent_card", False
+                )
             )
             used_authenticated_extended_card = False
             if extended_supported:

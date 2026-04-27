@@ -5,10 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
-from typing import Any, cast
 from uuid import uuid4
 
-from a2a.types import AgentCard, Message, Part, Role, TextPart
+from a2a.types import AgentCard, Message, Part, Role
 
 from app.integrations.a2a_client.models import (
     A2AInterfaceDescriptor,
@@ -66,28 +65,12 @@ def build_peer_descriptor(
     )
 
 
-def build_pascal_message_payload(request: A2AMessageRequest) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "messageId": str(uuid4()),
-        "role": "user",
-        "parts": [{"type": "text", "text": request.query}],
-    }
-    if request.context_id:
-        payload["contextId"] = request.context_id
-    if request.metadata:
-        payload["metadata"] = request.metadata
-    return payload
-
-
 def build_a2a_message(request: A2AMessageRequest) -> Message:
-    raw_role = (
-        getattr(Role, "USER", None) or getattr(Role, "user", None) or Role("user")
-    )
     resolved_context_id = request.context_id or str(uuid4())
-    parts: list[Part] = [cast(Part, TextPart(text=request.query))]
+    parts: list[Part] = [Part(text=request.query)]
     return Message(
         message_id=str(uuid4()),
-        role=raw_role,
+        role=Role.ROLE_USER,
         parts=parts,
         context_id=resolved_context_id,
         metadata=request.metadata or None,
@@ -95,27 +78,14 @@ def build_a2a_message(request: A2AMessageRequest) -> Message:
 
 
 def _collect_interfaces(card: AgentCard) -> Iterable[A2AInterfaceDescriptor]:
-    protocol_version = getattr(card, "protocol_version", None)
-    preferred_transport = normalize_transport_label(
-        getattr(card, "preferred_transport", None)
-    )
-    preferred_url = (getattr(card, "url", "") or "").strip()
-    if preferred_transport and preferred_url:
-        yield A2AInterfaceDescriptor(
-            transport=preferred_transport,
-            url=preferred_url,
-            protocol_version=protocol_version,
-            source="preferred",
-        )
-
-    for iface in getattr(card, "additional_interfaces", None) or []:
-        transport = normalize_transport_label(getattr(iface, "transport", None))
+    for iface in getattr(card, "supported_interfaces", None) or []:
+        transport = normalize_transport_label(getattr(iface, "protocol_binding", None))
         url = (getattr(iface, "url", "") or "").strip()
         if not transport or not url:
             continue
         yield A2AInterfaceDescriptor(
             transport=transport,
             url=url,
-            protocol_version=protocol_version,
-            source="additional",
+            protocol_version=(getattr(iface, "protocol_version", None) or None),
+            source="supported_interface",
         )

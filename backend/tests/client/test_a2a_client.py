@@ -10,8 +10,7 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-from a2a.client.errors import A2AClientHTTPError
-from a2a.types import Message, Role, TextPart
+from a2a.types import Message, Part, Role
 
 from app.core import http_client as http_client_module
 from app.integrations.a2a_client import client as client_module
@@ -146,7 +145,7 @@ async def test_sdk_adapter_close_preserves_borrowed_http_client() -> None:
     captured_config: dict[str, object] = {}
 
     class FakeFactory:
-        def __init__(self, *, config, consumers) -> None:
+        def __init__(self, *, config) -> None:
             captured_config["config"] = config
 
         def create(self, *_args, **_kwargs):
@@ -180,8 +179,8 @@ async def test_sdk_adapter_retire_drains_inflight_operations_before_closing() ->
     closed = AsyncMock()
 
     class FakeFactory:
-        def __init__(self, *, config, consumers) -> None:
-            _ = config, consumers
+        def __init__(self, *, config) -> None:
+            _ = config
 
         def create(self, *_args, **_kwargs):
             class FakeClient:
@@ -635,11 +634,11 @@ async def test_gateway_fetch_agent_card_detail_prefers_authenticated_extended_ca
     )
     public_card = SimpleNamespace(
         name="Public Card",
-        supports_authenticated_extended_card=True,
+        capabilities=SimpleNamespace(extended_agent_card=True),
     )
     extended_card = SimpleNamespace(
         name="Extended Card",
-        supports_authenticated_extended_card=True,
+        capabilities=SimpleNamespace(extended_agent_card=True),
     )
     session = SimpleNamespace(
         snapshot=SimpleNamespace(agent_card=public_card),
@@ -679,7 +678,7 @@ async def test_gateway_fetch_agent_card_detail_falls_back_to_public_card_when_ex
     )
     public_card = SimpleNamespace(
         name="Public Card",
-        supports_authenticated_extended_card=True,
+        capabilities=SimpleNamespace(extended_agent_card=True),
     )
     session = SimpleNamespace(
         snapshot=SimpleNamespace(agent_card=public_card),
@@ -855,7 +854,7 @@ def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
     fake_task_payload = SimpleNamespace(
         artifacts=[
             SimpleNamespace(
-                parts=[TextPart(text="Task completed")],
+                parts=[Part(text="Task completed")],
             )
         ]
     )
@@ -867,8 +866,8 @@ def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
 def test_extract_text_from_payload_can_handle_history_message() -> None:
     user_message = Message(
         message_id="m1",
-        role=Role("user"),
-        parts=[TextPart(text="Previous prompt")],
+        role=Role.ROLE_USER,
+        parts=[Part(text="Previous prompt")],
     )
     agent_payload = SimpleNamespace(history=[user_message])
 
@@ -1000,10 +999,7 @@ async def test_stream_with_fallback_downgrades_to_blocking_when_streaming_is_not
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._get_peer_descriptor = AsyncMock(return_value=descriptor)
     a2a_client._get_preferred_dialects = AsyncMock(
-        return_value=[
-            client_module.JSONRPC_SLASH_DIALECT,
-            client_module.JSONRPC_PASCAL_DIALECT,
-        ]
+        return_value=[client_module.SDK_DIALECT]
     )
     a2a_client._get_adapter = AsyncMock(return_value=_UnsupportedStreamAdapter())
     a2a_client._discard_adapter = AsyncMock()
@@ -1033,7 +1029,10 @@ async def test_cancel_task_returns_success_for_valid_request() -> None:
 async def test_cancel_task_maps_http_status_error_codes() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._cancel_with_fallback = AsyncMock(
-        side_effect=A2AClientHTTPError(404, "Task not found")
+        side_effect=A2APeerProtocolError(
+            "Task not found",
+            error_code="task_not_found",
+        )
     )
 
     result = await a2a_client.cancel_task("task-missing")
@@ -1107,7 +1106,10 @@ async def test_get_task_rejects_non_object_task_payload() -> None:
 async def test_get_task_maps_http_status_error_codes() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._get_task_with_fallback = AsyncMock(
-        side_effect=A2AClientHTTPError(404, "Task not found")
+        side_effect=A2APeerProtocolError(
+            "Task not found",
+            error_code="task_not_found",
+        )
     )
 
     result = await a2a_client.get_task("task-missing")

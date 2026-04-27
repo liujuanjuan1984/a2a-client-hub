@@ -86,11 +86,16 @@ class _FakeGateway:
             {
                 "name": "Example Agent",
                 "description": "Example",
-                "url": "https://example.com",
                 "version": "1.0",
+                "supported_interfaces": [
+                    {
+                        "url": "https://example.com/jsonrpc",
+                        "protocol_binding": "JSONRPC",
+                    }
+                ],
                 "capabilities": {"extensions": []},
-                "defaultInputModes": [],
-                "defaultOutputModes": [],
+                "default_input_modes": [],
+                "default_output_modes": [],
                 "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
             }
         )

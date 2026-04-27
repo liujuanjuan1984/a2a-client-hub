@@ -1260,8 +1260,13 @@ def test_build_stream_hints_runtime_meta_from_card_warns_once_for_missing_capabi
         {
             "name": "example",
             "description": "example",
-            "url": "https://example.com",
             "version": "1.0",
+            "supportedInterfaces": [
+                {
+                    "url": "https://example.com/jsonrpc",
+                    "protocolBinding": "JSONRPC",
+                }
+            ],
             "capabilities": {"extensions": []},
             "defaultInputModes": [],
             "defaultOutputModes": [],

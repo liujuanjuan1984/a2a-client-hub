@@ -26,8 +26,13 @@ def _base_card_payload() -> dict:
     return {
         "name": "example",
         "description": "example",
-        "url": "https://example.com",
         "version": "1.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://example.com/jsonrpc",
+                "protocolBinding": "JSONRPC",
+            }
+        ],
         "capabilities": {"extensions": []},
         "defaultInputModes": [],
         "defaultOutputModes": [],
@@ -62,8 +67,8 @@ def test_resolve_extracts_provider_discovery_methods_and_interface() -> None:
             },
         }
     ]
-    payload["additionalInterfaces"] = [
-        {"transport": "jsonrpc", "url": "https://api.example.com/jsonrpc"}
+    payload["supportedInterfaces"] = [
+        {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
     card = AgentCard.model_validate(payload)
@@ -94,8 +99,8 @@ def test_resolve_accepts_opencode_https_provider_discovery_uri() -> None:
             },
         }
     ]
-    payload["additionalInterfaces"] = [
-        {"transport": "jsonrpc", "url": "https://api.example.com/jsonrpc"}
+    payload["supportedInterfaces"] = [
+        {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
     resolved = resolve_opencode_provider_discovery(AgentCard.model_validate(payload))

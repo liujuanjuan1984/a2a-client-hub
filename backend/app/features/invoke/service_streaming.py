@@ -9,6 +9,7 @@ import re
 from contextlib import suppress
 from typing import Any, AsyncIterator
 
+from a2a.types import StreamResponse as A2AStreamResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
@@ -31,6 +32,11 @@ from app.features.invoke.service_types import (
 )
 from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
+from app.integrations.a2a_client.protobuf import (
+    is_terminal_task_state,
+    stream_response_to_payload,
+    to_json_like,
+)
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
@@ -541,16 +547,15 @@ class A2AInvokeStreamingRuntime:
     ) -> dict[str, Any]:
         from app.core.config import settings
 
-        resolved: Any
-        if isinstance(event, tuple):
-            resolved = event[1] if event[1] else event[0]
+        if isinstance(event, A2AStreamResponse):
+            payload = stream_response_to_payload(event)
+        elif isinstance(event, tuple):
+            resolved = event[1] if len(event) >= 2 and event[1] else event[0]
+            normalized_payload = to_json_like(resolved)
+            payload = normalized_payload if isinstance(normalized_payload, dict) else {}
         else:
-            resolved = event
-
-        if isinstance(resolved, dict):
-            payload = dict(resolved)
-        else:
-            payload = resolved.model_dump(exclude_none=True)
+            normalized_payload = to_json_like(event)
+            payload = normalized_payload if isinstance(normalized_payload, dict) else {}
         stream_payloads.coerce_message_event_to_artifact_update(payload)
         if settings.debug:
             payload["validation_errors"] = validate_message(payload)
@@ -564,7 +569,14 @@ class A2AInvokeStreamingRuntime:
 
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
-        return payload.get("kind") == "status-update" and payload.get("final") is True
+        if payload.get("kind") != "status-update":
+            return False
+        if payload.get("final") is True:
+            return True
+        status = payload.get("status")
+        if isinstance(status, dict):
+            return is_terminal_task_state(status.get("state"))
+        return False
 
     @classmethod
     def _ensure_outbound_stream_contract(

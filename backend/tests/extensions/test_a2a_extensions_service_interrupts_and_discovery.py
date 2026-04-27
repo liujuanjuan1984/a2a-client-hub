@@ -795,9 +795,11 @@ async def test_provider_and_interrupt_share_single_card_fetch(
     )
     fetch_calls = 0
     fake_card = SimpleNamespace(
-        url="https://example.com",
-        additionalInterfaces=[
-            SimpleNamespace(transport="jsonrpc", url="https://example.com/jsonrpc")
+        supported_interfaces=[
+            SimpleNamespace(
+                protocol_binding="JSONRPC",
+                url="https://example.com/jsonrpc",
+            )
         ],
         capabilities=SimpleNamespace(
             extensions=[

@@ -28,11 +28,16 @@ def _valid_card_payload() -> Dict[str, Any]:
     return {
         "name": "Example Agent",
         "description": "Example",
-        "url": "https://example.com",
         "version": "1.0",
+        "supported_interfaces": [
+            {
+                "url": "https://example.com/jsonrpc",
+                "protocol_binding": "JSONRPC",
+            }
+        ],
         "capabilities": {"extensions": []},
-        "defaultInputModes": [],
-        "defaultOutputModes": [],
+        "default_input_modes": ["text/plain"],
+        "default_output_modes": ["text/plain"],
         "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
     }
 

@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable
 
-from a2a.client.client import ClientEvent
-from a2a.types import Message
+from a2a.types import Message, StreamResponse
 
-StreamEvent = ClientEvent | Message
+StreamEvent = StreamResponse | Message | dict[str, Any]
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
 StreamTextCallbackFn = Callable[[str], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
