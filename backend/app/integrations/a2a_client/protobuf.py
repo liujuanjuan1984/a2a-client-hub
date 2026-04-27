@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict, is_dataclass
 from typing import Any, cast
 
+from a2a.types import AgentCard, StreamResponse
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.message import Message as ProtoMessage
-
-from a2a.types import AgentCard, StreamResponse
 
 _ROLE_MAP = {
     "ROLE_USER": "user",
@@ -82,6 +82,9 @@ def to_json_like(value: Any) -> Any:
             )
         )
 
+    if _is_dataclass_instance(value):
+        return to_json_like(asdict(value))
+
     if isinstance(value, Mapping):
         return {
             str(key): to_json_like(item)
@@ -102,22 +105,6 @@ def to_json_like(value: Any) -> Any:
         except TypeError:
             dumped = model_dump()
         return to_json_like(dumped)
-
-    legacy_dict = getattr(value, "dict", None)
-    if callable(legacy_dict):
-        try:
-            dumped = legacy_dict(by_alias=True, exclude_none=True)
-        except TypeError:
-            dumped = legacy_dict()
-        return to_json_like(dumped)
-
-    raw_dict = getattr(value, "__dict__", None)
-    if isinstance(raw_dict, Mapping):
-        return {
-            str(key): to_json_like(item)
-            for key, item in raw_dict.items()
-            if item is not None and not str(key).startswith("_")
-        }
 
     return value
 
@@ -181,6 +168,10 @@ def _normalize_json_like(value: Any) -> Any:
         return [_normalize_json_like(item) for item in value]
 
     return value
+
+
+def _is_dataclass_instance(value: Any) -> bool:
+    return is_dataclass(value) and not isinstance(value, type)
 
 
 def _normalize_scalar(value: Any) -> Any:

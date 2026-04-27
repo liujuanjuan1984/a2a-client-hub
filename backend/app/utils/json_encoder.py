@@ -43,12 +43,10 @@ class CompassJSONEncoder(json.JSONEncoder):
             return float(obj)
         elif is_proto_message(obj):
             return to_json_like(obj)
-        elif hasattr(obj, "model_dump"):
-            # Handle Pydantic models
-            return obj.model_dump()
-        elif hasattr(obj, "__dict__"):
-            # Handle objects with __dict__ attribute
-            return obj.__dict__
+
+        normalized = to_json_like(obj)
+        if normalized is not obj:
+            return normalized
 
         # Fall back to the default behavior
         return super().default(obj)

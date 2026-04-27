@@ -17,7 +17,7 @@ from a2a.client import (
 )
 from a2a.client.client import ClientCallContext
 from a2a.client.interceptors import AfterArgs, BeforeArgs
-from a2a.types import AgentCard, Message
+from a2a.types import AgentCard
 from a2a.utils.constants import (
     AGENT_CARD_WELL_KNOWN_PATH,
     TransportProtocol,
@@ -1366,6 +1366,32 @@ class A2AClient:
                     return nested_text
             return None
 
+        def extract_from_object(payload_obj: Any) -> Optional[str]:
+            object_payload = {
+                key: value
+                for key in (
+                    "content",
+                    "message",
+                    "messages",
+                    "result",
+                    "status",
+                    "text",
+                    "parts",
+                    "artifacts",
+                    "history",
+                    "events",
+                    "root",
+                    "task",
+                    "artifact",
+                    "artifact_update",
+                    "status_update",
+                )
+                if (value := getattr(payload_obj, key, None)) not in (None, "")
+            }
+            if not object_payload:
+                return None
+            return extract_from_mapping(object_payload)
+
         if payload is None:
             return None
 
@@ -1385,6 +1411,10 @@ class A2AClient:
 
         if isinstance(payload, (list, tuple)):
             return extract_from_iterable(payload)
+
+        object_text = extract_from_object(payload)
+        if object_text:
+            return object_text
 
         normalized = to_json_like(payload)
         if normalized is not payload:
@@ -1417,14 +1447,11 @@ def _as_plain_serializable(payload: Any) -> Any:
 
 
 def _json_fallback(value: Any) -> Any:
-    if is_proto_message(value):
-        return to_json_like(value)
-    if isinstance(value, Message):
-        return to_json_like(value)
     if isinstance(value, bytes):
         return value.decode(errors="replace")
-    if hasattr(value, "dict"):
-        return _as_plain_serializable(value.dict())
+    normalized = to_json_like(value)
+    if normalized is not value:
+        return _as_plain_serializable(normalized)
     return str(value)
 
 
