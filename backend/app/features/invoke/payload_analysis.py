@@ -14,7 +14,6 @@ from app.features.invoke.shared_metadata import (
 from app.integrations.a2a_client.protobuf import to_protojson_like
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.utils.payload_extract import (
-    as_dict,
     extract_context_id,
     extract_provider_and_external_session_id,
 )
@@ -31,6 +30,11 @@ class PayloadAnalysis:
     upstream_task_id: str | None = None
     context_id: str | None = None
     binding_metadata: dict[str, Any] | None = None
+
+
+def _dict_field(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
+    return value if isinstance(value, dict) else {}
 
 
 def _pick_non_empty_str(
@@ -96,7 +100,7 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
     if not payload:
         return {}
 
-    direct_usage = as_dict(payload.get("usage"))
+    direct_usage = _dict_field(payload, "usage")
     metadata_usage = extract_preferred_usage_metadata(payload)
 
     usage_payload: dict[str, Any] = {}
@@ -127,27 +131,27 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
-    root = as_dict(payload)
+    root = payload if isinstance(payload, dict) else {}
 
     stream_kind, stream_body = stream_payloads._resolve_stream_response_body(root)
-    event_metadata = as_dict(stream_body.get("metadata"))
+    event_metadata = _dict_field(stream_body, "metadata")
     artifact = stream_payloads._resolve_stream_artifact(root)
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    message = stream_body if stream_kind == "message" else as_dict(root.get("message"))
-    message_metadata = as_dict(message.get("metadata"))
+    artifact_metadata = _dict_field(artifact, "metadata")
+    message = stream_body if stream_kind == "message" else _dict_field(root, "message")
+    message_metadata = _dict_field(message, "metadata")
     status = (
-        as_dict(stream_body.get("status"))
+        _dict_field(stream_body, "status")
         if stream_kind == "status-update"
-        else as_dict(root.get("status"))
+        else _dict_field(root, "status")
     )
-    status_metadata = as_dict(status.get("metadata"))
-    task = stream_body if stream_kind == "task" else as_dict(root.get("task"))
-    task_status = as_dict(task.get("status"))
-    task_status_metadata = as_dict(task_status.get("metadata"))
-    result = stream_body if stream_kind == "result" else as_dict(root.get("result"))
-    result_status = as_dict(result.get("status"))
-    result_status_metadata = as_dict(result_status.get("metadata"))
-    root_metadata = event_metadata if stream_body else as_dict(root.get("metadata"))
+    status_metadata = _dict_field(status, "metadata")
+    task = stream_body if stream_kind == "task" else _dict_field(root, "task")
+    task_status = _dict_field(task, "status")
+    task_status_metadata = _dict_field(task_status, "metadata")
+    result = stream_body if stream_kind == "result" else _dict_field(root, "result")
+    result_status = _dict_field(result, "status")
+    result_status_metadata = _dict_field(result_status, "metadata")
+    root_metadata = event_metadata if stream_body else _dict_field(root, "metadata")
     artifact_shared_stream = merge_shared_metadata_sections(
         tuple(
             candidate
@@ -183,17 +187,11 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
 
     task_id = _pick_non_empty_str(stream_body, ("taskId",))
     if task_id is None:
-        for cand in (
-            artifact,
-            task,
-            as_dict(result.get("task")),
-            as_dict(status.get("task")),
-            root_metadata,
-            stream_body,
-        ):
-            task_id = _pick_non_empty_str(cand, ("taskId", "id"))
-            if task_id:
-                break
+        task_id = _pick_non_empty_str(task, ("id",))
+    if task_id is None:
+        task_id = _pick_non_empty_str(_dict_field(status, "task"), ("id",))
+    if task_id is None:
+        task_id = _pick_non_empty_str(_dict_field(result, "task"), ("id",))
 
     seq = _pick_int(stream_body, ("seq",))
     if seq is None:
@@ -202,9 +200,8 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
             artifact_metadata,
             root_metadata,
             artifact_shared_stream,
-            stream_body,
         ):
-            seq = _pick_int(cand, ("seq", "sequence"))
+            seq = _pick_int(cand, ("seq",))
             if seq is not None:
                 break
 
@@ -262,13 +259,6 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
 
 def coerce_payload_to_dict(payload: Any) -> dict[str, Any]:
     resolved_payload = payload
-    if isinstance(resolved_payload, tuple):
-        if len(resolved_payload) >= 2 and resolved_payload[1]:
-            resolved_payload = resolved_payload[1]
-        elif resolved_payload:
-            resolved_payload = resolved_payload[0]
-        else:
-            return {}
     if isinstance(resolved_payload, dict):
         return dict(resolved_payload)
     try:
@@ -377,21 +367,17 @@ def _extract_text_from_parts(parts: Any) -> str | None:
         text = part.get("text")
         if isinstance(text, str) and text.strip():
             collected.append(text)
-            continue
-        content = part.get("content")
-        if isinstance(content, str) and content.strip():
-            collected.append(content)
     if collected:
         return "".join(collected)
     return None
 
 
 def extract_preferred_text_from_payload(payload: Any) -> str | None:
-    root = as_dict(payload)
+    root = payload if isinstance(payload, dict) else {}
     if not root:
         return None
 
-    direct_text = _pick_non_empty_str(root, ("text", "content", "message"))
+    direct_text = _pick_non_empty_str(root, ("text",))
     if direct_text:
         return direct_text
 
@@ -399,7 +385,7 @@ def extract_preferred_text_from_payload(payload: Any) -> str | None:
     if parts_text:
         return parts_text
 
-    artifact = as_dict(root.get("artifact"))
+    artifact = _dict_field(root, "artifact")
     if artifact:
         artifact_text = _extract_text_from_parts(artifact.get("parts"))
         if artifact_text:
@@ -415,21 +401,17 @@ def extract_preferred_text_from_payload(payload: Any) -> str | None:
     history = root.get("history")
     if isinstance(history, list):
         for entry in reversed(history):
-            entry_root = as_dict(entry)
+            entry_root = entry if isinstance(entry, dict) else {}
             if not entry_root:
                 continue
             role = _normalize_a2a_role(_pick_non_empty_str(entry_root, ("role",)))
-            if role in {"agent", "assistant", "model"}:
+            if role == "agent":
                 history_text = extract_preferred_text_from_payload(entry_root)
                 if history_text:
                     return history_text
-        for entry in reversed(history):
-            history_text = extract_preferred_text_from_payload(entry)
-            if history_text:
-                return history_text
 
     for key in ("status", "result", "message"):
-        nested = as_dict(root.get(key))
+        nested = _dict_field(root, key)
         if nested:
             nested_text = extract_preferred_text_from_payload(nested)
             if nested_text:

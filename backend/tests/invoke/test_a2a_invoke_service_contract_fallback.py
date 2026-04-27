@@ -42,7 +42,7 @@ def test_extract_stream_chunk_rejects_kindless_artifact_updates():
                             "blockType": "reasoning",
                             "messageId": "msg-kindless",
                             "eventId": "evt-kindless",
-                            "sequence": 4,
+                            "seq": 4,
                         }
                     }
                 },
@@ -88,7 +88,7 @@ def test_extract_stream_chunk_prefers_shared_stream_block_type_over_text_part_ki
                                 "source": "tool_part_update",
                                 "messageId": "msg-shared",
                                 "eventId": "evt-shared",
-                                "sequence": 7,
+                                "seq": 7,
                             }
                         }
                     },
@@ -127,7 +127,7 @@ def test_extract_stream_chunk_reads_tool_call_content_from_data_parts():
                                 "source": "tool_part_update",
                                 "messageId": "msg-data",
                                 "eventId": "evt-data",
-                                "sequence": 8,
+                                "seq": 8,
                             }
                         }
                     },

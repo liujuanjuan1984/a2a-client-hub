@@ -201,7 +201,7 @@ def test_extract_readable_content_prefers_raw_history_agent_message():
                 "history": [
                     {"role": "user", "parts": [{"kind": "text", "text": "Hi"}]},
                     {
-                        "role": "agent",
+                        "role": "ROLE_AGENT",
                         "parts": [{"kind": "text", "text": "Hello from agent"}],
                     },
                 ]
@@ -217,8 +217,22 @@ def test_extract_readable_content_parses_json_string_content():
             "success": True,
             "content": (
                 '{"history":[{"role":"user","parts":[{"text":"Q"}]},'
-                '{"role":"assistant","parts":[{"text":"A"}]}]}'
+                '{"role":"ROLE_AGENT","parts":[{"text":"A"}]}]}'
             ),
         }
     )
     assert readable == "A"
+
+
+def test_extract_readable_content_does_not_extract_legacy_history_assistant_role():
+    content = (
+        '{"history":[{"role":"user","parts":[{"text":"Q"}]},'
+        '{"role":"assistant","parts":[{"text":"A"}]}]}'
+    )
+    readable = a2a_invoke_service.extract_readable_content_from_invoke_result(
+        {
+            "success": True,
+            "content": content,
+        }
+    )
+    assert readable == content

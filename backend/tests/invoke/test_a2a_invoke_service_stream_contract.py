@@ -38,9 +38,9 @@ def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
             "artifactUpdate": {
+                "taskId": "task-from-root",
                 "artifact": {"parts": [{"text": "noop"}]},
                 "metadata": {
-                    "taskId": "task-from-root",
                     "shared": {
                         "stream": {
                             "messageId": "msg-1",
@@ -58,6 +58,27 @@ def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
         "upstream_event_seq": 99,
         "upstream_task_id": "task-from-root",
     }
+
+
+def test_extract_stream_identity_hints_ignores_legacy_metadata_task_id_alias():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "noop"}]},
+                "metadata": {
+                    "taskId": "task-from-metadata",
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-1",
+                            "eventId": "evt-1",
+                            "seq": 99,
+                        }
+                    },
+                },
+            }
+        }
+    )
+    assert "upstream_task_id" not in hints
 
 
 def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
@@ -171,7 +192,7 @@ def test_extract_stream_identity_hints_reads_shared_stream_metadata():
                         "stream": {
                             "messageId": "msg-shared-stream",
                             "eventId": "evt-shared-stream",
-                            "sequence": 12,
+                            "seq": 12,
                         }
                     }
                 },
@@ -182,6 +203,29 @@ def test_extract_stream_identity_hints_reads_shared_stream_metadata():
     assert hints["upstream_message_id"] == "msg-shared-stream"
     assert hints["upstream_event_id"] == "evt-shared-stream"
     assert hints["upstream_event_seq"] == 12
+
+
+def test_extract_stream_identity_hints_ignores_legacy_sequence_alias():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "noop"}]},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "messageId": "msg-legacy-sequence",
+                            "eventId": "evt-legacy-sequence",
+                            "sequence": 12,
+                        }
+                    }
+                },
+            }
+        }
+    )
+
+    assert hints["upstream_message_id"] == "msg-legacy-sequence"
+    assert hints["upstream_event_id"] == "evt-legacy-sequence"
+    assert "upstream_event_seq" not in hints
 
 
 def test_extract_stream_chunk_reads_canonical_event_and_message_ids():

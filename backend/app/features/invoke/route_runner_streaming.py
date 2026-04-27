@@ -48,7 +48,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
-from app.utils.payload_extract import as_dict, extract_provider_and_external_session_id
+from app.utils.payload_extract import extract_provider_and_external_session_id
 
 _STREAM_HINTS_WARNING_TTL_SECONDS = 300.0
 _stream_hints_warning_cache: dict[
@@ -234,19 +234,31 @@ def has_shared_section(
 ) -> bool:
     candidates = [payload]
     if include_artifact:
-        artifact_update = as_dict(payload.get("artifactUpdate"))
-        candidates.append(artifact_update)
-        candidates.append(as_dict(artifact_update.get("artifact")))
+        artifact_update = payload.get("artifactUpdate")
+        if isinstance(artifact_update, dict):
+            candidates.append(artifact_update)
+            artifact = artifact_update.get("artifact")
+            if isinstance(artifact, dict):
+                candidates.append(artifact)
     if include_message:
-        candidates.append(as_dict(payload.get("message")))
+        message = payload.get("message")
+        if isinstance(message, dict):
+            candidates.append(message)
     if include_status:
-        status_update = as_dict(payload.get("statusUpdate"))
-        candidates.append(as_dict(status_update.get("status")))
-        candidates.append(status_update)
+        status_update = payload.get("statusUpdate")
+        if isinstance(status_update, dict):
+            status = status_update.get("status")
+            if isinstance(status, dict):
+                candidates.append(status)
+            candidates.append(status_update)
     if include_task:
-        candidates.append(as_dict(payload.get("task")))
+        task = payload.get("task")
+        if isinstance(task, dict):
+            candidates.append(task)
     if include_result:
-        candidates.append(as_dict(payload.get("result")))
+        result = payload.get("result")
+        if isinstance(result, dict):
+            candidates.append(result)
     return any(
         bool(extract_shared_metadata_section(candidate, section=section))
         for candidate in candidates

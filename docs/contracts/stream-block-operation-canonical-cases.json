@@ -18,7 +18,7 @@
                 "source": "stream",
                 "messageId": "msg-1",
                 "eventId": "evt-1",
-                "sequence": 1
+                "seq": 1
               }
             }
           }
@@ -62,7 +62,7 @@
                 "source": "canonical_v2",
                 "messageId": "msg-2",
                 "eventId": "evt-3",
-                "sequence": 9
+                "seq": 9
               }
             }
           }
@@ -102,7 +102,7 @@
                 "source": "canonical_v2",
                 "messageId": "msg-2",
                 "eventId": "evt-4",
-                "sequence": 10
+                "seq": 10
               }
             }
           }

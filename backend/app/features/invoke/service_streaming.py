@@ -434,10 +434,6 @@ class A2AInvokeStreamingRuntime:
 
         if isinstance(event, A2AStreamResponse):
             payload = stream_response_to_payload(event)
-        elif isinstance(event, tuple):
-            resolved = event[1] if len(event) >= 2 and event[1] else event[0]
-            normalized_payload = to_protojson_like(resolved)
-            payload = normalized_payload if isinstance(normalized_payload, dict) else {}
         else:
             normalized_payload = to_protojson_like(event)
             payload = normalized_payload if isinstance(normalized_payload, dict) else {}
