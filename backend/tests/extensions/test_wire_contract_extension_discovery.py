@@ -21,8 +21,13 @@ def _build_card(*, extension_payload: dict | None) -> AgentCard:
         {
             "name": "Example Agent",
             "description": "Example",
-            "url": "https://example.com",
             "version": "1.0",
+            "supportedInterfaces": [
+                {
+                    "url": "https://example.com/jsonrpc",
+                    "protocolBinding": "JSONRPC",
+                }
+            ],
             "capabilities": {"extensions": extensions},
             "defaultInputModes": [],
             "defaultOutputModes": [],

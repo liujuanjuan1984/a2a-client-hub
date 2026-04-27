@@ -73,8 +73,13 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
             return {
                 "name": "dummy",
                 "description": "dummy",
-                "url": "https://example.com",
                 "version": "1.0",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://example.com/jsonrpc",
+                        "protocolBinding": "JSONRPC",
+                    }
+                ],
                 "capabilities": {
                     "extensions": [
                         {
@@ -125,8 +130,13 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
             return {
                 "name": "dummy",
                 "description": "dummy",
-                "url": "https://example.com",
                 "version": "1.0",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://example.com/jsonrpc",
+                        "protocolBinding": "JSONRPC",
+                    }
+                ],
                 "capabilities": {
                     "extensions": [
                         {
@@ -187,8 +197,13 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
             return {
                 "name": "dummy",
                 "description": "dummy",
-                "url": "https://example.com",
                 "version": "1.0",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://example.com/jsonrpc",
+                        "protocolBinding": "JSONRPC",
+                    }
+                ],
                 "capabilities": {
                     "extensions": [
                         {
@@ -265,8 +280,13 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
             return {
                 "name": "dummy",
                 "description": "dummy",
-                "url": "https://example.com",
                 "version": "1.0",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://example.com/jsonrpc",
+                        "protocolBinding": "JSONRPC",
+                    }
+                ],
                 "capabilities": {
                     "extensions": [
                         {

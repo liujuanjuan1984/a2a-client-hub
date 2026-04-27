@@ -123,54 +123,7 @@ def _agent_card_model_validate(
     cls: type[AgentCard],
     payload: dict[str, object],
 ) -> AgentCard:
-    normalized_payload = dict(payload)
-    if (
-        "supported_interfaces" not in normalized_payload
-        and "supportedInterfaces" not in normalized_payload
-    ):
-        supported_interfaces: list[dict[str, object]] = []
-        preferred_transport = (
-            normalized_payload.get("preferred_transport")
-            or normalized_payload.get("preferredTransport")
-            or "JSONRPC"
-        )
-        primary_url = normalized_payload.get("url")
-        if isinstance(primary_url, str) and primary_url.strip():
-            supported_interfaces.append(
-                {
-                    "url": primary_url.strip(),
-                    "protocolBinding": str(preferred_transport),
-                }
-            )
-
-        raw_additional = (
-            normalized_payload.get("additional_interfaces")
-            or normalized_payload.get("additionalInterfaces")
-            or []
-        )
-        if isinstance(raw_additional, list):
-            for item in raw_additional:
-                if not isinstance(item, dict):
-                    continue
-                url = item.get("url")
-                transport = (
-                    item.get("protocol_binding")
-                    or item.get("protocolBinding")
-                    or item.get("transport")
-                    or "JSONRPC"
-                )
-                if isinstance(url, str) and url.strip():
-                    supported_interfaces.append(
-                        {
-                            "url": url.strip(),
-                            "protocolBinding": str(transport),
-                        }
-                    )
-
-        if supported_interfaces:
-            normalized_payload["supportedInterfaces"] = supported_interfaces
-
-    return parse_agent_card(normalized_payload)
+    return parse_agent_card(dict(payload))
 
 
 def _agent_card_model_dump(self: AgentCard, **_kwargs) -> dict[str, object]:

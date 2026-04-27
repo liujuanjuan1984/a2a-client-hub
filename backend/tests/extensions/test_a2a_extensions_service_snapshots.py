@@ -27,8 +27,13 @@ def test_build_interrupt_recovery_snapshot_preserves_scope_metadata() -> None:
         {
             "name": "Example Agent",
             "description": "Example",
-            "url": "https://example.com",
             "version": "1.0",
+            "supportedInterfaces": [
+                {
+                    "url": "https://example.com/jsonrpc",
+                    "protocolBinding": "JSONRPC",
+                }
+            ],
             "capabilities": {
                 "extensions": [
                     {
@@ -73,8 +78,13 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
         {
             "name": "Example Agent",
             "description": "Example",
-            "url": "https://example.com",
             "version": "1.0",
+            "supportedInterfaces": [
+                {
+                    "url": "https://example.com/jsonrpc",
+                    "protocolBinding": "JSONRPC",
+                }
+            ],
             "capabilities": {
                 "extensions": [
                     {
@@ -155,8 +165,13 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
         {
             "name": "Example Agent",
             "description": "Example",
-            "url": "https://example.com",
             "version": "1.0",
+            "supportedInterfaces": [
+                {
+                    "url": "https://example.com/jsonrpc",
+                    "protocolBinding": "JSONRPC",
+                }
+            ],
             "capabilities": {
                 "extensions": [
                     {
