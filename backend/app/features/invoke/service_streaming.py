@@ -18,6 +18,11 @@ from app.features.invoke import (
     service_streaming_transport,
     stream_payloads,
 )
+from app.features.invoke.payload_helpers import (
+    pick_first_non_empty_str,
+    pick_int,
+    pick_non_empty_str,
+)
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamErrorPayload,
@@ -408,23 +413,11 @@ class A2AInvokeStreamingRuntime:
         payload: dict[str, Any],
         keys: tuple[str, ...],
     ) -> str | None:
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return None
+        return pick_non_empty_str(payload, keys)
 
     @staticmethod
     def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, int):
-                return value
-            if isinstance(value, float) and value.is_integer():
-                return int(value)
-            if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-                return int(value.strip())
-        return None
+        return pick_int(payload, keys)
 
     @staticmethod
     def serialize_stream_event(
@@ -489,7 +482,6 @@ class A2AInvokeStreamingRuntime:
 
         shared_stream["seq"] = event_sequence
 
-        message_id = None
         artifact = stream_payloads._resolve_stream_artifact(payload)
         artifact_metadata = (
             artifact.get("metadata") if isinstance(artifact, dict) else {}
@@ -499,31 +491,28 @@ class A2AInvokeStreamingRuntime:
             if isinstance(artifact, dict)
             else {}
         )
-        for candidate in (
-            body,
-            artifact_shared_stream,
-            artifact,
-            artifact_metadata,
-            metadata,
-            shared_stream,
-        ):
-            if not isinstance(candidate, dict):
-                continue
-            if message_id is None:
-                message_id = cls._pick_non_empty_str(candidate, ("messageId",))
+        message_id = pick_first_non_empty_str(
+            (
+                body,
+                artifact_shared_stream,
+                artifact,
+                artifact_metadata,
+                metadata,
+                shared_stream,
+            ),
+            ("messageId",),
+        )
 
-        event_id = None
-        for candidate in (
-            body,
-            artifact_shared_stream,
-            artifact,
-            artifact_metadata,
-            metadata,
-        ):
-            if not isinstance(candidate, dict):
-                continue
-            if event_id is None:
-                event_id = cls._pick_non_empty_str(candidate, ("eventId",))
+        event_id = pick_first_non_empty_str(
+            (
+                body,
+                artifact_shared_stream,
+                artifact,
+                artifact_metadata,
+                metadata,
+            ),
+            ("eventId",),
+        )
 
         fallback_event_id = (
             f"{message_id}:{event_sequence}"

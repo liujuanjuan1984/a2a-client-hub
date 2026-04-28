@@ -9,6 +9,14 @@ from app.features.invoke.interrupt_metadata import (
     normalize_permissions_interrupt_details,
     normalize_question_interrupt_details,
 )
+from app.features.invoke.payload_helpers import dict_field as _dict_field
+from app.features.invoke.payload_helpers import (
+    pick_first_int,
+    pick_first_non_empty_str,
+)
+from app.features.invoke.payload_helpers import (
+    pick_non_empty_str as _pick_non_empty_str,
+)
 from app.features.invoke.shared_metadata import (
     extract_preferred_interrupt_metadata,
     merge_shared_metadata_sections,
@@ -26,11 +34,6 @@ _STREAM_RESPONSE_FIELD_TO_KIND = (
     ("message", "message"),
     ("task", "task"),
 )
-
-
-def _dict_field(payload: dict[str, Any], key: str) -> dict[str, Any]:
-    value = payload.get(key)
-    return value if isinstance(value, dict) else {}
 
 
 def _resolved_stream_event_kind(payload: dict[str, Any]) -> str | None:
@@ -53,29 +56,6 @@ def _resolve_stream_response_body(
 def _event_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     _, body = _resolve_stream_response_body(payload)
     return _dict_field(body, "metadata")
-
-
-def _pick_non_empty_str(
-    payload: dict[str, Any],
-    keys: tuple[str, ...],
-) -> str | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-            return int(value.strip())
-    return None
 
 
 def extract_stream_text_from_parts(parts: Any) -> str:
@@ -235,16 +215,17 @@ def extract_block_operation(
     event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    for candidate in (
-        body,
-        shared_stream,
-        artifact_metadata,
-        event_metadata,
-        artifact,
-    ):
-        raw = _pick_non_empty_str(candidate, ("op",))
-        if raw is None:
-            continue
+    raw = pick_first_non_empty_str(
+        (
+            body,
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("op",),
+    )
+    if raw is not None:
         normalized = raw.lower()
         if normalized in BLOCK_OPERATION_TYPES:
             return normalized
@@ -259,27 +240,29 @@ def extract_block_id(
     shared_stream = extract_shared_stream_metadata(payload, artifact)
     _, body = _resolve_stream_response_body(payload)
 
-    for candidate in (
-        shared_stream,
-        artifact_metadata,
-        event_metadata,
-        artifact,
-    ):
-        block_id = _pick_non_empty_str(candidate, ("blockId",))
-        if block_id is not None:
-            return block_id
+    block_id = pick_first_non_empty_str(
+        (
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("blockId",),
+    )
+    if block_id is not None:
+        return block_id
 
     lane_id = extract_lane_id(payload, artifact, block_type=block_type)
-    message_id = None
-    for candidate in (
-        artifact,
-        artifact_metadata,
-        event_metadata,
-        shared_stream,
-        body,
-    ):
-        if message_id is None:
-            message_id = _pick_non_empty_str(candidate, ("messageId",))
+    message_id = pick_first_non_empty_str(
+        (
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+            body,
+        ),
+        ("messageId",),
+    )
     if message_id is not None:
         return f"{message_id}:{lane_id}"
 
@@ -294,15 +277,17 @@ def extract_lane_id(
     event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    for candidate in (
-        shared_stream,
-        artifact_metadata,
-        event_metadata,
-        artifact,
-    ):
-        lane_id = _pick_non_empty_str(candidate, ("laneId",))
-        if lane_id is not None:
-            return lane_id
+    lane_id = pick_first_non_empty_str(
+        (
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("laneId",),
+    )
+    if lane_id is not None:
+        return lane_id
 
     return _default_lane_id(block_type)
 
@@ -314,16 +299,15 @@ def extract_block_base_seq(
     event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    for candidate in (
-        shared_stream,
-        artifact_metadata,
-        event_metadata,
-        artifact,
-    ):
-        base_seq = _pick_int(candidate, ("baseSeq",))
-        if base_seq is not None:
-            return base_seq
-    return None
+    return pick_first_int(
+        (
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("baseSeq",),
+    )
 
 
 def extract_stream_sequence_from_serialized_event(
@@ -335,16 +319,14 @@ def extract_stream_sequence_from_serialized_event(
     body_metadata = _dict_field(body, "metadata")
     artifact_metadata = _dict_field(artifact, "metadata")
     shared_stream = extract_shared_stream_metadata(root, artifact)
-    sequence = _pick_int(shared_stream, ("seq",))
-    if sequence is not None:
-        return sequence
-    sequence = _pick_int(body_metadata, ("seq",))
-    if sequence is not None:
-        return sequence
-    sequence = _pick_int(artifact_metadata, ("seq",))
-    if sequence is not None:
-        return sequence
-    return None
+    return pick_first_int(
+        (
+            shared_stream,
+            body_metadata,
+            artifact_metadata,
+        ),
+        ("seq",),
+    )
 
 
 def extract_stream_chunk_from_serialized_event(
@@ -369,19 +351,26 @@ def extract_stream_chunk_from_serialized_event(
     if operation is None:
         return None
 
-    event_id = None
-    message_id = None
-    for candidate in (
-        artifact,
-        artifact_metadata,
-        event_metadata,
-        shared_stream,
-        body,
-    ):
-        if event_id is None:
-            event_id = _pick_non_empty_str(candidate, ("eventId",))
-        if message_id is None:
-            message_id = _pick_non_empty_str(candidate, ("messageId",))
+    event_id = pick_first_non_empty_str(
+        (
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+            body,
+        ),
+        ("eventId",),
+    )
+    message_id = pick_first_non_empty_str(
+        (
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+            body,
+        ),
+        ("messageId",),
+    )
 
     delta = extract_stream_content_from_parts(
         artifact.get("parts"), block_type=block_type
@@ -392,12 +381,15 @@ def extract_stream_chunk_from_serialized_event(
     resolved_append = operation == "append"
     resolved_is_finished = operation == "finalize" or body.get("lastChunk") is True
 
-    seq = (
-        _pick_int(body, ("seq",))
-        or _pick_int(artifact, ("seq",))
-        or _pick_int(artifact_metadata, ("seq",))
-        or _pick_int(event_metadata, ("seq",))
-        or _pick_int(shared_stream, ("seq",))
+    seq = pick_first_int(
+        (
+            body,
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+        ),
+        ("seq",),
     )
     source = extract_artifact_source(payload, artifact)
     artifact_id = extract_artifact_id(payload, artifact)

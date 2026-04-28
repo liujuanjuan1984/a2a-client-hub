@@ -8,6 +8,7 @@ from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.contract_utils import (
     as_dict,
+    normalize_string_list,
     require_int,
     require_str,
 )
@@ -26,26 +27,6 @@ from app.integrations.a2a_extensions.types import (
     ResolvedUnsupportedMethodErrorContract,
     ResolvedWireContractExtension,
 )
-
-
-def _normalize_string_list(
-    value: Any,
-    *,
-    field: str,
-    allow_empty: bool = False,
-) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
-
-    items: list[str] = []
-    for item in value:
-        normalized = require_str(item, field=field)
-        if normalized not in items:
-            items.append(normalized)
-
-    if not allow_empty and not items:
-        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
-    return tuple(items)
 
 
 def _normalize_method_availability_map(
@@ -97,9 +78,10 @@ def _resolve_unsupported_method_error(
             payload.get("type"),
             field="params.unsupported_method_error.type",
         ),
-        data_fields=_normalize_string_list(
+        data_fields=normalize_string_list(
             payload.get("data_fields"),
             field="params.unsupported_method_error.data_fields",
+            allow_empty=False,
         ),
     )
 
@@ -138,22 +120,26 @@ def resolve_wire_contract(card: AgentCard) -> ResolvedWireContractExtension:
             params.get("preferred_transport"),
             field="params.preferred_transport",
         ),
-        additional_transports=_normalize_string_list(
+        additional_transports=normalize_string_list(
             params.get("additional_transports"),
             field="params.additional_transports",
+            allow_missing=True,
             allow_empty=True,
         ),
-        core_jsonrpc_methods=_normalize_string_list(
+        core_jsonrpc_methods=normalize_string_list(
             core.get("jsonrpc_methods"),
             field="params.core.jsonrpc_methods",
+            allow_empty=False,
         ),
-        core_http_endpoints=_normalize_string_list(
+        core_http_endpoints=normalize_string_list(
             core.get("http_endpoints"),
             field="params.core.http_endpoints",
+            allow_empty=False,
         ),
-        extension_jsonrpc_methods=_normalize_string_list(
+        extension_jsonrpc_methods=normalize_string_list(
             extensions_params.get("jsonrpc_methods"),
             field="params.extensions.jsonrpc_methods",
+            allow_missing=True,
             allow_empty=True,
         ),
         conditionally_available_methods=_normalize_method_availability_map(
@@ -162,15 +148,17 @@ def resolve_wire_contract(card: AgentCard) -> ResolvedWireContractExtension:
         ),
         extension_uris=tuple(
             normalize_known_extension_uri(item) or item
-            for item in _normalize_string_list(
+            for item in normalize_string_list(
                 extensions_params.get("extension_uris"),
                 field="params.extensions.extension_uris",
+                allow_missing=True,
                 allow_empty=True,
             )
         ),
-        all_jsonrpc_methods=_normalize_string_list(
+        all_jsonrpc_methods=normalize_string_list(
             params.get("all_jsonrpc_methods"),
             field="params.all_jsonrpc_methods",
+            allow_empty=False,
         ),
         service_behaviors=as_dict(params.get("service_behaviors")),
         unsupported_method_error=_resolve_unsupported_method_error(

@@ -36,6 +36,31 @@ def normalize_method_name(value: Any, *, field: str) -> Optional[str]:
     return normalized or None
 
 
+def normalize_string_list(
+    value: Any,
+    *,
+    field: str,
+    allow_missing: bool = False,
+    allow_empty: bool = True,
+) -> tuple[str, ...]:
+    if value is None:
+        if allow_missing:
+            return ()
+        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+    if not isinstance(value, list):
+        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+
+    items: list[str] = []
+    for item in value:
+        normalized = require_str(item, field=field)
+        if normalized not in items:
+            items.append(normalized)
+
+    if not allow_empty and not items:
+        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+    return tuple(items)
+
+
 def require_int(value: Any, *, field: str) -> int:
     if isinstance(value, bool):
         raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")

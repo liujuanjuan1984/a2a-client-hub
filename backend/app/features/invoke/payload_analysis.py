@@ -6,6 +6,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.features.invoke import stream_payloads
+from app.features.invoke.payload_helpers import dict_field as _dict_field
+from app.features.invoke.payload_helpers import (
+    pick_first_int,
+    pick_first_non_empty_str,
+)
+from app.features.invoke.payload_helpers import pick_int as _pick_int
+from app.features.invoke.payload_helpers import (
+    pick_non_empty_str as _pick_non_empty_str,
+)
 from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_preferred_session_binding_metadata,
@@ -32,22 +41,6 @@ class PayloadAnalysis:
     binding_metadata: dict[str, Any] | None = None
 
 
-def _dict_field(payload: dict[str, Any], key: str) -> dict[str, Any]:
-    value = payload.get(key)
-    return value if isinstance(value, dict) else {}
-
-
-def _pick_non_empty_str(
-    payload: dict[str, Any],
-    keys: tuple[str, ...],
-) -> str | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
 def _normalize_a2a_role(value: str | None) -> str | None:
     if not isinstance(value, str):
         return None
@@ -55,18 +48,6 @@ def _normalize_a2a_role(value: str | None) -> str | None:
     if normalized.startswith("role-"):
         normalized = normalized[len("role-") :]
     return normalized or None
-
-
-def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-            return int(value.strip())
-    return None
 
 
 def _pick_number(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
@@ -161,9 +142,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         section=SHARED_STREAM_KEY,
     )
 
-    msg_id = None
-    evt_id = None
-    for cand in (
+    identity_candidates = (
         artifact,
         artifact_metadata,
         message,
@@ -179,31 +158,30 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         artifact_shared_stream,
         root_metadata,
         stream_body,
-    ):
-        if msg_id is None:
-            msg_id = _pick_non_empty_str(cand, ("messageId",))
-        if evt_id is None:
-            evt_id = _pick_non_empty_str(cand, ("eventId",))
+    )
+    msg_id = pick_first_non_empty_str(identity_candidates, ("messageId",))
+    evt_id = pick_first_non_empty_str(identity_candidates, ("eventId",))
 
-    task_id = _pick_non_empty_str(stream_body, ("taskId",))
-    if task_id is None:
-        task_id = _pick_non_empty_str(task, ("id",))
-    if task_id is None:
-        task_id = _pick_non_empty_str(_dict_field(status, "task"), ("id",))
-    if task_id is None:
-        task_id = _pick_non_empty_str(_dict_field(result, "task"), ("id",))
+    task_id = pick_first_non_empty_str(
+        (
+            stream_body,
+            task,
+            _dict_field(status, "task"),
+            _dict_field(result, "task"),
+        ),
+        ("taskId", "id"),
+    )
 
-    seq = _pick_int(stream_body, ("seq",))
-    if seq is None:
-        for cand in (
+    seq = pick_first_int(
+        (
+            stream_body,
             artifact,
             artifact_metadata,
             root_metadata,
             artifact_shared_stream,
-        ):
-            seq = _pick_int(cand, ("seq",))
-            if seq is not None:
-                break
+        ),
+        ("seq",),
+    )
 
     usage: dict[str, Any] = {}
     for cand in (stream_body, artifact, message, status, task, result):
