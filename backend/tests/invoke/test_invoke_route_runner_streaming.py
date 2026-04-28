@@ -1193,7 +1193,9 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service, "stream_sse", fake_stream_sse
+        invoke_route_runner.a2a_invoke_streaming_runtime,
+        "stream_sse",
+        fake_stream_sse,
     )
     monkeypatch.setattr(
         invoke_route_runner,
@@ -1290,7 +1292,9 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service, "stream_ws", fake_stream_ws
+        invoke_route_runner.a2a_invoke_streaming_runtime,
+        "stream_ws",
+        fake_stream_ws,
     )
     monkeypatch.setattr(
         invoke_route_runner,

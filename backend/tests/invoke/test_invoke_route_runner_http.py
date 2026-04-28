@@ -605,7 +605,7 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
         )
 
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "consume_stream",
         fake_consume_stream,
     )
@@ -771,7 +771,7 @@ async def test_run_http_invoke_returns_structured_error_details(
         )
 
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "consume_stream",
         fake_consume_stream,
     )

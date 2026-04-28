@@ -338,7 +338,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "stream_ws",
         fake_stream_ws,
     )
@@ -487,7 +487,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "stream_ws",
         fake_stream_ws,
     )
@@ -718,7 +718,7 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "stream_ws",
         fake_stream_ws,
     )
@@ -784,7 +784,7 @@ async def test_run_ws_invoke_route_invalid_payload_close_is_cancellation_safe(
         return None
 
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "send_ws_error",
         _noop_send_ws_error,
     )

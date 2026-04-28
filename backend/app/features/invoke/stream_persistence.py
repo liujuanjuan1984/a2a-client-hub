@@ -7,7 +7,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from app.db.models.agent_message import AgentMessage
-from app.features.invoke.service import StreamOutcome
+from app.features.invoke.service_types import StreamOutcome
 from app.features.invoke.session_binding import resolve_invoke_session_control_intent
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.utils.idempotency_key import normalize_idempotency_key
@@ -275,16 +275,14 @@ async def persist_stream_block_update(
     state: InvokePersistenceState,
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
-    stream_service: Any,
+    extract_stream_chunk_fn: Any,
     session_factory: Any,
     commit_fn: Any,
     session_hub: Any,
     ensure_headers_fn: Any = ensure_local_message_headers,
     flush_buffer_fn: Any = None,
 ) -> None:
-    stream_block = stream_service.extract_stream_chunk_from_serialized_event(
-        event_payload
-    )
+    stream_block = extract_stream_chunk_fn(event_payload)
     if stream_block is None:
         return
     await ensure_headers_fn(
@@ -390,7 +388,7 @@ async def persist_interrupt_lifecycle_event(
     state: InvokePersistenceState,
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
-    stream_service: Any,
+    extract_interrupt_lifecycle_fn: Any,
     build_interrupt_message_content: Any,
     session_factory: Any,
     commit_fn: Any,
@@ -400,9 +398,7 @@ async def persist_interrupt_lifecycle_event(
 ) -> None:
     if state.local_session_id is None:
         return
-    interrupt_event = stream_service.extract_interrupt_lifecycle_from_serialized_event(
-        event_payload
-    )
+    interrupt_event = extract_interrupt_lifecycle_fn(event_payload)
     if interrupt_event is None:
         return
     await ensure_headers_fn(

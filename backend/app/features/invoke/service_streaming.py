@@ -21,7 +21,6 @@ from app.features.invoke import (
 from app.features.invoke.payload_helpers import dict_field as _dict_field
 from app.features.invoke.payload_helpers import (
     pick_first_non_empty_str,
-    pick_int,
     pick_non_empty_str,
 )
 from app.features.invoke.service_types import (
@@ -410,17 +409,6 @@ class A2AInvokeStreamingRuntime:
             yield payload
 
     @staticmethod
-    def _pick_non_empty_str(
-        payload: dict[str, Any],
-        keys: tuple[str, ...],
-    ) -> str | None:
-        return pick_non_empty_str(payload, keys)
-
-    @staticmethod
-    def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-        return pick_int(payload, keys)
-
-    @staticmethod
     def serialize_stream_event(
         event: StreamEvent, *, validate_message: ValidateMessageFn
     ) -> dict[str, Any]:
@@ -518,7 +506,7 @@ class A2AInvokeStreamingRuntime:
         )
         if event_id == f"stream:{event_sequence}" and message_id is not None:
             event_id = None
-        shared_event_id = cls._pick_non_empty_str(shared_stream, ("eventId",))
+        shared_event_id = pick_non_empty_str(shared_stream, ("eventId",))
         if event_id is None and shared_event_id not in (
             None,
             "",
@@ -884,3 +872,6 @@ class A2AInvokeStreamingRuntime:
             idle_timeout_seconds=idle_timeout_seconds,
             total_timeout_seconds=total_timeout_seconds,
         )
+
+
+a2a_invoke_streaming_runtime = A2AInvokeStreamingRuntime()

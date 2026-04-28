@@ -8,18 +8,26 @@ from uuid import UUID
 
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
+from app.features.invoke.payload_analysis import (
+    extract_binding_hints_from_serialized_event,
+    extract_stream_identity_hints_from_serialized_event,
+    extract_usage_hints_from_serialized_event,
+)
 from app.features.invoke.payload_helpers import dict_field as _dict_field
 from app.features.invoke.route_runner_state import (
     InvokeState,
     bind_inflight_task_if_needed,
     unregister_inflight_invoke,
 )
-from app.features.invoke.service import (
+from app.features.invoke.service_types import (
     StreamFinishReason,
     StreamOutcome,
-    a2a_invoke_service,
 )
 from app.features.invoke.shared_metadata import extract_shared_metadata_section
+from app.features.invoke.stream_payloads import (
+    extract_interrupt_lifecycle_from_serialized_event,
+    extract_stream_chunk_from_serialized_event,
+)
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
     coerce_uuid,
@@ -66,7 +74,7 @@ def collect_stream_hints(
     (
         event_context_id,
         event_metadata,
-    ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(event_payload)
+    ) = extract_binding_hints_from_serialized_event(event_payload)
     from app.features.invoke.session_binding import merge_invoke_binding_state
 
     state.context_id, state.metadata = merge_invoke_binding_state(
@@ -75,16 +83,10 @@ def collect_stream_hints(
         next_context_id=event_context_id,
         next_metadata=event_metadata,
     )
-    identity_hints = (
-        a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
-            event_payload
-        )
-    )
+    identity_hints = extract_stream_identity_hints_from_serialized_event(event_payload)
     if identity_hints:
         state.stream_identity.update(identity_hints)
-    usage_hints = a2a_invoke_service.extract_usage_hints_from_serialized_event(
-        event_payload
-    )
+    usage_hints = extract_usage_hints_from_serialized_event(event_payload)
     if usage_hints:
         state.stream_usage = usage_hints
 
@@ -302,9 +304,7 @@ def diagnose_stream_hints_contract_gap(
     if state.stream_hints_meta.get("stream_hints_mode") != "declared_contract":
         return
 
-    stream_chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
-        event_payload
-    )
+    stream_chunk = extract_stream_chunk_from_serialized_event(event_payload)
     if stream_chunk and not has_shared_section(
         event_payload,
         section="stream",
@@ -318,9 +318,7 @@ def diagnose_stream_hints_contract_gap(
             message=("Stream hints declared but event omitted metadata.shared.stream"),
         )
 
-    usage_hints = a2a_invoke_service.extract_usage_hints_from_serialized_event(
-        event_payload
-    )
+    usage_hints = extract_usage_hints_from_serialized_event(event_payload)
     if usage_hints and not has_shared_section(
         event_payload,
         section="usage",
@@ -338,9 +336,7 @@ def diagnose_stream_hints_contract_gap(
             message=("Stream hints declared but event omitted metadata.shared.usage"),
         )
 
-    interrupt = a2a_invoke_service.extract_interrupt_lifecycle_from_serialized_event(
-        event_payload
-    )
+    interrupt = extract_interrupt_lifecycle_from_serialized_event(event_payload)
     if interrupt and not has_shared_section(
         event_payload,
         section="interrupt",
@@ -356,9 +352,7 @@ def diagnose_stream_hints_contract_gap(
             ),
         )
 
-    _, binding_metadata = (
-        a2a_invoke_service.extract_binding_hints_from_serialized_event(event_payload)
-    )
+    _, binding_metadata = extract_binding_hints_from_serialized_event(event_payload)
     provider, external_session_id = extract_provider_and_external_session_id(
         {"metadata": binding_metadata}
     )
@@ -464,7 +458,7 @@ async def persist_stream_block_update(
         state=state,
         event_payload=event_payload,
         request=request,
-        stream_service=a2a_invoke_service,
+        extract_stream_chunk_fn=extract_stream_chunk_from_serialized_event,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
@@ -495,7 +489,9 @@ async def persist_interrupt_lifecycle_event(
         state=state,
         event_payload=event_payload,
         request=request,
-        stream_service=a2a_invoke_service,
+        extract_interrupt_lifecycle_fn=(
+            extract_interrupt_lifecycle_from_serialized_event
+        ),
         build_interrupt_message_content=serialize_interrupt_event_block_content,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
