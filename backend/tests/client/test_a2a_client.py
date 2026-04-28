@@ -884,29 +884,42 @@ async def test_gateway_invalidate_client_schedules_background_close() -> None:
 
 
 def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
-    fake_task_payload = SimpleNamespace(
-        artifacts=[
-            SimpleNamespace(
-                parts=[Part(text="Task completed")],
-            )
+    fake_task_payload = {
+        "artifacts": [
+            {
+                "parts": [Part(text="Task completed")],
+            }
         ]
-    )
+    }
     text = A2AClient._extract_text_from_payload(fake_task_payload)
 
     assert text == "Task completed"
 
 
 def test_extract_text_from_payload_can_handle_history_message() -> None:
+    agent_message = Message(
+        message_id="m1",
+        role=Role.ROLE_AGENT,
+        parts=[Part(text="Previous prompt")],
+    )
+    agent_payload = {"history": [agent_message]}
+
+    text = A2AClient._extract_text_from_payload(agent_payload)
+
+    assert text == "Previous prompt"
+
+
+def test_extract_text_from_payload_ignores_non_agent_history_message() -> None:
     user_message = Message(
         message_id="m1",
         role=Role.ROLE_USER,
         parts=[Part(text="Previous prompt")],
     )
-    agent_payload = SimpleNamespace(history=[user_message])
+    agent_payload = {"history": [user_message]}
 
     text = A2AClient._extract_text_from_payload(agent_payload)
 
-    assert text == "Previous prompt"
+    assert text is None
 
 
 def test_extract_text_from_payload_can_handle_dict_shape_payload() -> None:
