@@ -424,12 +424,6 @@ class A2AInvokeStreamingRuntime:
         return payload
 
     @staticmethod
-    def _analyze_stream_chunk_contract(
-        payload: dict[str, Any],
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        return stream_payloads.analyze_stream_chunk_contract(payload)
-
-    @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
         status_update = payload.get("statusUpdate")
         if not isinstance(status_update, dict):
@@ -533,15 +527,6 @@ class A2AInvokeStreamingRuntime:
                 or not str(shared_stream.get("op")).strip()
             ):
                 shared_stream["op"] = "replace"
-
-    @staticmethod
-    def _stream_heartbeat_interval_seconds() -> float:
-        from app.core.config import settings
-
-        interval = float(settings.a2a_stream_heartbeat_interval)
-        if interval <= 0:
-            return 0.0
-        return interval
 
     @classmethod
     def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:

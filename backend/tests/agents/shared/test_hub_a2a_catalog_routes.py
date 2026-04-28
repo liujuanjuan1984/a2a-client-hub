@@ -53,14 +53,6 @@ def _message_event(
     return {"message": message}
 
 
-def _completed_status_event() -> Dict[str, Any]:
-    return {
-        "statusUpdate": {
-            "status": {"state": "TASK_STATE_COMPLETED"},
-        }
-    }
-
-
 class _FakeGateway:
     def __init__(self) -> None:
         self.calls: list[Dict[str, Any]] = []
@@ -71,7 +63,7 @@ class _FakeGateway:
                 message_id="msg-default-1",
                 event_id="evt-default-1",
             ),
-            _completed_status_event(),
+            {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
         ]
 
     async def invoke(self, *, resolved, query: str, context_id=None, metadata=None):
@@ -222,7 +214,7 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
             provider="opencode",
             external_session_id="upstream-session-1",
         ),
-        _completed_status_event(),
+        {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
     ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
@@ -318,7 +310,7 @@ async def test_allowlisted_user_can_stream_sse(
             provider="opencode",
             external_session_id="upstream-stream-1",
         ),
-        _completed_status_event(),
+        {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
     ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)

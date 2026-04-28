@@ -6,6 +6,7 @@ import asyncio
 import time
 from typing import Any, Callable
 
+from app.features.invoke import stream_payloads
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamEventPayloadCallbackFn,
@@ -54,7 +55,10 @@ async def consume_stream(
     non_contract_drop_reasons: set[str] = set()
     started_at = time.monotonic()
     last_event_at = started_at
-    heartbeat_interval_seconds = runtime._stream_heartbeat_interval_seconds()
+    from app.core.config import settings
+
+    interval = float(settings.a2a_stream_heartbeat_interval)
+    heartbeat_interval_seconds = interval if interval > 0 else 0.0
     stream_iter = runtime._iter_stream_events_with_heartbeat(
         runtime._iter_gateway_stream(
             gateway=gateway,
@@ -206,8 +210,8 @@ async def consume_stream(
                         extra=warning_payload,
                     )
                 continue
-            stream_block, non_contract_reason = runtime._analyze_stream_chunk_contract(
-                serialized
+            stream_block, non_contract_reason = (
+                stream_payloads.analyze_stream_chunk_contract(serialized)
             )
             warn_non_contract_artifact_update_once(
                 seen_reasons=non_contract_drop_reasons,

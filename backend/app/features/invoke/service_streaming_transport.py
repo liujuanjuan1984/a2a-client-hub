@@ -62,7 +62,10 @@ def stream_sse(
         last_event_at = started_at
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
-        heartbeat_interval_seconds = runtime._stream_heartbeat_interval_seconds()
+        from app.core.config import settings
+
+        interval = float(settings.a2a_stream_heartbeat_interval)
+        heartbeat_interval_seconds = interval if interval > 0 else 0.0
         log_warning = getattr(logger, "warning", None)
         log_info = getattr(logger, "info", None)
         non_contract_drop_reasons: set[str] = set()
@@ -138,7 +141,7 @@ def stream_sse(
                     serialized, event_sequence=event_sequence
                 )
                 stream_block, non_contract_reason = (
-                    runtime._analyze_stream_chunk_contract(serialized)
+                    stream_payloads.analyze_stream_chunk_contract(serialized)
                 )
                 warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
@@ -275,7 +278,10 @@ async def stream_ws(
     last_event_at = started_at
     terminal_event_seen = False
     final_outcome: StreamOutcome | None = None
-    heartbeat_interval_seconds = runtime._stream_heartbeat_interval_seconds()
+    from app.core.config import settings
+
+    interval = float(settings.a2a_stream_heartbeat_interval)
+    heartbeat_interval_seconds = interval if interval > 0 else 0.0
     log_warning = getattr(logger, "warning", None)
     log_info = getattr(logger, "info", None)
     non_contract_drop_reasons: set[str] = set()
@@ -352,8 +358,8 @@ async def stream_ws(
             runtime._ensure_outbound_stream_contract(
                 serialized, event_sequence=event_sequence
             )
-            stream_block, non_contract_reason = runtime._analyze_stream_chunk_contract(
-                serialized
+            stream_block, non_contract_reason = (
+                stream_payloads.analyze_stream_chunk_contract(serialized)
             )
             warn_non_contract_artifact_update_once(
                 seen_reasons=non_contract_drop_reasons,

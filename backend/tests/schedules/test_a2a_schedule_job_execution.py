@@ -64,10 +64,6 @@ def _message_event(
     return {"message": message}
 
 
-def _completed_status_event() -> dict[str, object]:
-    return {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}}
-
-
 async def test_execute_claimed_task_resets_consecutive_failures_on_success(
     async_db_session,
     async_session_maker,
@@ -100,7 +96,7 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
                         message_id="msg-success-1",
                         event_id="evt-success-1",
                     ),
-                    _completed_status_event(),
+                    {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
                 ]
             ),
         ),
@@ -181,7 +177,7 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
                         message_id="msg-timeout-first-1",
                         event_id="evt-timeout-first-1",
                     ),
-                    _completed_status_event(),
+                    {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
                 ],
                 first_event_delay=0.05,
             ),
@@ -254,7 +250,7 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
             event_id="evt-timeout-partial-1",
         )
         await asyncio.sleep(0.05)
-        yield _completed_status_event()
+        yield {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}}
 
     preflight_client = SimpleNamespace(close=AsyncMock())
 
@@ -686,7 +682,7 @@ async def test_execute_claimed_task_binds_external_session_identity_when_present
                         provider="opencode",
                         external_session_id="ses_bind_1",
                     ),
-                    _completed_status_event(),
+                    {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
                 ]
             ),
         ),
@@ -754,7 +750,7 @@ async def test_execute_claimed_task_persists_readable_agent_content(
                         message_id="msg-readable-1",
                         event_id="evt-readable-1",
                     ),
-                    _completed_status_event(),
+                    {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
                 ]
             ),
         ),
@@ -825,7 +821,7 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
                         message_id="msg-new-conv-1",
                         event_id="evt-new-conv-1",
                     ),
-                    _completed_status_event(),
+                    {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
                 ]
             ),
         ),
