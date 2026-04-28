@@ -1181,7 +1181,7 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure_a
     assert include_legacy_root is False
     assert warnings == [
         (
-            "Session binding capability resolution failed upstream; legacy compatibility remains disabled",
+            "Session binding capability resolution failed upstream; session binding fallback remains disabled",
             {
                 "agent_id": "agent-1",
                 "session_binding_resolution_error": "upstream_fetch_failed",

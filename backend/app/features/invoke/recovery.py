@@ -242,7 +242,7 @@ async def resolve_session_binding_outbound_mode(
             logger=logger,
             message=(
                 "Session binding capability resolution failed upstream; "
-                "legacy compatibility remains disabled"
+                "session binding fallback remains disabled"
             ),
             log_extra=log_extra,
             extra={
@@ -257,7 +257,7 @@ async def resolve_session_binding_outbound_mode(
             logger=logger,
             message=(
                 "Session binding capability resolution failed due to runtime shape; "
-                "legacy compatibility remains disabled"
+                "session binding fallback remains disabled"
             ),
             log_extra=log_extra,
             extra={
@@ -272,7 +272,7 @@ async def resolve_session_binding_outbound_mode(
             logger=logger,
             message=(
                 "Session binding capability contract invalid; "
-                "legacy compatibility remains disabled"
+                "session binding fallback remains disabled"
             ),
             log_extra=log_extra,
             extra={

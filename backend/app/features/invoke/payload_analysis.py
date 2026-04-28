@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,9 +11,6 @@ from app.features.invoke.payload_helpers import (
     pick_first_non_empty_str,
 )
 from app.features.invoke.payload_helpers import pick_int as _pick_int
-from app.features.invoke.payload_helpers import (
-    pick_non_empty_str as _pick_non_empty_str,
-)
 from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_preferred_session_binding_metadata,
@@ -42,15 +37,6 @@ class PayloadAnalysis:
     upstream_task_id: str | None = None
     context_id: str | None = None
     binding_metadata: dict[str, Any] | None = None
-
-
-def _normalize_a2a_role(value: str | None) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip().lower().replace("_", "-")
-    if normalized.startswith("role-"):
-        normalized = normalized[len("role-") :]
-    return normalized or None
 
 
 def _pick_number(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
@@ -336,99 +322,3 @@ def extract_usage_hints_from_invoke_result(result: dict[str, Any]) -> dict[str, 
         if raw_analysis.usage:
             usage_hints = raw_analysis.usage
     return usage_hints
-
-
-def _extract_text_from_parts(parts: Any) -> str | None:
-    if not isinstance(parts, list):
-        return None
-    collected: list[str] = []
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        text = part.get("text")
-        if isinstance(text, str) and text.strip():
-            collected.append(text)
-    if collected:
-        return "".join(collected)
-    return None
-
-
-def _extract_preferred_text_from_mapping(root: dict[str, Any]) -> str | None:
-    if not root:
-        return None
-
-    direct_text = _pick_non_empty_str(root, ("text",))
-    if direct_text:
-        return direct_text
-
-    parts_text = _extract_text_from_parts(root.get("parts"))
-    if parts_text:
-        return parts_text
-
-    artifact = _dict_field(root, "artifact")
-    if artifact:
-        artifact_text = _extract_text_from_parts(artifact.get("parts"))
-        if artifact_text:
-            return artifact_text
-
-    artifacts = root.get("artifacts")
-    if isinstance(artifacts, list):
-        for artifact_item in reversed(artifacts):
-            artifact_text = _extract_preferred_text_from_mapping(
-                artifact_item if isinstance(artifact_item, dict) else {}
-            )
-            if artifact_text:
-                return artifact_text
-
-    history = root.get("history")
-    if isinstance(history, list):
-        for entry in reversed(history):
-            entry_root = entry if isinstance(entry, dict) else {}
-            if not entry_root:
-                continue
-            role = _normalize_a2a_role(_pick_non_empty_str(entry_root, ("role",)))
-            if role == "agent":
-                history_text = _extract_preferred_text_from_mapping(entry_root)
-                if history_text:
-                    return history_text
-
-    for key in ("status", "result", "message"):
-        nested = _dict_field(root, key)
-        if nested:
-            nested_text = _extract_preferred_text_from_mapping(nested)
-            if nested_text:
-                return nested_text
-
-    return None
-
-
-def extract_preferred_text_from_payload(payload: Any) -> str | None:
-    if isinstance(payload, dict):
-        return _extract_preferred_text_from_mapping(dict(payload))
-    if isinstance(payload, Mapping):
-        return _extract_preferred_text_from_mapping(
-            {str(key): value for key, value in payload.items()}
-        )
-    return None
-
-
-def extract_readable_content_from_invoke_result(result: dict[str, Any]) -> str | None:
-    raw_payload = coerce_payload_to_dict(result.get("raw"))
-    if raw_payload:
-        raw_text = _extract_preferred_text_from_mapping(raw_payload)
-        if raw_text:
-            return raw_text
-
-    content = result.get("content")
-    if isinstance(content, str) and content.strip():
-        stripped = content.strip()
-        if stripped[:1] in {"{", "["}:
-            try:
-                parsed = json.loads(stripped)
-            except Exception:
-                return stripped
-            parsed_text = extract_preferred_text_from_payload(parsed)
-            if parsed_text:
-                return parsed_text
-        return stripped
-    return None

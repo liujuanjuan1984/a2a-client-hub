@@ -14,7 +14,6 @@ from app.features.invoke.payload_analysis import (
     coerce_payload_to_dict,
     extract_binding_hints_from_invoke_result,
     extract_binding_hints_from_serialized_event,
-    extract_readable_content_from_invoke_result,
     extract_stream_identity_hints_from_invoke_result,
     extract_stream_identity_hints_from_serialized_event,
     extract_usage_hints_from_invoke_result,
@@ -156,9 +155,6 @@ a2a_invoke_service = SimpleNamespace(
     ),
     extract_interrupt_lifecycle_from_serialized_event=(
         extract_interrupt_lifecycle_from_serialized_event
-    ),
-    extract_readable_content_from_invoke_result=(
-        extract_readable_content_from_invoke_result
     ),
     extract_stream_chunk_from_serialized_event=(
         extract_stream_chunk_from_serialized_event
