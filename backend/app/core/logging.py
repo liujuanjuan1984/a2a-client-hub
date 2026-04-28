@@ -257,6 +257,12 @@ def setup_logging() -> None:
     card_resolver_logger.setLevel(logging.WARNING)
     card_resolver_logger.propagate = True
 
+    # Suppress APScheduler executor heartbeat noise while keeping warnings
+    # and failures visible.
+    apscheduler_executor_logger = logging.getLogger("apscheduler.executors.default")
+    apscheduler_executor_logger.setLevel(logging.WARNING)
+    apscheduler_executor_logger.propagate = True
+
 
 def get_logger(name: str) -> logging.Logger:
     """

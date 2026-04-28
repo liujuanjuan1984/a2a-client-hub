@@ -254,6 +254,50 @@ async def test_personal_agent_card_validate_logs_traceback_for_upstream_failure(
 
 
 @pytest.mark.asyncio
+async def test_personal_agent_can_recreate_same_card_url_after_soft_delete(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(
+        async_db_session, email="personal-soft-delete-recreate-route@example.com"
+    )
+    payload = {
+        "name": "Reusable Agent",
+        "card_url": "https://example.com/.well-known/agent-card.json",
+        "auth_type": "none",
+        "enabled": True,
+        "tags": [],
+        "extra_headers": {},
+        "invoke_metadata_defaults": {},
+    }
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        created_response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents",
+            json=payload,
+        )
+        assert created_response.status_code == 201
+        created_id = created_response.json()["id"]
+
+        deleted_response = await client.delete(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{created_id}"
+        )
+        assert deleted_response.status_code == 204
+
+        recreated_response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents",
+            json=payload,
+        )
+        assert recreated_response.status_code == 201
+        assert recreated_response.json()["id"] != created_id
+
+
+@pytest.mark.asyncio
 async def test_personal_agent_http_invoke_injects_session_bound_invoke_metadata(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
