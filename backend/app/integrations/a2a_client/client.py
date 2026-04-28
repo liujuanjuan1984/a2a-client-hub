@@ -54,8 +54,8 @@ from app.integrations.a2a_client.lifecycle import (
 )
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.protobuf import (
-    is_proto_message,
     to_json_like,
+    to_protojson_object,
 )
 from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
@@ -76,6 +76,39 @@ from app.utils.outbound_url import (
 logger = get_logger(__name__)
 
 AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH = "/v1/card"
+_TEXT_PAYLOAD_KEYS = (
+    "content",
+    "message",
+    "messages",
+    "result",
+    "status",
+    "text",
+    "parts",
+    "artifacts",
+    "history",
+    "events",
+    "root",
+    "task",
+    "artifact",
+    "artifact_update",
+    "status_update",
+)
+
+
+def _coerce_text_payload_mapping(payload: Any) -> dict[str, Any] | None:
+    if isinstance(payload, Mapping):
+        return {str(key): value for key, value in payload.items()}
+
+    normalized = to_protojson_object(payload)
+    if normalized is not None:
+        return normalized
+
+    object_payload = {
+        key: value
+        for key in _TEXT_PAYLOAD_KEYS
+        if (value := getattr(payload, key, None)) not in (None, "")
+    }
+    return object_payload or None
 
 
 def _is_legacy_protocol_version(value: str | None) -> bool:
@@ -1325,8 +1358,8 @@ class A2AClient:
                 return None
             collected: list[str] = []
             for part in parts:
-                normalized = to_json_like(part)
-                if not isinstance(normalized, Mapping):
+                normalized = _coerce_text_payload_mapping(part)
+                if normalized is None:
                     continue
                 text_value = normalized.get("text")
                 if isinstance(text_value, str) and text_value.strip():
@@ -1340,23 +1373,7 @@ class A2AClient:
             return None
 
         def extract_from_mapping(payload_map: Mapping[str, Any]) -> Optional[str]:
-            for key in (
-                "content",
-                "message",
-                "messages",
-                "result",
-                "status",
-                "text",
-                "parts",
-                "artifacts",
-                "history",
-                "events",
-                "root",
-                "task",
-                "artifact",
-                "artifact_update",
-                "status_update",
-            ):
+            for key in _TEXT_PAYLOAD_KEYS:
                 if key not in payload_map:
                     continue
                 value = payload_map[key]
@@ -1384,61 +1401,19 @@ class A2AClient:
                     return nested_text
             return None
 
-        def extract_from_object(payload_obj: Any) -> Optional[str]:
-            object_payload = {
-                key: value
-                for key in (
-                    "content",
-                    "message",
-                    "messages",
-                    "result",
-                    "status",
-                    "text",
-                    "parts",
-                    "artifacts",
-                    "history",
-                    "events",
-                    "root",
-                    "task",
-                    "artifact",
-                    "artifact_update",
-                    "status_update",
-                )
-                if (value := getattr(payload_obj, key, None)) not in (None, "")
-            }
-            if not object_payload:
-                return None
-            return extract_from_mapping(object_payload)
-
         if payload is None:
             return None
 
         if isinstance(payload, str):
             return payload.strip() or None
 
-        if is_proto_message(payload):
-            return A2AClient._extract_text_from_payload(to_json_like(payload))
-
-        if isinstance(payload, Mapping):
-            mapped_text = extract_from_mapping(
-                {str(key): value for key, value in payload.items()}
-            )
-            if mapped_text:
-                return mapped_text
-            return None
-
         if isinstance(payload, (list, tuple)):
             return extract_from_iterable(payload)
 
-        object_text = extract_from_object(payload)
-        if object_text:
-            return object_text
-
-        normalized = to_json_like(payload)
-        if normalized is not payload:
-            return A2AClient._extract_text_from_payload(normalized)
-
-        return None
+        payload_map = _coerce_text_payload_mapping(payload)
+        if payload_map is None:
+            return None
+        return extract_from_mapping(payload_map)
 
 
 def _as_plain_serializable(payload: Any) -> Any:
@@ -1446,21 +1421,25 @@ def _as_plain_serializable(payload: Any) -> Any:
         return None
     if isinstance(payload, (str, int, float, bool)):
         return payload
-    if is_proto_message(payload):
-        return to_json_like(payload)
     if isinstance(payload, list):
         return [_as_plain_serializable(item) for item in payload]
-    if isinstance(payload, dict):
+    if isinstance(payload, Mapping):
         return {
             str(key): _as_plain_serializable(value) for key, value in payload.items()
         }
-    for candidate in ("content", "status", "artifacts", "history", "parts", "text"):
-        value = getattr(payload, candidate, None)
-        if value is not None:
-            return {
-                "_type": type(payload).__name__,
-                candidate: _as_plain_serializable(value),
-            }
+
+    normalized = to_protojson_object(payload)
+    if normalized is not None:
+        return _as_plain_serializable(normalized)
+
+    payload_map = _coerce_text_payload_mapping(payload)
+    if payload_map is not None:
+        return {
+            "_type": type(payload).__name__,
+            **{
+                key: _as_plain_serializable(value) for key, value in payload_map.items()
+            },
+        }
     return str(payload)
 
 
