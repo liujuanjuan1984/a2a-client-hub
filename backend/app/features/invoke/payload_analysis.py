@@ -252,15 +252,6 @@ def coerce_payload_to_dict(payload: Any) -> dict[str, Any]:
     return {}
 
 
-def _analyze_raw_invoke_result_payload(
-    result: dict[str, Any],
-) -> PayloadAnalysis | None:
-    raw_payload = coerce_payload_to_dict(result.get("raw"))
-    if not raw_payload:
-        return None
-    return analyze_payload(raw_payload)
-
-
 def extract_binding_hints_from_serialized_event(
     payload: dict[str, Any],
 ) -> tuple[str | None, dict[str, Any]]:
@@ -297,8 +288,9 @@ def extract_binding_hints_from_invoke_result(
     context_id = analysis.context_id
     metadata = dict(analysis.binding_metadata or {})
 
-    raw_analysis = _analyze_raw_invoke_result_payload(result)
-    if raw_analysis is not None:
+    raw_payload = coerce_payload_to_dict(result.get("raw"))
+    if raw_payload:
+        raw_analysis = analyze_payload(raw_payload)
         if raw_analysis.context_id:
             context_id = raw_analysis.context_id
         if raw_analysis.binding_metadata:
@@ -320,8 +312,9 @@ def extract_stream_identity_hints_from_invoke_result(
     if analysis.upstream_task_id:
         hints["upstream_task_id"] = analysis.upstream_task_id
 
-    raw_analysis = _analyze_raw_invoke_result_payload(result)
-    if raw_analysis is not None:
+    raw_payload = coerce_payload_to_dict(result.get("raw"))
+    if raw_payload:
+        raw_analysis = analyze_payload(raw_payload)
         if raw_analysis.upstream_message_id:
             hints["upstream_message_id"] = raw_analysis.upstream_message_id
         if raw_analysis.upstream_event_id:
@@ -337,9 +330,11 @@ def extract_usage_hints_from_invoke_result(result: dict[str, Any]) -> dict[str, 
     analysis = analyze_payload(result)
     usage_hints = analysis.usage
 
-    raw_analysis = _analyze_raw_invoke_result_payload(result)
-    if raw_analysis is not None and raw_analysis.usage:
-        usage_hints = raw_analysis.usage
+    raw_payload = coerce_payload_to_dict(result.get("raw"))
+    if raw_payload:
+        raw_analysis = analyze_payload(raw_payload)
+        if raw_analysis.usage:
+            usage_hints = raw_analysis.usage
     return usage_hints
 
 
