@@ -5,7 +5,6 @@ from tests.invoke.invoke_route_runner_support import (
     A2AAgentInvokeResponse,
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
-    AgentCard,
     JSONResponse,
     SimpleNamespace,
     WebSocketDisconnect,
@@ -19,6 +18,7 @@ from tests.invoke.invoke_route_runner_support import (
     route_runner_streaming,
     uuid4,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _session_metadata(
@@ -1178,15 +1178,15 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure_a
         extensions_service_getter=lambda: _FailingExtensionsService(),
     )
 
-    assert include_legacy_root is True
+    assert include_legacy_root is False
     assert warnings == [
         (
-            "Session binding capability resolution failed upstream; using compatibility fallback",
+            "Session binding capability resolution failed upstream; legacy compatibility remains disabled",
             {
                 "agent_id": "agent-1",
                 "session_binding_resolution_error": "upstream_fetch_failed",
                 "session_binding_resolution_detail": "card fetch failed",
-                "session_binding_fallback_used": True,
+                "session_binding_fallback_used": False,
             },
         )
     ]
@@ -1203,7 +1203,7 @@ def test_build_stream_hints_runtime_meta_from_card_warns_once_for_missing_capabi
             headers={"Authorization": "Bearer token"},
         )
     )
-    card = AgentCard.model_validate(
+    card = parse_agent_card(
         {
             "name": "example",
             "description": "example",

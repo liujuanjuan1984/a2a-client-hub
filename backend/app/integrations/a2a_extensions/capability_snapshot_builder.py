@@ -131,8 +131,8 @@ def build_session_binding_snapshot(card: Any) -> SessionBindingCapabilitySnapsho
             error=str(exc),
             meta={
                 "session_binding_declared": False,
-                "session_binding_mode": "compat_fallback",
-                "session_binding_fallback_used": True,
+                "session_binding_mode": "undeclared",
+                "session_binding_fallback_used": False,
             },
         )
     except A2AExtensionContractError as exc:
@@ -141,8 +141,8 @@ def build_session_binding_snapshot(card: Any) -> SessionBindingCapabilitySnapsho
             error=str(exc),
             meta={
                 "session_binding_declared": True,
-                "session_binding_mode": "compat_fallback",
-                "session_binding_fallback_used": True,
+                "session_binding_mode": "invalid_contract",
+                "session_binding_fallback_used": False,
                 "session_binding_contract_error": str(exc),
             },
         )
@@ -153,10 +153,8 @@ def build_session_binding_snapshot(card: Any) -> SessionBindingCapabilitySnapsho
         meta={
             "session_binding_declared": True,
             "session_binding_uri": ext.uri,
-            "session_binding_mode": (
-                "compat_fallback" if ext.legacy_uri_used else "declared_contract"
-            ),
-            "session_binding_fallback_used": ext.legacy_uri_used,
+            "session_binding_mode": "declared_contract",
+            "session_binding_fallback_used": False,
         },
     )
 

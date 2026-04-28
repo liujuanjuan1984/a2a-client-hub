@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
@@ -20,6 +19,7 @@ from app.integrations.a2a_extensions.types import (
     JsonRpcInterface,
     ResolvedProviderDiscoveryExtension,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -41,7 +41,7 @@ def _base_card_payload() -> dict:
 
 
 def test_resolve_requires_provider_discovery_extension_present() -> None:
-    card = AgentCard.model_validate(_base_card_payload())
+    card = parse_agent_card(_base_card_payload())
     with pytest.raises(A2AExtensionNotSupportedError):
         resolve_opencode_provider_discovery(card)
 
@@ -71,7 +71,7 @@ def test_resolve_extracts_provider_discovery_methods_and_interface() -> None:
         {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_opencode_provider_discovery(card)
 
     assert resolved.uri == PROVIDER_DISCOVERY_URI
@@ -103,7 +103,7 @@ def test_resolve_accepts_opencode_https_provider_discovery_uri() -> None:
         {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
-    resolved = resolve_opencode_provider_discovery(AgentCard.model_validate(payload))
+    resolved = resolve_opencode_provider_discovery(parse_agent_card(payload))
 
     assert resolved.uri == OPENCODE_PROVIDER_DISCOVERY_URI
     assert resolved.methods["list_providers"] == "opencode.providers.list"

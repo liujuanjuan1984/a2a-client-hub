@@ -505,15 +505,15 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure()
         log_warning_fn=_capture_warning(warnings),
     )
 
-    assert include_legacy_root is True
+    assert include_legacy_root is False
     assert warnings == [
         (
-            "Session binding capability resolution failed upstream; using compatibility fallback",
+            "Session binding capability resolution failed upstream; legacy compatibility remains disabled",
             {
                 "agent_id": "agent-1",
                 "session_binding_resolution_error": "upstream_fetch_failed",
                 "session_binding_resolution_detail": "card fetch failed",
-                "session_binding_fallback_used": True,
+                "session_binding_fallback_used": False,
             },
         )
     ]

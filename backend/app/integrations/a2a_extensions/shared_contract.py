@@ -19,11 +19,9 @@ def _spec_uri(fragment: str) -> str:
 
 SHARED_SESSION_BINDING_URI = "urn:a2a:session-binding/v1"
 OPENCODE_SHARED_SESSION_BINDING_URI = _spec_uri("shared-session-binding-v1")
-LEGACY_SHARED_SESSION_BINDING_URI = "urn:shared-a2a:session-binding:v1"
 SUPPORTED_SESSION_BINDING_URIS = (
     SHARED_SESSION_BINDING_URI,
     OPENCODE_SHARED_SESSION_BINDING_URI,
-    LEGACY_SHARED_SESSION_BINDING_URI,
 )
 
 SHARED_SESSION_QUERY_URI = "urn:opencode-a2a:session-query/v1"

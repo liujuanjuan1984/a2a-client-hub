@@ -23,6 +23,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_ID_FIELD,
     STREAM_HINTS_URI,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -92,7 +93,7 @@ def _build_card(
     if with_stream_hints:
         extensions.append({"uri": STREAM_HINTS_URI, "params": {}})
     payload["capabilities"]["extensions"] = extensions
-    return AgentCard.model_validate(payload)
+    return parse_agent_card(payload)
 
 
 def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> None:
@@ -142,7 +143,7 @@ def test_resolve_runtime_session_query_selects_codex_compatibility() -> None:
 
 def test_resolve_runtime_session_query_rejects_unsupported_contract() -> None:
     with pytest.raises(A2AExtensionNotSupportedError):
-        resolve_runtime_session_query(AgentCard.model_validate(_base_card_payload()))
+        resolve_runtime_session_query(parse_agent_card(_base_card_payload()))
 
 
 def test_resolve_runtime_session_query_rejects_invalid_contract() -> None:
@@ -222,8 +223,8 @@ async def test_resolve_capability_snapshot_caches_unsupported_binding(
     assert first.session_binding.status == "unsupported"
     assert first.session_binding.meta == {
         "session_binding_declared": False,
-        "session_binding_mode": "compat_fallback",
-        "session_binding_fallback_used": True,
+        "session_binding_mode": "undeclared",
+        "session_binding_fallback_used": False,
     }
     assert first.stream_hints.status == "unsupported"
     assert first.stream_hints.meta == {

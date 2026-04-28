@@ -78,6 +78,10 @@ logger = get_logger(__name__)
 AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH = "/v1/card"
 
 
+def _is_legacy_protocol_version(value: str | None) -> bool:
+    return isinstance(value, str) and value.strip().startswith("0.3")
+
+
 class StaticHeaderInterceptor(ClientCallInterceptor):
     """Interceptor that injects static HTTP headers into every outbound request."""
 
@@ -505,10 +509,19 @@ class A2AClient:
                 log_label="A2A agent card",
             )
 
-            selected_transport, selected_url, supported_labels = (
-                self._resolve_negotiated_transport_target(card)
-            )
+            (
+                selected_transport,
+                selected_url,
+                supported_labels,
+                saw_legacy_interface,
+            ) = self._resolve_negotiated_transport_target(card)
             if not selected_transport or not selected_url:
+                if saw_legacy_interface:
+                    raise A2AUnsupportedBindingError(
+                        f"A2A agent '{redact_url_for_logging(self.agent_url)}' only "
+                        "advertises legacy A2A protocolVersion 0.3 interfaces. "
+                        "Upgrade the peer to A2A 1.0."
+                    )
                 supported = ", ".join(supported_labels)
                 raise A2AAgentUnavailableError(
                     f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
@@ -578,7 +591,7 @@ class A2AClient:
 
     def _resolve_negotiated_transport_target(
         self, card: AgentCard
-    ) -> tuple[TransportProtocol | str | None, str | None, list[str]]:
+    ) -> tuple[TransportProtocol | str | None, str | None, list[str], bool]:
         def _as_display_label(value: TransportProtocol | str | None) -> str:
             if value is None:
                 return ""
@@ -601,11 +614,16 @@ class A2AClient:
             supported_labels = [TransportProtocol.JSONRPC.value]
 
         server_set: list[tuple[str, str]] = []
+        skipped_legacy_interface = False
         for iface in getattr(card, "supported_interfaces", None) or []:
             transport = normalize_transport_label(
                 getattr(iface, "protocol_binding", None)
             )
             interface_url = (getattr(iface, "url", "") or "").strip()
+            protocol_version = getattr(iface, "protocol_version", None)
+            if _is_legacy_protocol_version(protocol_version):
+                skipped_legacy_interface = True
+                continue
             if transport and interface_url:
                 server_set.append((transport, interface_url))
 
@@ -614,14 +632,14 @@ class A2AClient:
                 label = _as_display_label(transport)
                 for candidate_transport, candidate_url in server_set:
                     if candidate_transport == label:
-                        return transport, candidate_url, supported_labels
-            return None, None, supported_labels
+                        return transport, candidate_url, supported_labels, False
+            return None, None, supported_labels, skipped_legacy_interface
 
         for candidate_transport, candidate_url in server_set:
             for transport in client_set:
                 if candidate_transport == _as_display_label(transport):
-                    return transport, candidate_url, supported_labels
-        return None, None, supported_labels
+                    return transport, candidate_url, supported_labels, False
+        return None, None, supported_labels, skipped_legacy_interface
 
     async def close(self) -> None:
         """Dispose cached transport wrappers."""

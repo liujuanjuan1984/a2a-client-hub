@@ -27,6 +27,7 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
     A2APeerProtocolError,
+    A2AUnsupportedBindingError,
     A2AUpstreamTimeoutError,
 )
 from app.integrations.a2a_client.http_clients import (
@@ -38,6 +39,7 @@ from app.integrations.a2a_client.invoke_session import (
     InvokeSessionOwnership,
 )
 from app.integrations.a2a_client.service import A2AService
+from tests.support.a2a import parse_agent_card
 
 
 @pytest.mark.asyncio
@@ -252,6 +254,37 @@ async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
 
     assert captured["transport_http_client"] is shared_lease.client
     assert captured["shared_transport_lease"] is shared_lease
+
+
+@pytest.mark.asyncio
+async def test_get_agent_card_rejects_legacy_protocol_interfaces() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._fetch_card = AsyncMock(
+        return_value=parse_agent_card(
+            {
+                "name": "Legacy Agent",
+                "description": "legacy",
+                "version": "1.0.0",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://example.com/jsonrpc",
+                        "protocolBinding": "JSONRPC",
+                        "protocolVersion": "0.3.0",
+                    }
+                ],
+                "capabilities": {"streaming": True},
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
+                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+            }
+        )
+    )
+
+    with pytest.raises(
+        A2AUnsupportedBindingError,
+        match="legacy A2A protocolVersion 0.3 interfaces",
+    ):
+        await a2a_client.get_agent_card()
 
 
 @pytest.mark.asyncio

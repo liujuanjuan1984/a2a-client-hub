@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -13,6 +12,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_MODEL_SELECTION_URI,
     SHARED_MODEL_FIELD,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -34,7 +34,7 @@ def _base_card_payload() -> dict:
 
 
 def test_resolve_requires_model_selection_extension_present() -> None:
-    card = AgentCard.model_validate(_base_card_payload())
+    card = parse_agent_card(_base_card_payload())
     with pytest.raises(A2AExtensionNotSupportedError):
         resolve_model_selection(card)
 
@@ -58,7 +58,7 @@ def test_resolve_extracts_canonical_model_selection_contract() -> None:
         }
     ]
 
-    resolved = resolve_model_selection(AgentCard.model_validate(payload))
+    resolved = resolve_model_selection(parse_agent_card(payload))
 
     assert resolved.uri == MODEL_SELECTION_URI
     assert resolved.provider == "opencode"
@@ -86,7 +86,7 @@ def test_resolve_defaults_provider_to_opencode() -> None:
         }
     ]
 
-    resolved = resolve_model_selection(AgentCard.model_validate(payload))
+    resolved = resolve_model_selection(parse_agent_card(payload))
 
     assert resolved.provider == "opencode"
 
@@ -105,7 +105,7 @@ def test_resolve_accepts_opencode_https_model_selection_uri() -> None:
         }
     ]
 
-    resolved = resolve_model_selection(AgentCard.model_validate(payload))
+    resolved = resolve_model_selection(parse_agent_card(payload))
 
     assert resolved.uri == OPENCODE_MODEL_SELECTION_URI
     assert resolved.provider == "opencode"
@@ -126,7 +126,7 @@ def test_resolve_rejects_non_canonical_metadata_field() -> None:
     ]
 
     with pytest.raises(A2AExtensionContractError):
-        resolve_model_selection(AgentCard.model_validate(payload))
+        resolve_model_selection(parse_agent_card(payload))
 
 
 def test_resolve_rejects_empty_applies_to_methods() -> None:
@@ -144,4 +144,4 @@ def test_resolve_rejects_empty_applies_to_methods() -> None:
     ]
 
     with pytest.raises(A2AExtensionContractError):
-        resolve_model_selection(AgentCard.model_validate(payload))
+        resolve_model_selection(parse_agent_card(payload))

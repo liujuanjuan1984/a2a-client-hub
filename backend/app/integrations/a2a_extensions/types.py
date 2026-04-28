@@ -127,7 +127,6 @@ class ResolvedSessionBindingExtension:
     provider_private_metadata: tuple[str, ...]
     shared_workspace_across_consumers: bool | None
     tenant_isolation: str | None
-    legacy_uri_used: bool = False
 
 
 @dataclass(frozen=True, slots=True)

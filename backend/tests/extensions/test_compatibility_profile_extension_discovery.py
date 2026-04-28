@@ -16,11 +16,12 @@ from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _build_card(*, extension_payload: dict | None) -> AgentCard:
     extensions = [extension_payload] if extension_payload is not None else []
-    return AgentCard.model_validate(
+    return parse_agent_card(
         {
             "name": "Example Agent",
             "description": "Example",

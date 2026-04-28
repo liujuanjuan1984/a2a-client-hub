@@ -369,8 +369,8 @@ async def test_continue_session_normalizes_binding_metadata_in_fallback_mode(
                 status="unsupported",
                 meta={
                     "session_binding_declared": False,
-                    "session_binding_mode": "compat_fallback",
-                    "session_binding_fallback_used": True,
+                    "session_binding_mode": "undeclared",
+                    "session_binding_fallback_used": False,
                 },
             ),
         )
@@ -398,7 +398,7 @@ async def test_continue_session_normalizes_binding_metadata_in_fallback_mode(
             },
         },
     }
-    assert result.meta["session_binding_mode"] == "compat_fallback"
+    assert result.meta["session_binding_mode"] == "undeclared"
 
 
 @pytest.mark.asyncio

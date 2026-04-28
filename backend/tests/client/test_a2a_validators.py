@@ -136,6 +136,21 @@ class TestValidateAgentCard:
             "'protocolBinding' (JSONRPC, HTTP+JSON, GRPC)." in result.errors
         )
 
+    def test_rejects_legacy_protocol_version(self, valid_card_data):
+        card_data = valid_card_data.copy()
+        card_data["supportedInterfaces"] = [
+            {
+                "url": "https://example.com/agent",
+                "protocolBinding": "JSONRPC",
+                "protocolVersion": "0.3.0",
+            }
+        ]
+        result = validators.validate_agent_card(card_data)
+        assert (
+            "Legacy A2A protocolVersion '0.3' is not supported; "
+            "upgrade the peer to A2A 1.0." in result.errors
+        )
+
 
 class TestValidateMessage:
     def test_missing_stream_response_field(self):

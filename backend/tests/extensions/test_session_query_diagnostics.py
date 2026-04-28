@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from a2a.types import AgentCard
-
 from app.integrations.a2a_extensions.session_query_diagnostics import (
     diagnose_session_query,
 )
@@ -11,6 +9,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     SHARED_SESSION_QUERY_URI,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -52,7 +51,7 @@ def test_diagnose_session_query_returns_supported_status_for_opencode() -> None:
         }
     ]
 
-    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+    diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
@@ -84,7 +83,7 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_uri() -> None:
         }
     ]
 
-    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+    diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
@@ -118,7 +117,7 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
         }
     ]
 
-    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+    diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
@@ -148,7 +147,7 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_limit_fields() 
         }
     ]
 
-    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+    diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
@@ -182,7 +181,7 @@ def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None
         }
     ]
 
-    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+    diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
@@ -193,7 +192,7 @@ def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None
 
 
 def test_diagnose_session_query_returns_unsupported_when_not_declared() -> None:
-    diagnostic = diagnose_session_query(AgentCard.model_validate(_base_card_payload()))
+    diagnostic = diagnose_session_query(parse_agent_card(_base_card_payload()))
 
     assert diagnostic.declared is False
     assert diagnostic.status == "unsupported"
@@ -235,7 +234,7 @@ def test_diagnose_session_query_returns_supported_status_for_codex() -> None:
         }
     ]
 
-    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+    diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
@@ -263,7 +262,7 @@ def test_diagnose_session_query_returns_invalid_for_bad_contract() -> None:
         }
     ]
 
-    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+    diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
     assert diagnostic.status == "invalid"

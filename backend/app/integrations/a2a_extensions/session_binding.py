@@ -12,7 +12,6 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    LEGACY_SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     SUPPORTED_SESSION_BINDING_URIS,
@@ -101,8 +100,4 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
         provider_private_metadata=provider_private_metadata,
         shared_workspace_across_consumers=shared_workspace,
         tenant_isolation=tenant_isolation,
-        legacy_uri_used=(
-            str(getattr(ext, "uri", SHARED_SESSION_BINDING_URI))
-            == LEGACY_SHARED_SESSION_BINDING_URI
-        ),
     )
