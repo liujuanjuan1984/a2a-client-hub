@@ -151,8 +151,8 @@ def build_stream_hints_runtime_meta_from_card(
     except A2AExtensionNotSupportedError:
         meta = {
             "stream_hints_declared": False,
-            "stream_hints_mode": "compat_fallback",
-            "stream_hints_fallback_used": True,
+            "stream_hints_mode": "undeclared",
+            "stream_hints_fallback_used": False,
         }
         if should_emit_stream_hints_warning(
             runtime=runtime,
@@ -162,17 +162,17 @@ def build_stream_hints_runtime_meta_from_card(
                 logger=logger,
                 message=(
                     "Stream hints extension not declared; "
-                    "using compatibility fallback"
+                    "contract-only stream hints remain disabled"
                 ),
                 log_extra=log_extra,
-                extra={"stream_hints_fallback_used": True},
+                extra={"stream_hints_fallback_used": False},
             )
         return meta
     except A2AExtensionContractError as exc:
         meta = {
             "stream_hints_declared": True,
-            "stream_hints_mode": "compat_fallback",
-            "stream_hints_fallback_used": True,
+            "stream_hints_mode": "invalid_contract",
+            "stream_hints_fallback_used": False,
             "stream_hints_contract_error": str(exc),
         }
         if should_emit_stream_hints_warning(
@@ -181,11 +181,14 @@ def build_stream_hints_runtime_meta_from_card(
         ):
             log_stream_hints_warning(
                 logger=logger,
-                message="Stream hints contract invalid; using compatibility fallback",
+                message=(
+                    "Stream hints contract invalid; "
+                    "contract-only stream hints remain disabled"
+                ),
                 log_extra=log_extra,
                 extra={
                     "stream_hints_contract_error": str(exc),
-                    "stream_hints_fallback_used": True,
+                    "stream_hints_fallback_used": False,
                 },
             )
         return meta
@@ -311,10 +314,7 @@ def diagnose_stream_hints_contract_gap(
             logger=logger,
             log_extra=log_extra,
             key="shared_stream_missing",
-            message=(
-                "Stream hints declared but artifact updates relied on "
-                "compatibility fallback for shared.stream"
-            ),
+            message=("Stream hints declared but event omitted metadata.shared.stream"),
         )
 
     usage_hints = a2a_invoke_service.extract_usage_hints_from_serialized_event(
@@ -334,10 +334,7 @@ def diagnose_stream_hints_contract_gap(
             logger=logger,
             log_extra=log_extra,
             key="shared_usage_missing",
-            message=(
-                "Stream hints declared but usage hints relied on "
-                "compatibility fallback for shared.usage"
-            ),
+            message=("Stream hints declared but event omitted metadata.shared.usage"),
         )
 
     interrupt = a2a_invoke_service.extract_interrupt_lifecycle_from_serialized_event(
@@ -354,8 +351,7 @@ def diagnose_stream_hints_contract_gap(
             log_extra=log_extra,
             key="shared_interrupt_missing",
             message=(
-                "Stream hints declared but interrupt hints relied on "
-                "compatibility fallback for shared.interrupt"
+                "Stream hints declared but event omitted metadata.shared.interrupt"
             ),
         )
 
@@ -376,10 +372,7 @@ def diagnose_stream_hints_contract_gap(
             logger=logger,
             log_extra=log_extra,
             key="shared_session_missing",
-            message=(
-                "Stream hints declared but session hints relied on "
-                "compatibility fallback for shared.session"
-            ),
+            message=("Stream hints declared but event omitted metadata.shared.session"),
         )
 
 

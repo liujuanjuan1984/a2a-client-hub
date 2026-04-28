@@ -13,7 +13,6 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.session_query import (
     resolve_canonical_session_query,
     resolve_codex_session_query,
-    resolve_legacy_session_query,
     resolve_session_query_control_methods,
 )
 from app.integrations.a2a_extensions.session_query_diagnostics import (
@@ -51,19 +50,6 @@ def resolve_runtime_session_query(
             declared_contract_family="opencode",
             normalized_contract_family="a2a_client_hub",
             selection_mode="direct",
-            control_methods=resolve_session_query_control_methods(card, ext=ext),
-        )
-
-    if (
-        diagnostic.status == "supported"
-        and diagnostic.declared_contract_family == "legacy"
-    ):
-        ext = resolve_legacy_session_query(card)
-        return ResolvedSessionQueryRuntimeCapability(
-            ext=ext,
-            declared_contract_family="legacy",
-            normalized_contract_family="a2a_client_hub",
-            selection_mode="legacy_compatibility",
             control_methods=resolve_session_query_control_methods(card, ext=ext),
         )
 

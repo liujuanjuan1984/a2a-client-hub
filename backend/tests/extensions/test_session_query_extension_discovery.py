@@ -578,7 +578,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     assert resolved.provider == "opencode"
 
 
-def test_resolve_accepts_legacy_session_query_uri() -> None:
+def test_resolve_rejects_legacy_session_query_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -600,6 +600,5 @@ def test_resolve_accepts_legacy_session_query_uri() -> None:
     ]
 
     card = parse_agent_card(payload)
-    resolved = resolve_session_query(card)
-    assert resolved.uri == LEGACY_SHARED_SESSION_QUERY_URI
-    assert resolved.provider == "opencode"
+    with pytest.raises(A2AExtensionNotSupportedError):
+        resolve_session_query(card)

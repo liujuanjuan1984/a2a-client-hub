@@ -490,7 +490,6 @@ class A2AInvokeStreamingRuntime:
         shared_stream["seq"] = event_sequence
 
         message_id = None
-        event_id = None
         artifact = stream_payloads._resolve_stream_artifact(payload)
         artifact_metadata = (
             artifact.get("metadata") if isinstance(artifact, dict) else {}
@@ -501,7 +500,20 @@ class A2AInvokeStreamingRuntime:
             else {}
         )
         for candidate in (
+            body,
+            artifact_shared_stream,
+            artifact,
+            artifact_metadata,
+            metadata,
             shared_stream,
+        ):
+            if not isinstance(candidate, dict):
+                continue
+            if message_id is None:
+                message_id = cls._pick_non_empty_str(candidate, ("messageId",))
+
+        event_id = None
+        for candidate in (
             body,
             artifact_shared_stream,
             artifact,
@@ -510,18 +522,43 @@ class A2AInvokeStreamingRuntime:
         ):
             if not isinstance(candidate, dict):
                 continue
-            if message_id is None:
-                message_id = cls._pick_non_empty_str(candidate, ("messageId",))
             if event_id is None:
                 event_id = cls._pick_non_empty_str(candidate, ("eventId",))
 
+        fallback_event_id = (
+            f"{message_id}:{event_sequence}"
+            if message_id
+            else f"stream:{event_sequence}"
+        )
+        if event_id == f"stream:{event_sequence}" and message_id is not None:
+            event_id = None
+        shared_event_id = cls._pick_non_empty_str(shared_stream, ("eventId",))
+        if event_id is None and shared_event_id not in (
+            None,
+            "",
+            fallback_event_id,
+            f"stream:{event_sequence}",
+        ):
+            event_id = shared_event_id
+
         if message_id is not None:
             shared_stream["messageId"] = message_id
-        shared_stream["eventId"] = (
-            event_id
-            or (f"{message_id}:{event_sequence}" if message_id else None)
-            or f"stream:{event_sequence}"
-        )
+        shared_stream["eventId"] = event_id or fallback_event_id
+        if kind == "message":
+            if (
+                not isinstance(shared_stream.get("blockType"), str)
+                or not str(shared_stream.get("blockType")).strip()
+            ):
+                parts = body.get("parts")
+                if stream_payloads.extract_stream_data_from_parts(parts):
+                    shared_stream["blockType"] = "tool_call"
+                elif stream_payloads.extract_stream_text_from_parts(parts):
+                    shared_stream["blockType"] = "text"
+            if (
+                not isinstance(shared_stream.get("op"), str)
+                or not str(shared_stream.get("op")).strip()
+            ):
+                shared_stream["op"] = "replace"
 
     @staticmethod
     def _stream_heartbeat_interval_seconds() -> float:

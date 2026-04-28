@@ -165,7 +165,6 @@ def extract_shared_stream_metadata(
 def extract_artifact_type(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> str | None:
-    kind = _resolved_stream_event_kind(payload)
     metadata = artifact.get("metadata")
     if not isinstance(metadata, dict):
         metadata = {}
@@ -179,11 +178,6 @@ def extract_artifact_type(
         raw = event_metadata.get("blockType")
 
     if not isinstance(raw, str) or not raw.strip():
-        if kind == "message":
-            if extract_stream_data_from_parts(artifact.get("parts")):
-                return "tool_call"
-            if extract_stream_text_from_parts(artifact.get("parts")):
-                return "text"
         return None
 
     normalized = raw.strip().lower()
@@ -254,9 +248,6 @@ def extract_block_operation(
         normalized = raw.lower()
         if normalized in BLOCK_OPERATION_TYPES:
             return normalized
-
-    if _resolved_stream_event_kind(payload) == "message":
-        return "replace"
     return None
 
 

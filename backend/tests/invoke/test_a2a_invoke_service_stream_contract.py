@@ -334,7 +334,7 @@ def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
     assert chunk["message_id"] is None
 
 
-def test_extract_stream_chunk_accepts_message_payloads_with_root_parts():
+def test_extract_stream_chunk_rejects_message_payloads_without_explicit_block_contract():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "message": {
@@ -354,13 +354,7 @@ def test_extract_stream_chunk_accepts_message_payloads_with_root_parts():
         }
     )
 
-    assert chunk is not None
-    assert chunk["event_id"] == "evt-root-1"
-    assert chunk["message_id"] == "msg-root-1"
-    assert chunk["block_type"] == "text"
-    assert chunk["content"] == "hello from message"
-    assert chunk["append"] is False
-    assert chunk["source"] == "assistant_text"
+    assert chunk is None
 
 
 def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
@@ -380,6 +374,8 @@ def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
     shared_stream = payload["message"]["metadata"]["shared"]["stream"]
     assert shared_stream["seq"] == 4
     assert shared_stream["eventId"] == "msg-root-2:4"
+    assert shared_stream["blockType"] == "text"
+    assert shared_stream["op"] == "replace"
     assert payload["message"]["parts"] == [{"text": "render me"}]
     assert payload["message"]["role"] == "ROLE_AGENT"
     assert payload["message"]["messageId"] == "msg-root-2"

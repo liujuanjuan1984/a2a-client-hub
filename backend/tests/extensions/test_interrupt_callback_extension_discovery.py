@@ -156,7 +156,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     assert resolved.provider == "opencode"
 
 
-def test_resolve_accepts_legacy_interrupt_uri() -> None:
+def test_resolve_rejects_legacy_interrupt_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -171,6 +171,5 @@ def test_resolve_accepts_legacy_interrupt_uri() -> None:
     ]
 
     card = parse_agent_card(payload)
-    resolved = resolve_interrupt_callback(card)
-    assert resolved.uri == LEGACY_SHARED_INTERRUPT_CALLBACK_URI
-    assert resolved.provider == "opencode"
+    with pytest.raises(A2AExtensionNotSupportedError):
+        resolve_interrupt_callback(card)

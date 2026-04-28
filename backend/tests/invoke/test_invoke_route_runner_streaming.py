@@ -661,6 +661,7 @@ async def test_persist_stream_block_update_preserves_canonical_message_events(
             "messageId": "msg-upstream-root",
             "role": "ROLE_AGENT",
             "parts": [{"text": "root text"}],
+            "metadata": {"shared": {"stream": {"blockType": "text", "op": "replace"}}},
         }
     }
 
@@ -680,6 +681,7 @@ async def test_persist_stream_block_update_preserves_canonical_message_events(
         "messageId": refs["agent_message_id"],
         "eventId": f"{refs['agent_message_id']}:5",
         "seq": 5,
+        "blockType": "text",
         "blockId": "msg-upstream-root:primary_text",
         "laneId": "primary_text",
         "op": "replace",

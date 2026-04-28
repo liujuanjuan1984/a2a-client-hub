@@ -68,6 +68,7 @@ async def consume_stream(
         heartbeat_interval_seconds=heartbeat_interval_seconds,
     ).__aiter__()
     terminal_event_seen = False
+    event_sequence = 0
     idle_timeout = (
         float(idle_timeout_seconds)
         if idle_timeout_seconds is not None and idle_timeout_seconds > 0
@@ -175,6 +176,10 @@ async def consume_stream(
             serialized = runtime.serialize_stream_event(
                 event, validate_message=validate_message
             )
+            event_sequence += 1
+            runtime._ensure_outbound_stream_contract(
+                serialized, event_sequence=event_sequence
+            )
             validation_errors = extract_artifact_validation_errors(
                 serialized,
                 validate_message=validate_message,
@@ -215,6 +220,9 @@ async def consume_stream(
 
             last_event_at = time.monotonic()
             await runtime._call_callback(on_event, serialized)
+            runtime._ensure_outbound_stream_contract(
+                serialized, event_sequence=event_sequence
+            )
             stream_text_accumulator.consume(serialized, stream_block=stream_block)
             if runtime._is_terminal_status_event(serialized):
                 terminal_event_seen = True

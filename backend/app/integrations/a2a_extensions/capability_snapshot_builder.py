@@ -459,8 +459,8 @@ def build_stream_hints_snapshot(card: Any) -> StreamHintsCapabilitySnapshot:
             error=str(exc),
             meta={
                 "stream_hints_declared": False,
-                "stream_hints_mode": "compat_fallback",
-                "stream_hints_fallback_used": True,
+                "stream_hints_mode": "undeclared",
+                "stream_hints_fallback_used": False,
             },
         )
     except A2AExtensionContractError as exc:
@@ -469,8 +469,8 @@ def build_stream_hints_snapshot(card: Any) -> StreamHintsCapabilitySnapshot:
             error=str(exc),
             meta={
                 "stream_hints_declared": True,
-                "stream_hints_mode": "compat_fallback",
-                "stream_hints_fallback_used": True,
+                "stream_hints_mode": "invalid_contract",
+                "stream_hints_fallback_used": False,
                 "stream_hints_contract_error": str(exc),
             },
         )

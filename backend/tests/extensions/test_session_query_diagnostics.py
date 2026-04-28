@@ -86,10 +86,11 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_uri() -> None:
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
-    assert diagnostic.status == "supported"
+    assert diagnostic.status == "unsupported"
     assert diagnostic.declared_contract_family == "legacy"
-    assert diagnostic.normalized_contract_family == "a2a_client_hub"
+    assert diagnostic.normalized_contract_family is None
     assert diagnostic.uses_legacy_uri is True
+    assert "legacy URI is no longer supported" in str(diagnostic.error)
 
 
 def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> None:
@@ -150,10 +151,11 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_limit_fields() 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
-    assert diagnostic.status == "supported"
+    assert diagnostic.status == "unsupported"
     assert diagnostic.declared_contract_family == "legacy"
     assert diagnostic.uses_legacy_contract_fields is True
     assert diagnostic.pagination_mode == "limit"
+    assert "legacy pagination fields are no longer supported" in str(diagnostic.error)
 
 
 def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None:

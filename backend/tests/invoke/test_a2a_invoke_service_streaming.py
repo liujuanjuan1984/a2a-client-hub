@@ -898,6 +898,8 @@ async def test_sse_preserves_canonical_message_payload_for_upstream_message_even
         "seq": 1,
         "messageId": "msg-upstream-sse-1",
         "eventId": "msg-upstream-sse-1:1",
+        "blockType": "text",
+        "op": "replace",
     }
 
 
@@ -1046,6 +1048,8 @@ async def test_ws_preserves_canonical_message_payload_for_upstream_message_event
         "seq": 1,
         "messageId": "msg-upstream-ws-1",
         "eventId": "msg-upstream-ws-1:1",
+        "blockType": "text",
+        "op": "replace",
     }
 
 

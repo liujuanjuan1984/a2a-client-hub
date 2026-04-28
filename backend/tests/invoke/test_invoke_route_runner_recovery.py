@@ -1248,16 +1248,16 @@ def test_build_stream_hints_runtime_meta_from_card_warns_once_for_missing_capabi
 
     assert meta == {
         "stream_hints_declared": False,
-        "stream_hints_mode": "compat_fallback",
-        "stream_hints_fallback_used": True,
+        "stream_hints_mode": "undeclared",
+        "stream_hints_fallback_used": False,
     }
     assert second == meta
     assert warnings == [
         (
-            "Stream hints extension not declared; using compatibility fallback",
+            "Stream hints extension not declared; contract-only stream hints remain disabled",
             {
                 "agent_id": "agent-1",
-                "stream_hints_fallback_used": True,
+                "stream_hints_fallback_used": False,
             },
         )
     ]
@@ -1281,10 +1281,11 @@ def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream
         },
     )
     event_payload = {
-        "message": {
-            "messageId": "msg-fallback-1",
-            "role": "ROLE_AGENT",
-            "parts": [{"text": "hello"}],
+        "artifactUpdate": {
+            "artifact": {
+                "parts": [{"text": "hello"}],
+                "metadata": {"blockType": "text", "op": "append"},
+            }
         },
     }
 
@@ -1309,7 +1310,7 @@ def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream
 
     assert warnings == [
         (
-            "Stream hints declared but artifact updates relied on compatibility fallback for shared.stream",
+            "Stream hints declared but event omitted metadata.shared.stream",
             {
                 "agent_id": "agent-1",
                 "stream_hints_mode": "declared_contract",

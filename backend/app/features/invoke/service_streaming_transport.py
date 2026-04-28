@@ -127,6 +127,16 @@ def stream_sse(
                         },
                     )
                     continue
+                event_sequence = seq_counter + 1
+                if (
+                    resume_from_sequence is not None
+                    and event_sequence <= resume_from_sequence
+                ):
+                    continue
+                seq_counter = max(seq_counter, event_sequence)
+                runtime._ensure_outbound_stream_contract(
+                    serialized, event_sequence=event_sequence
+                )
                 stream_block, non_contract_reason = (
                     runtime._analyze_stream_chunk_contract(serialized)
                 )
@@ -138,14 +148,6 @@ def stream_sse(
                     log_info=log_info,
                     log_extra=log_extra,
                 )
-
-                event_sequence = seq_counter + 1
-                if (
-                    resume_from_sequence is not None
-                    and event_sequence <= resume_from_sequence
-                ):
-                    continue
-                seq_counter = max(seq_counter, event_sequence)
 
                 await runtime._call_callback(on_event, serialized)
                 runtime._ensure_outbound_stream_contract(
@@ -340,6 +342,16 @@ async def stream_ws(
                     },
                 )
                 continue
+            event_sequence = seq_counter + 1
+            if (
+                resume_from_sequence is not None
+                and event_sequence <= resume_from_sequence
+            ):
+                continue
+            seq_counter = max(seq_counter, event_sequence)
+            runtime._ensure_outbound_stream_contract(
+                serialized, event_sequence=event_sequence
+            )
             stream_block, non_contract_reason = runtime._analyze_stream_chunk_contract(
                 serialized
             )
@@ -351,14 +363,6 @@ async def stream_ws(
                 log_info=log_info,
                 log_extra=log_extra,
             )
-
-            event_sequence = seq_counter + 1
-            if (
-                resume_from_sequence is not None
-                and event_sequence <= resume_from_sequence
-            ):
-                continue
-            seq_counter = max(seq_counter, event_sequence)
 
             await runtime._call_callback(on_event, serialized)
             runtime._ensure_outbound_stream_contract(

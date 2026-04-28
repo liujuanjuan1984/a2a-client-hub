@@ -112,15 +112,9 @@ def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> Non
     assert capability.control_methods["shell"].config_key == "A2A_ENABLE_SESSION_SHELL"
 
 
-def test_resolve_runtime_session_query_selects_legacy_compatibility() -> None:
-    capability = resolve_runtime_session_query(
-        _build_card(uri=LEGACY_SHARED_SESSION_QUERY_URI)
-    )
-
-    assert capability.declared_contract_family == "legacy"
-    assert capability.normalized_contract_family == "a2a_client_hub"
-    assert capability.selection_mode == "legacy_compatibility"
-    assert capability.ext.uri == LEGACY_SHARED_SESSION_QUERY_URI
+def test_resolve_runtime_session_query_rejects_legacy_uri() -> None:
+    with pytest.raises(A2AExtensionNotSupportedError, match="legacy URI"):
+        resolve_runtime_session_query(_build_card(uri=LEGACY_SHARED_SESSION_QUERY_URI))
 
 
 def test_resolve_runtime_session_query_selects_codex_compatibility() -> None:
@@ -229,8 +223,8 @@ async def test_resolve_capability_snapshot_caches_unsupported_binding(
     assert first.stream_hints.status == "unsupported"
     assert first.stream_hints.meta == {
         "stream_hints_declared": False,
-        "stream_hints_mode": "compat_fallback",
-        "stream_hints_fallback_used": True,
+        "stream_hints_mode": "undeclared",
+        "stream_hints_fallback_used": False,
     }
     assert second == first
     assert fetch_calls == 1
