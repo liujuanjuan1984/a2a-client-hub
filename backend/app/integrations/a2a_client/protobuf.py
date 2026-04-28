@@ -49,6 +49,13 @@ def protobuf_to_protojson_dict(value: ProtoMessage) -> dict[str, Any]:
     return dict(dumped) if isinstance(dumped, Mapping) else {}
 
 
+def to_protojson_object(value: Any) -> dict[str, Any] | None:
+    """Convert a protobuf/model payload into a JSON object when possible."""
+
+    normalized = to_protojson_like(value)
+    return normalized if isinstance(normalized, dict) else None
+
+
 def to_json_like(value: Any) -> Any:
     """Recursively convert protobuf or model objects into canonical ProtoJSON."""
 

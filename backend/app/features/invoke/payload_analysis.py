@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +21,9 @@ from app.features.invoke.shared_metadata import (
     merge_preferred_session_binding_metadata,
     merge_shared_metadata_sections,
 )
-from app.integrations.a2a_client.protobuf import to_protojson_like
+from app.integrations.a2a_client.protobuf import (
+    to_protojson_object,
+)
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.utils.payload_extract import (
     extract_context_id,
@@ -240,13 +243,22 @@ def coerce_payload_to_dict(payload: Any) -> dict[str, Any]:
     if isinstance(resolved_payload, dict):
         return dict(resolved_payload)
     try:
-        dumped = to_protojson_like(resolved_payload)
+        dumped = to_protojson_object(resolved_payload)
     except Exception as exc:
         logger.error("Failed to dump A2A payload", exc_info=True)
         raise ValueError("Payload serialization failed") from exc
-    if isinstance(dumped, dict):
+    if dumped is not None:
         return dumped
     return {}
+
+
+def _analyze_raw_invoke_result_payload(
+    result: dict[str, Any],
+) -> PayloadAnalysis | None:
+    raw_payload = coerce_payload_to_dict(result.get("raw"))
+    if not raw_payload:
+        return None
+    return analyze_payload(raw_payload)
 
 
 def extract_binding_hints_from_serialized_event(
@@ -285,9 +297,8 @@ def extract_binding_hints_from_invoke_result(
     context_id = analysis.context_id
     metadata = dict(analysis.binding_metadata or {})
 
-    raw_payload = coerce_payload_to_dict(result.get("raw"))
-    if raw_payload:
-        raw_analysis = analyze_payload(raw_payload)
+    raw_analysis = _analyze_raw_invoke_result_payload(result)
+    if raw_analysis is not None:
         if raw_analysis.context_id:
             context_id = raw_analysis.context_id
         if raw_analysis.binding_metadata:
@@ -309,9 +320,8 @@ def extract_stream_identity_hints_from_invoke_result(
     if analysis.upstream_task_id:
         hints["upstream_task_id"] = analysis.upstream_task_id
 
-    raw_payload = coerce_payload_to_dict(result.get("raw"))
-    if raw_payload:
-        raw_analysis = analyze_payload(raw_payload)
+    raw_analysis = _analyze_raw_invoke_result_payload(result)
+    if raw_analysis is not None:
         if raw_analysis.upstream_message_id:
             hints["upstream_message_id"] = raw_analysis.upstream_message_id
         if raw_analysis.upstream_event_id:
@@ -327,11 +337,9 @@ def extract_usage_hints_from_invoke_result(result: dict[str, Any]) -> dict[str, 
     analysis = analyze_payload(result)
     usage_hints = analysis.usage
 
-    raw_payload = coerce_payload_to_dict(result.get("raw"))
-    if raw_payload:
-        raw_analysis = analyze_payload(raw_payload)
-        if raw_analysis.usage:
-            usage_hints = raw_analysis.usage
+    raw_analysis = _analyze_raw_invoke_result_payload(result)
+    if raw_analysis is not None and raw_analysis.usage:
+        usage_hints = raw_analysis.usage
     return usage_hints
 
 
@@ -350,8 +358,7 @@ def _extract_text_from_parts(parts: Any) -> str | None:
     return None
 
 
-def extract_preferred_text_from_payload(payload: Any) -> str | None:
-    root = payload if isinstance(payload, dict) else {}
+def _extract_preferred_text_from_mapping(root: dict[str, Any]) -> str | None:
     if not root:
         return None
 
@@ -372,7 +379,9 @@ def extract_preferred_text_from_payload(payload: Any) -> str | None:
     artifacts = root.get("artifacts")
     if isinstance(artifacts, list):
         for artifact_item in reversed(artifacts):
-            artifact_text = extract_preferred_text_from_payload(artifact_item)
+            artifact_text = _extract_preferred_text_from_mapping(
+                artifact_item if isinstance(artifact_item, dict) else {}
+            )
             if artifact_text:
                 return artifact_text
 
@@ -384,24 +393,34 @@ def extract_preferred_text_from_payload(payload: Any) -> str | None:
                 continue
             role = _normalize_a2a_role(_pick_non_empty_str(entry_root, ("role",)))
             if role == "agent":
-                history_text = extract_preferred_text_from_payload(entry_root)
+                history_text = _extract_preferred_text_from_mapping(entry_root)
                 if history_text:
                     return history_text
 
     for key in ("status", "result", "message"):
         nested = _dict_field(root, key)
         if nested:
-            nested_text = extract_preferred_text_from_payload(nested)
+            nested_text = _extract_preferred_text_from_mapping(nested)
             if nested_text:
                 return nested_text
 
     return None
 
 
+def extract_preferred_text_from_payload(payload: Any) -> str | None:
+    if isinstance(payload, dict):
+        return _extract_preferred_text_from_mapping(dict(payload))
+    if isinstance(payload, Mapping):
+        return _extract_preferred_text_from_mapping(
+            {str(key): value for key, value in payload.items()}
+        )
+    return None
+
+
 def extract_readable_content_from_invoke_result(result: dict[str, Any]) -> str | None:
     raw_payload = coerce_payload_to_dict(result.get("raw"))
     if raw_payload:
-        raw_text = extract_preferred_text_from_payload(raw_payload)
+        raw_text = _extract_preferred_text_from_mapping(raw_payload)
         if raw_text:
             return raw_text
 
