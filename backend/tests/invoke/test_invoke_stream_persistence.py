@@ -10,9 +10,6 @@ from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.conversation_upstream_task import ConversationUpstreamTask
 from app.features.invoke.service_types import StreamFinishReason, StreamOutcome
-from app.features.invoke.stream_payloads import (
-    extract_stream_chunk_from_serialized_event,
-)
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
     build_stream_metadata_from_outcome,
@@ -294,7 +291,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
             state=state,
             event_payload=event_payload,
             request=_build_request(user_id=user.id),
-            extract_stream_chunk_fn=extract_stream_chunk_from_serialized_event,
             session_factory=_session_factory,
             commit_fn=_commit,
             session_hub=session_hub_service,
@@ -559,7 +555,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
             state=state,
             event_payload=event_payload,
             request=_build_request(user_id=user.id),
-            extract_stream_chunk_fn=extract_stream_chunk_from_serialized_event,
             session_factory=_session_factory,
             commit_fn=_commit,
             session_hub=session_hub_service,

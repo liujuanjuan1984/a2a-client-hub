@@ -458,7 +458,6 @@ async def persist_stream_block_update(
         state=state,
         event_payload=event_payload,
         request=request,
-        extract_stream_chunk_fn=extract_stream_chunk_from_serialized_event,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
@@ -489,9 +488,6 @@ async def persist_interrupt_lifecycle_event(
         state=state,
         event_payload=event_payload,
         request=request,
-        extract_interrupt_lifecycle_fn=(
-            extract_interrupt_lifecycle_from_serialized_event
-        ),
         build_interrupt_message_content=serialize_interrupt_event_block_content,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
