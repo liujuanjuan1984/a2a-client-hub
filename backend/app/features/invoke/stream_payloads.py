@@ -100,6 +100,14 @@ def extract_stream_data_from_parts(parts: Any) -> str:
     return "\n".join(collected)
 
 
+def _infer_message_block_type(parts: Any) -> str | None:
+    if extract_stream_data_from_parts(parts):
+        return "tool_call"
+    if extract_stream_text_from_parts(parts):
+        return "text"
+    return None
+
+
 def _resolve_stream_artifact(payload: dict[str, Any]) -> dict[str, Any]:
     kind, body = _resolve_stream_response_body(payload)
     if kind == "artifact-update":
@@ -145,6 +153,7 @@ def extract_shared_stream_metadata(
 def extract_artifact_type(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> str | None:
+    kind, body = _resolve_stream_response_body(payload)
     metadata = artifact.get("metadata")
     if not isinstance(metadata, dict):
         metadata = {}
@@ -158,6 +167,8 @@ def extract_artifact_type(
         raw = event_metadata.get("blockType")
 
     if not isinstance(raw, str) or not raw.strip():
+        if kind == "message":
+            return _infer_message_block_type(body.get("parts"))
         return None
 
     normalized = raw.strip().lower()
@@ -210,7 +221,7 @@ def _default_lane_id(block_type: str) -> str:
 def extract_block_operation(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> str | None:
-    _, body = _resolve_stream_response_body(payload)
+    kind, body = _resolve_stream_response_body(payload)
     artifact_metadata = _dict_field(artifact, "metadata")
     event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
@@ -229,6 +240,8 @@ def extract_block_operation(
         normalized = raw.lower()
         if normalized in BLOCK_OPERATION_TYPES:
             return normalized
+    if kind == "message" and _infer_message_block_type(body.get("parts")) is not None:
+        return "replace"
     return None
 
 
