@@ -84,7 +84,6 @@ _TEXT_PAYLOAD_KEYS = (
     "text",
     "parts",
     "artifacts",
-    "history",
     "events",
     "task",
     "artifact",
@@ -99,19 +98,6 @@ def _coerce_text_payload_mapping(payload: Any) -> dict[str, Any] | None:
     if normalized is not None:
         return normalized
     return None
-
-
-def _is_agent_history_message(payload: Any) -> bool:
-    payload_map = _coerce_text_payload_mapping(payload)
-    if payload_map is None:
-        return False
-    value = payload_map.get("role")
-    if not isinstance(value, str):
-        return False
-    normalized = value.strip().lower().replace("_", "-")
-    if normalized.startswith("role-"):
-        normalized = normalized[len("role-") :]
-    return normalized == "agent"
 
 
 def _is_unsupported_protocol_version(value: str | None) -> bool:
@@ -1390,14 +1376,6 @@ class A2AClient:
                     parts_text = extract_from_parts(value)
                     if parts_text:
                         return parts_text
-                if key == "history" and isinstance(value, (list, tuple)):
-                    for item in reversed(value):
-                        if not _is_agent_history_message(item):
-                            continue
-                        history_text = A2AClient._extract_text_from_payload(item)
-                        if history_text:
-                            return history_text
-                    continue
                 if isinstance(value, (list, tuple)) and key in (
                     "messages",
                     "artifacts",

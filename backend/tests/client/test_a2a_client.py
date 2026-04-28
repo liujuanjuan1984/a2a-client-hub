@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-from a2a.types import Message, Part, Role
+from a2a.types import Part
 
 from app.core import http_client as http_client_module
 from app.integrations.a2a_client import client as client_module
@@ -896,26 +896,16 @@ def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
     assert text == "Task completed"
 
 
-def test_extract_text_from_payload_can_handle_history_message() -> None:
-    agent_message = Message(
-        message_id="m1",
-        role=Role.ROLE_AGENT,
-        parts=[Part(text="Previous prompt")],
-    )
-    agent_payload = {"history": [agent_message]}
-
-    text = A2AClient._extract_text_from_payload(agent_payload)
-
-    assert text == "Previous prompt"
-
-
-def test_extract_text_from_payload_ignores_non_agent_history_message() -> None:
-    user_message = Message(
-        message_id="m1",
-        role=Role.ROLE_USER,
-        parts=[Part(text="Previous prompt")],
-    )
-    agent_payload = {"history": [user_message]}
+def test_extract_text_from_payload_ignores_history_messages() -> None:
+    agent_payload = {
+        "history": [
+            {
+                "messageId": "m1",
+                "role": "agent",
+                "parts": [{"text": "Previous prompt"}],
+            }
+        ]
+    }
 
     text = A2AClient._extract_text_from_payload(agent_payload)
 
