@@ -334,7 +334,7 @@ def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
     assert chunk["message_id"] is None
 
 
-def test_extract_stream_chunk_rejects_message_payloads_without_explicit_block_contract():
+def test_extract_stream_chunk_inferrs_message_payloads_without_explicit_block_contract():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "message": {
@@ -354,7 +354,13 @@ def test_extract_stream_chunk_rejects_message_payloads_without_explicit_block_co
         }
     )
 
-    assert chunk is None
+    assert chunk is not None
+    assert chunk["event_id"] == "evt-root-1"
+    assert chunk["message_id"] == "msg-root-1"
+    assert chunk["block_type"] == "text"
+    assert chunk["op"] == "replace"
+    assert chunk["content"] == "hello from message"
+    assert chunk["source"] == "assistant_text"
 
 
 def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():

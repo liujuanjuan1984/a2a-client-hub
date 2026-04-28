@@ -1,7 +1,7 @@
 from tests.invoke.a2a_invoke_service_support import a2a_invoke_service
 
 
-def test_extract_stream_chunk_rejects_message_wrapper_parts_without_block_contract():
+def test_extract_stream_chunk_inferrs_message_wrapper_parts_without_block_contract():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "message": {
@@ -10,7 +10,10 @@ def test_extract_stream_chunk_rejects_message_wrapper_parts_without_block_contra
             }
         }
     )
-    assert chunk is None
+    assert chunk is not None
+    assert chunk["block_type"] == "text"
+    assert chunk["op"] == "replace"
+    assert chunk["content"] == "hello"
 
 
 def test_extract_stream_chunk_prefers_standard_metadata_block_type():
