@@ -2,7 +2,7 @@ import pytest
 
 from app.core.config import settings
 from app.features.agents.common.card_validation import fetch_and_validate_agent_card
-from app.features.invoke.service import A2AInvokeService
+from app.features.invoke.service_streaming import A2AInvokeStreamingRuntime
 from tests.support.a2a import parse_agent_card
 
 
@@ -362,13 +362,13 @@ def test_serialize_stream_event_validation_errors_gated(monkeypatch):
     validate_message = lambda payload: ["bad-event"]  # noqa: E731
 
     monkeypatch.setattr(settings, "debug", False)
-    payload = A2AInvokeService.serialize_stream_event(
+    payload = A2AInvokeStreamingRuntime.serialize_stream_event(
         _DummyEvent(), validate_message=validate_message
     )
     assert "validation_errors" not in payload
 
     monkeypatch.setattr(settings, "debug", True)
-    payload_debug = A2AInvokeService.serialize_stream_event(
+    payload_debug = A2AInvokeStreamingRuntime.serialize_stream_event(
         _DummyEvent(), validate_message=validate_message
     )
     assert payload_debug["validation_errors"] == ["bad-event"]

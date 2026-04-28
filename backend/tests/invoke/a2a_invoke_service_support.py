@@ -4,14 +4,32 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
+from types import SimpleNamespace
 
 import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
-from app.features.invoke.payload_analysis import coerce_payload_to_dict
-from app.features.invoke.service import StreamFinishReason, a2a_invoke_service
+from app.features.invoke.payload_analysis import (
+    coerce_payload_to_dict,
+    extract_binding_hints_from_invoke_result,
+    extract_binding_hints_from_serialized_event,
+    extract_readable_content_from_invoke_result,
+    extract_stream_identity_hints_from_invoke_result,
+    extract_stream_identity_hints_from_serialized_event,
+    extract_usage_hints_from_invoke_result,
+    extract_usage_hints_from_serialized_event,
+)
+from app.features.invoke.service_streaming import (
+    A2AInvokeStreamingRuntime,
+    a2a_invoke_streaming_runtime,
+)
+from app.features.invoke.service_types import StreamFinishReason
 from app.features.invoke.stream_diagnostics import build_artifact_update_log_sample
+from app.features.invoke.stream_payloads import (
+    extract_interrupt_lifecycle_from_serialized_event,
+    extract_stream_chunk_from_serialized_event,
+)
 from app.integrations.a2a_client.errors import (
     A2APeerProtocolError,
     A2AUpstreamTimeoutError,
@@ -128,6 +146,41 @@ class _GatewayWithTimeoutError:
         return _FailingAsyncIterator(
             A2AUpstreamTimeoutError("Timed out before completing the request")
         )
+
+
+a2a_invoke_service = SimpleNamespace(
+    consume_stream=a2a_invoke_streaming_runtime.consume_stream,
+    extract_binding_hints_from_invoke_result=extract_binding_hints_from_invoke_result,
+    extract_binding_hints_from_serialized_event=(
+        extract_binding_hints_from_serialized_event
+    ),
+    extract_interrupt_lifecycle_from_serialized_event=(
+        extract_interrupt_lifecycle_from_serialized_event
+    ),
+    extract_readable_content_from_invoke_result=(
+        extract_readable_content_from_invoke_result
+    ),
+    extract_stream_chunk_from_serialized_event=(
+        extract_stream_chunk_from_serialized_event
+    ),
+    extract_stream_identity_hints_from_invoke_result=(
+        extract_stream_identity_hints_from_invoke_result
+    ),
+    extract_stream_identity_hints_from_serialized_event=(
+        extract_stream_identity_hints_from_serialized_event
+    ),
+    extract_usage_hints_from_invoke_result=extract_usage_hints_from_invoke_result,
+    extract_usage_hints_from_serialized_event=(
+        extract_usage_hints_from_serialized_event
+    ),
+    send_ws_error=a2a_invoke_streaming_runtime.send_ws_error,
+    serialize_stream_event=A2AInvokeStreamingRuntime.serialize_stream_event,
+    stream_sse=a2a_invoke_streaming_runtime.stream_sse,
+    stream_ws=a2a_invoke_streaming_runtime.stream_ws,
+    _ensure_outbound_stream_contract=(
+        A2AInvokeStreamingRuntime._ensure_outbound_stream_contract
+    ),
+)
 
 
 def _artifact_event(

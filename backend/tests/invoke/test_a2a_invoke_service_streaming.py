@@ -1743,8 +1743,14 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
             await timeout_task
         raise asyncio.TimeoutError()
 
-    monkeypatch.setattr("app.features.invoke.service.time.monotonic", _fake_monotonic)
-    monkeypatch.setattr("app.features.invoke.service.asyncio.wait_for", _fake_wait_for)
+    monkeypatch.setattr(
+        "app.features.invoke.service_streaming_consume.time.monotonic",
+        _fake_monotonic,
+    )
+    monkeypatch.setattr(
+        "app.features.invoke.service_streaming_consume.asyncio.wait_for",
+        _fake_wait_for,
+    )
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithSingleEventThenPending(
             first_event=_artifact_event(
@@ -1792,8 +1798,14 @@ async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypa
             await timeout_task
         raise asyncio.TimeoutError()
 
-    monkeypatch.setattr("app.features.invoke.service.time.monotonic", _fake_monotonic)
-    monkeypatch.setattr("app.features.invoke.service.asyncio.wait_for", _fake_wait_for)
+    monkeypatch.setattr(
+        "app.features.invoke.service_streaming_consume.time.monotonic",
+        _fake_monotonic,
+    )
+    monkeypatch.setattr(
+        "app.features.invoke.service_streaming_consume.asyncio.wait_for",
+        _fake_wait_for,
+    )
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithSingleEventThenPending(
             first_event=_artifact_event(

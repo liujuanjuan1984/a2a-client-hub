@@ -1,4 +1,4 @@
-from app.features.invoke.service import a2a_invoke_service
+from tests.invoke.a2a_invoke_service_support import a2a_invoke_service
 
 
 def test_extract_stream_chunk_rejects_message_wrapper_parts_without_block_contract():

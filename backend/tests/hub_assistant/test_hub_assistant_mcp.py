@@ -37,7 +37,7 @@ from app.features.hub_assistant.shared.task_service import (
     hub_assistant_task_service,
 )
 from app.features.invoke import route_runner as invoke_route_runner
-from app.features.invoke.service import StreamFinishReason, StreamOutcome
+from app.features.invoke.service_types import StreamFinishReason, StreamOutcome
 from app.main import combine_lifespans
 from tests.support.utils import (
     create_a2a_agent,
