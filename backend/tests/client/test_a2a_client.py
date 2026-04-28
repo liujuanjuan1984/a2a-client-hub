@@ -257,7 +257,7 @@ async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
 
 
 @pytest.mark.asyncio
-async def test_get_agent_card_rejects_legacy_protocol_interfaces() -> None:
+async def test_get_agent_card_rejects_unsupported_protocol_interfaces() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._fetch_card = AsyncMock(
         return_value=parse_agent_card(
@@ -282,7 +282,7 @@ async def test_get_agent_card_rejects_legacy_protocol_interfaces() -> None:
 
     with pytest.raises(
         A2AUnsupportedBindingError,
-        match="legacy A2A protocolVersion 0.3 interfaces",
+        match="unsupported A2A protocolVersion 0.3 interfaces",
     ):
         await a2a_client.get_agent_card()
 

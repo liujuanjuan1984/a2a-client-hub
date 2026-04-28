@@ -100,16 +100,16 @@ class TestValidateAgentCard:
             in result.warnings
         )
 
-    def test_rejects_legacy_agent_card_url_field(self, valid_card_data):
+    def test_rejects_unsupported_agent_card_url_field(self, valid_card_data):
         card_data = valid_card_data.copy()
         card_data["url"] = "https://example.com/legacy"
         result = validators.validate_agent_card(card_data)
         assert (
-            "Legacy field 'url' is not supported in A2A 1.0; use "
-            "'supportedInterfaces' instead." in result.errors
+            "Unsupported field 'url'; A2A 1.0 requires 'supportedInterfaces'."
+            in result.errors
         )
 
-    def test_rejects_legacy_capability_modes(self, valid_card_data):
+    def test_rejects_unsupported_capability_modes(self, valid_card_data):
         card_data = valid_card_data.copy()
         card_data["capabilities"] = {
             "streaming": True,
@@ -117,9 +117,8 @@ class TestValidateAgentCard:
         }
         result = validators.validate_agent_card(card_data)
         assert (
-            "Legacy field 'capabilities.inputModes' is not supported in A2A 1.0; "
-            "use 'defaultInputModes' or per-skill 'inputModes' instead."
-            in result.errors
+            "Unsupported field 'capabilities.inputModes'; "
+            "use 'defaultInputModes' or per-skill 'inputModes'." in result.errors
         )
 
     def test_rejects_unsupported_protocol_binding(self, valid_card_data):
@@ -136,7 +135,7 @@ class TestValidateAgentCard:
             "'protocolBinding' (JSONRPC, HTTP+JSON, GRPC)." in result.errors
         )
 
-    def test_rejects_legacy_protocol_version(self, valid_card_data):
+    def test_rejects_unsupported_protocol_version(self, valid_card_data):
         card_data = valid_card_data.copy()
         card_data["supportedInterfaces"] = [
             {
@@ -147,7 +146,7 @@ class TestValidateAgentCard:
         ]
         result = validators.validate_agent_card(card_data)
         assert (
-            "Legacy A2A protocolVersion '0.3' is not supported; "
+            "A2A protocolVersion '0.3' is not supported; "
             "upgrade the peer to A2A 1.0." in result.errors
         )
 

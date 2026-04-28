@@ -22,38 +22,35 @@ _DYNAMIC_PROTO_FULL_NAMES = frozenset(
     }
 )
 
-_LEGACY_TOP_LEVEL_FIELD_MESSAGES = {
-    "url": "Legacy field 'url' is not supported in A2A 1.0; use 'supportedInterfaces' instead.",
+_UNSUPPORTED_TOP_LEVEL_FIELD_MESSAGES = {
+    "url": "Unsupported field 'url'; A2A 1.0 requires 'supportedInterfaces'.",
     "supports_authenticated_extended_card": (
-        "Legacy field 'supports_authenticated_extended_card' is not supported in "
-        "A2A 1.0; use 'capabilities.extendedAgentCard' instead."
+        "Unsupported field 'supports_authenticated_extended_card'; "
+        "use 'capabilities.extendedAgentCard'."
     ),
     "supportsAuthenticatedExtendedCard": (
-        "Legacy field 'supportsAuthenticatedExtendedCard' is not supported in "
-        "A2A 1.0; use 'capabilities.extendedAgentCard' instead."
+        "Unsupported field 'supportsAuthenticatedExtendedCard'; "
+        "use 'capabilities.extendedAgentCard'."
     ),
-    "examples": (
-        "Legacy field 'examples' is not supported in A2A 1.0; move examples to "
-        "individual skills."
-    ),
+    "examples": ("Unsupported field 'examples'; move examples to individual skills."),
 }
 
-_LEGACY_CAPABILITY_FIELD_MESSAGES = {
+_UNSUPPORTED_CAPABILITY_FIELD_MESSAGES = {
     "input_modes": (
-        "Legacy field 'capabilities.input_modes' is not supported in A2A 1.0; "
-        "use 'defaultInputModes' or per-skill 'inputModes' instead."
+        "Unsupported field 'capabilities.input_modes'; "
+        "use 'defaultInputModes' or per-skill 'inputModes'."
     ),
     "inputModes": (
-        "Legacy field 'capabilities.inputModes' is not supported in A2A 1.0; "
-        "use 'defaultInputModes' or per-skill 'inputModes' instead."
+        "Unsupported field 'capabilities.inputModes'; "
+        "use 'defaultInputModes' or per-skill 'inputModes'."
     ),
     "output_modes": (
-        "Legacy field 'capabilities.output_modes' is not supported in A2A 1.0; "
-        "use 'defaultOutputModes' or per-skill 'outputModes' instead."
+        "Unsupported field 'capabilities.output_modes'; "
+        "use 'defaultOutputModes' or per-skill 'outputModes'."
     ),
     "outputModes": (
-        "Legacy field 'capabilities.outputModes' is not supported in A2A 1.0; "
-        "use 'defaultOutputModes' or per-skill 'outputModes' instead."
+        "Unsupported field 'capabilities.outputModes'; "
+        "use 'defaultOutputModes' or per-skill 'outputModes'."
     ),
 }
 
@@ -91,7 +88,7 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
             f"Field '{path}' is not canonical ProtoJSON; use '{canonical_name}'."
         )
 
-    for field_name, message in _LEGACY_TOP_LEVEL_FIELD_MESSAGES.items():
+    for field_name, message in _UNSUPPORTED_TOP_LEVEL_FIELD_MESSAGES.items():
         if field_name in card_data:
             result.errors.append(message)
 
@@ -137,9 +134,9 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
                             "Each supported interface must declare a non-empty "
                             "'protocolVersion' when provided."
                         )
-                    elif _is_legacy_protocol_version(protocol_version):
+                    elif _is_unsupported_protocol_version(protocol_version):
                         result.errors.append(
-                            "Legacy A2A protocolVersion '0.3' is not supported; "
+                            "A2A protocolVersion '0.3' is not supported; "
                             "upgrade the peer to A2A 1.0."
                         )
 
@@ -149,7 +146,7 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
         capabilities = None
 
     if isinstance(capabilities, dict):
-        for field_name, message in _LEGACY_CAPABILITY_FIELD_MESSAGES.items():
+        for field_name, message in _UNSUPPORTED_CAPABILITY_FIELD_MESSAGES.items():
             if field_name in capabilities:
                 result.errors.append(message)
         extended_agent_card = _pick_first(capabilities, "extendedAgentCard")
@@ -299,7 +296,7 @@ def _is_canonical_task_state(value: Any) -> bool:
     return isinstance(value, str) and value.startswith(_CANONICAL_TASK_STATE_PREFIX)
 
 
-def _is_legacy_protocol_version(value: Any) -> bool:
+def _is_unsupported_protocol_version(value: Any) -> bool:
     return isinstance(value, str) and value.strip().startswith("0.3")
 
 

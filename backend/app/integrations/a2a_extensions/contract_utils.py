@@ -7,13 +7,13 @@ from typing import Any, Dict, Optional
 
 from a2a.types import AgentCard
 
-from app.integrations.a2a_client.protobuf import to_json_like
+from app.integrations.a2a_client.protobuf import to_protojson_like
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.types import JsonRpcInterface
 
 
 def as_dict(value: Any) -> Dict[str, Any]:
-    normalized = to_json_like(value)
+    normalized = to_protojson_like(value)
     if isinstance(normalized, Mapping):
         return {str(key): item for key, item in normalized.items()}
     if isinstance(value, Mapping):

@@ -39,8 +39,8 @@ from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_client.protobuf import (
     is_terminal_task_state,
-    stream_response_to_payload,
     to_protojson_like,
+    to_protojson_object,
 )
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
@@ -415,7 +415,7 @@ class A2AInvokeStreamingRuntime:
         from app.core.config import settings
 
         if isinstance(event, A2AStreamResponse):
-            payload = stream_response_to_payload(event)
+            payload = to_protojson_object(event) or {}
         else:
             normalized_payload = to_protojson_like(event)
             payload = normalized_payload if isinstance(normalized_payload, dict) else {}

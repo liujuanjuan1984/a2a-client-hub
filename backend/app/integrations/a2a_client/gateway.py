@@ -29,7 +29,6 @@ from app.integrations.a2a_client.lifecycle import (
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
 from app.integrations.a2a_client.registry import A2AClientRegistry
-from app.integrations.a2a_client.resolution import A2AResolutionService
 from app.integrations.a2a_client.session_factory import A2AInvokeSessionFactory
 from app.utils.logging_redaction import (
     redact_url_for_logging,
@@ -54,9 +53,7 @@ class A2AGateway:
             close_reaper=self._close_reaper,
             client_builder=self._create_client,
         )
-        self._resolution_service = A2AResolutionService()
         self._session_factory = A2AInvokeSessionFactory(
-            resolution_service=self._resolution_service,
             shared_client_getter=lambda resolved: self._get_client(resolved),
             shared_client_invalidator=lambda resolved: self._invalidate_client(
                 resolved

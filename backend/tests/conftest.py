@@ -92,7 +92,7 @@ from app.core.config import settings
 from app.db.models.base import Base
 from app.integrations.a2a_client.protobuf import (
     parse_agent_card,
-    protobuf_to_protojson_dict,
+    to_protojson_object,
 )
 from app.integrations.a2a_client.validators import validate_agent_card
 from app.runtime.a2a_proxy_service import A2AProxyService
@@ -134,7 +134,7 @@ def _agent_card_model_validate(
 
 
 def _agent_card_model_dump(self: AgentCard, **_kwargs) -> dict[str, object]:
-    return protobuf_to_protojson_dict(self)
+    return to_protojson_object(self) or {}
 
 
 if not hasattr(AgentCard, "model_validate"):

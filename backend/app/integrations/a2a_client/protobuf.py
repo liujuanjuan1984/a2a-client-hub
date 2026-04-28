@@ -6,19 +6,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from typing import Any, cast
 
-from a2a.types import AgentCard, StreamResponse
+from a2a.types import AgentCard
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.message import Message as ProtoMessage
 
 from app.integrations.a2a_runtime_status_contract import terminal_runtime_state_values
 
 _TERMINAL_TASK_STATES = terminal_runtime_state_values()
-
-
-def is_proto_message(value: Any) -> bool:
-    """Return whether the value is a protobuf message instance."""
-
-    return isinstance(value, ProtoMessage)
 
 
 def parse_agent_card(
@@ -36,30 +30,11 @@ def parse_agent_card(
     )
 
 
-def protobuf_to_dict(value: ProtoMessage) -> dict[str, Any]:
-    """Convert a protobuf message into canonical ProtoJSON."""
-
-    return protobuf_to_protojson_dict(value)
-
-
-def protobuf_to_protojson_dict(value: ProtoMessage) -> dict[str, Any]:
-    """Convert a protobuf message into canonical ProtoJSON field names."""
-
-    dumped = _message_to_dict(value, preserving_proto_field_name=False)
-    return dict(dumped) if isinstance(dumped, Mapping) else {}
-
-
 def to_protojson_object(value: Any) -> dict[str, Any] | None:
     """Convert a protobuf/model payload into a JSON object when possible."""
 
     normalized = to_protojson_like(value)
     return normalized if isinstance(normalized, dict) else None
-
-
-def to_json_like(value: Any) -> Any:
-    """Recursively convert protobuf or model objects into canonical ProtoJSON."""
-
-    return to_protojson_like(value)
 
 
 def to_protojson_like(value: Any) -> Any:
@@ -68,7 +43,7 @@ def to_protojson_like(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
 
-    if is_proto_message(value):
+    if isinstance(value, ProtoMessage):
         return _message_to_dict(value, preserving_proto_field_name=False)
 
     if _is_dataclass_instance(value):
@@ -96,12 +71,6 @@ def to_protojson_like(value: Any) -> Any:
         return to_protojson_like(dumped)
 
     return value
-
-
-def stream_response_to_payload(response: StreamResponse) -> dict[str, Any]:
-    """Convert a StreamResponse into canonical ProtoJSON."""
-
-    return protobuf_to_protojson_dict(response)
 
 
 def is_terminal_task_state(value: Any) -> bool:

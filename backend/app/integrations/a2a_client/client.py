@@ -54,14 +54,13 @@ from app.integrations.a2a_client.lifecycle import (
 )
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.protobuf import (
-    to_json_like,
+    to_protojson_like,
     to_protojson_object,
 )
 from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
     normalize_transport_label,
 )
-from app.integrations.a2a_client.task_payloads import normalize_task_payload
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
@@ -115,7 +114,7 @@ def _is_agent_history_message(payload: Any) -> bool:
     return normalized == "agent"
 
 
-def _is_legacy_protocol_version(value: str | None) -> bool:
+def _is_unsupported_protocol_version(value: str | None) -> bool:
     return isinstance(value, str) and value.strip().startswith("0.3")
 
 
@@ -477,7 +476,7 @@ class A2AClient:
                     history_length=history_length,
                     metadata=metadata,
                 )
-                normalized_task = normalize_task_payload(task)
+                normalized_task = to_protojson_object(task)
                 if normalized_task is None:
                     return {
                         "success": False,
@@ -550,13 +549,13 @@ class A2AClient:
                 selected_transport,
                 selected_url,
                 supported_labels,
-                saw_legacy_interface,
+                saw_unsupported_protocol_interface,
             ) = self._resolve_negotiated_transport_target(card)
             if not selected_transport or not selected_url:
-                if saw_legacy_interface:
+                if saw_unsupported_protocol_interface:
                     raise A2AUnsupportedBindingError(
                         f"A2A agent '{redact_url_for_logging(self.agent_url)}' only "
-                        "advertises legacy A2A protocolVersion 0.3 interfaces. "
+                        "advertises unsupported A2A protocolVersion 0.3 interfaces. "
                         "Upgrade the peer to A2A 1.0."
                     )
                 supported = ", ".join(supported_labels)
@@ -651,15 +650,15 @@ class A2AClient:
             supported_labels = [TransportProtocol.JSONRPC.value]
 
         server_set: list[tuple[str, str]] = []
-        skipped_legacy_interface = False
+        skipped_unsupported_protocol_interface = False
         for iface in getattr(card, "supported_interfaces", None) or []:
             transport = normalize_transport_label(
                 getattr(iface, "protocol_binding", None)
             )
             interface_url = (getattr(iface, "url", "") or "").strip()
             protocol_version = getattr(iface, "protocol_version", None)
-            if _is_legacy_protocol_version(protocol_version):
-                skipped_legacy_interface = True
+            if _is_unsupported_protocol_version(protocol_version):
+                skipped_unsupported_protocol_interface = True
                 continue
             if transport and interface_url:
                 server_set.append((transport, interface_url))
@@ -670,13 +669,13 @@ class A2AClient:
                 for candidate_transport, candidate_url in server_set:
                     if candidate_transport == label:
                         return transport, candidate_url, supported_labels, False
-            return None, None, supported_labels, skipped_legacy_interface
+            return None, None, supported_labels, skipped_unsupported_protocol_interface
 
         for candidate_transport, candidate_url in server_set:
             for transport in client_set:
                 if candidate_transport == _as_display_label(transport):
                     return transport, candidate_url, supported_labels, False
-        return None, None, supported_labels, skipped_legacy_interface
+        return None, None, supported_labels, skipped_unsupported_protocol_interface
 
     async def close(self) -> None:
         """Dispose cached transport wrappers."""
@@ -1448,7 +1447,7 @@ def _as_plain_serializable(payload: Any) -> Any:
 def _json_fallback(value: Any) -> Any:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
-    normalized = to_json_like(value)
+    normalized = to_protojson_like(value)
     if normalized is not value:
         return _as_plain_serializable(normalized)
     return str(value)

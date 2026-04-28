@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import pytest
 
 from app.integrations.a2a_client.client import _json_fallback
-from app.integrations.a2a_client.protobuf import to_json_like
+from app.integrations.a2a_client.protobuf import to_protojson_like
 from app.utils.json_encoder import json_dumps
 
 
@@ -39,36 +39,36 @@ class _AttrsOnlyPayload:
         self.metadata = {"source": "attrs-only"}
 
 
-def test_to_json_like_supports_dataclass_instances() -> None:
+def test_to_protojson_like_supports_dataclass_instances() -> None:
     payload = _DataclassPayload(
         event_id="evt-dataclass",
         metadata={"source": "dataclass"},
     )
 
-    assert to_json_like(payload) == {
+    assert to_protojson_like(payload) == {
         "event_id": "evt-dataclass",
         "metadata": {"source": "dataclass"},
     }
 
 
-def test_to_json_like_supports_model_dump_objects() -> None:
-    assert to_json_like(_ModelDumpPayload()) == {
+def test_to_protojson_like_supports_model_dump_objects() -> None:
+    assert to_protojson_like(_ModelDumpPayload()) == {
         "event_id": "evt-model",
         "metadata": {"source": "model-dump"},
     }
 
 
-def test_to_json_like_does_not_consume_legacy_dict_only_objects() -> None:
+def test_to_protojson_like_does_not_consume_legacy_dict_only_objects() -> None:
     payload = _LegacyDictPayload()
 
-    assert to_json_like(payload) is payload
+    assert to_protojson_like(payload) is payload
     assert payload.called is False
 
 
-def test_to_json_like_does_not_consume_attrs_only_objects() -> None:
+def test_to_protojson_like_does_not_consume_attrs_only_objects() -> None:
     payload = _AttrsOnlyPayload()
 
-    assert to_json_like(payload) is payload
+    assert to_protojson_like(payload) is payload
 
 
 def test_json_dumps_serializes_dataclass_payloads() -> None:
