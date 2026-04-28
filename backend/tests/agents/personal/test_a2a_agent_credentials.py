@@ -73,6 +73,46 @@ async def test_delete_agent_hard_deletes_credential(async_db_session):
 
 
 @pytest.mark.asyncio
+async def test_soft_deleted_agent_does_not_block_recreate_with_same_card_url(
+    async_db_session,
+):
+    user = await create_user(
+        async_db_session, email="a2a-soft-delete-recreate@example.com"
+    )
+    card_url = "https://example.com/recreate"
+    original = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="original-agent",
+        card_url=card_url,
+        auth_type="none",
+        enabled=True,
+        tags=["test"],
+        extra_headers={"X-Test": "1"},
+    )
+
+    await a2a_agent_service.delete_agent(
+        async_db_session,
+        user_id=user.id,
+        agent_id=original.id,
+    )
+
+    recreated = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="recreated-agent",
+        card_url=card_url,
+        auth_type="none",
+        enabled=True,
+        tags=["test"],
+        extra_headers={"X-Test": "1"},
+    )
+
+    assert recreated.id != original.id
+    assert recreated.card_url == card_url
+
+
+@pytest.mark.asyncio
 async def test_upsert_keeps_single_credential_row(async_db_session):
     user = await create_user(
         async_db_session, email="a2a-hard-delete-legacy@example.com"

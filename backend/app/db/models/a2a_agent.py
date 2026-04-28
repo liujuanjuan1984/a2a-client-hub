@@ -5,10 +5,11 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
-    UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSON, UUID
 
@@ -26,11 +27,13 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
 
     __tablename__ = "a2a_agents"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_a2a_agents_user_scope_card_url",
             "user_id",
             "agent_scope",
             "card_url",
-            name="uq_a2a_agents_user_scope_card_url",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         {"schema": SCHEMA_NAME},
     )
