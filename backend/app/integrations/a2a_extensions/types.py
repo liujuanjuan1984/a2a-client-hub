@@ -57,7 +57,7 @@ class ResolvedExtension:
     methods: Mapping[str, Optional[str]]
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
-    result_envelope: Optional[ResultEnvelopeMapping]
+    result_envelope: ResultEnvelopeMapping
     message_cursor_pagination: MessageCursorPaginationContract = (
         MessageCursorPaginationContract()
     )

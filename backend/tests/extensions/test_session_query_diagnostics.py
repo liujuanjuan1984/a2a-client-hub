@@ -5,7 +5,6 @@ from app.integrations.a2a_extensions.session_query_diagnostics import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
-    LEGACY_SHARED_SESSION_QUERY_URI,
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     SHARED_SESSION_QUERY_URI,
 )
@@ -57,8 +56,6 @@ def test_diagnose_session_query_returns_supported_status_for_opencode() -> None:
     assert diagnostic.status == "supported"
     assert diagnostic.declared_contract_family == "opencode"
     assert diagnostic.normalized_contract_family == "a2a_client_hub"
-    assert diagnostic.uses_legacy_uri is False
-    assert diagnostic.uses_legacy_contract_fields is False
     assert diagnostic.pagination_mode == "page_size"
 
 
@@ -66,7 +63,7 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": LEGACY_SHARED_SESSION_QUERY_URI,
+            "uri": "urn:shared-a2a:session-query:v1",
             "params": {
                 "provider": "opencode",
                 "methods": {
@@ -87,10 +84,9 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_uri() -> None:
 
     assert diagnostic.declared is True
     assert diagnostic.status == "unsupported"
-    assert diagnostic.declared_contract_family == "legacy"
     assert diagnostic.normalized_contract_family is None
-    assert diagnostic.uses_legacy_uri is True
-    assert "legacy URI is no longer supported" in str(diagnostic.error)
+    assert diagnostic.uri == "urn:shared-a2a:session-query:v1"
+    assert "URI is not supported by Hub" in str(diagnostic.error)
 
 
 def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> None:
@@ -123,11 +119,12 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
     assert diagnostic.declared_contract_family == "opencode"
-    assert diagnostic.uses_legacy_uri is False
     assert diagnostic.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
 
 
-def test_diagnose_session_query_returns_legacy_status_for_legacy_limit_fields() -> None:
+def test_diagnose_session_query_returns_invalid_status_for_legacy_limit_fields() -> (
+    None
+):
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -151,11 +148,11 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_limit_fields() 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
     assert diagnostic.declared is True
-    assert diagnostic.status == "unsupported"
-    assert diagnostic.declared_contract_family == "legacy"
-    assert diagnostic.uses_legacy_contract_fields is True
+    assert diagnostic.status == "invalid"
+    assert diagnostic.declared_contract_family == "opencode"
     assert diagnostic.pagination_mode == "limit"
-    assert "legacy pagination fields are no longer supported" in str(diagnostic.error)
+    assert "result_envelope" not in str(diagnostic.error)
+    assert "pagination.default_limit" in str(diagnostic.error)
 
 
 def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None:
@@ -188,7 +185,6 @@ def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
     assert diagnostic.declared_contract_family == "opencode"
-    assert diagnostic.uses_legacy_contract_fields is False
     assert diagnostic.pagination_mode == "limit_and_optional_cursor"
     assert diagnostic.pagination_params == ["limit", "before"]
 

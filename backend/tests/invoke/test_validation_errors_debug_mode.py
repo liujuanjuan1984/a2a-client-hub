@@ -173,6 +173,11 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
                                         "opencode.sessions.messages.list"
                                     ],
                                 },
+                                "result_envelope": {
+                                    "raw": True,
+                                    "items": True,
+                                    "pagination": True,
+                                },
                             },
                         }
                     ]

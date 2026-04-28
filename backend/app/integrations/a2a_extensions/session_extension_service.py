@@ -187,7 +187,7 @@ class SessionExtensionService:
         *,
         page: int,
         size: int,
-        result_envelope: ResultEnvelopeMapping | None = None,
+        result_envelope: ResultEnvelopeMapping,
         page_info: Dict[str, Any] | None = None,
         include_raw: bool = False,
     ) -> Optional[Dict[str, Any]]:
@@ -216,77 +216,46 @@ class SessionExtensionService:
                 normalized_envelope["raw"] = result
             return SessionExtensionService._validate_query_result(normalized_envelope)
 
-        strict_result_envelope = result_envelope is not None
-        mapping = result_envelope or ResultEnvelopeMapping()
+        mapping = result_envelope
         raw: Any = _MISSING
 
         items, items_found = SessionExtensionService._resolve_result_field(
             result,
             path=mapping.items,
-            fallback_path=None if strict_result_envelope else "items",
         )
         if items_found:
             if not isinstance(items, list):
                 raise A2AExtensionContractError(
                     "Extension result envelope resolved invalid 'items'"
                 )
-        elif strict_result_envelope:
+        else:
             raise A2AExtensionContractError(
                 "Extension result envelope missing declared 'items'"
             )
-        else:
-            raw, _ = SessionExtensionService._resolve_result_field(
-                result,
-                path=mapping.raw,
-                fallback_path="raw",
-            )
-            if raw is _MISSING:
-                raw = result
-            if isinstance(raw, list):
-                items = raw
-            else:
-                items = []
 
-        if strict_result_envelope and include_raw:
+        if include_raw:
             raw, raw_found = SessionExtensionService._resolve_result_field(
                 result,
                 path=mapping.raw,
-                fallback_path=None,
             )
             if not raw_found:
                 raise A2AExtensionContractError(
                     "Extension result envelope missing declared 'raw'"
                 )
-        elif strict_result_envelope:
-            raw = _MISSING
-        elif isinstance(raw, list):
-            pass
 
         pagination, pagination_found = SessionExtensionService._resolve_result_field(
             result,
             path=mapping.pagination,
-            fallback_path=None if strict_result_envelope else "pagination",
         )
         if pagination_found:
             if not isinstance(pagination, dict):
                 raise A2AExtensionContractError(
                     "Extension result envelope resolved invalid 'pagination'"
                 )
-        elif strict_result_envelope:
+        else:
             raise A2AExtensionContractError(
                 "Extension result envelope missing declared 'pagination'"
             )
-        else:
-            pagination = {"page": page, "size": size}
-
-        if include_raw and raw is _MISSING:
-            raw, _ = SessionExtensionService._resolve_result_field(
-                result,
-                path=mapping.raw,
-                fallback_path=None if strict_result_envelope else "raw",
-            )
-            if raw is _MISSING:
-                raw = result
 
         envelope: Dict[str, Any] = {
             "items": items,
@@ -303,26 +272,20 @@ class SessionExtensionService:
         result: Mapping[str, Any],
         *,
         path: str,
-        fallback_path: str | None = None,
     ) -> tuple[Any, bool]:
-        candidates = [path]
-        if fallback_path and fallback_path not in candidates:
-            candidates.append(fallback_path)
-
-        for candidate in candidates:
-            current: Any = result
-            found = True
-            for part in candidate.split("."):
-                token = part.strip()
-                if not token:
-                    found = False
-                    break
-                if not isinstance(current, Mapping) or token not in current:
-                    found = False
-                    break
-                current = current[token]
-            if found:
-                return current, True
+        current: Any = result
+        found = True
+        for part in path.split("."):
+            token = part.strip()
+            if not token:
+                found = False
+                break
+            if not isinstance(current, Mapping) or token not in current:
+                found = False
+                break
+            current = current[token]
+        if found:
+            return current, True
         return _MISSING, False
 
     @staticmethod
@@ -452,7 +415,6 @@ class SessionExtensionService:
         value, found = SessionExtensionService._resolve_result_field(
             result,
             path=field,
-            fallback_path=None,
         )
         if not found or value is None:
             return None
@@ -793,6 +755,7 @@ class SessionExtensionService:
                     [],
                     page=resolved_page,
                     size=resolved_size,
+                    result_envelope=ext.result_envelope,
                     include_raw=include_raw,
                 ),
                 meta=self._build_call_meta(
@@ -872,6 +835,7 @@ class SessionExtensionService:
                     [],
                     page=resolved_page,
                     size=resolved_size,
+                    result_envelope=ext.result_envelope,
                     include_raw=include_raw,
                 ),
                 meta=self._build_call_meta(

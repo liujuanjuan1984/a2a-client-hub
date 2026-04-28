@@ -379,7 +379,7 @@ def _resolved_extension(
             -32005: "upstream_payload_error",
             -32006: "session_forbidden",
         },
-        result_envelope=None,
+        result_envelope=ResultEnvelopeMapping(),
         message_cursor_pagination=MessageCursorPaginationContract(
             cursor_param="before" if supports_cursor else None,
             result_cursor_field="next_cursor" if supports_cursor else None,

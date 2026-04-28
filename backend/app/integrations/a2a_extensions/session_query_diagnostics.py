@@ -14,7 +14,6 @@ from app.integrations.a2a_extensions.session_query import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
-    LEGACY_SHARED_SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
 )
 from app.schemas.a2a_agent_card import SharedSessionQueryDiagnostic
@@ -22,14 +21,7 @@ from app.schemas.a2a_agent_card import SharedSessionQueryDiagnostic
 _HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY = "a2a_client_hub"
 
 
-def _declared_contract_family(
-    *,
-    uses_legacy_uri: bool,
-    uses_legacy_contract_fields: bool,
-    uses_codex_uri: bool,
-) -> Literal["opencode", "codex", "legacy"]:
-    if uses_legacy_uri or uses_legacy_contract_fields:
-        return "legacy"
+def _declared_contract_family(*, uses_codex_uri: bool) -> Literal["opencode", "codex"]:
     if uses_codex_uri:
         return "codex"
     return "opencode"
@@ -64,64 +56,16 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     methods = as_dict(params.get("methods"))
     raw_pagination = as_dict(params.get("pagination"))
     result_envelope = params.get("result_envelope")
-    uses_legacy_uri = uri == LEGACY_SHARED_SESSION_QUERY_URI
     uses_codex_uri = uri == CODEX_SHARED_SESSION_QUERY_URI
-    uses_legacy_contract_fields = bool(
-        raw_pagination.get("mode") == "limit"
-        and (
-            "default_size" in raw_pagination
-            or "max_size" in raw_pagination
-            or "page" in raw_pagination.get("params", [])
-        )
-    )
     declared_contract_family = _declared_contract_family(
-        uses_legacy_uri=uses_legacy_uri,
-        uses_legacy_contract_fields=uses_legacy_contract_fields,
         uses_codex_uri=uses_codex_uri,
     )
-
-    if uses_legacy_uri:
-        return SharedSessionQueryDiagnostic(
-            declared=True,
-            status="unsupported",
-            uri=uri,
-            declaredContractFamily=declared_contract_family,
-            provider=str(params.get("provider") or "").strip().lower() or None,
-            methods=sorted(
-                key
-                for key, value in methods.items()
-                if isinstance(value, str) and value.strip()
-            ),
-            pagination_mode=(
-                str(raw_pagination.get("mode")).strip() if raw_pagination else None
-            ),
-            pagination_params=[
-                item.strip()
-                for item in raw_pagination.get("params", [])
-                if isinstance(item, str) and item.strip()
-            ],
-            result_envelope_declared=result_envelope is not None,
-            uses_legacy_uri=True,
-            error=(
-                "Shared session query legacy URI is no longer supported by Hub; "
-                "migrate to a canonical or opencode session-query URI"
-            ),
-        )
 
     if uri not in SUPPORTED_SESSION_QUERY_URIS:
         return SharedSessionQueryDiagnostic(
             declared=True,
             status="unsupported",
             uri=uri,
-            error="Shared session query extension URI is not supported by Hub",
-        )
-
-    if uses_legacy_contract_fields:
-        return SharedSessionQueryDiagnostic(
-            declared=True,
-            status="unsupported",
-            uri=uri,
-            declaredContractFamily=declared_contract_family,
             provider=str(params.get("provider") or "").strip().lower() or None,
             methods=sorted(
                 key
@@ -137,12 +81,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
                 if isinstance(item, str) and item.strip()
             ],
             result_envelope_declared=result_envelope is not None,
-            uses_legacy_contract_fields=True,
-            error=(
-                "Shared session query legacy pagination fields are no longer "
-                "supported; use pagination.default_limit/max_limit for mode "
-                "'limit'"
-            ),
+            error="Shared session query extension URI is not supported by Hub",
         )
 
     try:
@@ -173,8 +112,6 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
                 if isinstance(item, str) and item.strip()
             ],
             result_envelope_declared=result_envelope is not None,
-            uses_legacy_uri=uses_legacy_uri,
-            uses_legacy_contract_fields=uses_legacy_contract_fields,
             error=str(exc),
         )
 
@@ -194,6 +131,4 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         pagination_params=list(resolved.pagination.params),
         result_envelope_declared=resolved.result_envelope is not None,
         jsonrpc_interface_fallback_used=resolved.jsonrpc.fallback_used,
-        uses_legacy_uri=uses_legacy_uri,
-        uses_legacy_contract_fields=uses_legacy_contract_fields,
     )
