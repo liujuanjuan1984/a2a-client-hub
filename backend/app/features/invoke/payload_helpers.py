@@ -4,17 +4,8 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 
-def _coerce_mapping(payload: Any) -> Mapping[str, Any] | None:
-    if isinstance(payload, Mapping):
-        return payload
-    return None
-
-
-def dict_field(payload: Any, key: str) -> dict[str, Any]:
-    source = _coerce_mapping(payload)
-    if source is None:
-        return {}
-    value = source.get(key)
+def dict_field(payload: Mapping[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
     if isinstance(value, dict):
         return value
     if isinstance(value, Mapping):
@@ -23,28 +14,22 @@ def dict_field(payload: Any, key: str) -> dict[str, Any]:
 
 
 def pick_non_empty_str(
-    payload: Any,
+    payload: Mapping[str, Any],
     keys: tuple[str, ...],
 ) -> str | None:
-    source = _coerce_mapping(payload)
-    if source is None:
-        return None
     for key in keys:
-        value = source.get(key)
+        value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
 
 
 def pick_int(
-    payload: Any,
+    payload: Mapping[str, Any],
     keys: tuple[str, ...],
 ) -> int | None:
-    source = _coerce_mapping(payload)
-    if source is None:
-        return None
     for key in keys:
-        value = source.get(key)
+        value = payload.get(key)
         if isinstance(value, int):
             return value
         if isinstance(value, float) and value.is_integer():
@@ -55,7 +40,7 @@ def pick_int(
 
 
 def pick_first_non_empty_str(
-    payloads: Iterable[Any],
+    payloads: Iterable[Mapping[str, Any]],
     keys: tuple[str, ...],
 ) -> str | None:
     for payload in payloads:
@@ -66,7 +51,7 @@ def pick_first_non_empty_str(
 
 
 def pick_first_int(
-    payloads: Iterable[Any],
+    payloads: Iterable[Mapping[str, Any]],
     keys: tuple[str, ...],
 ) -> int | None:
     for payload in payloads:

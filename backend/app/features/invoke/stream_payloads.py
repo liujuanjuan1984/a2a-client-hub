@@ -313,7 +313,7 @@ def extract_block_base_seq(
 def extract_stream_sequence_from_serialized_event(
     payload: dict[str, Any],
 ) -> int | None:
-    root = payload if isinstance(payload, dict) else {}
+    root = payload
     _, body = _resolve_stream_response_body(root)
     artifact = _resolve_stream_artifact(root)
     body_metadata = _dict_field(body, "metadata")

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
+from app.features.invoke.payload_helpers import dict_field as _dict_field
 from app.features.invoke.route_runner_state import (
     InvokeState,
     bind_inflight_task_if_needed,
@@ -237,30 +238,30 @@ def has_shared_section(
 ) -> bool:
     candidates = [payload]
     if include_artifact:
-        artifact_update = payload.get("artifactUpdate")
-        if isinstance(artifact_update, dict):
+        artifact_update = _dict_field(payload, "artifactUpdate")
+        if artifact_update:
             candidates.append(artifact_update)
-            artifact = artifact_update.get("artifact")
-            if isinstance(artifact, dict):
+            artifact = _dict_field(artifact_update, "artifact")
+            if artifact:
                 candidates.append(artifact)
     if include_message:
-        message = payload.get("message")
-        if isinstance(message, dict):
+        message = _dict_field(payload, "message")
+        if message:
             candidates.append(message)
     if include_status:
-        status_update = payload.get("statusUpdate")
-        if isinstance(status_update, dict):
-            status = status_update.get("status")
-            if isinstance(status, dict):
+        status_update = _dict_field(payload, "statusUpdate")
+        if status_update:
+            status = _dict_field(status_update, "status")
+            if status:
                 candidates.append(status)
             candidates.append(status_update)
     if include_task:
-        task = payload.get("task")
-        if isinstance(task, dict):
+        task = _dict_field(payload, "task")
+        if task:
             candidates.append(task)
     if include_result:
-        result = payload.get("result")
-        if isinstance(result, dict):
+        result = _dict_field(payload, "result")
+        if result:
             candidates.append(result)
     return any(
         bool(extract_shared_metadata_section(candidate, section=section))

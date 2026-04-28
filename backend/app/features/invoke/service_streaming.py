@@ -18,6 +18,7 @@ from app.features.invoke import (
     service_streaming_transport,
     stream_payloads,
 )
+from app.features.invoke.payload_helpers import dict_field as _dict_field
 from app.features.invoke.payload_helpers import (
     pick_first_non_empty_str,
     pick_int,
@@ -483,13 +484,9 @@ class A2AInvokeStreamingRuntime:
         shared_stream["seq"] = event_sequence
 
         artifact = stream_payloads._resolve_stream_artifact(payload)
-        artifact_metadata = (
-            artifact.get("metadata") if isinstance(artifact, dict) else {}
-        )
-        artifact_shared_stream = (
-            stream_payloads.extract_shared_stream_metadata(payload, artifact)
-            if isinstance(artifact, dict)
-            else {}
+        artifact_metadata = _dict_field(artifact, "metadata")
+        artifact_shared_stream = stream_payloads.extract_shared_stream_metadata(
+            payload, artifact
         )
         message_id = pick_first_non_empty_str(
             (

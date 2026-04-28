@@ -115,7 +115,7 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
-    root = payload if isinstance(payload, dict) else {}
+    root = payload
 
     stream_kind, stream_body = stream_payloads._resolve_stream_response_body(root)
     event_metadata = _dict_field(stream_body, "metadata")
