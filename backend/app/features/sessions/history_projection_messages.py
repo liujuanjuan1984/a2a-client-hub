@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.db.transaction import rollback_safely
+from app.features.invoke.shared_metadata import (
+    merge_preferred_session_binding_metadata,
+)
 from app.features.sessions import block_store
 from app.features.sessions import common as session_common
 from app.features.sessions import message_store
@@ -173,11 +176,12 @@ class SessionHistoryMessageService:
         ) = extract_provider_and_external_session_id(invoke_metadata or {})
         working_directory = extract_working_directory(invoke_metadata or {})
         if context_id and isinstance(context_id, str):
-            metadata["context_id"] = context_id
-        if provider_from_invoke:
-            metadata["provider"] = provider_from_invoke
-        if external_session_id:
-            metadata["externalSessionId"] = external_session_id
+            metadata["contextId"] = context_id
+        metadata = merge_preferred_session_binding_metadata(
+            metadata,
+            provider=provider_from_invoke,
+            external_session_id=external_session_id,
+        )
         if working_directory:
             metadata["working_directory"] = working_directory
         if extra_metadata:

@@ -54,14 +54,13 @@ from app.integrations.a2a_client.lifecycle import (
 )
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.protobuf import (
-    is_proto_message,
-    to_json_like,
+    to_protojson_like,
+    to_protojson_object,
 )
 from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
     normalize_transport_label,
 )
-from app.integrations.a2a_client.task_payloads import normalize_task_payload
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
@@ -76,6 +75,47 @@ from app.utils.outbound_url import (
 logger = get_logger(__name__)
 
 AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH = "/v1/card"
+_TEXT_PAYLOAD_KEYS = (
+    "content",
+    "message",
+    "messages",
+    "result",
+    "status",
+    "text",
+    "parts",
+    "artifacts",
+    "history",
+    "events",
+    "task",
+    "artifact",
+)
+
+
+def _coerce_text_payload_mapping(payload: Any) -> dict[str, Any] | None:
+    if isinstance(payload, Mapping):
+        return {str(key): value for key, value in payload.items()}
+
+    normalized = to_protojson_object(payload)
+    if normalized is not None:
+        return normalized
+    return None
+
+
+def _is_agent_history_message(payload: Any) -> bool:
+    payload_map = _coerce_text_payload_mapping(payload)
+    if payload_map is None:
+        return False
+    value = payload_map.get("role")
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower().replace("_", "-")
+    if normalized.startswith("role-"):
+        normalized = normalized[len("role-") :]
+    return normalized == "agent"
+
+
+def _is_unsupported_protocol_version(value: str | None) -> bool:
+    return isinstance(value, str) and value.strip().startswith("0.3")
 
 
 class StaticHeaderInterceptor(ClientCallInterceptor):
@@ -436,7 +476,7 @@ class A2AClient:
                     history_length=history_length,
                     metadata=metadata,
                 )
-                normalized_task = normalize_task_payload(task)
+                normalized_task = to_protojson_object(task)
                 if normalized_task is None:
                     return {
                         "success": False,
@@ -505,10 +545,19 @@ class A2AClient:
                 log_label="A2A agent card",
             )
 
-            selected_transport, selected_url, supported_labels = (
-                self._resolve_negotiated_transport_target(card)
-            )
+            (
+                selected_transport,
+                selected_url,
+                supported_labels,
+                saw_unsupported_protocol_interface,
+            ) = self._resolve_negotiated_transport_target(card)
             if not selected_transport or not selected_url:
+                if saw_unsupported_protocol_interface:
+                    raise A2AUnsupportedBindingError(
+                        f"A2A agent '{redact_url_for_logging(self.agent_url)}' only "
+                        "advertises unsupported A2A protocolVersion 0.3 interfaces. "
+                        "Upgrade the peer to A2A 1.0."
+                    )
                 supported = ", ".join(supported_labels)
                 raise A2AAgentUnavailableError(
                     f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
@@ -578,7 +627,7 @@ class A2AClient:
 
     def _resolve_negotiated_transport_target(
         self, card: AgentCard
-    ) -> tuple[TransportProtocol | str | None, str | None, list[str]]:
+    ) -> tuple[TransportProtocol | str | None, str | None, list[str], bool]:
         def _as_display_label(value: TransportProtocol | str | None) -> str:
             if value is None:
                 return ""
@@ -601,11 +650,16 @@ class A2AClient:
             supported_labels = [TransportProtocol.JSONRPC.value]
 
         server_set: list[tuple[str, str]] = []
+        skipped_unsupported_protocol_interface = False
         for iface in getattr(card, "supported_interfaces", None) or []:
             transport = normalize_transport_label(
                 getattr(iface, "protocol_binding", None)
             )
             interface_url = (getattr(iface, "url", "") or "").strip()
+            protocol_version = getattr(iface, "protocol_version", None)
+            if _is_unsupported_protocol_version(protocol_version):
+                skipped_unsupported_protocol_interface = True
+                continue
             if transport and interface_url:
                 server_set.append((transport, interface_url))
 
@@ -614,14 +668,14 @@ class A2AClient:
                 label = _as_display_label(transport)
                 for candidate_transport, candidate_url in server_set:
                     if candidate_transport == label:
-                        return transport, candidate_url, supported_labels
-            return None, None, supported_labels
+                        return transport, candidate_url, supported_labels, False
+            return None, None, supported_labels, skipped_unsupported_protocol_interface
 
         for candidate_transport, candidate_url in server_set:
             for transport in client_set:
                 if candidate_transport == _as_display_label(transport):
-                    return transport, candidate_url, supported_labels
-        return None, None, supported_labels
+                    return transport, candidate_url, supported_labels, False
+        return None, None, supported_labels, skipped_unsupported_protocol_interface
 
     async def close(self) -> None:
         """Dispose cached transport wrappers."""
@@ -1307,8 +1361,8 @@ class A2AClient:
                 return None
             collected: list[str] = []
             for part in parts:
-                normalized = to_json_like(part)
-                if not isinstance(normalized, Mapping):
+                normalized = _coerce_text_payload_mapping(part)
+                if normalized is None:
                     continue
                 text_value = normalized.get("text")
                 if isinstance(text_value, str) and text_value.strip():
@@ -1322,23 +1376,7 @@ class A2AClient:
             return None
 
         def extract_from_mapping(payload_map: Mapping[str, Any]) -> Optional[str]:
-            for key in (
-                "content",
-                "message",
-                "messages",
-                "result",
-                "status",
-                "text",
-                "parts",
-                "artifacts",
-                "history",
-                "events",
-                "root",
-                "task",
-                "artifact",
-                "artifact_update",
-                "status_update",
-            ):
+            for key in _TEXT_PAYLOAD_KEYS:
                 if key not in payload_map:
                     continue
                 value = payload_map[key]
@@ -1352,10 +1390,17 @@ class A2AClient:
                     parts_text = extract_from_parts(value)
                     if parts_text:
                         return parts_text
+                if key == "history" and isinstance(value, (list, tuple)):
+                    for item in reversed(value):
+                        if not _is_agent_history_message(item):
+                            continue
+                        history_text = A2AClient._extract_text_from_payload(item)
+                        if history_text:
+                            return history_text
+                    continue
                 if isinstance(value, (list, tuple)) and key in (
                     "messages",
                     "artifacts",
-                    "history",
                     "events",
                 ):
                     iterable_text = extract_from_iterable(value)
@@ -1366,61 +1411,19 @@ class A2AClient:
                     return nested_text
             return None
 
-        def extract_from_object(payload_obj: Any) -> Optional[str]:
-            object_payload = {
-                key: value
-                for key in (
-                    "content",
-                    "message",
-                    "messages",
-                    "result",
-                    "status",
-                    "text",
-                    "parts",
-                    "artifacts",
-                    "history",
-                    "events",
-                    "root",
-                    "task",
-                    "artifact",
-                    "artifact_update",
-                    "status_update",
-                )
-                if (value := getattr(payload_obj, key, None)) not in (None, "")
-            }
-            if not object_payload:
-                return None
-            return extract_from_mapping(object_payload)
-
         if payload is None:
             return None
 
         if isinstance(payload, str):
             return payload.strip() or None
 
-        if is_proto_message(payload):
-            return A2AClient._extract_text_from_payload(to_json_like(payload))
-
-        if isinstance(payload, Mapping):
-            mapped_text = extract_from_mapping(
-                {str(key): value for key, value in payload.items()}
-            )
-            if mapped_text:
-                return mapped_text
-            return None
-
         if isinstance(payload, (list, tuple)):
             return extract_from_iterable(payload)
 
-        object_text = extract_from_object(payload)
-        if object_text:
-            return object_text
-
-        normalized = to_json_like(payload)
-        if normalized is not payload:
-            return A2AClient._extract_text_from_payload(normalized)
-
-        return None
+        payload_map = _coerce_text_payload_mapping(payload)
+        if payload_map is None:
+            return None
+        return extract_from_mapping(payload_map)
 
 
 def _as_plain_serializable(payload: Any) -> Any:
@@ -1428,28 +1431,23 @@ def _as_plain_serializable(payload: Any) -> Any:
         return None
     if isinstance(payload, (str, int, float, bool)):
         return payload
-    if is_proto_message(payload):
-        return to_json_like(payload)
     if isinstance(payload, list):
         return [_as_plain_serializable(item) for item in payload]
-    if isinstance(payload, dict):
+    if isinstance(payload, Mapping):
         return {
             str(key): _as_plain_serializable(value) for key, value in payload.items()
         }
-    for candidate in ("content", "status", "artifacts", "history", "parts", "text"):
-        value = getattr(payload, candidate, None)
-        if value is not None:
-            return {
-                "_type": type(payload).__name__,
-                candidate: _as_plain_serializable(value),
-            }
+
+    normalized = to_protojson_object(payload)
+    if normalized is not None:
+        return _as_plain_serializable(normalized)
     return str(payload)
 
 
 def _json_fallback(value: Any) -> Any:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
-    normalized = to_json_like(value)
+    normalized = to_protojson_like(value)
     if normalized is not value:
         return _as_plain_serializable(normalized)
     return str(value)

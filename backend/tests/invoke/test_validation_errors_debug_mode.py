@@ -2,7 +2,8 @@ import pytest
 
 from app.core.config import settings
 from app.features.agents.common.card_validation import fetch_and_validate_agent_card
-from app.features.invoke.service import A2AInvokeService
+from app.features.invoke.service_streaming import A2AInvokeStreamingRuntime
+from tests.support.a2a import parse_agent_card
 
 
 class _DummyCard:
@@ -97,7 +98,21 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
                                     "default_size": 20,
                                 },
                             },
-                        }
+                        },
+                        {
+                            "uri": "urn:a2a:compatibility-profile/v1",
+                            "params": {
+                                "extension_retention": {},
+                                "method_retention": {},
+                                "service_behaviors": {
+                                    "classification": "stable-service-semantics",
+                                    "methods": {
+                                        "tasks/cancel": {"retention": "stable"}
+                                    },
+                                },
+                                "consumer_guidance": ["Treat query methods as stable."],
+                            },
+                        },
                     ]
                 },
                 "defaultInputModes": [],
@@ -107,9 +122,7 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
 
     class _ExtensionGateway:
         async def fetch_agent_card_detail(self, **kwargs):
-            from a2a.types import AgentCard
-
-            return AgentCard.model_validate(_ExtensionCard().model_dump())
+            return parse_agent_card(_ExtensionCard().model_dump())
 
     resp = await fetch_and_validate_agent_card(
         gateway=_ExtensionGateway(), resolved=object()
@@ -171,9 +184,7 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
 
     class _ExtensionGateway:
         async def fetch_agent_card_detail(self, **kwargs):
-            from a2a.types import AgentCard
-
-            return AgentCard.model_validate(_ExtensionCard().model_dump())
+            return parse_agent_card(_ExtensionCard().model_dump())
 
     resp = await fetch_and_validate_agent_card(
         gateway=_ExtensionGateway(), resolved=object()
@@ -244,7 +255,23 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
                                 },
                                 "result_envelope": {},
                             },
-                        }
+                        },
+                        {
+                            "uri": "urn:a2a:compatibility-profile/v1",
+                            "params": {
+                                "extension_retention": {},
+                                "method_retention": {},
+                                "service_behaviors": {
+                                    "classification": "stable-service-semantics",
+                                    "methods": {
+                                        "tasks/cancel": {"retention": "stable"}
+                                    },
+                                },
+                                "consumer_guidance": [
+                                    "Treat codex session query methods as stable."
+                                ],
+                            },
+                        },
                     ]
                 },
                 "defaultInputModes": [],
@@ -254,9 +281,7 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
 
     class _ExtensionGateway:
         async def fetch_agent_card_detail(self, **kwargs):
-            from a2a.types import AgentCard
-
-            return AgentCard.model_validate(_ExtensionCard().model_dump())
+            return parse_agent_card(_ExtensionCard().model_dump())
 
     resp = await fetch_and_validate_agent_card(
         gateway=_ExtensionGateway(), resolved=object()
@@ -317,9 +342,7 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
 
     class _ExtensionGateway:
         async def fetch_agent_card_detail(self, **kwargs):
-            from a2a.types import AgentCard
-
-            return AgentCard.model_validate(_ExtensionCard().model_dump())
+            return parse_agent_card(_ExtensionCard().model_dump())
 
     resp = await fetch_and_validate_agent_card(
         gateway=_ExtensionGateway(), resolved=object()
@@ -339,13 +362,13 @@ def test_serialize_stream_event_validation_errors_gated(monkeypatch):
     validate_message = lambda payload: ["bad-event"]  # noqa: E731
 
     monkeypatch.setattr(settings, "debug", False)
-    payload = A2AInvokeService.serialize_stream_event(
+    payload = A2AInvokeStreamingRuntime.serialize_stream_event(
         _DummyEvent(), validate_message=validate_message
     )
     assert "validation_errors" not in payload
 
     monkeypatch.setattr(settings, "debug", True)
-    payload_debug = A2AInvokeService.serialize_stream_event(
+    payload_debug = A2AInvokeStreamingRuntime.serialize_stream_event(
         _DummyEvent(), validate_message=validate_message
     )
     assert payload_debug["validation_errors"] == ["bad-event"]

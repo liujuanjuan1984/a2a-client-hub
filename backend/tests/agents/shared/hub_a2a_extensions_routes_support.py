@@ -29,15 +29,15 @@ def _valid_card_payload() -> Dict[str, Any]:
         "name": "Example Agent",
         "description": "Example",
         "version": "1.0",
-        "supported_interfaces": [
+        "supportedInterfaces": [
             {
                 "url": "https://example.com/jsonrpc",
-                "protocol_binding": "JSONRPC",
+                "protocolBinding": "JSONRPC",
             }
         ],
         "capabilities": {"extensions": []},
-        "default_input_modes": ["text/plain"],
-        "default_output_modes": ["text/plain"],
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
         "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
     }
 
@@ -128,11 +128,14 @@ class _FakeExtensionsService:
             success=True,
             result={
                 "contextId": session_id,
-                "provider": "opencode",
                 "metadata": {
-                    "provider": "opencode",
-                    "externalSessionId": session_id,
                     "contextId": session_id,
+                    "shared": {
+                        "session": {
+                            "id": session_id,
+                            "provider": "opencode",
+                        }
+                    },
                 },
             },
             meta={},

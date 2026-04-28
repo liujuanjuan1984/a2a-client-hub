@@ -516,25 +516,28 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     class _Gateway:
         async def stream(self, **kwargs):
             yield {
-                "kind": "artifact-update",
-                "artifact": {
-                    "parts": [{"kind": "text", "text": "ok"}],
-                    "metadata": {
-                        "block_type": "text",
-                        "message_id": "msg-usage-1",
-                        "event_id": "evt-usage-1",
-                        "shared": {
-                            "usage": {
-                                "input_tokens": 100,
-                                "output_tokens": 20,
-                                "total_tokens": 120,
-                                "cost": 0.01,
+                "artifactUpdate": {
+                    "artifact": {
+                        "parts": [{"text": "ok"}],
+                        "metadata": {
+                            "shared": {
+                                "stream": {
+                                    "block_type": "text",
+                                    "messageId": "msg-usage-1",
+                                    "eventId": "evt-usage-1",
+                                },
+                                "usage": {
+                                    "input_tokens": 100,
+                                    "output_tokens": 20,
+                                    "total_tokens": 120,
+                                    "cost": 0.01,
+                                },
                             },
                         },
-                    },
-                },
+                    }
+                }
             }
-            yield {"kind": "status-update", "final": True}
+            yield {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}}
 
     payload = A2AAgentInvokeRequest.model_validate(
         {
@@ -602,7 +605,7 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
         )
 
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "consume_stream",
         fake_consume_stream,
     )
@@ -645,14 +648,20 @@ async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_c
         async def stream(self, **kwargs):
             yield SimpleNamespace(
                 model_dump=lambda exclude_none=True: {
-                    "kind": "message",
-                    "message_id": "msg-run-http-invoke-1",
-                    "task_id": "task-run-http-invoke-1",
-                    "parts": [{"type": "text", "text": "downgraded result"}],
-                    "metadata": {
-                        "event_id": "evt-run-http-invoke-1",
-                        "block_type": "text",
-                    },
+                    "message": {
+                        "messageId": "msg-run-http-invoke-1",
+                        "taskId": "task-run-http-invoke-1",
+                        "role": "ROLE_AGENT",
+                        "parts": [{"type": "text", "text": "downgraded result"}],
+                        "metadata": {
+                            "shared": {
+                                "stream": {
+                                    "eventId": "evt-run-http-invoke-1",
+                                    "block_type": "text",
+                                }
+                            }
+                        },
+                    }
                 }
             )
 
@@ -762,7 +771,7 @@ async def test_run_http_invoke_returns_structured_error_details(
         )
 
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "consume_stream",
         fake_consume_stream,
     )
@@ -957,15 +966,19 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
     async def fake_finalize_outbound_invoke_payload(**kwargs):
         return kwargs["payload"]
 
-    async def fake_append_session_control(**kwargs):
-        return SimpleNamespace(
-            success=True,
-            result={"ok": True, "session_id": "ses-upstream-next"},
-            error_code=None,
-            source="upstream_a2a",
-            jsonrpc_code=None,
-            missing_params=None,
-            upstream_error=None,
+    async def fake_run_append_session_control(**kwargs):
+        return A2AAgentInvokeResponse.model_validate(
+            {
+                "success": True,
+                "source": "hub_session_control",
+                "agent_name": "Demo Agent",
+                "agent_url": "https://example.com/a2a",
+                "sessionControl": {
+                    "intent": "append",
+                    "status": "accepted",
+                    "sessionId": "ses-upstream-next",
+                },
+            }
         )
 
     monkeypatch.setattr(
@@ -974,9 +987,9 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
         fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
-        invoke_route_runner.get_a2a_extensions_service(),
-        "append_session_control",
-        fake_append_session_control,
+        invoke_route_runner,
+        "run_append_session_control",
+        fake_run_append_session_control,
     )
 
     runtime = SimpleNamespace(
@@ -1069,15 +1082,24 @@ async def test_run_http_invoke_append_turn_forbidden_returns_failed(
     async def fake_finalize_outbound_invoke_payload(**kwargs):
         return kwargs["payload"]
 
-    async def fake_append_session_control(**kwargs):
-        return SimpleNamespace(
-            success=False,
-            result=None,
-            error_code="turn_forbidden",
-            source="upstream_a2a",
-            jsonrpc_code=-32013,
-            missing_params=None,
-            upstream_error={"message": "Turn does not belong to caller"},
+    async def fake_run_append_session_control(**kwargs):
+        return A2AAgentInvokeResponse.model_validate(
+            {
+                "success": False,
+                "error": "Append failed.",
+                "error_code": "turn_forbidden",
+                "source": "upstream_a2a",
+                "jsonrpc_code": -32013,
+                "upstream_error": {
+                    "message": "Turn does not belong to caller",
+                },
+                "agent_name": "Demo Agent",
+                "agent_url": "https://example.com/a2a",
+                "sessionControl": {
+                    "intent": "append",
+                    "status": "failed",
+                },
+            }
         )
 
     monkeypatch.setattr(
@@ -1086,9 +1108,9 @@ async def test_run_http_invoke_append_turn_forbidden_returns_failed(
         fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
-        invoke_route_runner.get_a2a_extensions_service(),
-        "append_session_control",
-        fake_append_session_control,
+        invoke_route_runner,
+        "run_append_session_control",
+        fake_run_append_session_control,
     )
 
     runtime = SimpleNamespace(
@@ -1107,8 +1129,8 @@ async def test_run_http_invoke_append_turn_forbidden_returns_failed(
             "metadata": {
                 "shared": {
                     "stream": {
-                        "thread_id": "thread-1",
-                        "turn_id": "turn-1",
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
                     }
                 }
             },

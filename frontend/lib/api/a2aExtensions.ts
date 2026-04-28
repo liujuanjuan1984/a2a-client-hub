@@ -4,6 +4,7 @@ import type {
   RuntimeStatusContract,
 } from "@/lib/api/chat-utils";
 import { apiRequest } from "@/lib/api/client";
+import { withSharedSessionBinding } from "@/lib/sharedMetadata";
 
 type A2AExtensionResponse = {
   success: boolean;
@@ -440,6 +441,27 @@ const assertPromptAsyncResult = (
   };
 };
 
+const normalizeSessionBindingMetadata = (
+  metadata: Record<string, unknown> | undefined,
+) => {
+  if (!metadata) {
+    return undefined;
+  }
+  const provider =
+    typeof metadata.provider === "string" ? metadata.provider.trim() : "";
+  const externalSessionId =
+    typeof metadata.externalSessionId === "string"
+      ? metadata.externalSessionId.trim()
+      : "";
+  if (!externalSessionId) {
+    return metadata;
+  }
+  return withSharedSessionBinding(metadata, {
+    provider: provider || null,
+    externalSessionId,
+  });
+};
+
 export const promptSessionAsync = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
@@ -465,7 +487,9 @@ export const promptSessionAsync = async (input: {
       method: "POST",
       body: {
         request: input.request,
-        ...(input.metadata ? { metadata: input.metadata } : {}),
+        ...(input.metadata
+          ? { metadata: normalizeSessionBindingMetadata(input.metadata) }
+          : {}),
         ...(input.workingDirectory
           ? { workingDirectory: input.workingDirectory }
           : {}),

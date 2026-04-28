@@ -104,11 +104,9 @@ describe("chat store utils", () => {
     const session = createAgentSession("agent-3");
     session.metadata = {
       locale: "zh-CN",
-      provider: "legacy",
-      externalSessionId: "legacy-sid",
       shared: {
         session: {
-          id: "legacy-sid",
+          id: "ses-upstream-0",
           provider: "legacy",
         },
       },
@@ -137,8 +135,8 @@ describe("chat store utils", () => {
       locale: "zh-CN",
       shared: {
         stream: {
-          thread_id: "thread-1",
-          turn_id: "turn-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
         },
       },
     };
@@ -158,8 +156,8 @@ describe("chat store utils", () => {
       locale: "zh-CN",
       shared: {
         stream: {
-          thread_id: "thread-1",
-          turn_id: "turn-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
         },
       },
     };
@@ -179,8 +177,8 @@ describe("chat store utils", () => {
         locale: "zh-CN",
         shared: {
           stream: {
-            thread_id: "thread-1",
-            turn_id: "turn-1",
+            threadId: "thread-1",
+            turnId: "turn-1",
           },
         },
       },
@@ -246,9 +244,9 @@ describe("chat store utils", () => {
     session.metadata = {
       shared: {
         stream: {
-          thread_id: "thread-1",
-          turn_id: "turn-2",
-          event_id: "evt-ignored",
+          threadId: "thread-1",
+          turnId: "turn-2",
+          eventId: "evt-ignored",
         },
       },
     };
@@ -258,8 +256,8 @@ describe("chat store utils", () => {
     expect(persisted["conv-1"]?.metadata).toEqual({
       shared: {
         stream: {
-          thread_id: "thread-1",
-          turn_id: "turn-2",
+          threadId: "thread-1",
+          turnId: "turn-2",
         },
       },
     });

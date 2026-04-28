@@ -15,7 +15,10 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
 )
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
-from app.integrations.a2a_client.protobuf import parse_agent_card, to_json_like
+from app.integrations.a2a_client.protobuf import (
+    parse_agent_card,
+    to_protojson_object,
+)
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
 )
@@ -59,21 +62,46 @@ async def fetch_and_validate_agent_card(
             message="Agent card unavailable",
         )
 
-    card_payload = to_json_like(card)
-    if not isinstance(card_payload, dict):
+    raw_card_payload = to_protojson_object(card)
+    if raw_card_payload is None:
         return A2AAgentCardValidationResponse(
             success=False,
             message="Agent card payload must be a JSON object",
         )
-    validation_result = validate_agent_card_payload(card_payload)
-    validation_errors = list(validation_result.errors)
-    validation_warnings = list(validation_result.warnings)
+    validation_errors: list[str] = []
+    validation_warnings: list[str] = []
     diagnostics_card: AgentCard | None = card if isinstance(card, AgentCard) else None
+    strict_parse_error: str | None = None
+
     try:
         if diagnostics_card is None:
-            diagnostics_card = parse_agent_card(card_payload)
-    except Exception:
-        diagnostics_card = None
+            diagnostics_card = parse_agent_card(
+                raw_card_payload,
+                ignore_unknown_fields=False,
+            )
+    except Exception as exc:
+        strict_parse_error = (
+            "Agent card payload is not compatible with A2A 1.0 canonical parsing: "
+            f"{exc}"
+        )
+        try:
+            diagnostics_card = parse_agent_card(raw_card_payload)
+        except Exception:
+            diagnostics_card = None
+
+    card_payload = (
+        to_protojson_object(diagnostics_card)
+        if diagnostics_card is not None
+        else raw_card_payload
+    )
+    if card_payload is None:
+        card_payload = raw_card_payload
+
+    validation_result = validate_agent_card_payload(card_payload)
+    validation_errors.extend(validation_result.errors)
+    validation_warnings.extend(validation_result.warnings)
+    if strict_parse_error is not None:
+        validation_errors.insert(0, strict_parse_error)
 
     session_query = (
         diagnose_session_query(diagnostics_card)

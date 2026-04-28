@@ -12,7 +12,9 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from app.integrations.a2a_client.protobuf import is_proto_message, to_json_like
+from google.protobuf.message import Message as ProtoMessage
+
+from app.integrations.a2a_client.protobuf import to_protojson_like
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +43,10 @@ class CompassJSONEncoder(json.JSONEncoder):
             return obj.isoformat()
         elif isinstance(obj, Decimal):
             return float(obj)
-        elif is_proto_message(obj):
-            return to_json_like(obj)
+        elif isinstance(obj, ProtoMessage):
+            return to_protojson_like(obj)
 
-        normalized = to_json_like(obj)
+        normalized = to_protojson_like(obj)
         if normalized is not obj:
             return normalized
 

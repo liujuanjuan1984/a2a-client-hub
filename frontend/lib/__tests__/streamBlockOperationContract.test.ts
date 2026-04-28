@@ -11,17 +11,17 @@ const normalizeParsedUpdate = (payload: Record<string, unknown>) => {
   const parsed = extractStreamBlockUpdate(payload);
   expect(parsed).not.toBeNull();
   return {
-    event_id: parsed?.eventId ?? null,
+    eventId: parsed?.eventId ?? null,
     seq: parsed?.seq ?? null,
-    message_id: parsed?.messageId ?? null,
-    artifact_id: parsed?.artifactId ?? null,
-    block_id: parsed?.blockId ?? null,
-    lane_id: parsed?.laneId ?? null,
-    block_type: parsed?.blockType ?? null,
+    messageId: parsed?.messageId ?? null,
+    artifactId: parsed?.artifactId ?? null,
+    blockId: parsed?.blockId ?? null,
+    laneId: parsed?.laneId ?? null,
+    blockType: parsed?.blockType ?? null,
     op: parsed?.op ?? null,
     content: parsed?.delta ?? null,
-    base_seq: parsed?.baseSeq ?? null,
-    is_finished: parsed?.done ?? null,
+    baseSeq: parsed?.baseSeq ?? null,
+    isFinished: parsed?.done ?? null,
     source: parsed?.source ?? null,
   };
 };

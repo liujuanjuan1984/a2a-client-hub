@@ -19,6 +19,30 @@ const interruptLifecycleMessageCases =
     content: string;
   }[];
 
+const buildStatusUpdatePayload = (input: {
+  state: string;
+  seq?: number;
+  messageId?: string;
+  completionPhase?: string;
+  interrupt?: Record<string, unknown>;
+}) => ({
+  statusUpdate: {
+    status: { state: input.state },
+    metadata: {
+      shared: {
+        ...(input.interrupt ? { interrupt: input.interrupt } : {}),
+        stream: {
+          ...(input.seq !== undefined ? { seq: input.seq } : {}),
+          ...(input.messageId ? { messageId: input.messageId } : {}),
+          ...(input.completionPhase
+            ? { completionPhase: input.completionPhase }
+            : {}),
+        },
+      },
+    },
+  },
+});
+
 const buildBlockUpdatePayload = (input: {
   blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
   delta?: string;
@@ -36,38 +60,44 @@ const buildBlockUpdatePayload = (input: {
   baseSeq?: number;
 }) => {
   const artifactMetadata: Record<string, unknown> = {
-    block_type: input.blockType,
+    blockType: input.blockType,
+    op: input.op ?? (input.append === false ? "replace" : "append"),
     source: input.source ?? "stream",
   };
   if (input.blockId !== undefined) {
-    artifactMetadata.block_id = input.blockId;
+    artifactMetadata.blockId = input.blockId;
   }
   if (input.laneId !== undefined) {
-    artifactMetadata.lane_id = input.laneId;
-  }
-  if (input.op !== undefined) {
-    artifactMetadata.op = input.op;
+    artifactMetadata.laneId = input.laneId;
   }
   if (input.baseSeq !== undefined) {
-    artifactMetadata.base_seq = input.baseSeq;
+    artifactMetadata.baseSeq = input.baseSeq;
   }
   const payload: Record<string, unknown> = {
-    kind: "artifact-update",
-    task_id: input.taskId ?? "task-1",
-    message_id: input.messageId ?? "msg-1",
-    event_id: input.eventId ?? "evt-1",
-    append: input.append ?? true,
-    lastChunk: input.lastChunk ?? false,
-    artifact: {
-      artifact_id: input.artifactId,
-      parts:
-        input.delta !== undefined ? [{ kind: "text", text: input.delta }] : [],
-      metadata: artifactMetadata,
+    artifactUpdate: {
+      append: input.append ?? true,
+      lastChunk: input.lastChunk ?? false,
+      taskId: input.taskId ?? "task-1",
+      artifact: {
+        artifactId: input.artifactId,
+        parts: input.delta !== undefined ? [{ text: input.delta }] : [],
+        metadata: {
+          ...artifactMetadata,
+          shared: {
+            stream: {
+              ...(input.messageId !== undefined
+                ? { messageId: input.messageId }
+                : { messageId: "msg-1" }),
+              ...(input.eventId !== undefined
+                ? { eventId: input.eventId }
+                : { eventId: "evt-1" }),
+              ...(input.seq !== undefined ? { seq: input.seq } : {}),
+            },
+          },
+        },
+      },
     },
   };
-  if (input.seq !== undefined) {
-    payload.seq = input.seq;
-  }
   return payload;
 };
 
@@ -78,7 +108,7 @@ const mustParse = (payload: Record<string, unknown>): StreamBlockUpdate => {
 };
 
 describe("block-based stream parser and reducer", () => {
-  it("appends when incoming block_type matches the active block", () => {
+  it("appends when incoming blockType matches the active block", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
@@ -299,7 +329,7 @@ describe("block-based stream parser and reducer", () => {
           : {};
       if (event.phase === "resolved") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type:
             event.type === "permission" ||
             event.type === "permissions" ||
@@ -312,7 +342,7 @@ describe("block-based stream parser and reducer", () => {
       }
       if (event.type === "permission") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type: "permission",
           phase: "asked",
           details: {
@@ -326,17 +356,15 @@ describe("block-based stream parser and reducer", () => {
                 )
               : [],
             displayMessage:
-              typeof details.display_message === "string"
-                ? details.display_message
-                : typeof details.displayMessage === "string"
-                  ? details.displayMessage
-                  : null,
+              typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
           },
         };
       }
       if (event.type === "permissions") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type: "permissions",
           phase: "asked",
           details: {
@@ -345,42 +373,33 @@ describe("block-based stream parser and reducer", () => {
                 ? (details.permissions as Record<string, unknown>)
                 : null,
             displayMessage:
-              typeof details.display_message === "string"
-                ? details.display_message
-                : typeof details.displayMessage === "string"
-                  ? details.displayMessage
-                  : null,
+              typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
           },
         };
       }
       if (event.type === "elicitation") {
         return {
-          requestId: String(event.request_id),
+          requestId: String(event.requestId),
           type: "elicitation",
           phase: "asked",
           details: {
             displayMessage:
-              typeof details.display_message === "string"
-                ? details.display_message
-                : typeof details.displayMessage === "string"
-                  ? details.displayMessage
-                  : null,
+              typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
             serverName:
-              typeof details.server_name === "string"
-                ? details.server_name
-                : typeof details.serverName === "string"
-                  ? details.serverName
-                  : null,
+              typeof details.serverName === "string"
+                ? details.serverName
+                : null,
             mode: typeof details.mode === "string" ? details.mode : null,
-            requestedSchema:
-              details.requested_schema ?? details.requestedSchema ?? null,
+            requestedSchema: details.requestedSchema ?? null,
             url: typeof details.url === "string" ? details.url : null,
             elicitationId:
-              typeof details.elicitation_id === "string"
-                ? details.elicitation_id
-                : typeof details.elicitationId === "string"
-                  ? details.elicitationId
-                  : null,
+              typeof details.elicitationId === "string"
+                ? details.elicitationId
+                : null,
             meta:
               details.meta && typeof details.meta === "object"
                 ? (details.meta as Record<string, unknown>)
@@ -389,16 +408,14 @@ describe("block-based stream parser and reducer", () => {
         };
       }
       return {
-        requestId: String(event.request_id),
+        requestId: String(event.requestId),
         type: "question",
         phase: "asked",
         details: {
           displayMessage:
-            typeof details.display_message === "string"
-              ? details.display_message
-              : typeof details.displayMessage === "string"
-                ? details.displayMessage
-                : null,
+            typeof details.displayMessage === "string"
+              ? details.displayMessage
+              : null,
           questions: Array.isArray(details.questions)
             ? details.questions.map((question) => {
                 const item = question as Record<string, unknown>;
@@ -427,7 +444,7 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("supports overwrite semantics when append=false or final_snapshot arrives", () => {
+  it("supports overwrite semantics when explicit replace operation arrives", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
@@ -449,8 +466,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "text",
           delta: "reset",
           artifactId: "task-2:stream:text",
-          append: false,
-          source: "final_snapshot",
+          op: "replace",
           taskId: "task-2",
           seq: 2,
         }),
@@ -705,7 +721,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.baseSeq).toBe(10);
   });
 
-  it("adapts legacy final_snapshot onto the existing primary text block", () => {
+  it("replaces the declared primary text block without snapshot-source heuristics", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
@@ -731,7 +747,7 @@ describe("block-based stream parser and reducer", () => {
           artifactId: "task-5:stream:reasoning",
           taskId: "task-5",
           seq: 2,
-          append: false,
+          op: "replace",
         }),
       ),
     );
@@ -740,10 +756,11 @@ describe("block-based stream parser and reducer", () => {
       mustParse(
         buildBlockUpdatePayload({
           blockType: "text",
-          delta: "draft plan final answer",
+          delta: "final answer",
           artifactId: "task-5:stream:text:final",
-          source: "final_snapshot",
-          append: false,
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "replace",
           taskId: "task-5",
           seq: 3,
           lastChunk: true,
@@ -840,18 +857,24 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("parses block_type from canonical metadata", () => {
+  it("parses blockType from canonical metadata", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      task_id: "task-9",
-      message_id: "msg-9",
-      event_id: "evt-9",
-      seq: 9,
-      artifact: {
-        artifact_id: "task-9:stream",
-        parts: [{ kind: "text", text: "hello" }],
-        metadata: {
-          block_type: "text",
+      artifactUpdate: {
+        taskId: "task-9",
+        artifact: {
+          artifactId: "task-9:stream",
+          parts: [{ text: "hello" }],
+          metadata: {
+            blockType: "text",
+            op: "append",
+            shared: {
+              stream: {
+                messageId: "msg-9",
+                eventId: "evt-9",
+                seq: 9,
+              },
+            },
+          },
         },
       },
     });
@@ -859,17 +882,23 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventIdSource).toBe("upstream");
   });
 
-  it("prefers standard metadata.block_type", () => {
+  it("prefers standard metadata.blockType", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      task_id: "task-9",
-      message_id: "msg-9",
-      event_id: "evt-9",
-      artifact: {
-        artifact_id: "task-9:stream",
-        parts: [{ kind: "text", text: "thinking" }],
-        metadata: {
-          block_type: "reasoning",
+      artifactUpdate: {
+        taskId: "task-9",
+        artifact: {
+          artifactId: "task-9:stream",
+          parts: [{ text: "thinking" }],
+          metadata: {
+            blockType: "reasoning",
+            op: "append",
+            shared: {
+              stream: {
+                messageId: "msg-9",
+                eventId: "evt-9",
+              },
+            },
+          },
         },
       },
     });
@@ -878,19 +907,21 @@ describe("block-based stream parser and reducer", () => {
 
   it("prefers shared.stream metadata for tool_call blocks carried in text parts", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      taskId: "task-10",
-      artifact: {
-        artifactId: "task-10:stream",
-        parts: [{ kind: "text", text: '{"tool":"bash","status":"running"}' }],
-        metadata: {
-          shared: {
-            stream: {
-              block_type: "tool_call",
-              source: "tool_part_update",
-              message_id: "msg-shared",
-              event_id: "evt-shared",
-              sequence: 10,
+      artifactUpdate: {
+        taskId: "task-10",
+        artifact: {
+          artifactId: "task-10:stream",
+          parts: [{ text: '{"tool":"bash","status":"running"}' }],
+          metadata: {
+            shared: {
+              stream: {
+                blockType: "tool_call",
+                op: "append",
+                source: "tool_part_update",
+                messageId: "msg-shared",
+                eventId: "evt-shared",
+                seq: 10,
+              },
             },
           },
         },
@@ -905,22 +936,27 @@ describe("block-based stream parser and reducer", () => {
 
   it("parses interrupt_event blocks carried in artifact metadata", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      message_id: "msg-interrupt-2",
-      event_id: "evt-interrupt-2",
-      seq: 8,
-      append: false,
-      artifact: {
-        artifact_id: "artifact-interrupt-2",
-        parts: [
-          {
-            kind: "text",
-            text: "Agent requested additional input: Proceed?",
+      artifactUpdate: {
+        append: false,
+        artifact: {
+          artifactId: "artifact-interrupt-2",
+          parts: [
+            {
+              text: "Agent requested additional input: Proceed?",
+            },
+          ],
+          metadata: {
+            blockType: "interrupt_event",
+            op: "replace",
+            source: "interrupt_lifecycle",
+            shared: {
+              stream: {
+                messageId: "msg-interrupt-2",
+                eventId: "evt-interrupt-2",
+                seq: 8,
+              },
+            },
           },
-        ],
-        metadata: {
-          block_type: "interrupt_event",
-          source: "interrupt_lifecycle",
         },
       },
     });
@@ -937,35 +973,36 @@ describe("block-based stream parser and reducer", () => {
 
   it("parses tool_call blocks carried in data parts", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      taskId: "task-10",
-      tool_call: {
-        name: "read",
-        status: "running",
-        callId: "call-1",
-        arguments: {},
-      },
-      artifact: {
-        artifactId: "task-10:stream",
-        parts: [
-          {
-            kind: "data",
-            data: {
-              call_id: "call-1",
-              tool: "read",
-              status: "pending",
-              input: {},
+      artifactUpdate: {
+        taskId: "task-10",
+        toolCall: {
+          name: "read",
+          status: "running",
+          callId: "call-1",
+          arguments: {},
+        },
+        artifact: {
+          artifactId: "task-10:stream",
+          parts: [
+            {
+              data: {
+                call_id: "call-1",
+                tool: "read",
+                status: "pending",
+                input: {},
+              },
             },
-          },
-        ],
-        metadata: {
-          shared: {
-            stream: {
-              block_type: "tool_call",
-              source: "tool_part_update",
-              message_id: "msg-data",
-              event_id: "evt-data",
-              sequence: 11,
+          ],
+          metadata: {
+            shared: {
+              stream: {
+                blockType: "tool_call",
+                op: "append",
+                source: "tool_part_update",
+                messageId: "msg-data",
+                eventId: "evt-data",
+                seq: 11,
+              },
             },
           },
         },
@@ -988,83 +1025,103 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("infers text block type when explicit metadata is missing", () => {
+  it("infers text block type for canonical message wrappers", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      taskId: "task-9",
-      artifact: {
-        artifactId: "task-9:stream",
-        parts: [{ kind: "text", text: "hello" }],
+      message: {
+        role: "ROLE_AGENT",
+        parts: [{ text: "hello" }],
+        metadata: {
+          shared: {
+            stream: {
+              messageId: "msg-message-9",
+              eventId: "evt-message-9",
+            },
+          },
+        },
       },
     });
     expect(parsed?.blockType).toBe("text");
-    expect(parsed?.messageId).toBe("task:task-9");
-  });
-
-  it("accepts text parts that use type/content shape", () => {
-    const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      taskId: "task-11",
-      artifact: {
-        artifactId: "task-11:stream",
-        parts: [{ type: "text", content: "hello" }],
-      },
-    });
-    expect(parsed?.blockType).toBe("text");
-    expect(parsed?.delta).toBe("hello");
+    expect(parsed?.messageId).toBe("msg-message-9");
   });
 
   it("parses chunk when taskId is missing but messageId exists", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      message_id: "msg-only-1",
-      artifact: {
-        artifact_id: "stream-1",
-        parts: [{ kind: "text", text: "hello" }],
+      artifactUpdate: {
+        artifact: {
+          artifactId: "stream-1",
+          parts: [{ text: "hello" }],
+          metadata: {
+            shared: {
+              stream: {
+                blockType: "text",
+                op: "append",
+                messageId: "msg-only-1",
+              },
+            },
+          },
+        },
       },
     });
     expect(parsed?.messageId).toBe("msg-only-1");
     expect(parsed?.taskId).toBe("msg-only-1");
   });
 
-  it("ignores unsupported block_type values", () => {
+  it("ignores unsupported blockType values", () => {
     const parsed = extractStreamBlockUpdate({
-      kind: "artifact-update",
-      task_id: "task-8",
-      message_id: "msg-8",
-      event_id: "evt-8",
-      seq: 8,
-      artifact: {
-        artifact_id: "task-8:stream",
-        parts: [{ kind: "text", text: "noop" }],
-        metadata: {
-          block_type: "custom_phase",
+      artifactUpdate: {
+        taskId: "task-8",
+        artifact: {
+          artifactId: "task-8:stream",
+          parts: [{ text: "noop" }],
+          metadata: {
+            blockType: "custom_phase",
+            op: "append",
+            shared: {
+              stream: {
+                messageId: "msg-8",
+                eventId: "evt-8",
+                seq: 8,
+              },
+            },
+          },
         },
       },
     });
     expect(parsed).toBeNull();
   });
 
-  it("falls back to task-based message id when message_id is missing", () => {
+  it("falls back to task-based message id when messageId is missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
       artifactId: "task-1:stream",
       messageId: "",
     }) as Record<string, unknown>;
-    delete payload.message_id;
+    delete (
+      payload.artifactUpdate as {
+        artifact?: {
+          metadata?: { shared?: { stream?: Record<string, unknown> } };
+        };
+      }
+    ).artifact?.metadata?.shared?.stream?.messageId;
     const parsed = extractStreamBlockUpdate(payload);
     expect(parsed?.messageId).toBe("task:task-1");
   });
 
-  it("uses seq-based fallback when event_id is missing", () => {
+  it("uses seq-based fallback when eventId is missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
       artifactId: "task-1:stream",
       seq: 7,
     }) as Record<string, unknown>;
-    delete payload.event_id;
+    delete (
+      payload.artifactUpdate as {
+        artifact?: {
+          metadata?: { shared?: { stream?: Record<string, unknown> } };
+        };
+      }
+    ).artifact?.metadata?.shared?.stream?.eventId;
     const parsed = extractStreamBlockUpdate(payload);
     expect(parsed?.eventId).toBe("seq:msg-1:7");
     expect(parsed?.eventIdSource).toBe("fallback_seq");
@@ -1072,15 +1129,21 @@ describe("block-based stream parser and reducer", () => {
 
   it("accepts chunks using camelCase message/event fields", () => {
     const payload = {
-      kind: "artifact-update",
-      task_id: "task-1",
-      messageId: "msg-camel",
-      eventId: "evt-camel",
-      artifact: {
-        artifact_id: "task-1:stream",
-        parts: [{ kind: "text", text: "hello" }],
-        metadata: {
-          block_type: "text",
+      artifactUpdate: {
+        taskId: "task-1",
+        artifact: {
+          artifactId: "task-1:stream",
+          parts: [{ text: "hello" }],
+          metadata: {
+            blockType: "text",
+            op: "append",
+            shared: {
+              stream: {
+                messageId: "msg-camel",
+                eventId: "evt-camel",
+              },
+            },
+          },
         },
       },
     };
@@ -1102,14 +1165,20 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventIdSource).toBe("upstream");
   });
 
-  it("uses chunk-based fallback when both seq and event_id are missing", () => {
+  it("uses chunk-based fallback when both seq and eventId are missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
       artifactId: "task-1:stream",
       seq: undefined,
     }) as Record<string, unknown>;
-    delete payload.event_id;
+    delete (
+      payload.artifactUpdate as {
+        artifact?: {
+          metadata?: { shared?: { stream?: Record<string, unknown> } };
+        };
+      }
+    ).artifact?.metadata?.shared?.stream?.eventId;
     const parsed = extractStreamBlockUpdate(payload);
     expect(parsed?.seq).toBeNull();
     expect(parsed?.eventId).toBe("chunk:msg-1:task-1:stream");
@@ -1132,11 +1201,9 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("parses status-update terminal signal", () => {
-    const payload = {
-      kind: "status-update",
-      status: { state: "input_required" },
-      final: true,
-    };
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_INPUT_REQUIRED",
+    });
 
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "input-required",
@@ -1149,15 +1216,14 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("returns null runtime status event for non-status payload", () => {
-    expect(extractRuntimeStatusEvent({ kind: "artifact-update" })).toBeNull();
+    expect(extractRuntimeStatusEvent({ artifactUpdate: {} })).toBeNull();
   });
 
   it("parses status-update seq for resume tracking", () => {
-    const payload = {
-      kind: "status-update",
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_WORKING",
       seq: 4,
-      status: { state: "working" },
-    };
+    });
 
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "working",
@@ -1170,25 +1236,20 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("parses permission interrupt metadata from status-update", () => {
-    const payload = {
-      kind: "status-update",
-      status: { state: "input-required" },
-      metadata: {
-        shared: {
-          interrupt: {
-            request_id: "perm-1",
-            type: "permission",
-            details: {
-              permission: "read",
-              patterns: ["/repo/.env"],
-            },
-          },
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_INPUT_REQUIRED",
+      interrupt: {
+        requestId: "perm-1",
+        type: "permission",
+        details: {
+          permission: "read",
+          patterns: ["/repo/.env"],
         },
       },
-    };
+    });
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "input-required",
-      isFinal: false,
+      isFinal: true,
       interrupt: {
         requestId: "perm-1",
         type: "permission",
@@ -1207,25 +1268,20 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("parses richer permission interrupt display text from nested metadata", () => {
-    const payload = {
-      kind: "status-update",
-      status: { state: "input-required" },
-      metadata: {
-        shared: {
-          interrupt: {
-            request_id: "perm-2",
-            type: "permission",
-            details: {
-              permission: "approval",
-              patterns: ["/repo/.env"],
-              request: {
-                description: "Agent wants to read the environment file.",
-              },
-            },
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_INPUT_REQUIRED",
+      interrupt: {
+        requestId: "perm-2",
+        type: "permission",
+        details: {
+          permission: "approval",
+          patterns: ["/repo/.env"],
+          request: {
+            description: "Agent wants to read the environment file.",
           },
         },
       },
-    };
+    });
     expect(extractRuntimeStatusEvent(payload)?.interrupt).toEqual({
       requestId: "perm-2",
       type: "permission",
@@ -1240,30 +1296,25 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("parses question interrupt metadata from status-update", () => {
-    const payload = {
-      kind: "status-update",
-      status: { state: "input-required" },
-      metadata: {
-        shared: {
-          interrupt: {
-            request_id: "q-1",
-            type: "question",
-            details: {
-              questions: [
-                {
-                  header: "Confirm",
-                  question: "Proceed?",
-                  options: [{ label: "Yes", value: "yes" }],
-                },
-              ],
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_INPUT_REQUIRED",
+      interrupt: {
+        requestId: "q-1",
+        type: "question",
+        details: {
+          questions: [
+            {
+              header: "Confirm",
+              question: "Proceed?",
+              options: [{ label: "Yes", value: "yes" }],
             },
-          },
+          ],
         },
       },
-    };
+    });
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "input-required",
-      isFinal: false,
+      isFinal: true,
       interrupt: {
         requestId: "q-1",
         type: "question",
@@ -1288,29 +1339,24 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("parses richer question interrupt metadata from nested fields", () => {
-    const payload = {
-      kind: "status-update",
-      status: { state: "input-required" },
-      metadata: {
-        shared: {
-          interrupt: {
-            request_id: "q-2",
-            type: "question",
-            details: {
-              description: "Please confirm how the agent should continue.",
-              questions: [
-                {
-                  title: "Approval",
-                  prompt: "Proceed with deployment?",
-                  description: "This will update the production service.",
-                  options: [{ label: "Yes", value: "yes" }],
-                },
-              ],
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_INPUT_REQUIRED",
+      interrupt: {
+        requestId: "q-2",
+        type: "question",
+        details: {
+          description: "Please confirm how the agent should continue.",
+          questions: [
+            {
+              title: "Approval",
+              prompt: "Proceed with deployment?",
+              description: "This will update the production service.",
+              options: [{ label: "Yes", value: "yes" }],
             },
-          },
+          ],
         },
       },
-    };
+    });
     expect(extractRuntimeStatusEvent(payload)?.interrupt).toEqual({
       requestId: "q-2",
       type: "question",
@@ -1331,20 +1377,15 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("parses resolved interrupt metadata from non-input-required status-update", () => {
-    const payload = {
-      kind: "status-update",
-      status: { state: "working" },
-      metadata: {
-        shared: {
-          interrupt: {
-            request_id: "q-1",
-            type: "question",
-            phase: "resolved",
-            resolution: "rejected",
-          },
-        },
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_WORKING",
+      interrupt: {
+        requestId: "q-1",
+        type: "question",
+        phase: "resolved",
+        resolution: "rejected",
       },
-    };
+    });
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "working",
       isFinal: false,
@@ -1362,20 +1403,11 @@ describe("block-based stream parser and reducer", () => {
   });
 
   it("parses explicit persisted completion acknowledgement from shared stream metadata", () => {
-    const payload = {
-      kind: "status-update",
-      final: true,
-      message_id: "msg-persisted-1",
-      status: { state: "completed" },
-      metadata: {
-        shared: {
-          stream: {
-            message_id: "msg-persisted-1",
-            completion_phase: "persisted",
-          },
-        },
-      },
-    };
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_COMPLETED",
+      messageId: "msg-persisted-1",
+      completionPhase: "persisted",
+    });
 
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "completed",
@@ -1387,41 +1419,39 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("ignores non-canonical persisted completion aliases", () => {
-    const payload = {
-      kind: "status-update",
-      final: true,
-      status: { state: "completed" },
-      metadata: {
-        shared: {
-          stream: {
-            messageId: "msg-legacy-1",
-            completionPhase: "persisted",
-            persisted: true,
-          },
-        },
-      },
-    };
+  it("ignores unrelated persisted alias flags when canonical stream metadata is present", () => {
+    const payload = buildStatusUpdatePayload({
+      state: "TASK_STATE_COMPLETED",
+      messageId: "msg-persisted-2",
+      completionPhase: "persisted",
+    }) as Record<string, unknown>;
+    (
+      ((
+        payload.statusUpdate as {
+          metadata?: { shared?: { stream?: Record<string, unknown> } };
+        }
+      ).metadata?.shared?.stream ?? {}) as Record<string, unknown>
+    ).persisted = true;
 
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "completed",
       isFinal: true,
       interrupt: null,
       seq: null,
-      completionPhase: null,
-      messageId: null,
+      completionPhase: "persisted",
+      messageId: "msg-persisted-2",
     });
   });
 
   it("extracts external session from canonical shared session metadata", () => {
     const meta = extractSessionMeta({
-      kind: "status-update",
-      final: true,
-      metadata: {
-        provider: "opencode",
-        shared: {
-          session: {
-            id: "ses_upstream_1",
+      statusUpdate: {
+        metadata: {
+          shared: {
+            session: {
+              provider: "opencode",
+              id: "ses_upstream_1",
+            },
           },
         },
       },
@@ -1430,44 +1460,22 @@ describe("block-based stream parser and reducer", () => {
     expect(meta.externalSessionId).toBe("ses_upstream_1");
   });
 
-  it("falls back to legacy root session metadata when shared session metadata is missing", () => {
-    const meta = extractSessionMeta({
-      kind: "status-update",
-      final: true,
-      metadata: {
-        provider: "opencode",
-        externalSessionId: "ses_upstream_1",
-      },
-    });
-    expect(meta.provider).toBe("opencode");
-    expect(meta.externalSessionId).toBe("ses_upstream_1");
-  });
-
-  it("falls back to legacy interrupt metadata when shared interrupt metadata is missing", () => {
+  it("requires shared interrupt metadata on canonical status-update payloads", () => {
     const payload = {
-      kind: "status-update",
-      status: { state: "input-required" },
-      metadata: {
-        interrupt: {
-          request_id: "perm-legacy-1",
-          type: "permission",
-          details: {
-            permission: "read",
-            patterns: ["/repo/.env"],
+      statusUpdate: {
+        status: { state: "TASK_STATE_INPUT_REQUIRED" },
+        metadata: {
+          interrupt: {
+            requestId: "perm-legacy-1",
+            type: "permission",
+            details: {
+              permission: "read",
+              patterns: ["/repo/.env"],
+            },
           },
         },
       },
     };
-    expect(extractRuntimeStatusEvent(payload)?.interrupt).toEqual({
-      requestId: "perm-legacy-1",
-      type: "permission",
-      phase: "asked",
-      source: "stream",
-      details: {
-        permission: "read",
-        patterns: ["/repo/.env"],
-        displayMessage: null,
-      },
-    });
+    expect(extractRuntimeStatusEvent(payload)?.interrupt).toBeNull();
   });
 });

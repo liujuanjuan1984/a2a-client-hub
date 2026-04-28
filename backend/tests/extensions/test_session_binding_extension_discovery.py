@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -9,11 +8,11 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.shared_contract import (
-    LEGACY_SHARED_SESSION_BINDING_URI,
     OPENCODE_SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -35,7 +34,7 @@ def _base_card_payload() -> dict:
 
 
 def test_resolve_requires_session_binding_extension_present() -> None:
-    card = AgentCard.model_validate(_base_card_payload())
+    card = parse_agent_card(_base_card_payload())
     with pytest.raises(A2AExtensionNotSupportedError):
         resolve_session_binding(card)
 
@@ -58,7 +57,7 @@ def test_resolve_extracts_canonical_session_binding_contract() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_binding(card)
 
     assert resolved.uri == SHARED_SESSION_BINDING_URI
@@ -72,7 +71,6 @@ def test_resolve_extracts_canonical_session_binding_contract() -> None:
     assert resolved.provider_private_metadata == ("opencode.directory",)
     assert resolved.shared_workspace_across_consumers is True
     assert resolved.tenant_isolation == "none"
-    assert resolved.legacy_uri_used is False
 
 
 def test_resolve_defaults_provider_to_opencode() -> None:
@@ -88,7 +86,7 @@ def test_resolve_defaults_provider_to_opencode() -> None:
         }
     ]
 
-    resolved = resolve_session_binding(AgentCard.model_validate(payload))
+    resolved = resolve_session_binding(parse_agent_card(payload))
     assert resolved.provider == "opencode"
 
 
@@ -105,17 +103,16 @@ def test_resolve_accepts_opencode_https_session_binding_uri() -> None:
         }
     ]
 
-    resolved = resolve_session_binding(AgentCard.model_validate(payload))
+    resolved = resolve_session_binding(parse_agent_card(payload))
 
     assert resolved.uri == OPENCODE_SHARED_SESSION_BINDING_URI
-    assert resolved.legacy_uri_used is False
 
 
-def test_resolve_accepts_legacy_session_binding_uri() -> None:
+def test_resolve_rejects_legacy_session_binding_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": LEGACY_SHARED_SESSION_BINDING_URI,
+            "uri": "urn:shared-a2a:session-binding:v1",
             "required": False,
             "params": {
                 "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -124,9 +121,8 @@ def test_resolve_accepts_legacy_session_binding_uri() -> None:
         }
     ]
 
-    resolved = resolve_session_binding(AgentCard.model_validate(payload))
-    assert resolved.uri == LEGACY_SHARED_SESSION_BINDING_URI
-    assert resolved.legacy_uri_used is True
+    with pytest.raises(A2AExtensionNotSupportedError):
+        resolve_session_binding(parse_agent_card(payload))
 
 
 def test_resolve_rejects_non_canonical_metadata_field() -> None:
@@ -143,7 +139,7 @@ def test_resolve_rejects_non_canonical_metadata_field() -> None:
     ]
 
     with pytest.raises(A2AExtensionContractError):
-        resolve_session_binding(AgentCard.model_validate(payload))
+        resolve_session_binding(parse_agent_card(payload))
 
 
 def test_resolve_rejects_invalid_supported_metadata_shape() -> None:
@@ -161,4 +157,4 @@ def test_resolve_rejects_invalid_supported_metadata_shape() -> None:
     ]
 
     with pytest.raises(A2AExtensionContractError):
-        resolve_session_binding(AgentCard.model_validate(payload))
+        resolve_session_binding(parse_agent_card(payload))

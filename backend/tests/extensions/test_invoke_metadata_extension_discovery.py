@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -13,6 +12,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_INVOKE_METADATA_URI,
     SHARED_INVOKE_FIELD,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -34,7 +34,7 @@ def _base_card_payload() -> dict:
 
 
 def test_resolve_requires_invoke_metadata_extension_present() -> None:
-    card = AgentCard.model_validate(_base_card_payload())
+    card = parse_agent_card(_base_card_payload())
     with pytest.raises(A2AExtensionNotSupportedError):
         resolve_invoke_metadata(card)
 
@@ -66,7 +66,7 @@ def test_resolve_extracts_invoke_metadata_contract() -> None:
         }
     ]
 
-    resolved = resolve_invoke_metadata(AgentCard.model_validate(payload))
+    resolved = resolve_invoke_metadata(parse_agent_card(payload))
 
     assert resolved.uri == INVOKE_METADATA_URI
     assert resolved.provider == "commonground"
@@ -96,7 +96,7 @@ def test_resolve_accepts_https_alias() -> None:
         }
     ]
 
-    resolved = resolve_invoke_metadata(AgentCard.model_validate(payload))
+    resolved = resolve_invoke_metadata(parse_agent_card(payload))
     assert resolved.uri == OPENCODE_INVOKE_METADATA_URI
 
 
@@ -116,7 +116,7 @@ def test_resolve_rejects_non_canonical_metadata_field() -> None:
     ]
 
     with pytest.raises(A2AExtensionContractError):
-        resolve_invoke_metadata(AgentCard.model_validate(payload))
+        resolve_invoke_metadata(parse_agent_card(payload))
 
 
 def test_resolve_rejects_empty_fields() -> None:
@@ -135,4 +135,4 @@ def test_resolve_rejects_empty_fields() -> None:
     ]
 
     with pytest.raises(A2AExtensionContractError):
-        resolve_invoke_metadata(AgentCard.model_validate(payload))
+        resolve_invoke_metadata(parse_agent_card(payload))

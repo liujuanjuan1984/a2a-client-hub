@@ -9,6 +9,14 @@ from app.features.invoke.interrupt_metadata import (
     normalize_permissions_interrupt_details,
     normalize_question_interrupt_details,
 )
+from app.features.invoke.payload_helpers import dict_field as _dict_field
+from app.features.invoke.payload_helpers import (
+    pick_first_int,
+    pick_first_non_empty_str,
+)
+from app.features.invoke.payload_helpers import (
+    pick_non_empty_str as _pick_non_empty_str,
+)
 from app.features.invoke.shared_metadata import (
     extract_preferred_interrupt_metadata,
     merge_shared_metadata_sections,
@@ -18,40 +26,36 @@ from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.integrations.a2a_runtime_status_contract import (
     is_interactive_runtime_state,
 )
-from app.utils.payload_extract import as_dict
 
-PRIMARY_TEXT_SNAPSHOT_SOURCES = frozenset({"final_snapshot", "finalize_snapshot"})
 BLOCK_OPERATION_TYPES = frozenset({"append", "replace", "finalize"})
+_STREAM_RESPONSE_FIELD_TO_KIND = (
+    ("artifactUpdate", "artifact-update"),
+    ("statusUpdate", "status-update"),
+    ("message", "message"),
+    ("task", "task"),
+)
 
 
-def _normalized_stream_event_kind(payload: dict[str, Any]) -> str | None:
-    raw_kind = payload.get("kind")
-    if not isinstance(raw_kind, str) or not raw_kind.strip():
-        return None
-    return raw_kind.strip().lower()
+def _resolved_stream_event_kind(payload: dict[str, Any]) -> str | None:
+    for field_name, kind in _STREAM_RESPONSE_FIELD_TO_KIND:
+        if isinstance(payload.get(field_name), dict):
+            return kind
+    return None
 
 
-def _pick_non_empty_str(
+def _resolve_stream_response_body(
     payload: dict[str, Any],
-    keys: tuple[str, ...],
-) -> str | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
+) -> tuple[str | None, dict[str, Any]]:
+    for field_name, kind in _STREAM_RESPONSE_FIELD_TO_KIND:
+        candidate = payload.get(field_name)
+        if isinstance(candidate, dict):
+            return kind, candidate
+    return None, {}
 
 
-def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-            return int(value.strip())
-    return None
+def _event_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    _, body = _resolve_stream_response_body(payload)
+    return _dict_field(body, "metadata")
 
 
 def extract_stream_text_from_parts(parts: Any) -> str:
@@ -61,19 +65,9 @@ def extract_stream_text_from_parts(parts: Any) -> str:
     for part in parts:
         if not isinstance(part, dict):
             continue
-        raw_kind = part.get("kind") or part.get("type")
-        normalized_kind = (
-            raw_kind.strip().lower() if isinstance(raw_kind, str) else None
-        )
-        if normalized_kind not in {None, "", "text"}:
-            continue
         text = part.get("text")
         if isinstance(text, str):
             collected.append(text)
-            continue
-        content = part.get("content")
-        if isinstance(content, str):
-            collected.append(content)
     return "".join(collected)
 
 
@@ -98,11 +92,7 @@ def extract_stream_data_from_parts(parts: Any) -> str:
     for part in parts:
         if not isinstance(part, dict):
             continue
-        raw_kind = part.get("kind") or part.get("type")
-        normalized_kind = (
-            raw_kind.strip().lower() if isinstance(raw_kind, str) else None
-        )
-        if normalized_kind != "data" and "data" not in part:
+        if "data" not in part:
             continue
         serialized = serialize_stream_data_value(part.get("data"))
         if serialized:
@@ -110,52 +100,33 @@ def extract_stream_data_from_parts(parts: Any) -> str:
     return "\n".join(collected)
 
 
+def _infer_message_block_type(parts: Any) -> str | None:
+    if extract_stream_data_from_parts(parts):
+        return "tool_call"
+    if extract_stream_text_from_parts(parts):
+        return "text"
+    return None
+
+
 def _resolve_stream_artifact(payload: dict[str, Any]) -> dict[str, Any]:
-    artifact = as_dict(payload.get("artifact"))
-    if artifact:
-        return artifact
-    if _normalized_stream_event_kind(payload) != "message":
+    kind, body = _resolve_stream_response_body(payload)
+    if kind == "artifact-update":
+        artifact = body.get("artifact")
+        return artifact if isinstance(artifact, dict) else {}
+    if kind != "message":
         return {}
-    parts = payload.get("parts")
+    parts = body.get("parts")
     if not isinstance(parts, list):
         return {}
     synthetic_artifact: dict[str, Any] = {"parts": list(parts)}
-    metadata = as_dict(payload.get("metadata"))
+    metadata = _dict_field(body, "metadata")
     if metadata:
         synthetic_artifact["metadata"] = dict(metadata)
     return synthetic_artifact
 
 
 def coerce_message_event_to_artifact_update(payload: dict[str, Any]) -> None:
-    if _normalized_stream_event_kind(payload) != "message":
-        return
-    artifact = as_dict(payload.get("artifact"))
-    if not artifact:
-        parts = payload.get("parts")
-        if not isinstance(parts, list) or not parts:
-            return
-        artifact = {"parts": list(parts)}
-        metadata = as_dict(payload.get("metadata"))
-        if metadata:
-            artifact["metadata"] = dict(metadata)
-        payload["artifact"] = artifact
-    message_id = _pick_non_empty_str(payload, ("message_id", "messageId"))
-    if message_id is not None:
-        payload["message_id"] = message_id
-    event_id = _pick_non_empty_str(payload, ("event_id", "eventId"))
-    if event_id is not None:
-        payload["event_id"] = event_id
-    task_id = _pick_non_empty_str(payload, ("task_id", "taskId"))
-    if task_id is not None:
-        payload["task_id"] = task_id
-    if "append" not in payload:
-        payload["append"] = False
-    payload.pop("messageId", None)
-    payload.pop("eventId", None)
-    payload.pop("taskId", None)
-    payload.pop("parts", None)
-    payload.pop("role", None)
-    payload["kind"] = "artifact-update"
+    return None
 
 
 def extract_stream_content_from_parts(parts: Any, *, block_type: str) -> str:
@@ -170,7 +141,11 @@ def extract_shared_stream_metadata(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> dict[str, Any]:
     return merge_shared_metadata_sections(
-        (payload, artifact),
+        tuple(
+            candidate
+            for candidate in (_event_metadata(payload), artifact)
+            if isinstance(candidate, dict)
+        ),
         section=SHARED_STREAM_KEY,
     )
 
@@ -178,23 +153,22 @@ def extract_shared_stream_metadata(
 def extract_artifact_type(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> str | None:
+    kind, body = _resolve_stream_response_body(payload)
     metadata = artifact.get("metadata")
     if not isinstance(metadata, dict):
         metadata = {}
-    root_metadata = payload.get("metadata")
-    if not isinstance(root_metadata, dict):
-        root_metadata = {}
+    event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    raw = shared_stream.get("block_type")
+    raw = shared_stream.get("blockType")
     if not isinstance(raw, str) or not raw.strip():
-        raw = metadata.get("block_type")
+        raw = metadata.get("blockType")
     if not isinstance(raw, str) or not raw.strip():
-        raw = root_metadata.get("block_type")
+        raw = event_metadata.get("blockType")
 
     if not isinstance(raw, str) or not raw.strip():
-        if extract_stream_text_from_parts(artifact.get("parts")):
-            return "text"
+        if kind == "message":
+            return _infer_message_block_type(body.get("parts"))
         return None
 
     normalized = raw.strip().lower()
@@ -209,15 +183,13 @@ def extract_artifact_source(
     metadata = artifact.get("metadata")
     if not isinstance(metadata, dict):
         metadata = {}
-    root_metadata = payload.get("metadata")
-    if not isinstance(root_metadata, dict):
-        root_metadata = {}
+    event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
     source = shared_stream.get("source")
     if not isinstance(source, str) or not source.strip():
         source = metadata.get("source")
     if not isinstance(source, str) or not source.strip():
-        source = root_metadata.get("source")
+        source = event_metadata.get("source")
     if isinstance(source, str) and source.strip():
         return source.strip().lower()
     return None
@@ -226,20 +198,17 @@ def extract_artifact_source(
 def extract_artifact_id(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> str | None:
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    root_metadata = as_dict(payload.get("metadata"))
+    artifact_metadata = _dict_field(artifact, "metadata")
+    event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
     for candidate in (
-        payload,
         artifact,
         artifact_metadata,
-        root_metadata,
+        event_metadata,
         shared_stream,
     ):
-        artifact_id = _pick_non_empty_str(
-            candidate, ("artifact_id", "artifactId", "id")
-        )
+        artifact_id = _pick_non_empty_str(candidate, ("artifactId",))
         if artifact_id is not None:
             return artifact_id
     return None
@@ -252,64 +221,61 @@ def _default_lane_id(block_type: str) -> str:
 def extract_block_operation(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> str | None:
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    root_metadata = as_dict(payload.get("metadata"))
+    kind, body = _resolve_stream_response_body(payload)
+    artifact_metadata = _dict_field(artifact, "metadata")
+    event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    for candidate in (
-        shared_stream,
-        artifact_metadata,
-        root_metadata,
-        artifact,
-        payload,
-    ):
-        raw = _pick_non_empty_str(candidate, ("op", "operation"))
-        if raw is None:
-            continue
+    raw = pick_first_non_empty_str(
+        (
+            body,
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("op",),
+    )
+    if raw is not None:
         normalized = raw.lower()
         if normalized in BLOCK_OPERATION_TYPES:
             return normalized
-
-    source = extract_artifact_source(payload, artifact)
-    append = payload.get("append")
-    if source in PRIMARY_TEXT_SNAPSHOT_SOURCES:
+    if kind == "message" and _infer_message_block_type(body.get("parts")) is not None:
         return "replace"
-    if isinstance(append, bool):
-        return "append" if append else "replace"
-    if _normalized_stream_event_kind(payload) == "message":
-        return "replace"
-    return "append"
+    return None
 
 
 def extract_block_id(
     payload: dict[str, Any], artifact: dict[str, Any], *, block_type: str
 ) -> str:
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    root_metadata = as_dict(payload.get("metadata"))
+    artifact_metadata = _dict_field(artifact, "metadata")
+    event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
+    _, body = _resolve_stream_response_body(payload)
 
-    for candidate in (
-        shared_stream,
-        artifact_metadata,
-        root_metadata,
-        artifact,
-        payload,
-    ):
-        block_id = _pick_non_empty_str(candidate, ("block_id", "blockId"))
-        if block_id is not None:
-            return block_id
+    block_id = pick_first_non_empty_str(
+        (
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("blockId",),
+    )
+    if block_id is not None:
+        return block_id
 
     lane_id = extract_lane_id(payload, artifact, block_type=block_type)
-    message_id = None
-    for candidate in (
-        payload,
-        artifact,
-        artifact_metadata,
-        root_metadata,
-        shared_stream,
-    ):
-        if message_id is None:
-            message_id = _pick_non_empty_str(candidate, ("message_id", "messageId"))
+    message_id = pick_first_non_empty_str(
+        (
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+            body,
+        ),
+        ("messageId",),
+    )
     if message_id is not None:
         return f"{message_id}:{lane_id}"
 
@@ -320,20 +286,21 @@ def extract_block_id(
 def extract_lane_id(
     payload: dict[str, Any], artifact: dict[str, Any], *, block_type: str
 ) -> str:
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    root_metadata = as_dict(payload.get("metadata"))
+    artifact_metadata = _dict_field(artifact, "metadata")
+    event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    for candidate in (
-        shared_stream,
-        artifact_metadata,
-        root_metadata,
-        artifact,
-        payload,
-    ):
-        lane_id = _pick_non_empty_str(candidate, ("lane_id", "laneId"))
-        if lane_id is not None:
-            return lane_id
+    lane_id = pick_first_non_empty_str(
+        (
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("laneId",),
+    )
+    if lane_id is not None:
+        return lane_id
 
     return _default_lane_id(block_type)
 
@@ -341,47 +308,53 @@ def extract_lane_id(
 def extract_block_base_seq(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> int | None:
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    root_metadata = as_dict(payload.get("metadata"))
+    artifact_metadata = _dict_field(artifact, "metadata")
+    event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    for candidate in (
-        shared_stream,
-        artifact_metadata,
-        root_metadata,
-        artifact,
-        payload,
-    ):
-        base_seq = _pick_int(candidate, ("base_seq", "baseSeq"))
-        if base_seq is not None:
-            return base_seq
-    return None
+    return pick_first_int(
+        (
+            shared_stream,
+            artifact_metadata,
+            event_metadata,
+            artifact,
+        ),
+        ("baseSeq",),
+    )
 
 
 def extract_stream_sequence_from_serialized_event(
     payload: dict[str, Any],
 ) -> int | None:
-    root = as_dict(payload)
-    sequence = _pick_int(root, ("seq",))
-    if sequence is not None:
-        return sequence
-    artifact = as_dict(root.get("artifact"))
+    root = payload
+    _, body = _resolve_stream_response_body(root)
+    artifact = _resolve_stream_artifact(root)
+    body_metadata = _dict_field(body, "metadata")
+    artifact_metadata = _dict_field(artifact, "metadata")
     shared_stream = extract_shared_stream_metadata(root, artifact)
-    return _pick_int(shared_stream, ("sequence", "seq"))
+    return pick_first_int(
+        (
+            shared_stream,
+            body_metadata,
+            artifact_metadata,
+        ),
+        ("seq",),
+    )
 
 
 def extract_stream_chunk_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    normalized_kind = _normalized_stream_event_kind(payload)
-    if normalized_kind not in (None, "artifact-update", "message"):
+    normalized_kind = _resolved_stream_event_kind(payload)
+    if normalized_kind not in ("artifact-update", "message"):
         return None
 
+    _, body = _resolve_stream_response_body(payload)
     artifact = _resolve_stream_artifact(payload)
     if not artifact:
         return None
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    root_metadata = as_dict(payload.get("metadata"))
+    artifact_metadata = _dict_field(artifact, "metadata")
+    event_metadata = _dict_field(body, "metadata")
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
     block_type = extract_artifact_type(payload, artifact)
@@ -391,19 +364,26 @@ def extract_stream_chunk_from_serialized_event(
     if operation is None:
         return None
 
-    event_id = None
-    message_id = None
-    for candidate in (
-        payload,
-        artifact,
-        artifact_metadata,
-        root_metadata,
-        shared_stream,
-    ):
-        if event_id is None:
-            event_id = _pick_non_empty_str(candidate, ("event_id", "eventId"))
-        if message_id is None:
-            message_id = _pick_non_empty_str(candidate, ("message_id", "messageId"))
+    event_id = pick_first_non_empty_str(
+        (
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+            body,
+        ),
+        ("eventId",),
+    )
+    message_id = pick_first_non_empty_str(
+        (
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+            body,
+        ),
+        ("messageId",),
+    )
 
     delta = extract_stream_content_from_parts(
         artifact.get("parts"), block_type=block_type
@@ -411,30 +391,23 @@ def extract_stream_chunk_from_serialized_event(
     if not delta and operation != "finalize":
         return None
 
-    append = payload.get("append")
-    resolved_append = (
-        append
-        if isinstance(append, bool)
-        else False if normalized_kind == "message" else True
-    )
-    resolved_is_finished = (
-        payload.get("lastChunk") is True
-        or payload.get("last_chunk") is True
-        or artifact.get("lastChunk") is True
-        or artifact.get("last_chunk") is True
-    )
-    if operation == "finalize":
-        resolved_is_finished = True
+    resolved_append = operation == "append"
+    resolved_is_finished = operation == "finalize" or body.get("lastChunk") is True
 
-    seq = (
-        _pick_int(payload, ("seq",))
-        or _pick_int(artifact, ("seq",))
-        or _pick_int(artifact_metadata, ("seq",))
-        or _pick_int(root_metadata, ("seq",))
-        or _pick_int(shared_stream, ("sequence", "seq"))
+    seq = pick_first_int(
+        (
+            body,
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+        ),
+        ("seq",),
     )
     source = extract_artifact_source(payload, artifact)
     artifact_id = extract_artifact_id(payload, artifact)
+    if artifact_id is None and message_id is not None:
+        artifact_id = f"{message_id}:{block_type}"
     stream_chunk: dict[str, Any] = {
         "event_id": event_id,
         "seq": seq,
@@ -463,8 +436,8 @@ def extract_stream_chunk_from_serialized_event(
 def analyze_stream_chunk_contract(
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
-    normalized_kind = _normalized_stream_event_kind(payload)
-    if normalized_kind not in (None, "artifact-update", "message"):
+    normalized_kind = _resolved_stream_event_kind(payload)
+    if normalized_kind not in ("artifact-update", "message"):
         return None, None
     stream_block = extract_stream_chunk_from_serialized_event(payload)
     if stream_block is not None:
@@ -492,16 +465,17 @@ def analyze_stream_chunk_contract(
 def extract_interrupt_lifecycle_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    if not isinstance(payload, dict) or payload.get("kind") != "status-update":
+    normalized_kind, body = _resolve_stream_response_body(payload)
+    if normalized_kind != "status-update":
         return None
 
-    status = as_dict(payload.get("status"))
+    status = _dict_field(body, "status")
     raw_state = _pick_non_empty_str(status, ("state",))
-    interrupt = extract_preferred_interrupt_metadata(payload)
+    interrupt = extract_preferred_interrupt_metadata(body)
     if not interrupt:
         return None
 
-    request_id = _pick_non_empty_str(interrupt, ("request_id", "requestId"))
+    request_id = _pick_non_empty_str(interrupt, ("requestId",))
     interrupt_type = _pick_non_empty_str(interrupt, ("type",))
     if not request_id or interrupt_type not in {
         "permission",
@@ -529,7 +503,7 @@ def extract_interrupt_lifecycle_from_serialized_event(
         payload_event["resolution"] = resolution
         return payload_event
 
-    details = as_dict(interrupt.get("details")) or {}
+    details = _dict_field(interrupt, "details")
     if interrupt_type == "permission":
         payload_event["details"] = normalize_permission_interrupt_details(details)
         return payload_event

@@ -7,7 +7,6 @@ from tests.extensions.a2a_extensions_service_support import (
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_QUERY_URI,
     A2AExtensionsService,
-    AgentCard,
     CompatibilityRetentionEntry,
     DeclaredMethodCapabilitySnapshot,
     DeclaredSingleMethodCapabilitySnapshot,
@@ -19,11 +18,12 @@ from tests.extensions.a2a_extensions_service_support import (
     _wire_contract_snapshot,
     capability_snapshot_builder,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def test_build_interrupt_recovery_snapshot_preserves_scope_metadata() -> None:
     service = A2AExtensionsService()
-    card = AgentCard.model_validate(
+    card = parse_agent_card(
         {
             "name": "Example Agent",
             "description": "Example",
@@ -74,7 +74,7 @@ def test_build_interrupt_recovery_snapshot_preserves_scope_metadata() -> None:
 
 
 def test_build_compatibility_profile_snapshot_returns_supported_status() -> None:
-    card = AgentCard.model_validate(
+    card = parse_agent_card(
         {
             "name": "Example Agent",
             "description": "Example",
@@ -161,7 +161,7 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
 
 
 def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> None:
-    card = AgentCard.model_validate(
+    card = parse_agent_card(
         {
             "name": "Example Agent",
             "description": "Example",

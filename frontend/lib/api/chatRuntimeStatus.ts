@@ -84,6 +84,18 @@ export const DEFAULT_RUNTIME_STATUS_CONTRACT: RuntimeStatusContract = {
   passthroughUnknown: true,
 };
 
+const resolveStatusUpdateBody = (
+  data: Record<string, unknown>,
+): Record<string, unknown> | null => asRecord(data.statusUpdate);
+
+const resolveCanonicalStreamBody = (
+  data: Record<string, unknown>,
+): Record<string, unknown> | null =>
+  asRecord(data.artifactUpdate) ??
+  asRecord(data.message) ??
+  asRecord(data.statusUpdate) ??
+  asRecord(data.task);
+
 type InterruptQuestionOption = {
   label: string;
   description: string | null;
@@ -200,31 +212,35 @@ const coerceMissingParams = (value: unknown): StreamMissingParam[] | null => {
 };
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
-  const session = getPreferredSessionMetadata(data);
-  const properties = asRecord(data.properties);
-  const metadata = asRecord(data.metadata);
+  const body = resolveCanonicalStreamBody(data) ?? data;
+  const session = getPreferredSessionMetadata(body);
+  const properties = asRecord(body.properties);
+  const metadata = asRecord(body.metadata);
   const shared = asRecord(metadata?.shared);
   const sharedStream = asRecord(shared?.stream);
-  const externalSessionId =
-    pickString(session, ["id", "externalSessionId"]) ?? undefined;
+  const externalSessionId = pickString(session, ["id"]) ?? undefined;
   const rawProvider = pickString(session, ["provider"]);
   const provider = rawProvider?.trim().toLowerCase() ?? undefined;
   const streamThreadId =
-    pickString(properties, ["thread_id", "threadId"]) ??
-    pickString(sharedStream, ["thread_id", "threadId"]) ??
-    pickString(asRecord(data), ["thread_id", "threadId"]) ??
+    pickString(properties, ["threadId"]) ??
+    pickString(sharedStream, ["threadId"]) ??
+    pickString(body, ["threadId"]) ??
     undefined;
   const streamTurnId =
-    pickString(properties, ["turn_id", "turnId"]) ??
-    pickString(sharedStream, ["turn_id", "turnId"]) ??
-    pickString(asRecord(data), ["turn_id", "turnId"]) ??
+    pickString(properties, ["turnId"]) ??
+    pickString(sharedStream, ["turnId"]) ??
+    pickString(body, ["turnId"]) ??
     undefined;
   const transport =
-    typeof data.transport === "string" ? data.transport : undefined;
+    typeof body.transport === "string"
+      ? body.transport
+      : typeof data.transport === "string"
+        ? data.transport
+        : undefined;
   const inputModes =
-    coerceStringArray(data.input_modes) ?? coerceStringArray(data.inputModes);
+    coerceStringArray(body.inputModes) ?? coerceStringArray(data.inputModes);
   const outputModes =
-    coerceStringArray(data.output_modes) ?? coerceStringArray(data.outputModes);
+    coerceStringArray(body.outputModes) ?? coerceStringArray(data.outputModes);
 
   return {
     provider,
@@ -343,7 +359,10 @@ export const normalizeRuntimeState = (
   contract?: RuntimeStatusContract | null,
 ) => {
   const resolvedContract = resolveRuntimeStatusContract(contract);
-  const normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  let normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  if (normalized.startsWith("task-state-")) {
+    normalized = normalized.slice("task-state-".length);
+  }
   const aliases = normalizeRuntimeAliasMap(resolvedContract);
   return aliases[normalized] ?? normalized;
 };
@@ -369,7 +388,7 @@ const extractRuntimeInterrupt = (
   if (!interrupt) {
     return null;
   }
-  const requestId = pickString(interrupt, ["request_id", "requestId"]);
+  const requestId = pickString(interrupt, ["requestId"]);
   const interruptType = pickString(interrupt, ["type"])?.toLowerCase();
   if (
     !requestId ||
@@ -459,14 +478,11 @@ const extractRuntimeInterrupt = (
       source: "stream",
       details: {
         displayMessage: extractInterruptDisplayMessage(details),
-        serverName:
-          pickRawString(details, ["server_name", "serverName"]) ?? null,
+        serverName: pickRawString(details, ["serverName"]) ?? null,
         mode: pickRawString(details, ["mode"]) ?? null,
-        requestedSchema:
-          details?.requested_schema ?? details?.requestedSchema ?? null,
+        requestedSchema: details?.requestedSchema ?? null,
         url: pickRawString(details, ["url"]) ?? null,
-        elicitationId:
-          pickRawString(details, ["elicitation_id", "elicitationId"]) ?? null,
+        elicitationId: pickRawString(details, ["elicitationId"]) ?? null,
         meta: asRecord(details?.meta),
       },
     };
@@ -478,16 +494,17 @@ export const extractRuntimeStatusEvent = (
   data: Record<string, unknown>,
   contract?: RuntimeStatusContract | null,
 ): RuntimeStatusEvent | null => {
-  if (data.kind !== "status-update") {
+  const statusUpdate = resolveStatusUpdateBody(data);
+  if (!statusUpdate) {
     return null;
   }
-  const status = data.status as { state?: unknown } | undefined;
+  const status = statusUpdate.status as { state?: unknown } | undefined;
   if (status && typeof status.state === "string" && status.state.trim()) {
     const metadata =
-      data.metadata &&
-      typeof data.metadata === "object" &&
-      !Array.isArray(data.metadata)
-        ? (data.metadata as Record<string, unknown>)
+      statusUpdate.metadata &&
+      typeof statusUpdate.metadata === "object" &&
+      !Array.isArray(statusUpdate.metadata)
+        ? (statusUpdate.metadata as Record<string, unknown>)
         : null;
     const shared =
       metadata?.shared &&
@@ -502,26 +519,30 @@ export const extractRuntimeStatusEvent = (
         ? (shared.stream as Record<string, unknown>)
         : null;
     const rawCompletionPhase =
-      typeof sharedStream?.completion_phase === "string"
-        ? sharedStream.completion_phase
+      typeof sharedStream?.completionPhase === "string"
+        ? sharedStream.completionPhase
         : null;
     const completionPhase =
       rawCompletionPhase?.trim().toLowerCase() === "persisted"
         ? "persisted"
         : null;
     const messageId =
-      typeof data.message_id === "string" && data.message_id.trim().length > 0
-        ? data.message_id.trim()
-        : typeof sharedStream?.message_id === "string" &&
-            sharedStream.message_id.trim().length > 0
-          ? sharedStream.message_id.trim()
-          : null;
-    const state = normalizeRuntimeState(status.state, contract);
+      typeof sharedStream?.messageId === "string" &&
+      sharedStream.messageId.trim().length > 0
+        ? sharedStream.messageId.trim()
+        : null;
+    const resolvedContract = resolveRuntimeStatusContract(contract);
+    const state = normalizeRuntimeState(status.state, resolvedContract);
+    const isFinal = resolvedContract.terminalStates
+      .map((item) => normalizeRuntimeState(item, resolvedContract))
+      .includes(state);
     return {
       state,
-      isFinal: data.final === true,
-      interrupt: extractRuntimeInterrupt(data, state, contract),
-      seq: pickInteger(data, ["seq"]),
+      isFinal,
+      interrupt: extractRuntimeInterrupt(statusUpdate, state, resolvedContract),
+      seq:
+        pickInteger(sharedStream, ["seq", "sequence"]) ??
+        pickInteger(metadata, ["seq"]),
       completionPhase,
       messageId,
     };

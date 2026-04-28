@@ -4,14 +4,31 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
+from types import SimpleNamespace
 
 import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
-from app.features.invoke.payload_analysis import coerce_payload_to_dict
-from app.features.invoke.service import StreamFinishReason, a2a_invoke_service
+from app.features.invoke.payload_analysis import (
+    coerce_payload_to_dict,
+    extract_binding_hints_from_invoke_result,
+    extract_binding_hints_from_serialized_event,
+    extract_stream_identity_hints_from_invoke_result,
+    extract_stream_identity_hints_from_serialized_event,
+    extract_usage_hints_from_invoke_result,
+    extract_usage_hints_from_serialized_event,
+)
+from app.features.invoke.service_streaming import (
+    A2AInvokeStreamingRuntime,
+    a2a_invoke_streaming_runtime,
+)
+from app.features.invoke.service_types import StreamFinishReason
 from app.features.invoke.stream_diagnostics import build_artifact_update_log_sample
+from app.features.invoke.stream_payloads import (
+    extract_interrupt_lifecycle_from_serialized_event,
+    extract_stream_chunk_from_serialized_event,
+)
 from app.integrations.a2a_client.errors import (
     A2APeerProtocolError,
     A2AUpstreamTimeoutError,
@@ -130,6 +147,38 @@ class _GatewayWithTimeoutError:
         )
 
 
+a2a_invoke_service = SimpleNamespace(
+    consume_stream=a2a_invoke_streaming_runtime.consume_stream,
+    extract_binding_hints_from_invoke_result=extract_binding_hints_from_invoke_result,
+    extract_binding_hints_from_serialized_event=(
+        extract_binding_hints_from_serialized_event
+    ),
+    extract_interrupt_lifecycle_from_serialized_event=(
+        extract_interrupt_lifecycle_from_serialized_event
+    ),
+    extract_stream_chunk_from_serialized_event=(
+        extract_stream_chunk_from_serialized_event
+    ),
+    extract_stream_identity_hints_from_invoke_result=(
+        extract_stream_identity_hints_from_invoke_result
+    ),
+    extract_stream_identity_hints_from_serialized_event=(
+        extract_stream_identity_hints_from_serialized_event
+    ),
+    extract_usage_hints_from_invoke_result=extract_usage_hints_from_invoke_result,
+    extract_usage_hints_from_serialized_event=(
+        extract_usage_hints_from_serialized_event
+    ),
+    send_ws_error=a2a_invoke_streaming_runtime.send_ws_error,
+    serialize_stream_event=A2AInvokeStreamingRuntime.serialize_stream_event,
+    stream_sse=a2a_invoke_streaming_runtime.stream_sse,
+    stream_ws=a2a_invoke_streaming_runtime.stream_ws,
+    _ensure_outbound_stream_contract=(
+        A2AInvokeStreamingRuntime._ensure_outbound_stream_contract
+    ),
+)
+
+
 def _artifact_event(
     *,
     artifact_id: str,
@@ -140,26 +189,29 @@ def _artifact_event(
     message_id: str | None = None,
     event_id: str | None = None,
 ) -> dict:
-    metadata: dict[str, str] = {}
+    shared_stream: dict[str, str] = {}
     if block_type or source or message_id or event_id:
         artifact_key = artifact_id.replace(":", "-").replace("/", "-")
         if block_type:
-            metadata["block_type"] = block_type
+            shared_stream["blockType"] = block_type
         if source:
-            metadata["source"] = source
-        metadata["message_id"] = message_id or f"msg-{artifact_key}"
-        metadata["event_id"] = event_id or f"evt-{artifact_key}"
+            shared_stream["source"] = source
+        shared_stream["messageId"] = message_id or f"msg-{artifact_key}"
+        shared_stream["eventId"] = event_id or f"evt-{artifact_key}"
 
+    metadata = {"shared": {"stream": shared_stream}} if shared_stream else {}
     payload: dict = {
-        "kind": "artifact-update",
-        "artifact": {
-            "artifact_id": artifact_id,
-            "parts": [{"kind": "text", "text": text}],
-            "metadata": metadata,
-        },
+        "artifactUpdate": {
+            "op": (
+                "append" if append else "replace" if append is not None else "replace"
+            ),
+            "artifact": {
+                "artifactId": artifact_id,
+                "parts": [{"text": text}],
+                "metadata": metadata,
+            },
+        }
     }
-    if append is not None:
-        payload["append"] = append
     return payload
 
 
@@ -173,24 +225,26 @@ def _artifact_data_event(
     message_id: str | None = None,
     event_id: str | None = None,
 ) -> dict:
-    metadata: dict[str, str] = {}
+    shared_stream: dict[str, str] = {}
     artifact_key = artifact_id.replace(":", "-").replace("/", "-")
-    metadata["block_type"] = block_type
+    shared_stream["blockType"] = block_type
     if source:
-        metadata["source"] = source
-    metadata["message_id"] = message_id or f"msg-{artifact_key}"
-    metadata["event_id"] = event_id or f"evt-{artifact_key}"
+        shared_stream["source"] = source
+    shared_stream["messageId"] = message_id or f"msg-{artifact_key}"
+    shared_stream["eventId"] = event_id or f"evt-{artifact_key}"
 
     payload: dict = {
-        "kind": "artifact-update",
-        "artifact": {
-            "artifact_id": artifact_id,
-            "parts": [{"kind": "data", "data": data}],
-            "metadata": metadata,
-        },
+        "artifactUpdate": {
+            "op": (
+                "append" if append else "replace" if append is not None else "replace"
+            ),
+            "artifact": {
+                "artifactId": artifact_id,
+                "parts": [{"data": data}],
+                "metadata": {"shared": {"stream": shared_stream}},
+            },
+        }
     }
-    if append is not None:
-        payload["append"] = append
     return payload
 
 

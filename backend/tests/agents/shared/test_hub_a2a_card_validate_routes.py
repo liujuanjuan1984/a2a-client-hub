@@ -286,11 +286,9 @@ async def test_hub_card_validate_reports_shared_session_query_diagnostics(
     payload = resp.json()
     assert payload["success"] is True
     assert payload["shared_session_query"]["declared"] is True
-    assert payload["shared_session_query"]["status"] == "supported"
+    assert payload["shared_session_query"]["status"] == "unsupported"
     assert payload["shared_session_query"]["declaredContractFamily"] == "legacy"
-    assert payload["shared_session_query"]["normalizedContractFamily"] == (
-        "a2a_client_hub"
-    )
+    assert "normalizedContractFamily" not in payload["shared_session_query"]
     assert payload["shared_session_query"]["uses_legacy_uri"] is True
 
 

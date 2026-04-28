@@ -265,10 +265,10 @@ const normalizeSessionForPersistence = (
       ? {
           stream: {
             ...(sharedStreamIdentity.threadId
-              ? { thread_id: sharedStreamIdentity.threadId }
+              ? { threadId: sharedStreamIdentity.threadId }
               : {}),
             ...(sharedStreamIdentity.turnId
-              ? { turn_id: sharedStreamIdentity.turnId }
+              ? { turnId: sharedStreamIdentity.turnId }
               : {}),
           },
         }

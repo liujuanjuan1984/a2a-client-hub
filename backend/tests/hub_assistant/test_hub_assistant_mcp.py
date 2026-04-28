@@ -37,7 +37,7 @@ from app.features.hub_assistant.shared.task_service import (
     hub_assistant_task_service,
 )
 from app.features.invoke import route_runner as invoke_route_runner
-from app.features.invoke.service import StreamFinishReason, StreamOutcome
+from app.features.invoke.service_types import StreamFinishReason, StreamOutcome
 from app.main import combine_lifespans
 from tests.support.utils import (
     create_a2a_agent,
@@ -805,7 +805,7 @@ async def test_execute_hub_assistant_mcp_operation_persists_delegated_session_se
     monkeypatch.setattr(invoke_route_runner, "_register_inflight_invoke", _fake_noop)
     monkeypatch.setattr(invoke_route_runner, "_unregister_inflight_invoke", _fake_noop)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "consume_stream",
         _fake_consume_stream,
     )
@@ -1012,7 +1012,7 @@ async def test_execute_hub_assistant_mcp_operation_persists_delegated_agent_star
     monkeypatch.setattr(invoke_route_runner, "_register_inflight_invoke", _fake_noop)
     monkeypatch.setattr(invoke_route_runner, "_unregister_inflight_invoke", _fake_noop)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service,
+        invoke_route_runner.a2a_invoke_streaming_runtime,
         "consume_stream",
         _fake_consume_stream,
     )

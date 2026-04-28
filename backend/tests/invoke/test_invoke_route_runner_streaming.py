@@ -76,15 +76,21 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
 
     await on_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "partial response"}],
-                "metadata": {
-                    "block_type": "text",
-                    "message_id": "msg-partial-1",
-                    "event_id": "evt-partial-1",
+            "artifactUpdate": {
+                "op": "append",
+                "artifact": {
+                    "parts": [{"text": "partial response"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "blockType": "text",
+                                "messageId": "msg-partial-1",
+                                "eventId": "evt-partial-1",
+                            }
+                        }
+                    },
                 },
-            },
+            }
         }
     )
     await on_finalized(
@@ -181,7 +187,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
                 "seq": 2,
                 "block_type": "text",
                 "content": "partial",
-                "append": True,
+                "op": "append",
                 "is_finished": False,
                 "event_id": "evt-partial",
                 "source": "stream",
@@ -196,21 +202,22 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
 
     await on_event(
         {
-            "kind": "status-update",
-            "status": {"state": "input-required"},
-            "metadata": {
-                "shared": {
-                    "interrupt": {
-                        "request_id": "perm-1",
-                        "type": "permission",
-                        "phase": "asked",
-                        "details": {
-                            "permission": "read",
-                            "patterns": ["/repo/.env"],
+            "statusUpdate": {
+                "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+                "metadata": {
+                    "shared": {
+                        "interrupt": {
+                            "requestId": "perm-1",
+                            "type": "permission",
+                            "phase": "asked",
+                            "details": {
+                                "permission": "read",
+                                "patterns": ["/repo/.env"],
+                            },
                         },
-                    },
-                }
-            },
+                    }
+                },
+            }
         }
     )
 
@@ -477,13 +484,14 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
     )
 
     event_payload = {
-        "kind": "artifact-update",
-        "append": True,
-        "lastChunk": True,
-        "artifact": {
-            "parts": [{"kind": "text", "text": "stream"}],
-            "metadata": {"block_type": "text"},
-        },
+        "artifactUpdate": {
+            "op": "append",
+            "lastChunk": True,
+            "artifact": {
+                "parts": [{"text": "stream"}],
+                "metadata": {"shared": {"stream": {"blockType": "text"}}},
+            },
+        }
     }
 
     await invoke_route_runner._persist_stream_block_update(
@@ -492,9 +500,10 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         request=_build_persistence_request(transport="ws"),
     )
 
-    assert event_payload["message_id"] == agent_message_id
-    assert isinstance(event_payload.get("event_id"), str)
-    assert event_payload["seq"] == 1
+    shared_stream = event_payload["artifactUpdate"]["metadata"]["shared"]["stream"]
+    assert shared_stream["messageId"] == agent_message_id
+    assert isinstance(shared_stream.get("eventId"), str)
+    assert shared_stream["seq"] == 1
     updates = captured["updates"]
     assert isinstance(updates, list)
     assert len(updates) == 1
@@ -554,18 +563,23 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     )
 
     event_payload = {
-        "kind": "artifact-update",
-        "seq": 9,
-        "append": False,
-        "lastChunk": True,
-        "artifact": {
-            "parts": [{"kind": "text", "text": "chunk-body"}],
-            "metadata": {
-                "block_type": "text",
-                "message_id": "msg-opt",
-                "event_id": "evt-opt",
+        "artifactUpdate": {
+            "seq": 9,
+            "op": "replace",
+            "lastChunk": True,
+            "artifact": {
+                "parts": [{"text": "chunk-body"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "blockType": "text",
+                            "messageId": "msg-opt",
+                            "eventId": "evt-opt",
+                        }
+                    }
+                },
             },
-        },
+        }
     }
 
     await invoke_route_runner._persist_stream_block_update(
@@ -583,22 +597,14 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     assert state.next_event_seq == 4
     assert state.persisted_block_count == 1
     assert state.chunk_buffer == []
-    assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
-    assert event_payload["event_id"] == "evt-opt"
-    assert event_payload["seq"] == 3
-    assert "messageId" not in event_payload
-    assert "eventId" not in event_payload
-    assert "eventSeq" not in event_payload
-    assert "sequence" not in event_payload
-    assert event_payload["artifact"]["message_id"] == str(
-        state.message_refs["agent_message_id"]
-    )
-    assert event_payload["artifact"]["event_id"] == "evt-opt"
-    assert event_payload["artifact"]["seq"] == 3
+    shared_stream = event_payload["artifactUpdate"]["metadata"]["shared"]["stream"]
+    assert shared_stream["messageId"] == str(state.message_refs["agent_message_id"])
+    assert shared_stream["eventId"] == "evt-opt"
+    assert shared_stream["seq"] == 3
 
 
 @pytest.mark.asyncio
-async def test_persist_stream_block_update_normalizes_message_events(
+async def test_persist_stream_block_update_preserves_canonical_message_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -651,10 +657,12 @@ async def test_persist_stream_block_update_normalizes_message_events(
     )
 
     event_payload = {
-        "kind": "message",
-        "messageId": "msg-upstream-root",
-        "role": "agent",
-        "parts": [{"kind": "text", "text": "root text"}],
+        "message": {
+            "messageId": "msg-upstream-root",
+            "role": "ROLE_AGENT",
+            "parts": [{"text": "root text"}],
+            "metadata": {"shared": {"stream": {"blockType": "text", "op": "replace"}}},
+        }
     }
 
     await invoke_route_runner._persist_stream_block_update(
@@ -667,10 +675,17 @@ async def test_persist_stream_block_update_normalizes_message_events(
     assert len(state.chunk_buffer) == 1
     assert state.chunk_buffer[0]["content"] == "root text"
     assert state.chunk_buffer[0]["append"] is False
-    assert event_payload["kind"] == "artifact-update"
-    assert event_payload["message_id"] == refs["agent_message_id"]
-    assert event_payload["event_id"] == f"{refs['agent_message_id']}:5"
-    assert event_payload["artifact"]["parts"] == [{"kind": "text", "text": "root text"}]
+    assert "message" in event_payload
+    assert event_payload["message"]["parts"] == [{"text": "root text"}]
+    assert event_payload["message"]["metadata"]["shared"]["stream"] == {
+        "messageId": refs["agent_message_id"],
+        "eventId": f"{refs['agent_message_id']}:5",
+        "seq": 5,
+        "blockType": "text",
+        "blockId": "msg-upstream-root:primary_text",
+        "laneId": "primary_text",
+        "op": "replace",
+    }
 
 
 @pytest.mark.asyncio
@@ -728,15 +743,21 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
     await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload={
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "alpha"}],
-                "metadata": {
-                    "block_type": "text",
-                    "message_id": "msg-alpha",
-                    "event_id": "evt-alpha",
+            "artifactUpdate": {
+                "op": "append",
+                "artifact": {
+                    "parts": [{"text": "alpha"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "blockType": "text",
+                                "messageId": "msg-alpha",
+                                "eventId": "evt-alpha",
+                            }
+                        }
+                    },
                 },
-            },
+            }
         },
         request=_build_persistence_request(transport="http_json"),
     )
@@ -746,15 +767,21 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
     await invoke_route_runner._persist_stream_block_update(
         state=state,
         event_payload={
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "beta"}],
-                "metadata": {
-                    "block_type": "reasoning",
-                    "message_id": "msg-beta",
-                    "event_id": "evt-beta",
+            "artifactUpdate": {
+                "op": "append",
+                "artifact": {
+                    "parts": [{"text": "beta"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "blockType": "reasoning",
+                                "messageId": "msg-beta",
+                                "eventId": "evt-beta",
+                            }
+                        }
+                    },
                 },
-            },
+            }
         },
         request=_build_persistence_request(transport="http_json"),
     )
@@ -820,14 +847,20 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
     )
 
     event_payload = {
-        "kind": "artifact-update",
-        "lastChunk": True,
-        "artifact": {
-            "parts": [{"kind": "text", "text": "chunk-body"}],
-            "metadata": {
-                "block_type": "text",
+        "artifactUpdate": {
+            "op": "append",
+            "lastChunk": True,
+            "artifact": {
+                "parts": [{"text": "chunk-body"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "blockType": "text",
+                        }
+                    }
+                },
             },
-        },
+        }
     }
 
     await invoke_route_runner._persist_stream_block_update(
@@ -842,9 +875,14 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
     assert len(updates) == 1
     assert updates[0]["event_id"] == expected_event_id
     assert updates[0]["seq"] == 4
-    assert event_payload["message_id"] == refs["agent_message_id"]
-    assert event_payload["event_id"] == expected_event_id
-    assert event_payload["seq"] == 4
+    assert event_payload["artifactUpdate"]["metadata"]["shared"]["stream"] == {
+        "messageId": refs["agent_message_id"],
+        "eventId": expected_event_id,
+        "seq": 4,
+        "blockId": "stream:primary_text",
+        "laneId": "primary_text",
+        "op": "append",
+    }
     assert state.next_event_seq == 5
 
 
@@ -930,15 +968,21 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
 
     await on_event(
         {
-            "kind": "artifact-update",
-            "artifact": {
-                "parts": [{"kind": "text", "text": "partial"}],
-                "metadata": {
-                    "block_type": "text",
-                    "message_id": "msg-partial",
-                    "event_id": "evt-partial",
+            "artifactUpdate": {
+                "op": "append",
+                "artifact": {
+                    "parts": [{"text": "partial"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "blockType": "text",
+                                "messageId": "msg-partial",
+                                "eventId": "evt-partial",
+                            }
+                        }
+                    },
                 },
-            },
+            }
         }
     )
     assert len(state.chunk_buffer) == 1
@@ -962,20 +1006,19 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     assert state.persisted_block_count == 1
     assert captured_outcome["response_content"] == "partial"
     assert persisted_ack == {
-        "kind": "status-update",
-        "final": True,
-        "status": {"state": "completed"},
-        "message_id": str(state.message_refs["agent_message_id"]),
-        "metadata": {
-            "shared": {
-                "stream": {
-                    "message_id": str(state.message_refs["agent_message_id"]),
-                    "completion_phase": "persisted",
-                    "finish_reason": "success",
-                    "success": True,
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "messageId": str(state.message_refs["agent_message_id"]),
+                        "completionPhase": "persisted",
+                        "finishReason": "success",
+                        "success": True,
+                    }
                 }
-            }
-        },
+            },
+        }
     }
 
 
@@ -1150,7 +1193,9 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service, "stream_sse", fake_stream_sse
+        invoke_route_runner.a2a_invoke_streaming_runtime,
+        "stream_sse",
+        fake_stream_sse,
     )
     monkeypatch.setattr(
         invoke_route_runner,
@@ -1247,7 +1292,9 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner.a2a_invoke_service, "stream_ws", fake_stream_ws
+        invoke_route_runner.a2a_invoke_streaming_runtime,
+        "stream_ws",
+        fake_stream_ws,
     )
     monkeypatch.setattr(
         invoke_route_runner,

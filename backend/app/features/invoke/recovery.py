@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Literal, cast
+from typing import Any, Callable, Literal
 
 from app.features.invoke.invoke_metadata import (
     apply_invoke_metadata_bindings,
@@ -234,56 +234,56 @@ async def resolve_session_binding_outbound_mode(
     log_warning_fn: Callable[..., None] = log_session_binding_warning,
 ) -> bool:
     try:
-        ext = await extensions_service_getter().resolve_session_binding(runtime=runtime)
+        await extensions_service_getter().resolve_session_binding(runtime=runtime)
     except A2AExtensionNotSupportedError:
-        return True
+        return False
     except A2AExtensionUpstreamError as exc:
         log_warning_fn(
             logger=logger,
             message=(
                 "Session binding capability resolution failed upstream; "
-                "using compatibility fallback"
+                "session binding fallback remains disabled"
             ),
             log_extra=log_extra,
             extra={
                 "session_binding_resolution_error": "upstream_fetch_failed",
                 "session_binding_resolution_detail": str(exc),
-                "session_binding_fallback_used": True,
+                "session_binding_fallback_used": False,
             },
         )
-        return True
+        return False
     except AttributeError as exc:
         log_warning_fn(
             logger=logger,
             message=(
                 "Session binding capability resolution failed due to runtime shape; "
-                "using compatibility fallback"
+                "session binding fallback remains disabled"
             ),
             log_extra=log_extra,
             extra={
                 "session_binding_resolution_error": "runtime_invalid",
                 "session_binding_resolution_detail": str(exc),
-                "session_binding_fallback_used": True,
+                "session_binding_fallback_used": False,
             },
         )
-        return True
+        return False
     except A2AExtensionContractError as exc:
         log_warning_fn(
             logger=logger,
             message=(
                 "Session binding capability contract invalid; "
-                "using compatibility fallback"
+                "session binding fallback remains disabled"
             ),
             log_extra=log_extra,
             extra={
                 "session_binding_resolution_error": "contract_invalid",
                 "session_binding_contract_error": str(exc),
-                "session_binding_fallback_used": True,
+                "session_binding_fallback_used": False,
             },
         )
-        return True
+        return False
 
-    return cast(bool, ext.legacy_uri_used)
+    return False
 
 
 async def finalize_outbound_invoke_payload(
@@ -293,9 +293,6 @@ async def finalize_outbound_invoke_payload(
     logger: Any,
     log_extra: dict[str, Any],
     extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
-    resolve_outbound_mode: Callable[..., Awaitable[bool]] = (
-        resolve_session_binding_outbound_mode
-    ),
     log_warning_fn: Callable[..., None] = log_session_binding_warning,
 ) -> A2AAgentInvokeRequest:
     invoke_metadata_ext = None
@@ -371,16 +368,10 @@ async def finalize_outbound_invoke_payload(
             update={"metadata": cleaned_metadata, "session_binding": None}
         )
 
-    include_legacy_root = await resolve_outbound_mode(
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-    )
     next_metadata = apply_invoke_session_binding_metadata(
         cleaned_metadata,
         provider=provider,
         external_session_id=external_session_id,
-        include_legacy_root=include_legacy_root,
     )
     if (
         invoke_metadata_ext is not None

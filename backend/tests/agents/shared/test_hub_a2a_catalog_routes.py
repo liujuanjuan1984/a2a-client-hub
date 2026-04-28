@@ -22,11 +22,49 @@ from tests.support.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
+def _message_event(
+    text: str,
+    *,
+    message_id: str,
+    event_id: str,
+    context_id: str | None = None,
+    provider: str | None = None,
+    external_session_id: str | None = None,
+) -> Dict[str, Any]:
+    shared: Dict[str, Any] = {
+        "stream": {
+            "messageId": message_id,
+            "eventId": event_id,
+        }
+    }
+    if provider or external_session_id:
+        shared["session"] = {
+            **({"provider": provider} if provider else {}),
+            **({"id": external_session_id} if external_session_id else {}),
+        }
+    message: Dict[str, Any] = {
+        "role": "ROLE_AGENT",
+        "messageId": message_id,
+        "parts": [{"text": text}],
+        "metadata": {"shared": shared},
+    }
+    if context_id:
+        message["contextId"] = context_id
+    return {"message": message}
+
+
 class _FakeGateway:
     def __init__(self) -> None:
         self.calls: list[Dict[str, Any]] = []
         self.invoke_response: Dict[str, Any] = {"success": True, "content": "ok"}
-        self.stream_events: list[Dict[str, Any]] = [{"content": "ok"}]
+        self.stream_events: list[Dict[str, Any]] = [
+            _message_event(
+                "ok",
+                message_id="msg-default-1",
+                event_id="evt-default-1",
+            ),
+            {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
+        ]
 
     async def invoke(self, *, resolved, query: str, context_id=None, metadata=None):
         self.calls.append(
@@ -168,14 +206,15 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
 
     fake_gateway = _FakeGateway()
     fake_gateway.stream_events = [
-        {
-            "content": "ok",
-            "contextId": "ctx-upstream-1",
-            "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "upstream-session-1",
-            },
-        }
+        _message_event(
+            "ok",
+            message_id="msg-upstream-1",
+            event_id="evt-upstream-1",
+            context_id="ctx-upstream-1",
+            provider="opencode",
+            external_session_id="upstream-session-1",
+        ),
+        {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
     ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
@@ -263,14 +302,15 @@ async def test_allowlisted_user_can_stream_sse(
 
     fake_gateway = _FakeGateway()
     fake_gateway.stream_events = [
-        {
-            "content": "ok",
-            "contextId": "ctx-stream-1",
-            "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "upstream-stream-1",
-            },
-        }
+        _message_event(
+            "ok",
+            message_id="msg-stream-1",
+            event_id="evt-stream-1",
+            context_id="ctx-stream-1",
+            provider="opencode",
+            external_session_id="upstream-stream-1",
+        ),
+        {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
     ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)

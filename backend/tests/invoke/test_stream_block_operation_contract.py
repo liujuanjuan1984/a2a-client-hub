@@ -19,17 +19,17 @@ def _normalize_stream_chunk(
     if parsed is None:
         return None
     return {
-        "event_id": parsed.get("event_id"),
+        "eventId": parsed.get("event_id"),
         "seq": parsed.get("seq"),
-        "message_id": parsed.get("message_id"),
-        "artifact_id": parsed.get("artifact_id"),
-        "block_id": parsed.get("block_id"),
-        "lane_id": parsed.get("lane_id"),
-        "block_type": parsed.get("block_type"),
+        "messageId": parsed.get("message_id"),
+        "artifactId": parsed.get("artifact_id"),
+        "blockId": parsed.get("block_id"),
+        "laneId": parsed.get("lane_id"),
+        "blockType": parsed.get("block_type"),
         "op": parsed.get("op"),
         "content": parsed.get("content"),
-        "base_seq": parsed.get("base_seq"),
-        "is_finished": parsed.get("is_finished"),
+        "baseSeq": parsed.get("base_seq"),
+        "isFinished": parsed.get("is_finished"),
         "source": parsed.get("source"),
     }
 

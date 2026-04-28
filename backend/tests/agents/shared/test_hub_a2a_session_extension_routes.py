@@ -161,7 +161,14 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
                     "parts": [{"type": "text", "text": "Continue and summarize"}],
                     "noReply": True,
                 },
-                "metadata": {"provider": "opencode", "externalSessionId": "sess-1"},
+                "metadata": {
+                    "shared": {
+                        "session": {
+                            "id": "sess-1",
+                            "provider": "opencode",
+                        }
+                    }
+                },
             },
         )
         assert prompt_async_resp.status_code == 200
@@ -178,7 +185,14 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
                     "arguments": "--quick",
                     "parts": [{"type": "text", "text": "Focus on tests"}],
                 },
-                "metadata": {"provider": "opencode", "externalSessionId": "sess-1"},
+                "metadata": {
+                    "shared": {
+                        "session": {
+                            "id": "sess-1",
+                            "provider": "opencode",
+                        }
+                    }
+                },
             },
         )
         assert command_resp.status_code == 200
@@ -197,16 +211,24 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
     assert len(prompt_calls) == 1
     assert prompt_calls[0]["request_payload"]["parts"][0]["text"].startswith("Continue")
     assert prompt_calls[0]["metadata"] == {
-        "provider": "opencode",
-        "externalSessionId": "sess-1",
+        "shared": {
+            "session": {
+                "id": "sess-1",
+                "provider": "opencode",
+            }
+        },
     }
     command_calls = [c for c in fake_extensions.calls if c["fn"] == "command_session"]
     assert len(command_calls) == 1
     assert command_calls[0]["request_payload"]["command"] == "/review"
     assert command_calls[0]["request_payload"]["arguments"] == "--quick"
     assert command_calls[0]["metadata"] == {
-        "provider": "opencode",
-        "externalSessionId": "sess-1",
+        "shared": {
+            "session": {
+                "id": "sess-1",
+                "provider": "opencode",
+            }
+        },
     }
     permission_calls = [
         c for c in fake_extensions.calls if c["fn"] == "reply_permission_interrupt"

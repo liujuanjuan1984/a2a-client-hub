@@ -64,55 +64,19 @@ export const pickSharedMetadataSections = (
 
 export const getPreferredInterruptMetadata = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
-) => {
-  const canonical = getSharedMetadataSection(payloadOrMetadata, "interrupt");
-  if (canonical) {
-    return canonical;
-  }
-  const metadata = getMetadataRecord(payloadOrMetadata);
-  return asRecord(metadata?.interrupt);
-};
+) => getSharedMetadataSection(payloadOrMetadata, "interrupt");
 
 export const getPreferredSessionMetadata = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
-) => {
-  const metadata = getMetadataRecord(payloadOrMetadata);
-  const canonical = getSharedMetadataSection(payloadOrMetadata, "session");
-  if (canonical) {
-    const merged = { ...canonical };
-    if (pickString(merged, ["id", "externalSessionId"]) == null) {
-      const sessionId = pickString(metadata, ["externalSessionId"]);
-      if (sessionId) {
-        merged.id = sessionId;
-      }
-    }
-    if (pickString(merged, ["provider"]) == null) {
-      const provider = pickString(metadata, ["provider"]);
-      if (provider) {
-        merged.provider = provider;
-      }
-    }
-    return merged;
-  }
-  const legacy: Record<string, unknown> = {};
-  const sessionId = pickString(metadata, ["externalSessionId"]);
-  const provider = pickString(metadata, ["provider"]);
-  if (sessionId) {
-    legacy.id = sessionId;
-  }
-  if (provider) {
-    legacy.provider = provider;
-  }
-  return Object.keys(legacy).length > 0 ? legacy : null;
-};
+) => getSharedMetadataSection(payloadOrMetadata, "session");
 
 export const readSharedStreamIdentity = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
 ) => {
   const stream = getSharedMetadataSection(payloadOrMetadata, "stream");
   return {
-    threadId: pickString(stream, ["thread_id", "threadId"]),
-    turnId: pickString(stream, ["turn_id", "turnId"]),
+    threadId: pickString(stream, ["threadId"]),
+    turnId: pickString(stream, ["turnId"]),
   };
 };
 
@@ -135,15 +99,13 @@ export const withSharedStreamIdentity = (
   const turnId = identity?.turnId?.trim() ?? "";
 
   if (threadId) {
-    nextStream.thread_id = threadId;
+    nextStream.threadId = threadId;
   } else {
-    delete nextStream.thread_id;
     delete nextStream.threadId;
   }
   if (turnId) {
-    nextStream.turn_id = turnId;
+    nextStream.turnId = turnId;
   } else {
-    delete nextStream.turn_id;
     delete nextStream.turnId;
   }
 
@@ -185,8 +147,50 @@ export const withoutSharedSessionBinding = (
     }
   }
 
-  delete nextMetadata.provider;
   delete nextMetadata.externalSessionId;
+  delete nextMetadata.provider;
+  return nextMetadata;
+};
+
+export const withSharedSessionBinding = (
+  metadata: Record<string, unknown> | null | undefined,
+  binding: {
+    provider?: string | null;
+    externalSessionId?: string | null;
+  } | null,
+) => {
+  const nextMetadata = withoutSharedSessionBinding(metadata, {
+    keepSharedStream: true,
+  });
+  const nextShared = asRecord(nextMetadata.shared)
+    ? { ...(nextMetadata.shared as Record<string, unknown>) }
+    : {};
+  const nextSession = asRecord(nextShared.session)
+    ? { ...(nextShared.session as Record<string, unknown>) }
+    : {};
+
+  const provider = binding?.provider?.trim() ?? "";
+  const externalSessionId = binding?.externalSessionId?.trim() ?? "";
+
+  if (externalSessionId) {
+    nextSession.id = externalSessionId;
+  }
+  if (provider) {
+    nextSession.provider = provider;
+  }
+
+  if (Object.keys(nextSession).length > 0) {
+    nextShared.session = nextSession;
+  } else {
+    delete nextShared.session;
+  }
+
+  if (Object.keys(nextShared).length > 0) {
+    nextMetadata.shared = nextShared;
+  } else {
+    delete nextMetadata.shared;
+  }
+
   return nextMetadata;
 };
 
@@ -196,6 +200,6 @@ export const readSharedSessionBinding = (
   const session = getPreferredSessionMetadata(payloadOrMetadata);
   return {
     provider: pickString(session, ["provider"]),
-    externalSessionId: pickString(session, ["id", "externalSessionId"]),
+    externalSessionId: pickString(session, ["id"]),
   };
 };

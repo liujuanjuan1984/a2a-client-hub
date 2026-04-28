@@ -7,13 +7,13 @@ from typing import Any, Dict, Optional
 
 from a2a.types import AgentCard
 
-from app.integrations.a2a_client.protobuf import to_json_like
+from app.integrations.a2a_client.protobuf import to_protojson_like
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.types import JsonRpcInterface
 
 
 def as_dict(value: Any) -> Dict[str, Any]:
-    normalized = to_json_like(value)
+    normalized = to_protojson_like(value)
     if isinstance(normalized, Mapping):
         return {str(key): item for key, item in normalized.items()}
     if isinstance(value, Mapping):
@@ -34,6 +34,31 @@ def normalize_method_name(value: Any, *, field: str) -> Optional[str]:
         raise A2AExtensionContractError(f"'{field}' must be a string if provided")
     normalized = value.strip()
     return normalized or None
+
+
+def normalize_string_list(
+    value: Any,
+    *,
+    field: str,
+    allow_missing: bool = False,
+    allow_empty: bool = True,
+) -> tuple[str, ...]:
+    if value is None:
+        if allow_missing:
+            return ()
+        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+    if not isinstance(value, list):
+        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+
+    items: list[str] = []
+    for item in value:
+        normalized = require_str(item, field=field)
+        if normalized not in items:
+            items.append(normalized)
+
+    if not allow_empty and not items:
+        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+    return tuple(items)
 
 
 def require_int(value: Any, *, field: str) -> int:

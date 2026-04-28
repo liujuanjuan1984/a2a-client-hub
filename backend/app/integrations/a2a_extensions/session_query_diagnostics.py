@@ -11,7 +11,6 @@ from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.session_query import (
     resolve_canonical_session_query,
     resolve_codex_session_query,
-    resolve_legacy_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
@@ -61,14 +60,6 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
             error="Shared session query extension not declared",
         )
 
-    if uri not in SUPPORTED_SESSION_QUERY_URIS:
-        return SharedSessionQueryDiagnostic(
-            declared=True,
-            status="unsupported",
-            uri=uri,
-            error="Shared session query extension URI is not supported by Hub",
-        )
-
     params = as_dict(getattr(ext, "params", None))
     methods = as_dict(params.get("methods"))
     raw_pagination = as_dict(params.get("pagination"))
@@ -89,11 +80,74 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         uses_codex_uri=uses_codex_uri,
     )
 
+    if uses_legacy_uri:
+        return SharedSessionQueryDiagnostic(
+            declared=True,
+            status="unsupported",
+            uri=uri,
+            declaredContractFamily=declared_contract_family,
+            provider=str(params.get("provider") or "").strip().lower() or None,
+            methods=sorted(
+                key
+                for key, value in methods.items()
+                if isinstance(value, str) and value.strip()
+            ),
+            pagination_mode=(
+                str(raw_pagination.get("mode")).strip() if raw_pagination else None
+            ),
+            pagination_params=[
+                item.strip()
+                for item in raw_pagination.get("params", [])
+                if isinstance(item, str) and item.strip()
+            ],
+            result_envelope_declared=result_envelope is not None,
+            uses_legacy_uri=True,
+            error=(
+                "Shared session query legacy URI is no longer supported by Hub; "
+                "migrate to a canonical or opencode session-query URI"
+            ),
+        )
+
+    if uri not in SUPPORTED_SESSION_QUERY_URIS:
+        return SharedSessionQueryDiagnostic(
+            declared=True,
+            status="unsupported",
+            uri=uri,
+            error="Shared session query extension URI is not supported by Hub",
+        )
+
+    if uses_legacy_contract_fields:
+        return SharedSessionQueryDiagnostic(
+            declared=True,
+            status="unsupported",
+            uri=uri,
+            declaredContractFamily=declared_contract_family,
+            provider=str(params.get("provider") or "").strip().lower() or None,
+            methods=sorted(
+                key
+                for key, value in methods.items()
+                if isinstance(value, str) and value.strip()
+            ),
+            pagination_mode=(
+                str(raw_pagination.get("mode")).strip() if raw_pagination else None
+            ),
+            pagination_params=[
+                item.strip()
+                for item in raw_pagination.get("params", [])
+                if isinstance(item, str) and item.strip()
+            ],
+            result_envelope_declared=result_envelope is not None,
+            uses_legacy_contract_fields=True,
+            error=(
+                "Shared session query legacy pagination fields are no longer "
+                "supported; use pagination.default_limit/max_limit for mode "
+                "'limit'"
+            ),
+        )
+
     try:
         if uses_codex_uri:
             resolver = resolve_codex_session_query
-        elif uses_legacy_uri or uses_legacy_contract_fields:
-            resolver = resolve_legacy_session_query
         else:
             resolver = resolve_canonical_session_query
         resolved = resolver(card)

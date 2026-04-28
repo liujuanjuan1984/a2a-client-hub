@@ -1,18 +1,26 @@
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any
 
+from app.features.invoke import stream_payloads
+from app.features.invoke.payload_helpers import dict_field as _dict_field
+from app.features.invoke.payload_helpers import (
+    pick_first_int,
+    pick_first_non_empty_str,
+)
+from app.features.invoke.payload_helpers import pick_int as _pick_int
 from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
+    merge_preferred_session_binding_metadata,
     merge_shared_metadata_sections,
 )
-from app.integrations.a2a_client.protobuf import to_json_like
+from app.integrations.a2a_client.protobuf import (
+    to_protojson_object,
+)
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.utils.payload_extract import (
-    as_dict,
     extract_context_id,
     extract_provider_and_external_session_id,
 )
@@ -29,29 +37,6 @@ class PayloadAnalysis:
     upstream_task_id: str | None = None
     context_id: str | None = None
     binding_metadata: dict[str, Any] | None = None
-
-
-def _pick_non_empty_str(
-    payload: dict[str, Any],
-    keys: tuple[str, ...],
-) -> str | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-            return int(value.strip())
-    return None
 
 
 def _pick_number(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
@@ -85,7 +70,7 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
     if not payload:
         return {}
 
-    direct_usage = as_dict(payload.get("usage"))
+    direct_usage = _dict_field(payload, "usage")
     metadata_usage = extract_preferred_usage_metadata(payload)
 
     usage_payload: dict[str, Any] = {}
@@ -116,30 +101,37 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
-    root = as_dict(payload)
+    root = payload
 
-    artifact = as_dict(root.get("artifact"))
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    message = as_dict(root.get("message"))
-    message_metadata = as_dict(message.get("metadata"))
-    status = as_dict(root.get("status"))
-    status_metadata = as_dict(status.get("metadata"))
-    task = as_dict(root.get("task"))
-    task_status = as_dict(task.get("status"))
-    task_status_metadata = as_dict(task_status.get("metadata"))
-    result = as_dict(root.get("result"))
-    result_status = as_dict(result.get("status"))
-    result_status_metadata = as_dict(result_status.get("metadata"))
-    root_metadata = as_dict(root.get("metadata"))
+    stream_kind, stream_body = stream_payloads._resolve_stream_response_body(root)
+    event_metadata = _dict_field(stream_body, "metadata")
+    artifact = stream_payloads._resolve_stream_artifact(root)
+    artifact_metadata = _dict_field(artifact, "metadata")
+    message = stream_body if stream_kind == "message" else _dict_field(root, "message")
+    message_metadata = _dict_field(message, "metadata")
+    status = (
+        _dict_field(stream_body, "status")
+        if stream_kind == "status-update"
+        else _dict_field(root, "status")
+    )
+    status_metadata = _dict_field(status, "metadata")
+    task = stream_body if stream_kind == "task" else _dict_field(root, "task")
+    task_status = _dict_field(task, "status")
+    task_status_metadata = _dict_field(task_status, "metadata")
+    result = stream_body if stream_kind == "result" else _dict_field(root, "result")
+    result_status = _dict_field(result, "status")
+    result_status_metadata = _dict_field(result_status, "metadata")
+    root_metadata = event_metadata if stream_body else _dict_field(root, "metadata")
     artifact_shared_stream = merge_shared_metadata_sections(
-        (root, artifact),
+        tuple(
+            candidate
+            for candidate in ((stream_body if stream_body else root), artifact)
+            if candidate
+        ),
         section=SHARED_STREAM_KEY,
     )
 
-    msg_id = None
-    evt_id = None
-    for cand in (
-        root,
+    identity_candidates = (
         artifact,
         artifact_metadata,
         message,
@@ -154,39 +146,34 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         result_status_metadata,
         artifact_shared_stream,
         root_metadata,
-    ):
-        if msg_id is None:
-            msg_id = _pick_non_empty_str(cand, ("message_id", "messageId"))
-        if evt_id is None:
-            evt_id = _pick_non_empty_str(cand, ("event_id", "eventId"))
+        stream_body,
+    )
+    msg_id = pick_first_non_empty_str(identity_candidates, ("messageId",))
+    evt_id = pick_first_non_empty_str(identity_candidates, ("eventId",))
 
-    task_id = _pick_non_empty_str(root, ("task_id", "taskId"))
-    if task_id is None:
-        for cand in (
-            artifact,
+    task_id = pick_first_non_empty_str(
+        (
+            stream_body,
             task,
-            as_dict(result.get("task")),
-            as_dict(status.get("task")),
-            root_metadata,
-        ):
-            task_id = _pick_non_empty_str(cand, ("task_id", "taskId", "id"))
-            if task_id:
-                break
+            _dict_field(status, "task"),
+            _dict_field(result, "task"),
+        ),
+        ("taskId", "id"),
+    )
 
-    seq = _pick_int(root, ("seq",))
-    if seq is None:
-        for cand in (
+    seq = pick_first_int(
+        (
+            stream_body,
             artifact,
             artifact_metadata,
             root_metadata,
             artifact_shared_stream,
-        ):
-            seq = _pick_int(cand, ("seq", "sequence"))
-            if seq is not None:
-                break
+        ),
+        ("seq",),
+    )
 
     usage: dict[str, Any] = {}
-    for cand in (root, artifact, message, status, task, result):
+    for cand in (stream_body, artifact, message, status, task, result):
         cand_usage = _extract_usage_from_candidate(cand)
         if cand_usage:
             usage.update(cand_usage)
@@ -196,7 +183,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     external_session_id = None
     binding_meta: dict[str, Any] = {}
 
-    for cand in (root, message, result):
+    for cand in (stream_body, message, result):
         if context_id is None:
             context_id = extract_context_id(cand)
 
@@ -220,10 +207,11 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         if external_session_id is None:
             external_session_id = m_external
 
-    if provider:
-        binding_meta["provider"] = provider
-    if external_session_id:
-        binding_meta["externalSessionId"] = external_session_id
+    binding_meta = merge_preferred_session_binding_metadata(
+        binding_meta,
+        provider=provider,
+        external_session_id=external_session_id,
+    )
 
     return PayloadAnalysis(
         usage=usage,
@@ -238,21 +226,14 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
 
 def coerce_payload_to_dict(payload: Any) -> dict[str, Any]:
     resolved_payload = payload
-    if isinstance(resolved_payload, tuple):
-        if len(resolved_payload) >= 2 and resolved_payload[1]:
-            resolved_payload = resolved_payload[1]
-        elif resolved_payload:
-            resolved_payload = resolved_payload[0]
-        else:
-            return {}
     if isinstance(resolved_payload, dict):
         return dict(resolved_payload)
     try:
-        dumped = to_json_like(resolved_payload)
+        dumped = to_protojson_object(resolved_payload)
     except Exception as exc:
         logger.error("Failed to dump A2A payload", exc_info=True)
         raise ValueError("Payload serialization failed") from exc
-    if isinstance(dumped, dict):
+    if dumped is not None:
         return dumped
     return {}
 
@@ -341,96 +322,3 @@ def extract_usage_hints_from_invoke_result(result: dict[str, Any]) -> dict[str, 
         if raw_analysis.usage:
             usage_hints = raw_analysis.usage
     return usage_hints
-
-
-def _extract_text_from_parts(parts: Any) -> str | None:
-    if not isinstance(parts, list):
-        return None
-    collected: list[str] = []
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        text = part.get("text")
-        if isinstance(text, str) and text.strip():
-            collected.append(text)
-            continue
-        content = part.get("content")
-        if isinstance(content, str) and content.strip():
-            collected.append(content)
-    if collected:
-        return "".join(collected)
-    return None
-
-
-def extract_preferred_text_from_payload(payload: Any) -> str | None:
-    root = as_dict(payload)
-    if not root:
-        return None
-
-    direct_text = _pick_non_empty_str(root, ("text", "content", "message"))
-    if direct_text:
-        return direct_text
-
-    parts_text = _extract_text_from_parts(root.get("parts"))
-    if parts_text:
-        return parts_text
-
-    artifact = as_dict(root.get("artifact"))
-    if artifact:
-        artifact_text = _extract_text_from_parts(artifact.get("parts"))
-        if artifact_text:
-            return artifact_text
-
-    artifacts = root.get("artifacts")
-    if isinstance(artifacts, list):
-        for artifact_item in reversed(artifacts):
-            artifact_text = extract_preferred_text_from_payload(artifact_item)
-            if artifact_text:
-                return artifact_text
-
-    history = root.get("history")
-    if isinstance(history, list):
-        for entry in reversed(history):
-            entry_root = as_dict(entry)
-            if not entry_root:
-                continue
-            role = _pick_non_empty_str(entry_root, ("role",))
-            if role and role.lower() in {"agent", "assistant", "model"}:
-                history_text = extract_preferred_text_from_payload(entry_root)
-                if history_text:
-                    return history_text
-        for entry in reversed(history):
-            history_text = extract_preferred_text_from_payload(entry)
-            if history_text:
-                return history_text
-
-    for key in ("status", "result", "message"):
-        nested = as_dict(root.get(key))
-        if nested:
-            nested_text = extract_preferred_text_from_payload(nested)
-            if nested_text:
-                return nested_text
-
-    return None
-
-
-def extract_readable_content_from_invoke_result(result: dict[str, Any]) -> str | None:
-    raw_payload = coerce_payload_to_dict(result.get("raw"))
-    if raw_payload:
-        raw_text = extract_preferred_text_from_payload(raw_payload)
-        if raw_text:
-            return raw_text
-
-    content = result.get("content")
-    if isinstance(content, str) and content.strip():
-        stripped = content.strip()
-        if stripped[:1] in {"{", "["}:
-            try:
-                parsed = json.loads(stripped)
-            except Exception:
-                return stripped
-            parsed_text = extract_preferred_text_from_payload(parsed)
-            if parsed_text:
-                return parsed_text
-        return stripped
-    return None

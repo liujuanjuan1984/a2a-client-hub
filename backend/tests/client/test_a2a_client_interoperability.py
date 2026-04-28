@@ -266,7 +266,7 @@ def test_supported_transports_is_copied_on_init() -> None:
         ]
     )
 
-    selected_transport, selected_url, _ = (
+    selected_transport, selected_url, _, _ = (
         a2a_client._resolve_negotiated_transport_target(card)
     )
 

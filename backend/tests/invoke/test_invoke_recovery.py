@@ -41,8 +41,31 @@ def _capture_warning(
     return _warn
 
 
-async def _return_false(**kwargs) -> bool:
-    return False
+def _session_metadata(
+    *,
+    provider: str | None = None,
+    session_id: str | None = None,
+    context_id: str | None = None,
+    **extra: object,
+) -> dict[str, object]:
+    metadata: dict[str, object] = dict(extra)
+    if context_id is not None:
+        metadata["contextId"] = context_id
+    if provider is not None or session_id is not None:
+        session: dict[str, str] = {}
+        if session_id is not None:
+            session["id"] = session_id
+        if provider is not None:
+            session["provider"] = provider
+        metadata["shared"] = {
+            **(
+                metadata.get("shared")
+                if isinstance(metadata.get("shared"), dict)
+                else {}
+            ),
+            "session": session,
+        }
+    return metadata
 
 
 def _invoke_metadata_extension() -> ResolvedInvokeMetadataExtension:
@@ -69,11 +92,11 @@ def test_build_rebound_invoke_payload_applies_continue_binding_fields() -> None:
         {
             "query": "hello",
             "conversationId": str(uuid4()),
-            "metadata": {
-                "locale": "zh-CN",
-                "provider": "legacy",
-                "externalSessionId": "legacy-sid",
-            },
+            "metadata": _session_metadata(
+                provider="legacy",
+                session_id="legacy-sid",
+                locale="zh-CN",
+            ),
         }
     )
 
@@ -81,11 +104,11 @@ def test_build_rebound_invoke_payload_applies_continue_binding_fields() -> None:
         payload=payload,
         continue_payload={
             "conversationId": "conv-next",
-            "metadata": {
-                "provider": "OpenCode",
-                "externalSessionId": "ses-upstream-1",
-                "contextId": "ctx-next",
-            },
+            "metadata": _session_metadata(
+                provider="OpenCode",
+                session_id="ses-upstream-1",
+                context_id="ctx-next",
+            ),
         },
     )
 
@@ -102,7 +125,7 @@ async def test_validate_provider_aware_continue_session_skips_without_session_id
 ):
     result = await validate_provider_aware_continue_session(
         runtime=SimpleNamespace(),
-        continue_payload={"metadata": {"provider": "opencode"}},
+        continue_payload={"metadata": _session_metadata(provider="opencode")},
         logger=_fake_logger(),
         log_extra={},
     )
@@ -124,10 +147,10 @@ async def test_validate_provider_aware_continue_session_validates_with_extension
     result = await validate_provider_aware_continue_session(
         runtime=SimpleNamespace(),
         continue_payload={
-            "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "ses-upstream-1",
-            }
+            "metadata": _session_metadata(
+                provider="opencode",
+                session_id="ses-upstream-1",
+            )
         },
         logger=_fake_logger(),
         log_extra={},
@@ -155,10 +178,10 @@ async def test_validate_provider_aware_continue_session_returns_failed_for_expli
     result = await validate_provider_aware_continue_session(
         runtime=SimpleNamespace(),
         continue_payload={
-            "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "ses-upstream-1",
-            }
+            "metadata": _session_metadata(
+                provider="opencode",
+                session_id="ses-upstream-1",
+            )
         },
         logger=_fake_logger(),
         log_extra={},
@@ -181,10 +204,10 @@ async def test_validate_provider_aware_continue_session_skips_when_extension_is_
     result = await validate_provider_aware_continue_session(
         runtime=SimpleNamespace(),
         continue_payload={
-            "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "ses-upstream-1",
-            }
+            "metadata": _session_metadata(
+                provider="opencode",
+                session_id="ses-upstream-1",
+            )
         },
         logger=_fake_logger(),
         log_extra={},
@@ -200,11 +223,11 @@ async def test_finalize_outbound_invoke_payload_applies_declared_contract() -> N
         {
             "query": "hello",
             "conversationId": str(uuid4()),
-            "metadata": {
-                "locale": "zh-CN",
-                "provider": "legacy",
-                "externalSessionId": "legacy-sid",
-                "shared": {
+            "metadata": _session_metadata(
+                provider="legacy",
+                session_id="legacy-sid",
+                locale="zh-CN",
+                shared={
                     "session": {
                         "id": "legacy-sid",
                         "provider": "legacy",
@@ -214,7 +237,7 @@ async def test_finalize_outbound_invoke_payload_applies_declared_contract() -> N
                         "modelID": "gpt-5",
                     },
                 },
-            },
+            ),
             "sessionBinding": {
                 "provider": "OpenCode",
                 "externalSessionId": "ses-upstream-1",
@@ -229,7 +252,6 @@ async def test_finalize_outbound_invoke_payload_applies_declared_contract() -> N
         ),
         logger=_fake_logger(),
         log_extra={},
-        resolve_outbound_mode=_return_false,
     )
 
     assert finalized.metadata == {
@@ -280,7 +302,6 @@ async def test_finalize_outbound_invoke_payload_injects_bound_invoke_metadata() 
         logger=_fake_logger(),
         log_extra={},
         extensions_service_getter=lambda: _ExtensionsService(),
-        resolve_outbound_mode=_return_false,
     )
 
     assert finalized.metadata == {
@@ -324,7 +345,6 @@ async def test_finalize_outbound_invoke_payload_prefers_request_override_over_bo
         logger=_fake_logger(),
         log_extra={},
         extensions_service_getter=lambda: _ExtensionsService(),
-        resolve_outbound_mode=_return_false,
     )
 
     assert finalized.metadata == {
@@ -369,7 +389,6 @@ async def test_finalize_outbound_invoke_payload_applies_agent_defaults_after_bin
         logger=_fake_logger(),
         log_extra={},
         extensions_service_getter=lambda: _ExtensionsService(),
-        resolve_outbound_mode=_return_false,
     )
 
     assert finalized.metadata == {
@@ -413,7 +432,6 @@ async def test_finalize_outbound_invoke_payload_raises_when_declared_fields_are_
             logger=_fake_logger(),
             log_extra={},
             extensions_service_getter=lambda: _ExtensionsService(),
-            resolve_outbound_mode=_return_false,
         )
 
     assert exc_info.value.missing_params == ({"name": "channel_id", "required": True},)
@@ -445,7 +463,6 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_binding_and_
         logger=_fake_logger(),
         log_extra={"agent_id": "agent-1"},
         extensions_service_getter=lambda: _UnsupportedInvokeMetadataService(),
-        resolve_outbound_mode=_return_false,
         log_warning_fn=_capture_warning(warnings),
     )
 
@@ -488,15 +505,15 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure()
         log_warning_fn=_capture_warning(warnings),
     )
 
-    assert include_legacy_root is True
+    assert include_legacy_root is False
     assert warnings == [
         (
-            "Session binding capability resolution failed upstream; using compatibility fallback",
+            "Session binding capability resolution failed upstream; session binding fallback remains disabled",
             {
                 "agent_id": "agent-1",
                 "session_binding_resolution_error": "upstream_fetch_failed",
                 "session_binding_resolution_detail": "card fetch failed",
-                "session_binding_fallback_used": True,
+                "session_binding_fallback_used": False,
             },
         )
     ]

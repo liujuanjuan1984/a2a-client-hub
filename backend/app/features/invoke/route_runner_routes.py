@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.error_codes import status_code_for_invoke_error_code
 from app.api.error_handlers import build_error_detail, build_error_response
 from app.features.invoke import session_binding as invoke_session_binding
-from app.features.invoke.service import a2a_invoke_service
+from app.features.invoke.service_streaming import a2a_invoke_streaming_runtime
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeResponse,
@@ -58,7 +58,7 @@ async def run_ws_invoke_route(
         try:
             payload = A2AAgentInvokeRequest.model_validate(data)
         except ValidationError:
-            await a2a_invoke_service.send_ws_error(
+            await a2a_invoke_streaming_runtime.send_ws_error(
                 websocket,
                 message="Invalid request payload",
                 error_code="invalid_request",
@@ -69,7 +69,7 @@ async def run_ws_invoke_route(
             return
 
         if not payload.query.strip():
-            await a2a_invoke_service.send_ws_error(
+            await a2a_invoke_streaming_runtime.send_ws_error(
                 websocket,
                 message="Query must be a non-empty string",
                 error_code="invalid_query",
@@ -87,7 +87,7 @@ async def run_ws_invoke_route(
                 if callable(runtime_not_found_message)
                 else runtime_not_found_message
             )
-            await a2a_invoke_service.send_ws_error(
+            await a2a_invoke_streaming_runtime.send_ws_error(
                 websocket,
                 message=message,
                 error_code=runtime_not_found_code,
@@ -97,7 +97,7 @@ async def run_ws_invoke_route(
             )
             return
         except runtime_validation_errors as exc:
-            await a2a_invoke_service.send_ws_error(
+            await a2a_invoke_streaming_runtime.send_ws_error(
                 websocket,
                 message=str(exc),
                 error_code="runtime_invalid",
@@ -138,7 +138,7 @@ async def run_ws_invoke_route(
                     max_recovery_attempts=session_not_found_retry_limit,
                 )
         except ValueError as exc:
-            await a2a_invoke_service.send_ws_error(
+            await a2a_invoke_streaming_runtime.send_ws_error(
                 websocket,
                 message=str(exc),
                 error_code=invoke_session_binding.ws_error_code_for_invoke_session_error(
@@ -158,7 +158,7 @@ async def run_ws_invoke_route(
         else:
             logger.error(unexpected_log_message, exc_info=True)
             try:
-                await a2a_invoke_service.send_ws_error(
+                await a2a_invoke_streaming_runtime.send_ws_error(
                     websocket,
                     message="Upstream streaming failed",
                     error_code="upstream_stream_error",

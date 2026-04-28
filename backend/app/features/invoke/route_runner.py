@@ -28,7 +28,6 @@ from app.features.invoke.recovery import (
     InvokeMetadataBindingRequiredError,
     build_rebound_invoke_payload,
     finalize_outbound_invoke_payload,
-    resolve_session_binding_outbound_mode,
     validate_provider_aware_continue_session,
 )
 from app.features.invoke.route_runner_session_control import (
@@ -47,10 +46,10 @@ from app.features.invoke.route_runner_state import (
     register_inflight_invoke,
     unregister_inflight_invoke,
 )
-from app.features.invoke.service import (
-    StreamOutcome,
-    a2a_invoke_service,
+from app.features.invoke.service_streaming import (
+    a2a_invoke_streaming_runtime,
 )
+from app.features.invoke.service_types import StreamOutcome
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
 )
@@ -78,7 +77,6 @@ from app.features.invoke.stream_persistence import (
 from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
 from app.features.working_directory import adapt_working_directory_metadata_for_upstream
-from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.runtime.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
@@ -253,20 +251,6 @@ async def _unregister_inflight_invoke(
     )
 
 
-async def _resolve_session_binding_outbound_mode(
-    *,
-    runtime: Any,
-    logger: Any,
-    log_extra: dict[str, Any],
-) -> bool:
-    return await resolve_session_binding_outbound_mode(
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-        extensions_service_getter=get_a2a_extensions_service,
-    )
-
-
 async def _try_acquire_invoke_guard(guard_key: str) -> bool:
     return await try_acquire_invoke_guard(guard_key)
 
@@ -287,7 +271,6 @@ async def _finalize_outbound_invoke_payload(
         runtime=runtime,
         logger=logger,
         log_extra=log_extra,
-        resolve_outbound_mode=_resolve_session_binding_outbound_mode,
     )
 
 
@@ -360,7 +343,6 @@ async def _persist_stream_block_update(
         state=state,
         event_payload=event_payload,
         request=request,
-        stream_service=a2a_invoke_service,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
@@ -391,7 +373,6 @@ async def _persist_interrupt_lifecycle_event(
         state=state,
         event_payload=event_payload,
         request=request,
-        stream_service=a2a_invoke_service,
         build_interrupt_message_content=serialize_interrupt_event_block_content,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
@@ -634,7 +615,7 @@ async def run_http_invoke(
             log_extra=stream_log_extra,
         )
         try:
-            return a2a_invoke_service.stream_sse(
+            return a2a_invoke_streaming_runtime.stream_sse(
                 gateway=gateway,
                 resolved=runtime.resolved,
                 query=payload.query,
@@ -660,7 +641,7 @@ async def run_http_invoke(
         log_extra=stream_log_extra,
     )
     try:
-        outcome = await a2a_invoke_service.consume_stream(
+        outcome = await a2a_invoke_streaming_runtime.consume_stream(
             gateway=gateway,
             resolved=runtime.resolved,
             query=payload.query,
@@ -786,7 +767,7 @@ async def run_background_invoke(
         log_extra=stream_log_extra,
     )
     try:
-        outcome = await a2a_invoke_service.consume_stream(
+        outcome = await a2a_invoke_streaming_runtime.consume_stream(
             gateway=gateway,
             invoke_session=invoke_session,
             resolved=runtime.resolved,
@@ -859,7 +840,7 @@ async def run_ws_invoke(
             "missing_params": response.missing_params,
             "upstream_error": response.upstream_error,
         }
-        await a2a_invoke_service.send_ws_error(
+        await a2a_invoke_streaming_runtime.send_ws_error(
             websocket=websocket,
             message=response.error or "Invoke failed",
             error_code=response.error_code,
@@ -869,9 +850,11 @@ async def run_ws_invoke(
             upstream_error=response.upstream_error,
         )
         if on_error_metadata is not None:
-            await a2a_invoke_service._call_callback(on_error_metadata, error_payload)
+            await a2a_invoke_streaming_runtime._call_callback(
+                on_error_metadata, error_payload
+            )
         if send_stream_end:
-            await a2a_invoke_service.send_ws_stream_end(websocket)
+            await a2a_invoke_streaming_runtime.send_ws_stream_end(websocket)
         return
     state = await _prepare_state(
         user_id=user_id,
@@ -916,7 +899,7 @@ async def run_ws_invoke(
         log_extra=stream_log_extra,
     )
     try:
-        await a2a_invoke_service.stream_ws(
+        await a2a_invoke_streaming_runtime.stream_ws(
             websocket=websocket,
             gateway=gateway,
             resolved=runtime.resolved,
@@ -970,7 +953,7 @@ async def run_ws_invoke_with_session_recovery(
                 stream_error_message = raw_message
 
         async def _send_recovery_failed_error() -> None:
-            await a2a_invoke_service.send_ws_error(
+            await a2a_invoke_streaming_runtime.send_ws_error(
                 websocket=websocket,
                 message=stream_error_message
                 or _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE,
@@ -994,17 +977,17 @@ async def run_ws_invoke_with_session_recovery(
             send_stream_end=False,
         )
         if stream_error_code is None:
-            await a2a_invoke_service.send_ws_stream_end(websocket)
+            await a2a_invoke_streaming_runtime.send_ws_stream_end(websocket)
             return
 
         if not invoke_session_binding.is_recoverable_invoke_session_error(
             stream_error_code
         ):
-            await a2a_invoke_service.send_ws_stream_end(websocket)
+            await a2a_invoke_streaming_runtime.send_ws_stream_end(websocket)
             return
         if remaining_retries <= 0:
             await _send_recovery_failed_error()
-            await a2a_invoke_service.send_ws_stream_end(websocket)
+            await a2a_invoke_streaming_runtime.send_ws_stream_end(websocket)
             return
 
         remaining_retries -= 1
@@ -1017,11 +1000,11 @@ async def run_ws_invoke_with_session_recovery(
                 log_extra=log_extra,
             )
         except ValueError:
-            await a2a_invoke_service.send_ws_stream_end(websocket)
+            await a2a_invoke_streaming_runtime.send_ws_stream_end(websocket)
             return
         if rebound_payload is None:
             await _send_recovery_failed_error()
-            await a2a_invoke_service.send_ws_stream_end(websocket)
+            await a2a_invoke_streaming_runtime.send_ws_stream_end(websocket)
             return
         current_payload = rebound_payload
 

@@ -16,6 +16,61 @@ import type {
   SessionMessageItem,
 } from "./chatRuntime.test.support";
 
+const buildStatusUpdate = ({
+  state,
+  messageId,
+  completionPhase,
+}: {
+  state: string;
+  messageId?: string;
+  completionPhase?: string;
+}) => ({
+  statusUpdate: {
+    status: { state },
+    metadata: {
+      shared: {
+        stream: {
+          ...(messageId ? { messageId } : {}),
+          ...(completionPhase ? { completionPhase } : {}),
+        },
+      },
+    },
+  },
+});
+
+const buildArtifactUpdate = ({
+  agentMessageId,
+  text,
+  eventId,
+  seq,
+  source = "assistant_text",
+}: {
+  agentMessageId: string;
+  text: string;
+  eventId: string;
+  seq: number;
+  source?: string;
+}) => ({
+  artifactUpdate: {
+    op: "append",
+    artifact: {
+      artifactId: `${agentMessageId}:stream:1`,
+      parts: [{ text }],
+      metadata: {
+        shared: {
+          stream: {
+            blockType: "text",
+            source,
+            messageId: agentMessageId,
+            eventId,
+            seq,
+          },
+        },
+      },
+    },
+  },
+});
+
 describe("executeChatRuntime empty-content recovery", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -80,25 +135,16 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-          message_id: agentMessageId,
-          metadata: {
-            shared: {
-              stream: {
-                message_id: agentMessageId,
-                completion_phase: "persisted",
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({ state: "TASK_STATE_WORKING" }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+            messageId: agentMessageId,
+            completionPhase: "persisted",
+          }),
+        );
         return true;
       },
     );
@@ -215,33 +261,17 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:1`,
-            parts: [{ kind: "text", text: "Hello after terminal status." }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
-                },
-              },
-            },
-          },
-        });
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-        });
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            text: "Hello after terminal status.",
+            eventId: `${agentMessageId}:1`,
+            seq: 1,
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({ state: "TASK_STATE_COMPLETED" }),
+        );
         await transportDone.promise;
         return true;
       },
@@ -340,42 +370,21 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:1`,
-            parts: [{ kind: "text", text: "Persisted ack response." }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
-                },
-              },
-            },
-          },
-        });
-        const shouldClose = params.callbacks.onData({
-          kind: "status-update",
-          final: true,
-          message_id: agentMessageId,
-          status: { state: "completed" },
-          metadata: {
-            shared: {
-              stream: {
-                message_id: agentMessageId,
-                completion_phase: "persisted",
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            text: "Persisted ack response.",
+            eventId: `${agentMessageId}:1`,
+            seq: 1,
+          }),
+        );
+        const shouldClose = params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+            messageId: agentMessageId,
+            completionPhase: "persisted",
+          }),
+        );
         expect(shouldClose).toBe(true);
         return true;
       },
@@ -459,28 +468,14 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          kind: "artifact-update",
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          append: true,
-          artifact: {
-            artifactId: `${agentMessageId}:stream:1`,
-            parts: [{ kind: "text", text: "Hello before stream end." }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "text",
-                  source: "assistant_text",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
-                },
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildArtifactUpdate({
+            agentMessageId,
+            text: "Hello before stream end.",
+            eventId: `${agentMessageId}:1`,
+            seq: 1,
+          }),
+        );
         const shouldClose = params.callbacks.onData({
           event: "stream_end",
           data: {},
@@ -682,18 +677,28 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
+        params.callbacks.onData(
+          buildStatusUpdate({ state: "TASK_STATE_WORKING" }),
+        );
         params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-        });
-        params.callbacks.onData({
-          kind: "artifact-update",
-          taskId: "task-compat-1",
-          append: true,
-          artifact: {
-            artifactId: "stream-compat-1",
-            parts: [{ type: "text", content: "Hello from stream" }],
+          artifactUpdate: {
+            op: "append",
+            taskId: "task-compat-1",
+            artifact: {
+              artifactId: "stream-compat-1",
+              parts: [{ text: "Hello from stream" }],
+              metadata: {
+                shared: {
+                  stream: {
+                    blockType: "text",
+                    source: "assistant_text",
+                    messageId: agentMessageId,
+                    eventId: `${agentMessageId}:1`,
+                    seq: 1,
+                  },
+                },
+              },
+            },
           },
         });
         await new Promise((resolve) => setTimeout(resolve, 30));
@@ -703,11 +708,9 @@ describe("executeChatRuntime empty-content recovery", () => {
             message.status === "streaming" &&
             message.content.includes("Hello from stream"),
         );
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({ state: "TASK_STATE_COMPLETED" }),
+        );
         return true;
       },
     );
@@ -796,44 +799,34 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
+        params.callbacks.onData(
+          buildStatusUpdate({ state: "TASK_STATE_WORKING" }),
+        );
         params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-        });
-        params.callbacks.onData({
-          kind: "artifact-update",
-          append: false,
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          tool_call: {
-            name: "bash",
-            status: "running",
-            callId: "call-1",
-            arguments: { command: "pwd" },
-          },
-          artifact: {
-            artifactId: `${agentMessageId}:stream`,
-            parts: [
-              {
-                kind: "data",
-                data: {
-                  call_id: "call-1",
-                  tool: "bash",
-                  status: "running",
-                  input: { command: "pwd" },
+          artifactUpdate: {
+            op: "replace",
+            artifact: {
+              artifactId: `${agentMessageId}:stream`,
+              parts: [
+                {
+                  kind: "data",
+                  data: {
+                    call_id: "call-1",
+                    tool: "bash",
+                    status: "running",
+                    input: { command: "pwd" },
+                  },
                 },
-              },
-            ],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "tool_call",
-                  source: "tool_part_update",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
+              ],
+              metadata: {
+                shared: {
+                  stream: {
+                    blockType: "tool_call",
+                    source: "tool_part_update",
+                    messageId: agentMessageId,
+                    eventId: `${agentMessageId}:1`,
+                    seq: 1,
+                  },
                 },
               },
             },
@@ -850,20 +843,13 @@ describe("executeChatRuntime empty-content recovery", () => {
           agentMessage?.blocks?.[0]?.toolCall?.name === "bash" &&
           agentMessage?.blocks?.[0]?.toolCall?.status === "running";
 
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-          message_id: agentMessageId,
-          metadata: {
-            shared: {
-              stream: {
-                message_id: agentMessageId,
-                completion_phase: "persisted",
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+            messageId: agentMessageId,
+            completionPhase: "persisted",
+          }),
+        );
         return true;
       },
     );
@@ -939,28 +925,24 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
+        params.callbacks.onData(
+          buildStatusUpdate({ state: "TASK_STATE_WORKING" }),
+        );
         params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "working" },
-          final: false,
-        });
-        params.callbacks.onData({
-          kind: "artifact-update",
-          append: false,
-          message_id: agentMessageId,
-          event_id: `${agentMessageId}:1`,
-          seq: 1,
-          artifact: {
-            artifactId: `${agentMessageId}:stream`,
-            parts: [{ kind: "text", text: "Reasoning in progress" }],
-            metadata: {
-              shared: {
-                stream: {
-                  block_type: "reasoning",
-                  source: "reasoning_part_update",
-                  message_id: agentMessageId,
-                  event_id: `${agentMessageId}:1`,
-                  sequence: 1,
+          artifactUpdate: {
+            op: "replace",
+            artifact: {
+              artifactId: `${agentMessageId}:stream`,
+              parts: [{ text: "Reasoning in progress" }],
+              metadata: {
+                shared: {
+                  stream: {
+                    blockType: "reasoning",
+                    source: "reasoning_part_update",
+                    messageId: agentMessageId,
+                    eventId: `${agentMessageId}:1`,
+                    seq: 1,
+                  },
                 },
               },
             },
@@ -975,20 +957,13 @@ describe("executeChatRuntime empty-content recovery", () => {
           (agentMessage.blocks?.length ?? 0) > 0 &&
           agentMessage?.blocks?.[0]?.type === "reasoning";
 
-        params.callbacks.onData({
-          kind: "status-update",
-          status: { state: "completed" },
-          final: true,
-          message_id: agentMessageId,
-          metadata: {
-            shared: {
-              stream: {
-                message_id: agentMessageId,
-                completion_phase: "persisted",
-              },
-            },
-          },
-        });
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+            messageId: agentMessageId,
+            completionPhase: "persisted",
+          }),
+        );
         return true;
       },
     );

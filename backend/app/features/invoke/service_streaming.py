@@ -18,6 +18,11 @@ from app.features.invoke import (
     service_streaming_transport,
     stream_payloads,
 )
+from app.features.invoke.payload_helpers import dict_field as _dict_field
+from app.features.invoke.payload_helpers import (
+    pick_first_non_empty_str,
+    pick_non_empty_str,
+)
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamErrorPayload,
@@ -34,14 +39,13 @@ from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_client.protobuf import (
     is_terminal_task_state,
-    stream_response_to_payload,
-    to_json_like,
+    to_protojson_like,
+    to_protojson_object,
 )
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
 from app.utils.json_encoder import json_dumps
-from app.utils.payload_extract import as_dict
 
 
 class StreamTextAccumulator:
@@ -50,10 +54,6 @@ class StreamTextAccumulator:
     def __init__(self) -> None:
         self._blocks: list[dict[str, Any]] = []
         self._block_seq = 0
-
-    @staticmethod
-    def _is_word_char(value: str | None) -> bool:
-        return bool(value and re.fullmatch(r"[\w]", value, flags=re.UNICODE))
 
     @staticmethod
     def _extract_shared_stream_metadata(
@@ -66,81 +66,6 @@ class StreamTextAccumulator:
             if str(block.get("block_id") or "") == block_id:
                 return index
         return None
-
-    def _find_last_text_block_index(self) -> int | None:
-        for index in range(len(self._blocks) - 1, -1, -1):
-            if str(self._blocks[index].get("type") or "") == "text":
-                return index
-        return None
-
-    def _trim_overlapping_reasoning_prefix(self, text: str) -> str:
-        if not text or not self._blocks:
-            return text
-        latest_reasoning = self._blocks[-1]
-        if str(latest_reasoning.get("type") or "") != "reasoning":
-            return text
-        reasoning_content = str(latest_reasoning.get("content") or "")
-        if not reasoning_content:
-            return text
-        for overlap in range(min(len(reasoning_content), len(text)), 0, -1):
-            candidate = reasoning_content[-overlap:]
-            overlap_start = len(reasoning_content) - overlap
-            before_overlap = (
-                reasoning_content[overlap_start - 1] if overlap_start > 0 else None
-            )
-            after_overlap = text[overlap] if overlap < len(text) else None
-            tokens = re.findall(r"[\w]+", candidate, flags=re.UNICODE)
-            if (
-                text.startswith(candidate)
-                and not self._is_word_char(before_overlap)
-                and not self._is_word_char(after_overlap)
-                and (len(tokens) >= 2 or any(len(token) >= 5 for token in tokens))
-            ):
-                return re.sub(r"^\s+", "", text[overlap:])
-        return text
-
-    def _adapt_legacy_stream_block(
-        self,
-        *,
-        block_type: str,
-        delta: str,
-        done: bool,
-        source: str | None,
-        block_id: str,
-        lane_id: str,
-        operation: str,
-        base_seq: int | None,
-        seq: int | None,
-    ) -> tuple[str, str, str, str, int | None, bool]:
-        resolved_block_id = block_id
-        resolved_lane_id = lane_id
-        resolved_delta = delta
-        resolved_base_seq = base_seq
-        if (
-            operation == "replace"
-            and block_type == "text"
-            and source in {"final_snapshot", "finalize_snapshot"}
-        ):
-            latest_text_index = self._find_last_text_block_index()
-            if latest_text_index is not None:
-                latest_text = self._blocks[latest_text_index]
-                existing_block_id = str(latest_text.get("block_id") or "")
-                existing_lane_id = str(latest_text.get("lane_id") or "")
-                if existing_block_id:
-                    resolved_block_id = existing_block_id
-                if existing_lane_id:
-                    resolved_lane_id = existing_lane_id
-            resolved_delta = self._trim_overlapping_reasoning_prefix(resolved_delta)
-            if resolved_base_seq is None:
-                resolved_base_seq = seq
-        return (
-            resolved_block_id,
-            resolved_lane_id,
-            operation,
-            resolved_delta,
-            resolved_base_seq,
-            done,
-        )
 
     def _push_new_block(
         self,
@@ -172,7 +97,6 @@ class StreamTextAccumulator:
         block_type: str,
         delta: str,
         done: bool,
-        source: str | None,
         block_id: str,
         lane_id: str,
         operation: str,
@@ -260,51 +184,17 @@ class StreamTextAccumulator:
             lane_id = "primary_text" if block_type == "text" else block_type
         if not isinstance(operation, str) or not operation:
             operation = (
-                "replace"
-                if (not bool(resolved_stream_block.get("append", True)))
-                or str(resolved_stream_block.get("source") or "")
-                in {"final_snapshot", "finalize_snapshot"}
-                else "append"
+                "append" if bool(resolved_stream_block.get("append")) else "replace"
             )
-        (
-            block_id,
-            lane_id,
-            operation,
-            delta,
-            base_seq,
-            done,
-        ) = self._adapt_legacy_stream_block(
-            block_type=block_type,
-            delta=delta,
-            done=bool(resolved_stream_block.get("is_finished", False)),
-            source=(
-                str(resolved_stream_block.get("source"))
-                if isinstance(resolved_stream_block.get("source"), str)
-                else None
-            ),
-            block_id=block_id,
-            lane_id=lane_id,
-            operation=operation,
-            base_seq=base_seq if isinstance(base_seq, int) else None,
-            seq=(
-                resolved_stream_block.get("seq")
-                if isinstance(resolved_stream_block.get("seq"), int)
-                else None
-            ),
-        )
+        done = bool(resolved_stream_block.get("is_finished", False))
         self._apply_block_update(
             block_type=block_type,
             delta=delta,
             done=done,
-            source=(
-                str(resolved_stream_block.get("source"))
-                if isinstance(resolved_stream_block.get("source"), str)
-                else None
-            ),
             block_id=block_id,
             lane_id=lane_id,
             operation=operation,
-            base_seq=base_seq,
+            base_seq=base_seq if isinstance(base_seq, int) else None,
         )
 
     def result(self) -> str:
@@ -519,61 +409,26 @@ class A2AInvokeStreamingRuntime:
             yield payload
 
     @staticmethod
-    def _pick_non_empty_str(
-        payload: dict[str, Any],
-        keys: tuple[str, ...],
-    ) -> str | None:
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return None
-
-    @staticmethod
-    def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, int):
-                return value
-            if isinstance(value, float) and value.is_integer():
-                return int(value)
-            if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-                return int(value.strip())
-        return None
-
-    @staticmethod
     def serialize_stream_event(
         event: StreamEvent, *, validate_message: ValidateMessageFn
     ) -> dict[str, Any]:
         from app.core.config import settings
 
         if isinstance(event, A2AStreamResponse):
-            payload = stream_response_to_payload(event)
-        elif isinstance(event, tuple):
-            resolved = event[1] if len(event) >= 2 and event[1] else event[0]
-            normalized_payload = to_json_like(resolved)
-            payload = normalized_payload if isinstance(normalized_payload, dict) else {}
+            payload = to_protojson_object(event) or {}
         else:
-            normalized_payload = to_json_like(event)
+            normalized_payload = to_protojson_like(event)
             payload = normalized_payload if isinstance(normalized_payload, dict) else {}
-        stream_payloads.coerce_message_event_to_artifact_update(payload)
         if settings.debug:
             payload["validation_errors"] = validate_message(payload)
         return payload
 
     @staticmethod
-    def _analyze_stream_chunk_contract(
-        payload: dict[str, Any],
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        return stream_payloads.analyze_stream_chunk_contract(payload)
-
-    @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
-        if payload.get("kind") != "status-update":
+        status_update = payload.get("statusUpdate")
+        if not isinstance(status_update, dict):
             return False
-        if payload.get("final") is True:
-            return True
-        status = payload.get("status")
+        status = status_update.get("status")
         if isinstance(status, dict):
             return is_terminal_task_state(status.get("state"))
         return False
@@ -585,69 +440,93 @@ class A2AInvokeStreamingRuntime:
         *,
         event_sequence: int,
     ) -> None:
-        payload["seq"] = event_sequence
-        stream_payloads.coerce_message_event_to_artifact_update(payload)
-        if (
-            payload.get("kind") != "artifact-update"
-            and stream_payloads.extract_stream_chunk_from_serialized_event(payload)
-            is not None
-        ):
-            payload["kind"] = "artifact-update"
-        if payload.get("kind") != "artifact-update":
+        kind = stream_payloads._resolved_stream_event_kind(payload)
+        if kind not in {"artifact-update", "message", "status-update", "task"}:
             return
 
-        artifact = as_dict(payload.get("artifact"))
-        artifact_metadata: dict[str, Any] = {}
-        if artifact:
-            artifact["seq"] = event_sequence
-            artifact_metadata = as_dict(artifact.get("metadata"))
-            artifact_metadata["seq"] = event_sequence
-            artifact["metadata"] = artifact_metadata
-            payload["artifact"] = artifact
-        root_metadata = as_dict(payload.get("metadata"))
-        shared_stream = StreamTextAccumulator._extract_shared_stream_metadata(
+        _, body = stream_payloads._resolve_stream_response_body(payload)
+        if not body:
+            return
+
+        metadata = body.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            body["metadata"] = metadata
+
+        shared = metadata.get("shared")
+        if not isinstance(shared, dict):
+            shared = {}
+            metadata["shared"] = shared
+
+        shared_stream = shared.get("stream")
+        if not isinstance(shared_stream, dict):
+            shared_stream = {}
+            shared["stream"] = shared_stream
+
+        shared_stream["seq"] = event_sequence
+
+        artifact = stream_payloads._resolve_stream_artifact(payload)
+        artifact_metadata = _dict_field(artifact, "metadata")
+        artifact_shared_stream = stream_payloads.extract_shared_stream_metadata(
             payload, artifact
         )
+        message_id = pick_first_non_empty_str(
+            (
+                body,
+                artifact_shared_stream,
+                artifact,
+                artifact_metadata,
+                metadata,
+                shared_stream,
+            ),
+            ("messageId",),
+        )
 
-        message_id = None
-        for candidate in (
-            payload,
-            artifact,
-            artifact_metadata,
-            root_metadata,
-            shared_stream,
-        ):
-            if message_id is None:
-                message_id = cls._pick_non_empty_str(
-                    candidate, ("message_id", "messageId")
-                )
-        if message_id:
-            payload["message_id"] = message_id
+        event_id = pick_first_non_empty_str(
+            (
+                body,
+                artifact_shared_stream,
+                artifact,
+                artifact_metadata,
+                metadata,
+            ),
+            ("eventId",),
+        )
 
-        event_id = None
-        for candidate in (
-            payload,
-            artifact,
-            artifact_metadata,
-            root_metadata,
-            shared_stream,
-        ):
-            if event_id is None:
-                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
-        payload["event_id"] = event_id or (
+        fallback_event_id = (
             f"{message_id}:{event_sequence}"
             if message_id
             else f"stream:{event_sequence}"
         )
+        if event_id == f"stream:{event_sequence}" and message_id is not None:
+            event_id = None
+        shared_event_id = pick_non_empty_str(shared_stream, ("eventId",))
+        if event_id is None and shared_event_id not in (
+            None,
+            "",
+            fallback_event_id,
+            f"stream:{event_sequence}",
+        ):
+            event_id = shared_event_id
 
-    @staticmethod
-    def _stream_heartbeat_interval_seconds() -> float:
-        from app.core.config import settings
-
-        interval = float(settings.a2a_stream_heartbeat_interval)
-        if interval <= 0:
-            return 0.0
-        return interval
+        if message_id is not None:
+            shared_stream["messageId"] = message_id
+        shared_stream["eventId"] = event_id or fallback_event_id
+        if kind == "message":
+            if (
+                not isinstance(shared_stream.get("blockType"), str)
+                or not str(shared_stream.get("blockType")).strip()
+            ):
+                parts = body.get("parts")
+                if stream_payloads.extract_stream_data_from_parts(parts):
+                    shared_stream["blockType"] = "tool_call"
+                elif stream_payloads.extract_stream_text_from_parts(parts):
+                    shared_stream["blockType"] = "text"
+            if (
+                not isinstance(shared_stream.get("op"), str)
+                or not str(shared_stream.get("op")).strip()
+            ):
+                shared_stream["op"] = "replace"
 
     @classmethod
     def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:
@@ -978,3 +857,6 @@ class A2AInvokeStreamingRuntime:
             idle_timeout_seconds=idle_timeout_seconds,
             total_timeout_seconds=total_timeout_seconds,
         )
+
+
+a2a_invoke_streaming_runtime = A2AInvokeStreamingRuntime()

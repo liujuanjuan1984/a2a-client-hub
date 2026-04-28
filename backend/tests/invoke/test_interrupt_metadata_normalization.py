@@ -21,24 +21,50 @@ _MESSAGE_CASES = json.loads(
 )
 
 
+def _to_internal_interrupt_event(event: dict[str, object]) -> dict[str, object]:
+    details = (
+        dict(event.get("details")) if isinstance(event.get("details"), dict) else {}
+    )
+    normalized_details: dict[str, object] = dict(details)
+    if "displayMessage" in details:
+        normalized_details["display_message"] = details["displayMessage"]
+    if "serverName" in details:
+        normalized_details["server_name"] = details["serverName"]
+    if "requestedSchema" in details:
+        normalized_details["requested_schema"] = details["requestedSchema"]
+    if "elicitationId" in details:
+        normalized_details["elicitation_id"] = details["elicitationId"]
+    normalized_event: dict[str, object] = {
+        "request_id": event.get("requestId"),
+        "type": event.get("type"),
+        "phase": event.get("phase"),
+    }
+    if "resolution" in event:
+        normalized_event["resolution"] = event["resolution"]
+    if normalized_details:
+        normalized_event["details"] = normalized_details
+    return normalized_event
+
+
 def test_extract_interrupt_lifecycle_keeps_permission_display_message() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input-required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "perm-1",
-                    "type": "permission",
-                    "details": {
-                        "permission": "approval",
-                        "patterns": ["/repo/.env"],
-                        "request": {
-                            "description": "Agent wants to read the environment file."
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "requestId": "perm-1",
+                        "type": "permission",
+                        "details": {
+                            "permission": "approval",
+                            "patterns": ["/repo/.env"],
+                            "request": {
+                                "description": "Agent wants to read the environment file."
+                            },
                         },
-                    },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -56,26 +82,27 @@ def test_extract_interrupt_lifecycle_keeps_permission_display_message() -> None:
 
 def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "q-1",
-                    "type": "question",
-                    "details": {
-                        "description": "Please confirm how the agent should continue.",
-                        "questions": [
-                            {
-                                "title": "Approval",
-                                "prompt": "Proceed with deployment?",
-                                "description": "This will update the production service.",
-                                "options": [{"label": "Yes", "value": "yes"}],
-                            }
-                        ],
-                    },
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "requestId": "q-1",
+                        "type": "question",
+                        "details": {
+                            "description": "Please confirm how the agent should continue.",
+                            "questions": [
+                                {
+                                    "title": "Approval",
+                                    "prompt": "Proceed with deployment?",
+                                    "description": "This will update the production service.",
+                                    "options": [{"label": "Yes", "value": "yes"}],
+                                }
+                            ],
+                        },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -105,21 +132,22 @@ def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
 
 def test_extract_interrupt_lifecycle_keeps_permissions_display_message() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input-required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "perms-1",
-                    "type": "permissions",
-                    "details": {
-                        "display_message": "Approve the requested workspace access.",
-                        "permissions": {
-                            "fileSystem": {"write": ["/workspace/project"]}
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "requestId": "perms-1",
+                        "type": "permissions",
+                        "details": {
+                            "displayMessage": "Approve the requested workspace access.",
+                            "permissions": {
+                                "fileSystem": {"write": ["/workspace/project"]}
+                            },
                         },
-                    },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -136,27 +164,28 @@ def test_extract_interrupt_lifecycle_keeps_permissions_display_message() -> None
 
 def test_extract_interrupt_lifecycle_keeps_elicitation_details() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "eli-1",
-                    "type": "elicitation",
-                    "details": {
-                        "description": "Select the target folder.",
-                        "mode": "form",
-                        "server_name": "workspace-server",
-                        "requested_schema": {
-                            "type": "object",
-                            "properties": {"folder": {"type": "string"}},
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "requestId": "eli-1",
+                        "type": "elicitation",
+                        "details": {
+                            "description": "Select the target folder.",
+                            "mode": "form",
+                            "serverName": "workspace-server",
+                            "requestedSchema": {
+                                "type": "object",
+                                "properties": {"folder": {"type": "string"}},
+                            },
+                            "url": "https://example.com/form",
+                            "elicitationId": "elicitation-1",
+                            "meta": {"source": "upstream"},
                         },
-                        "url": "https://example.com/form",
-                        "elicitation_id": "elicitation-1",
-                        "meta": {"source": "upstream"},
-                    },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -181,19 +210,20 @@ def test_extract_interrupt_lifecycle_keeps_elicitation_details() -> None:
 
 def test_extract_interrupt_lifecycle_treats_auth_required_as_asked() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "auth_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "auth-1",
-                    "type": "permission",
-                    "details": {
-                        "permission": "login",
-                        "patterns": [],
-                    },
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_AUTH_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "requestId": "auth-1",
+                        "type": "permission",
+                        "details": {
+                            "permission": "login",
+                            "patterns": [],
+                        },
+                    }
                 }
-            }
+            },
         },
     }
 
@@ -210,34 +240,35 @@ def test_extract_interrupt_lifecycle_treats_auth_required_as_asked() -> None:
 
 def test_extract_interrupt_lifecycle_ignores_codex_private_permission_details() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input-required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "perm-codex-1",
-                    "type": "permission",
-                    "details": {},
-                }
-            },
-            "codex": {
-                "interrupt": {
-                    "metadata": {
-                        "method": "execCommandApproval",
-                        "raw": {
-                            "request": {
-                                "description": "Agent wants to read the environment file."
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "requestId": "perm-codex-1",
+                        "type": "permission",
+                        "details": {},
+                    }
+                },
+                "codex": {
+                    "interrupt": {
+                        "metadata": {
+                            "method": "execCommandApproval",
+                            "raw": {
+                                "request": {
+                                    "description": "Agent wants to read the environment file."
+                                },
+                                "parsedCmd": [
+                                    {
+                                        "cmd": "cat .env",
+                                        "path": "/repo/.env",
+                                        "type": "read",
+                                    }
+                                ],
                             },
-                            "parsedCmd": [
-                                {
-                                    "cmd": "cat .env",
-                                    "path": "/repo/.env",
-                                    "type": "read",
-                                }
-                            ],
                         },
                     }
-                }
+                },
             },
         },
     }
@@ -255,34 +286,35 @@ def test_extract_interrupt_lifecycle_ignores_codex_private_permission_details() 
 
 def test_extract_interrupt_lifecycle_ignores_codex_private_question_details() -> None:
     payload = {
-        "kind": "status-update",
-        "status": {"state": "input_required"},
-        "metadata": {
-            "shared": {
-                "interrupt": {
-                    "request_id": "q-codex-1",
-                    "type": "question",
-                    "details": {"questions": []},
-                }
-            },
-            "codex": {
-                "interrupt": {
-                    "metadata": {
-                        "method": "item/tool/requestUserInput",
-                        "raw": {
-                            "context": {
-                                "description": "Please confirm how the agent should continue."
+        "statusUpdate": {
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED"},
+            "metadata": {
+                "shared": {
+                    "interrupt": {
+                        "requestId": "q-codex-1",
+                        "type": "question",
+                        "details": {"questions": []},
+                    }
+                },
+                "codex": {
+                    "interrupt": {
+                        "metadata": {
+                            "method": "item/tool/requestUserInput",
+                            "raw": {
+                                "context": {
+                                    "description": "Please confirm how the agent should continue."
+                                },
+                                "questions": [
+                                    {
+                                        "header": "Deploy",
+                                        "question": "Proceed with deployment?",
+                                        "options": [{"label": "Yes", "value": "yes"}],
+                                    }
+                                ],
                             },
-                            "questions": [
-                                {
-                                    "header": "Deploy",
-                                    "question": "Proceed with deployment?",
-                                    "options": [{"label": "Yes", "value": "yes"}],
-                                }
-                            ],
                         },
                     }
-                }
+                },
             },
         },
     }
@@ -324,10 +356,9 @@ def test_normalize_interrupt_lifecycle_event_keeps_legacy_nested_permission_text
 
 def test_build_interrupt_lifecycle_message_contract_cases() -> None:
     for case in _MESSAGE_CASES:
-        assert build_interrupt_lifecycle_message_code(case["event"]) == case["code"]
-        assert (
-            build_interrupt_lifecycle_message_content(case["event"]) == case["content"]
-        )
+        event = _to_internal_interrupt_event(case["event"])
+        assert build_interrupt_lifecycle_message_code(event) == case["code"]
+        assert build_interrupt_lifecycle_message_content(event) == case["content"]
 
 
 def test_interrupt_event_block_content_round_trips_structured_payload() -> None:

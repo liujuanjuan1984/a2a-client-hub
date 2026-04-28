@@ -1,155 +1,163 @@
 [
   {
-    "name": "legacy_append_text_chunk_maps_to_append_operation",
+    "name": "explicit_append_text_chunk_keeps_lane_defaults",
     "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-1",
-      "message_id": "msg-1",
-      "event_id": "evt-1",
-      "seq": 1,
-      "append": true,
-      "artifact": {
-        "artifact_id": "task-1:stream:text",
-        "parts": [
-          {
-            "kind": "text",
-            "text": "Hello "
+      "artifactUpdate": {
+        "artifact": {
+          "artifactId": "task-1:stream:text",
+          "parts": [
+            {
+              "text": "Hello "
+            }
+          ],
+          "metadata": {
+            "shared": {
+              "stream": {
+                "blockType": "text",
+                "op": "append",
+                "source": "stream",
+                "messageId": "msg-1",
+                "eventId": "evt-1",
+                "seq": 1
+              }
+            }
           }
-        ],
-        "metadata": {
-          "block_type": "text",
-          "source": "stream"
         }
       }
     },
     "expected": {
-      "event_id": "evt-1",
+      "eventId": "evt-1",
       "seq": 1,
-      "message_id": "msg-1",
-      "artifact_id": "task-1:stream:text",
-      "block_id": "msg-1:primary_text",
-      "lane_id": "primary_text",
-      "block_type": "text",
+      "messageId": "msg-1",
+      "artifactId": "task-1:stream:text",
+      "blockId": "msg-1:primary_text",
+      "laneId": "primary_text",
+      "blockType": "text",
       "op": "append",
       "content": "Hello ",
-      "base_seq": null,
-      "is_finished": false,
+      "baseSeq": null,
+      "isFinished": false,
       "source": "stream"
     }
   },
   {
-    "name": "legacy_final_snapshot_maps_to_replace_operation",
+    "name": "explicit_replace_keeps_declared_target_and_base_seq",
     "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-1",
-      "message_id": "msg-1",
-      "event_id": "evt-2",
-      "seq": 2,
-      "append": false,
-      "artifact": {
-        "artifact_id": "task-1:stream:text",
-        "parts": [
-          {
-            "kind": "text",
-            "text": "Hello world"
+      "artifactUpdate": {
+        "artifact": {
+          "artifactId": "task-2:block:text:main",
+          "parts": [
+            {
+              "text": "Final answer"
+            }
+          ],
+          "metadata": {
+            "shared": {
+              "stream": {
+                "blockType": "text",
+                "blockId": "block-text-main",
+                "laneId": "primary_text",
+                "op": "replace",
+                "baseSeq": 7,
+                "source": "canonical_v2",
+                "messageId": "msg-2",
+                "eventId": "evt-3",
+                "seq": 9
+              }
+            }
           }
-        ],
-        "metadata": {
-          "block_type": "text",
-          "source": "final_snapshot"
         }
       }
     },
     "expected": {
-      "event_id": "evt-2",
-      "seq": 2,
-      "message_id": "msg-1",
-      "artifact_id": "task-1:stream:text",
-      "block_id": "msg-1:primary_text",
-      "lane_id": "primary_text",
-      "block_type": "text",
-      "op": "replace",
-      "content": "Hello world",
-      "base_seq": null,
-      "is_finished": false,
-      "source": "final_snapshot"
-    }
-  },
-  {
-    "name": "explicit_v2_replace_keeps_declared_target_and_base_seq",
-    "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-2",
-      "message_id": "msg-2",
-      "event_id": "evt-3",
+      "eventId": "evt-3",
       "seq": 9,
-      "artifact": {
-        "artifact_id": "task-2:block:text:main",
-        "parts": [
-          {
-            "kind": "text",
-            "text": "Final answer"
-          }
-        ],
-        "metadata": {
-          "block_type": "text",
-          "block_id": "block-text-main",
-          "lane_id": "primary_text",
-          "op": "replace",
-          "base_seq": 7,
-          "source": "canonical_v2"
-        }
-      }
-    },
-    "expected": {
-      "event_id": "evt-3",
-      "seq": 9,
-      "message_id": "msg-2",
-      "artifact_id": "task-2:block:text:main",
-      "block_id": "block-text-main",
-      "lane_id": "primary_text",
-      "block_type": "text",
+      "messageId": "msg-2",
+      "artifactId": "task-2:block:text:main",
+      "blockId": "block-text-main",
+      "laneId": "primary_text",
+      "blockType": "text",
       "op": "replace",
       "content": "Final answer",
-      "base_seq": 7,
-      "is_finished": false,
+      "baseSeq": 7,
+      "isFinished": false,
       "source": "canonical_v2"
     }
   },
   {
-    "name": "explicit_v2_finalize_accepts_empty_content",
+    "name": "explicit_finalize_accepts_empty_content",
     "payload": {
-      "kind": "artifact-update",
-      "task_id": "task-2",
-      "message_id": "msg-2",
-      "event_id": "evt-4",
-      "seq": 10,
-      "artifact": {
-        "artifact_id": "task-2:block:text:main",
-        "parts": [],
-        "metadata": {
-          "block_type": "text",
-          "block_id": "block-text-main",
-          "lane_id": "primary_text",
-          "op": "finalize",
-          "base_seq": 9,
-          "source": "canonical_v2"
+      "artifactUpdate": {
+        "artifact": {
+          "artifactId": "task-2:block:text:main",
+          "parts": [],
+          "metadata": {
+            "shared": {
+              "stream": {
+                "blockType": "text",
+                "blockId": "block-text-main",
+                "laneId": "primary_text",
+                "op": "finalize",
+                "baseSeq": 9,
+                "source": "canonical_v2",
+                "messageId": "msg-2",
+                "eventId": "evt-4",
+                "seq": 10
+              }
+            }
+          }
         }
       }
     },
     "expected": {
-      "event_id": "evt-4",
+      "eventId": "evt-4",
       "seq": 10,
-      "message_id": "msg-2",
-      "artifact_id": "task-2:block:text:main",
-      "block_id": "block-text-main",
-      "lane_id": "primary_text",
-      "block_type": "text",
+      "messageId": "msg-2",
+      "artifactId": "task-2:block:text:main",
+      "blockId": "block-text-main",
+      "laneId": "primary_text",
+      "blockType": "text",
       "op": "finalize",
       "content": "",
-      "base_seq": 9,
-      "is_finished": true,
+      "baseSeq": 9,
+      "isFinished": true,
       "source": "canonical_v2"
+    }
+  },
+  {
+    "name": "message_wrapper_inferrs_text_replace_without_artifact_update_compat",
+    "payload": {
+      "message": {
+        "role": "ROLE_AGENT",
+        "parts": [
+          {
+            "text": "Message wrapper content"
+          }
+        ],
+        "metadata": {
+          "shared": {
+            "stream": {
+              "messageId": "msg-3",
+              "eventId": "evt-5",
+              "seq": 2
+            }
+          }
+        }
+      }
+    },
+    "expected": {
+      "eventId": "evt-5",
+      "seq": 2,
+      "messageId": "msg-3",
+      "artifactId": "msg-3:text",
+      "blockId": "msg-3:primary_text",
+      "laneId": "primary_text",
+      "blockType": "text",
+      "op": "replace",
+      "content": "Message wrapper content",
+      "baseSeq": null,
+      "isFinished": false,
+      "source": null
     }
   }
 ]

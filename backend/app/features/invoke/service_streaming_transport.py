@@ -62,7 +62,10 @@ def stream_sse(
         last_event_at = started_at
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
-        heartbeat_interval_seconds = runtime._stream_heartbeat_interval_seconds()
+        from app.core.config import settings
+
+        interval = float(settings.a2a_stream_heartbeat_interval)
+        heartbeat_interval_seconds = interval if interval > 0 else 0.0
         log_warning = getattr(logger, "warning", None)
         log_info = getattr(logger, "info", None)
         non_contract_drop_reasons: set[str] = set()
@@ -114,7 +117,7 @@ def stream_sse(
                 )
                 if validation_errors:
                     logger.warning(
-                        "Dropped invalid artifact-update event",
+                        "Dropped invalid stream event",
                         extra={
                             **log_extra,
                             "validation_error_count": len(validation_errors),
@@ -127,8 +130,18 @@ def stream_sse(
                         },
                     )
                     continue
+                event_sequence = seq_counter + 1
+                if (
+                    resume_from_sequence is not None
+                    and event_sequence <= resume_from_sequence
+                ):
+                    continue
+                seq_counter = max(seq_counter, event_sequence)
+                runtime._ensure_outbound_stream_contract(
+                    serialized, event_sequence=event_sequence
+                )
                 stream_block, non_contract_reason = (
-                    runtime._analyze_stream_chunk_contract(serialized)
+                    stream_payloads.analyze_stream_chunk_contract(serialized)
                 )
                 warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
@@ -138,14 +151,6 @@ def stream_sse(
                     log_info=log_info,
                     log_extra=log_extra,
                 )
-
-                event_sequence = seq_counter + 1
-                if (
-                    resume_from_sequence is not None
-                    and event_sequence <= resume_from_sequence
-                ):
-                    continue
-                seq_counter = max(seq_counter, event_sequence)
 
                 await runtime._call_callback(on_event, serialized)
                 runtime._ensure_outbound_stream_contract(
@@ -273,7 +278,10 @@ async def stream_ws(
     last_event_at = started_at
     terminal_event_seen = False
     final_outcome: StreamOutcome | None = None
-    heartbeat_interval_seconds = runtime._stream_heartbeat_interval_seconds()
+    from app.core.config import settings
+
+    interval = float(settings.a2a_stream_heartbeat_interval)
+    heartbeat_interval_seconds = interval if interval > 0 else 0.0
     log_warning = getattr(logger, "warning", None)
     log_info = getattr(logger, "info", None)
     non_contract_drop_reasons: set[str] = set()
@@ -327,7 +335,7 @@ async def stream_ws(
             )
             if validation_errors:
                 logger.warning(
-                    "Dropped invalid artifact-update event",
+                    "Dropped invalid stream event",
                     extra={
                         **log_extra,
                         "validation_error_count": len(validation_errors),
@@ -340,8 +348,18 @@ async def stream_ws(
                     },
                 )
                 continue
-            stream_block, non_contract_reason = runtime._analyze_stream_chunk_contract(
-                serialized
+            event_sequence = seq_counter + 1
+            if (
+                resume_from_sequence is not None
+                and event_sequence <= resume_from_sequence
+            ):
+                continue
+            seq_counter = max(seq_counter, event_sequence)
+            runtime._ensure_outbound_stream_contract(
+                serialized, event_sequence=event_sequence
+            )
+            stream_block, non_contract_reason = (
+                stream_payloads.analyze_stream_chunk_contract(serialized)
             )
             warn_non_contract_artifact_update_once(
                 seen_reasons=non_contract_drop_reasons,
@@ -351,14 +369,6 @@ async def stream_ws(
                 log_info=log_info,
                 log_extra=log_extra,
             )
-
-            event_sequence = seq_counter + 1
-            if (
-                resume_from_sequence is not None
-                and event_sequence <= resume_from_sequence
-            ):
-                continue
-            seq_counter = max(seq_counter, event_sequence)
 
             await runtime._call_callback(on_event, serialized)
             runtime._ensure_outbound_stream_contract(

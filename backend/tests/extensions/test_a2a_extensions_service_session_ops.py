@@ -46,8 +46,12 @@ async def test_prompt_session_async_forwards_request_and_metadata(
             "noReply": True,
         }
         assert kwargs["params"]["metadata"] == {
-            "provider": "opencode",
-            "externalSessionId": "ses_123",
+            "shared": {
+                "session": {
+                    "id": "ses_123",
+                    "provider": "opencode",
+                }
+            }
         }
         assert kwargs["normalize_envelope"] is False
         return ExtensionCallResult(
@@ -304,8 +308,8 @@ async def test_append_session_control_prefers_codex_turn_steer_when_stream_ident
         metadata={
             "shared": {
                 "stream": {
-                    "thread_id": "thread-1",
-                    "turn_id": "turn-1",
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
                 }
             }
         },
@@ -475,8 +479,12 @@ async def test_command_session_forwards_request_and_metadata(
             "parts": [{"type": "text", "text": "Focus on tests"}],
         }
         assert kwargs["params"]["metadata"] == {
-            "provider": "opencode",
-            "externalSessionId": "ses_123",
+            "shared": {
+                "session": {
+                    "id": "ses_123",
+                    "provider": "opencode",
+                }
+            }
         }
         assert kwargs["normalize_envelope"] is False
         return ExtensionCallResult(

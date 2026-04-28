@@ -11,6 +11,10 @@ describe("runtime status contract", () => {
     expect(normalizeRuntimeState("input_required")).toBe("input-required");
     expect(normalizeRuntimeState("canceled")).toBe("cancelled");
     expect(normalizeRuntimeState("success")).toBe("completed");
+    expect(normalizeRuntimeState("TASK_STATE_INPUT_REQUIRED")).toBe(
+      "input-required",
+    );
+    expect(normalizeRuntimeState("TASK_STATE_CANCELED")).toBe("cancelled");
   });
 
   it("uses capability-provided aliases when available", () => {
@@ -37,9 +41,9 @@ describe("runtime status contract", () => {
   it("canonicalizes runtime status events", () => {
     expect(
       extractRuntimeStatusEvent({
-        kind: "status-update",
-        status: { state: "input_required" },
-        final: true,
+        statusUpdate: {
+          status: { state: "TASK_STATE_INPUT_REQUIRED" },
+        },
       }),
     ).toEqual({
       state: "input-required",
@@ -54,10 +58,15 @@ describe("runtime status contract", () => {
   it("extracts shared stream turn identity from lifecycle event properties", () => {
     expect(
       extractSessionMeta({
-        kind: "artifact-update",
-        properties: {
-          thread_id: "thread-1",
-          turn_id: "turn-2",
+        artifactUpdate: {
+          metadata: {
+            shared: {
+              stream: {
+                threadId: "thread-1",
+                turnId: "turn-2",
+              },
+            },
+          },
         },
       }),
     ).toEqual({

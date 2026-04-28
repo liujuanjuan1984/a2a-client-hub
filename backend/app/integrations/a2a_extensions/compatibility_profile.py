@@ -6,7 +6,11 @@ from typing import Any, Dict
 
 from a2a.types import AgentCard
 
-from app.integrations.a2a_extensions.contract_utils import as_dict, require_str
+from app.integrations.a2a_extensions.contract_utils import (
+    as_dict,
+    normalize_string_list,
+    require_str,
+)
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
@@ -21,18 +25,6 @@ from app.integrations.a2a_extensions.types import (
     CompatibilityRetentionEntry,
     ResolvedCompatibilityProfileExtension,
 )
-
-
-def _normalize_string_list(value: Any, *, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
-
-    items: list[str] = []
-    for item in value:
-        normalized = require_str(item, field=field)
-        if normalized not in items:
-            items.append(normalized)
-    return tuple(items)
 
 
 def _resolve_retention_entry(
@@ -165,8 +157,9 @@ def resolve_compatibility_profile(
             field="params.method_retention",
         ),
         service_behaviors=service_behaviors,
-        consumer_guidance=_normalize_string_list(
+        consumer_guidance=normalize_string_list(
             params.get("consumer_guidance"),
             field="params.consumer_guidance",
+            allow_empty=True,
         ),
     )

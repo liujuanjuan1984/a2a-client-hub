@@ -96,8 +96,12 @@ describe("useContinueSession", () => {
       conversationId: "conv-1",
       source: "manual",
       metadata: {
-        provider: "opencode",
-        externalSessionId: "upstream-1",
+        shared: {
+          session: {
+            id: "upstream-1",
+            provider: "opencode",
+          },
+        },
       },
       workingDirectory: "/workspace/app",
     });
@@ -138,8 +142,12 @@ describe("useContinueSession", () => {
       conversationId: "rebound-conversation-id",
       source: "manual",
       metadata: {
-        provider: "opencode",
-        externalSessionId: "upstream-1",
+        shared: {
+          session: {
+            id: "upstream-1",
+            provider: "opencode",
+          },
+        },
       },
       workingDirectory: "/workspace/app",
     });

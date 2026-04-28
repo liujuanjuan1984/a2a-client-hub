@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
@@ -13,6 +12,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     LEGACY_SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
 )
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -35,7 +35,7 @@ def _base_card_payload() -> dict:
 
 def test_resolve_requires_interrupt_extension_present() -> None:
     payload = _base_card_payload()
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     with pytest.raises(A2AExtensionNotSupportedError):
         resolve_interrupt_callback(card)
 
@@ -69,7 +69,7 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
         {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
 
     assert resolved.provider == "opencode"
@@ -101,7 +101,7 @@ def test_resolve_accepts_missing_interrupt_method_fields() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
     assert resolved.methods.get("reply_permission") == "shared.permission.reply"
     assert resolved.methods.get("reject_question") is None
@@ -128,7 +128,7 @@ def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
     assert resolved.methods.get("reply_permission") is None
     assert resolved.methods.get("reply_question") is None
@@ -151,12 +151,12 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
     assert resolved.provider == "opencode"
 
 
-def test_resolve_accepts_legacy_interrupt_uri() -> None:
+def test_resolve_rejects_legacy_interrupt_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -170,7 +170,6 @@ def test_resolve_accepts_legacy_interrupt_uri() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
-    resolved = resolve_interrupt_callback(card)
-    assert resolved.uri == LEGACY_SHARED_INTERRUPT_CALLBACK_URI
-    assert resolved.provider == "opencode"
+    card = parse_agent_card(payload)
+    with pytest.raises(A2AExtensionNotSupportedError):
+        resolve_interrupt_callback(card)

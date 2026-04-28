@@ -6,6 +6,7 @@ import asyncio
 import time
 from typing import Any, Callable
 
+from app.features.invoke import stream_payloads
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamEventPayloadCallbackFn,
@@ -54,7 +55,10 @@ async def consume_stream(
     non_contract_drop_reasons: set[str] = set()
     started_at = time.monotonic()
     last_event_at = started_at
-    heartbeat_interval_seconds = runtime._stream_heartbeat_interval_seconds()
+    from app.core.config import settings
+
+    interval = float(settings.a2a_stream_heartbeat_interval)
+    heartbeat_interval_seconds = interval if interval > 0 else 0.0
     stream_iter = runtime._iter_stream_events_with_heartbeat(
         runtime._iter_gateway_stream(
             gateway=gateway,
@@ -68,6 +72,7 @@ async def consume_stream(
         heartbeat_interval_seconds=heartbeat_interval_seconds,
     ).__aiter__()
     terminal_event_seen = False
+    event_sequence = 0
     idle_timeout = (
         float(idle_timeout_seconds)
         if idle_timeout_seconds is not None and idle_timeout_seconds > 0
@@ -175,6 +180,10 @@ async def consume_stream(
             serialized = runtime.serialize_stream_event(
                 event, validate_message=validate_message
             )
+            event_sequence += 1
+            runtime._ensure_outbound_stream_contract(
+                serialized, event_sequence=event_sequence
+            )
             validation_errors = extract_artifact_validation_errors(
                 serialized,
                 validate_message=validate_message,
@@ -192,17 +201,17 @@ async def consume_stream(
                 }
                 if callable(log_warning):
                     log_warning(
-                        "Dropped invalid artifact-update event",
+                        "Dropped invalid stream event",
                         extra=warning_payload,
                     )
                 elif callable(log_info):
                     log_info(
-                        "Dropped invalid artifact-update event",
+                        "Dropped invalid stream event",
                         extra=warning_payload,
                     )
                 continue
-            stream_block, non_contract_reason = runtime._analyze_stream_chunk_contract(
-                serialized
+            stream_block, non_contract_reason = (
+                stream_payloads.analyze_stream_chunk_contract(serialized)
             )
             warn_non_contract_artifact_update_once(
                 seen_reasons=non_contract_drop_reasons,
@@ -215,6 +224,9 @@ async def consume_stream(
 
             last_event_at = time.monotonic()
             await runtime._call_callback(on_event, serialized)
+            runtime._ensure_outbound_stream_contract(
+                serialized, event_sequence=event_sequence
+            )
             stream_text_accumulator.consume(serialized, stream_block=stream_block)
             if runtime._is_terminal_status_event(serialized):
                 terminal_event_seen = True

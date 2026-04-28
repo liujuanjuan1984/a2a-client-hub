@@ -18,18 +18,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _pick_first_non_empty_str(
-    payload: Mapping[str, Any], keys: Iterable[str]
-) -> str | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str):
-            trimmed = value.strip()
-            if trimmed:
-                return trimmed
-    return None
-
-
 def coerce_metadata_mapping(payload_or_metadata: Mapping[str, Any]) -> dict[str, Any]:
     metadata = payload_or_metadata.get("metadata")
     if isinstance(metadata, Mapping):
@@ -63,27 +51,19 @@ def merge_shared_metadata_sections(
 def extract_preferred_interrupt_metadata(
     payload_or_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
-    interrupt = extract_shared_metadata_section(
+    return extract_shared_metadata_section(
         payload_or_metadata,
         section=SHARED_INTERRUPT_KEY,
     )
-    if interrupt:
-        return interrupt
-    metadata = coerce_metadata_mapping(payload_or_metadata)
-    return _as_dict(metadata.get(SHARED_INTERRUPT_KEY))
 
 
 def extract_preferred_usage_metadata(
     payload_or_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
-    usage = extract_shared_metadata_section(
+    return extract_shared_metadata_section(
         payload_or_metadata,
         section=SHARED_USAGE_KEY,
     )
-    if usage:
-        return usage
-    metadata = coerce_metadata_mapping(payload_or_metadata)
-    return _as_dict(metadata.get(SHARED_USAGE_KEY))
 
 
 def merge_preferred_session_binding_metadata(
@@ -91,7 +71,6 @@ def merge_preferred_session_binding_metadata(
     *,
     provider: str | None,
     external_session_id: str | None,
-    include_legacy_root: bool,
 ) -> dict[str, Any]:
     next_metadata = coerce_metadata_mapping(metadata or {})
     next_shared = _as_dict(next_metadata.get(SHARED_METADATA_KEY))
@@ -116,18 +95,8 @@ def merge_preferred_session_binding_metadata(
     else:
         next_metadata.pop(SHARED_METADATA_KEY, None)
 
-    if include_legacy_root:
-        if external_session_id:
-            next_metadata[CANONICAL_EXTERNAL_SESSION_ID_KEY] = external_session_id
-        else:
-            next_metadata.pop(CANONICAL_EXTERNAL_SESSION_ID_KEY, None)
-        if provider:
-            next_metadata[CANONICAL_PROVIDER_KEY] = provider
-        else:
-            next_metadata.pop(CANONICAL_PROVIDER_KEY, None)
-    else:
-        next_metadata.pop(CANONICAL_EXTERNAL_SESSION_ID_KEY, None)
-        next_metadata.pop(CANONICAL_PROVIDER_KEY, None)
+    next_metadata.pop(CANONICAL_EXTERNAL_SESSION_ID_KEY, None)
+    next_metadata.pop(CANONICAL_PROVIDER_KEY, None)
 
     return next_metadata
 
@@ -154,17 +123,12 @@ def apply_invoke_session_binding_metadata(
     *,
     provider: str | None,
     external_session_id: str | None,
-    include_legacy_root: bool,
 ) -> dict[str, Any]:
     next_metadata = strip_session_binding_metadata(metadata or {})
-    if external_session_id:
+    if external_session_id or provider:
         return merge_preferred_session_binding_metadata(
             next_metadata,
             provider=provider,
             external_session_id=external_session_id,
-            include_legacy_root=include_legacy_root,
         )
-
-    if provider:
-        next_metadata[CANONICAL_PROVIDER_KEY] = provider
     return next_metadata

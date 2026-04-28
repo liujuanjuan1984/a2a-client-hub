@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -18,6 +17,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_QUERY_URI,
 )
 from app.integrations.a2a_extensions.types import ResultEnvelopeMapping
+from tests.support.a2a import parse_agent_card
 
 
 def _base_card_payload() -> dict:
@@ -40,7 +40,7 @@ def _base_card_payload() -> dict:
 
 def test_resolve_requires_extension_present() -> None:
     payload = _base_card_payload()
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     with pytest.raises(A2AExtensionNotSupportedError):
         resolve_session_query(card)
 
@@ -87,7 +87,7 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
         {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
 
     assert resolved.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
@@ -122,7 +122,9 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
 
 def test_resolve_requires_jsonrpc_interface_when_missing() -> None:
     payload = _base_card_payload()
-    payload["supportedInterfaces"] = []
+    payload["supportedInterfaces"] = [
+        {"url": "https://example.com/http-json", "protocolBinding": "HTTP+JSON"}
+    ]
     payload["capabilities"]["extensions"] = [
         {
             "uri": SHARED_SESSION_QUERY_URI,
@@ -139,7 +141,7 @@ def test_resolve_requires_jsonrpc_interface_when_missing() -> None:
             },
         }
     ]
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     with pytest.raises(
         A2AExtensionContractError,
         match="Agent card is missing a JSON-RPC interface URL",
@@ -162,7 +164,7 @@ def test_resolve_rejects_missing_pagination() -> None:
             },
         }
     ]
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     with pytest.raises(A2AExtensionContractError):
         resolve_session_query(card)
 
@@ -189,7 +191,7 @@ def test_resolve_accepts_limit_mode_with_default_limit_keys() -> None:
             },
         }
     ]
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
     assert resolved.pagination.mode == "limit"
     assert resolved.pagination.default_size == 20
@@ -221,7 +223,7 @@ def test_resolve_accepts_limit_mode_with_offset_param() -> None:
             },
         }
     ]
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
     assert resolved.pagination.params == ("limit", "offset")
     assert resolved.pagination.supports_offset is True
@@ -254,7 +256,7 @@ def test_resolve_extracts_message_cursor_pagination_contract() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
 
     assert resolved.message_cursor_pagination.cursor_param == "before"
@@ -310,7 +312,7 @@ def test_resolve_accepts_codex_session_query_contract() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
 
     assert resolved.uri == CODEX_SHARED_SESSION_QUERY_URI
@@ -344,7 +346,7 @@ def test_resolve_rejects_codex_offset_pagination() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     with pytest.raises(
         A2AExtensionContractError,
         match="does not support offset pagination",
@@ -387,7 +389,7 @@ def test_resolve_rejects_codex_command_requiring_arguments() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     with pytest.raises(
         A2AExtensionContractError,
         match="must not require request.arguments",
@@ -422,7 +424,7 @@ def test_resolve_accepts_limit_and_optional_cursor_mode() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
 
     assert resolved.pagination.mode == "limit"
@@ -470,7 +472,7 @@ def test_resolve_extracts_session_list_filter_contract() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
 
     assert resolved.session_list_filters.directory.top_level_param == "directory"
@@ -510,7 +512,7 @@ def test_resolve_accepts_result_envelope_field_aliases() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
     assert resolved.result_envelope == ResultEnvelopeMapping(
         items="payload.sessions",
@@ -545,7 +547,7 @@ def test_resolve_rejects_result_envelope_unknown_keys() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     with pytest.raises(A2AExtensionContractError):
         resolve_session_query(card)
 
@@ -571,12 +573,12 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
+    card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
     assert resolved.provider == "opencode"
 
 
-def test_resolve_accepts_legacy_session_query_uri() -> None:
+def test_resolve_rejects_legacy_session_query_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -597,7 +599,6 @@ def test_resolve_accepts_legacy_session_query_uri() -> None:
         }
     ]
 
-    card = AgentCard.model_validate(payload)
-    resolved = resolve_session_query(card)
-    assert resolved.uri == LEGACY_SHARED_SESSION_QUERY_URI
-    assert resolved.provider == "opencode"
+    card = parse_agent_card(payload)
+    with pytest.raises(A2AExtensionNotSupportedError):
+        resolve_session_query(card)

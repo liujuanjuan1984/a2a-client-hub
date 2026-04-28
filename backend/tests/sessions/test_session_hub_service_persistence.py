@@ -187,8 +187,12 @@ async def test_record_local_invoke_messages_writes_canonical_external_session_id
         success=True,
         context_id="ctx-1",
         invoke_metadata={
-            "provider": "opencode",
-            "externalSessionId": "ses-upstream-1",
+            "shared": {
+                "session": {
+                    "id": "ses-upstream-1",
+                    "provider": "opencode",
+                }
+            }
         },
     )
     await async_db_session.flush()
@@ -200,8 +204,15 @@ async def test_record_local_invoke_messages_writes_canonical_external_session_id
     assert len(messages) == 2
     for msg in messages:
         metadata = msg.message_metadata or {}
-        assert metadata.get("externalSessionId") == "ses-upstream-1"
+        assert metadata.get("contextId") == "ctx-1"
+        assert metadata.get("shared", {}).get("session") == {
+            "id": "ses-upstream-1",
+            "provider": "opencode",
+        }
+        assert "externalSessionId" not in metadata
+        assert "provider" not in metadata
         assert "external_session_id" not in metadata
+        assert "context_id" not in metadata
 
 
 async def test_record_local_invoke_messages_reads_shared_session_binding_metadata(
@@ -247,8 +258,13 @@ async def test_record_local_invoke_messages_reads_shared_session_binding_metadat
     assert len(messages) == 2
     for msg in messages:
         metadata = msg.message_metadata or {}
-        assert metadata.get("provider") == "opencode"
-        assert metadata.get("externalSessionId") == "ses-upstream-shared-1"
+        assert metadata.get("contextId") == "ctx-1"
+        assert metadata.get("shared", {}).get("session") == {
+            "id": "ses-upstream-shared-1",
+            "provider": "opencode",
+        }
+        assert "provider" not in metadata
+        assert "externalSessionId" not in metadata
 
 
 async def test_record_local_invoke_messages_is_idempotent_with_key(

@@ -90,7 +90,11 @@ from setup_db_schema import create_schema, drop_schema
 
 from app.core.config import settings
 from app.db.models.base import Base
-from app.integrations.a2a_client.protobuf import parse_agent_card, protobuf_to_dict
+from app.integrations.a2a_client.protobuf import (
+    parse_agent_card,
+    to_protojson_object,
+)
+from app.integrations.a2a_client.validators import validate_agent_card
 from app.runtime.a2a_proxy_service import A2AProxyService
 
 # Import the minimal set of models required for tests to ensure SQLAlchemy
@@ -123,11 +127,14 @@ def _agent_card_model_validate(
     cls: type[AgentCard],
     payload: dict[str, object],
 ) -> AgentCard:
-    return parse_agent_card(dict(payload))
+    result = validate_agent_card(dict(payload))
+    if result.errors:
+        raise ValueError("; ".join(result.errors))
+    return parse_agent_card(dict(payload), ignore_unknown_fields=False)
 
 
 def _agent_card_model_dump(self: AgentCard, **_kwargs) -> dict[str, object]:
-    return protobuf_to_dict(self)
+    return to_protojson_object(self) or {}
 
 
 if not hasattr(AgentCard, "model_validate"):

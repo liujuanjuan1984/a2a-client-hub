@@ -7,9 +7,12 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from app.db.models.agent_message import AgentMessage
-from app.features.invoke.service import StreamOutcome
+from app.features.invoke.service_types import StreamOutcome
 from app.features.invoke.session_binding import resolve_invoke_session_control_intent
-from app.features.invoke.stream_payloads import coerce_message_event_to_artifact_update
+from app.features.invoke.stream_payloads import (
+    extract_interrupt_lifecycle_from_serialized_event,
+    extract_stream_chunk_from_serialized_event,
+)
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.session_identity import normalize_non_empty_text
@@ -173,46 +176,25 @@ def rewrite_stream_event_contract(
     seq: int | None,
     stream_block: dict[str, Any] | None = None,
 ) -> None:
-    if event_payload.get("kind") != "artifact-update":
+    shared_stream = _ensure_shared_stream_metadata(event_payload)
+    if shared_stream is None:
         return
-    event_payload.pop("messageId", None)
-    event_payload.pop("eventId", None)
-    event_payload.pop("eventSeq", None)
-    event_payload.pop("sequence", None)
-    event_payload["message_id"] = local_message_id
+    shared_stream["messageId"] = local_message_id
     if event_id:
-        event_payload["event_id"] = event_id
+        shared_stream["eventId"] = event_id
     if isinstance(seq, int) and seq > 0:
-        event_payload["seq"] = seq
+        shared_stream["seq"] = seq
     if isinstance(stream_block, dict):
-        for field in ("block_id", "lane_id", "op", "base_seq"):
-            value = stream_block.get(field)
+        field_map = {
+            "block_id": "blockId",
+            "lane_id": "laneId",
+            "op": "op",
+            "base_seq": "baseSeq",
+        }
+        for source_name, target_name in field_map.items():
+            value = stream_block.get(source_name)
             if value is not None:
-                event_payload[field] = value
-    artifact = event_payload.get("artifact")
-    if isinstance(artifact, dict):
-        artifact.pop("messageId", None)
-        artifact.pop("eventId", None)
-        artifact.pop("eventSeq", None)
-        artifact.pop("sequence", None)
-        artifact["message_id"] = local_message_id
-        metadata = artifact.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-            artifact["metadata"] = metadata
-        metadata["message_id"] = local_message_id
-        if event_id:
-            metadata["event_id"] = event_id
-            artifact["event_id"] = event_id
-        if isinstance(seq, int) and seq > 0:
-            metadata["seq"] = seq
-            artifact["seq"] = seq
-        if isinstance(stream_block, dict):
-            for field in ("block_id", "lane_id", "op", "base_seq"):
-                value = stream_block.get(field)
-                if value is not None:
-                    metadata[field] = value
-                    artifact[field] = value
+                shared_stream[target_name] = value
 
 
 def resolve_stream_event_id(
@@ -297,17 +279,13 @@ async def persist_stream_block_update(
     state: InvokePersistenceState,
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
-    stream_service: Any,
     session_factory: Any,
     commit_fn: Any,
     session_hub: Any,
     ensure_headers_fn: Any = ensure_local_message_headers,
     flush_buffer_fn: Any = None,
 ) -> None:
-    coerce_message_event_to_artifact_update(event_payload)
-    stream_block = stream_service.extract_stream_chunk_from_serialized_event(
-        event_payload
-    )
+    stream_block = extract_stream_chunk_from_serialized_event(event_payload)
     if stream_block is None:
         return
     await ensure_headers_fn(
@@ -378,12 +356,41 @@ async def persist_stream_block_update(
         )
 
 
+def _ensure_shared_stream_metadata(
+    event_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    event_body = None
+    for field_name in ("artifactUpdate", "message", "statusUpdate", "task"):
+        candidate = event_payload.get(field_name)
+        if isinstance(candidate, dict):
+            event_body = candidate
+            break
+    if event_body is None:
+        return None
+
+    metadata = event_body.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        event_body["metadata"] = metadata
+
+    shared = metadata.get("shared")
+    if not isinstance(shared, dict):
+        shared = {}
+        metadata["shared"] = shared
+
+    shared_stream = shared.get("stream")
+    if not isinstance(shared_stream, dict):
+        shared_stream = {}
+        shared["stream"] = shared_stream
+
+    return shared_stream
+
+
 async def persist_interrupt_lifecycle_event(
     *,
     state: InvokePersistenceState,
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
-    stream_service: Any,
     build_interrupt_message_content: Any,
     session_factory: Any,
     commit_fn: Any,
@@ -393,9 +400,7 @@ async def persist_interrupt_lifecycle_event(
 ) -> None:
     if state.local_session_id is None:
         return
-    interrupt_event = stream_service.extract_interrupt_lifecycle_from_serialized_event(
-        event_payload
-    )
+    interrupt_event = extract_interrupt_lifecycle_from_serialized_event(event_payload)
     if interrupt_event is None:
         return
     await ensure_headers_fn(

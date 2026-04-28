@@ -89,13 +89,13 @@ async def test_conversation_routes_use_conversation_id_only(
         user_id=user.id,
         sender="user",
         conversation_id=manual_session.id,
-        message_metadata={"context_id": "ctx-manual-1"},
+        message_metadata={"contextId": "ctx-manual-1"},
     )
     agent_message = AgentMessage(
         user_id=user.id,
         sender="agent",
         conversation_id=manual_session.id,
-        message_metadata={"context_id": "ctx-manual-1"},
+        message_metadata={"contextId": "ctx-manual-1"},
     )
     async_db_session.add(user_message)
     async_db_session.add(agent_message)
@@ -230,9 +230,13 @@ async def test_continue_includes_opencode_session_metadata(
         sender="agent",
         conversation_id=session.id,
         message_metadata={
-            "provider": "opencode",
-            "external_session_id": "ses_upstream_1",
-            "context_id": "ctx-bound-1",
+            "contextId": "ctx-bound-1",
+            "shared": {
+                "session": {
+                    "id": "ses_upstream_1",
+                    "provider": "opencode",
+                }
+            },
         },
     )
     async_db_session.add(bound_message)
@@ -260,8 +264,6 @@ async def test_continue_includes_opencode_session_metadata(
         payload = resp.json()
         assert payload["conversationId"] == str(session.id)
         assert payload["source"] == "manual"
-        assert payload.get("metadata", {}).get("provider") == "opencode"
-        assert payload.get("metadata", {}).get("externalSessionId") == "ses_upstream_1"
         assert payload.get("metadata", {}).get("contextId") == "ctx-bound-1"
         assert payload.get("metadata", {}).get("shared", {}).get("session") == {
             "id": "ses_upstream_1",
@@ -700,8 +702,12 @@ async def test_upstream_task_route_fetches_task_for_bound_conversation(
             "task_id": "task-1",
             "history_length": 3,
             "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "ses-task-1",
+                "shared": {
+                    "session": {
+                        "id": "ses-task-1",
+                        "provider": "opencode",
+                    }
+                },
             },
         }
     ]
@@ -1338,9 +1344,13 @@ async def test_list_sessions_filters_use_conversation_source_only(
         sender="agent",
         conversation_id=session.id,
         message_metadata={
-            "provider": "opencode",
-            "external_session_id": "ses_filter_1",
-            "context_id": "ctx-filter-1",
+            "contextId": "ctx-filter-1",
+            "shared": {
+                "session": {
+                    "id": "ses_filter_1",
+                    "provider": "opencode",
+                }
+            },
         },
     )
     async_db_session.add(bound_message)
@@ -1406,9 +1416,13 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
     async_db_session.add(session)
     await async_db_session.flush()
     metadata = {
-        "provider": "opencode",
-        "external_session_id": "ses_local_hist_1",
-        "context_id": "ctx-local-hist-1",
+        "contextId": "ctx-local-hist-1",
+        "shared": {
+            "session": {
+                "id": "ses_local_hist_1",
+                "provider": "opencode",
+            }
+        },
     }
     user_message = AgentMessage(
         user_id=user.id,
@@ -1898,8 +1912,12 @@ async def test_continue_keeps_external_session_id_empty_when_missing(
         sender="agent",
         conversation_id=session.id,
         message_metadata={
-            "provider": "opencode",
-            "context_id": "ses_context_only_1",
+            "contextId": "ses_context_only_1",
+            "shared": {
+                "session": {
+                    "provider": "opencode",
+                }
+            },
         },
     )
     async_db_session.add(bound_message)
@@ -1927,6 +1945,5 @@ async def test_continue_keeps_external_session_id_empty_when_missing(
         payload = resp.json()
         assert payload["conversationId"] == str(session.id)
         assert payload["source"] == "manual"
-        assert payload.get("metadata", {}).get("provider") == "opencode"
         assert payload.get("metadata", {}).get("externalSessionId") is None
         assert payload.get("metadata", {}).get("contextId") == "ses_context_only_1"

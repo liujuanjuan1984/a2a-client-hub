@@ -20,7 +20,7 @@ from app.db.locking import (
 )
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke import route_runner_state, route_runner_streaming
-from app.features.invoke.service import StreamFinishReason, StreamOutcome
+from app.features.invoke.service_types import StreamFinishReason, StreamOutcome
 from app.features.invoke.stream_persistence import InvokePersistenceRequest
 from app.features.sessions.common import (
     BindInflightTaskReport,

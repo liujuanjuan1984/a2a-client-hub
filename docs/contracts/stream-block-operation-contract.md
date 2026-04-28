@@ -7,41 +7,41 @@ This document defines the canonical block-operation contract used to unify strea
 - Make append, replace, and finalize semantics explicit.
 - Give authoritative updates a stable target block.
 - Keep frontend reducers and backend projections on the same state machine.
-- Push legacy heuristics into an adapter layer with a clear removal boundary.
+- Reject non-canonical stream payloads at the boundary.
 
 ## Canonical Event Shape
 
 Each block update must be normalized to the following logical shape:
 
-- `event_id`: Unique event identifier.
+- `eventId`: Unique event identifier.
 - `seq`: Monotonic message-local sequence number.
-- `message_id`: Stable message identifier.
-- `artifact_id`: Upstream artifact identifier when available.
-- `block_id`: Stable logical block identifier.
-- `lane_id`: Stable presentation lane identifier.
-- `block_type`: One of `text`, `reasoning`, `tool_call`, `interrupt_event`.
+- `messageId`: Stable message identifier.
+- `artifactId`: Upstream artifact identifier when available.
+- `blockId`: Stable logical block identifier.
+- `laneId`: Stable presentation lane identifier.
+- `blockType`: One of `text`, `reasoning`, `tool_call`, `interrupt_event`.
 - `op`: One of `append`, `replace`, `finalize`.
 - `content`: Payload for `append` or `replace`. Empty for `finalize`.
-- `base_seq`: Optional sequence used to reject stale authoritative updates.
-- `is_finished`: Compatibility flag. Canonical semantics are driven by `op`.
+- `baseSeq`: Optional sequence used to reject stale authoritative updates.
+- `isFinished`: Compatibility flag. Canonical semantics are driven by `op`.
 - `source`: Diagnostic-only source hint.
 
 ## State Machine Rules
 
-- `append`: Extend the existing block identified by `block_id`.
-- `replace`: Replace the content of the existing block identified by `block_id`.
-- `finalize`: Mark the existing block identified by `block_id` as finished without altering other blocks.
+- `append`: Extend the existing block identified by `blockId`.
+- `replace`: Replace the content of the existing block identified by `blockId`.
+- `finalize`: Mark the existing block identified by `blockId` as finished without altering other blocks.
 
-Consumers must not infer replace targets by searching for the "last text block". Consumers must not infer duplicate removal from visible text content unless they are running inside the legacy adapter.
+Consumers must not infer replace targets by searching for the "last text block". Consumers must not infer duplicate removal from visible text content.
 
 ## Completion Acknowledgement
 
 Canonical streaming consumers must use an explicit persisted-completion acknowledgement as the only success-finalization signal.
 
-When the server has finished durable persistence for the current message, it may emit a terminal `status-update` carrying:
+When the server has finished durable persistence for the current message, it may emit a terminal `statusUpdate` carrying:
 
-- `metadata.shared.stream.completion_phase = "persisted"`
-- `metadata.shared.stream.message_id = <canonical message id>`
+- `metadata.shared.stream.completionPhase = "persisted"`
+- `metadata.shared.stream.messageId = <canonical message id>`
 
 This acknowledgement is emitted after persistence succeeds and before any transport-level `stream_end` marker. Consumers may finalize the live message and refresh history as soon as they observe this persisted ack.
 
@@ -49,26 +49,15 @@ Transport completion alone (`stream_end` / `onDone`) must not be treated as a su
 
 ## Lane Defaults
 
-If `lane_id` is missing, adapters should derive a stable fallback:
+If `laneId` is missing, canonical normalization should derive a stable fallback:
 
 - `text` -> `primary_text`
 - `reasoning` -> `reasoning`
 - `tool_call` -> `tool_call`
 - `interrupt_event` -> `interrupt_event`
 
-## Legacy Compatibility Rules
+## Canonical-Only Boundary
 
-Legacy `artifact-update` payloads still rely on implicit semantics:
+Canonical streaming reducers and projections must operate solely on `blockId`, `laneId`, `op`, and `baseSeq`.
 
-- `append=false`
-- `source=final_snapshot`
-- `source=finalize_snapshot`
-- payload-local chunk ordering
-
-Legacy adapters may map those signals to canonical operations:
-
-- `append=true` -> `append`
-- `append=false` or snapshot sources -> `replace`
-- explicit canonical `op=finalize` -> `finalize`
-
-Legacy overlap trimming and "rewrite latest text slot" behavior must remain in adapter code only. Canonical reducers and projections should operate solely on `block_id`, `lane_id`, `op`, and `base_seq`.
+Adapters must reject or drop non-canonical payloads that rely on implicit overwrite semantics, snapshot source hints, or legacy snake_case stream metadata. The only supported overwrite/finalization semantics are explicit `op="replace"` and `op="finalize"`.
