@@ -76,23 +76,6 @@ class A2AInvokeService:
         return analyze_payload_object(payload)
 
     @classmethod
-    def _extract_stream_sequence_from_serialized_event(
-        cls, payload: dict[str, Any]
-    ) -> int | None:
-        return stream_payloads.extract_stream_sequence_from_serialized_event(payload)
-
-    @staticmethod
-    def _pick_non_empty_str(
-        payload: dict[str, Any],
-        keys: tuple[str, ...],
-    ) -> str | None:
-        return A2AInvokeStreamingRuntime._pick_non_empty_str(payload, keys)
-
-    @staticmethod
-    def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
-        return A2AInvokeStreamingRuntime._pick_int(payload, keys)
-
-    @classmethod
     def extract_binding_hints_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
@@ -141,11 +124,6 @@ class A2AInvokeService:
         cls, result: dict[str, Any]
     ) -> dict[str, Any]:
         return extract_usage_hints_from_result(result)
-
-    @staticmethod
-    def _extract_text_from_parts(parts: Any) -> str | None:
-        resolved = stream_payloads.extract_stream_text_from_parts(parts)
-        return resolved or None
 
     @classmethod
     def extract_readable_content_from_invoke_result(

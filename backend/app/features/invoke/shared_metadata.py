@@ -18,18 +18,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _pick_first_non_empty_str(
-    payload: Mapping[str, Any], keys: Iterable[str]
-) -> str | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str):
-            trimmed = value.strip()
-            if trimmed:
-                return trimmed
-    return None
-
-
 def coerce_metadata_mapping(payload_or_metadata: Mapping[str, Any]) -> dict[str, Any]:
     metadata = payload_or_metadata.get("metadata")
     if isinstance(metadata, Mapping):
