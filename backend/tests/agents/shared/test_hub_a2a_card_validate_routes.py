@@ -14,6 +14,7 @@ from tests.agents.shared.hub_a2a_extensions_routes_support import (
     pytest,
     settings,
 )
+from tests.support.a2a import build_session_query_extension_payload
 
 pytestmark = support.pytestmark
 
@@ -251,22 +252,10 @@ async def test_hub_card_validate_reports_shared_session_query_diagnostics(
 
     fake_gateway = _FakeGateway()
     fake_gateway.card_payload["capabilities"]["extensions"] = [
-        {
-            "uri": "urn:shared-a2a:session-query:v1",
-            "params": {
-                "provider": "opencode",
-                "methods": {
-                    "list_sessions": "shared.sessions.list",
-                    "get_session_messages": "shared.sessions.messages.list",
-                },
-                "pagination": {
-                    "mode": "page_size",
-                    "default_size": 20,
-                    "max_size": 100,
-                },
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
-            },
-        }
+        build_session_query_extension_payload(
+            uri="urn:shared-a2a:session-query:v1",
+            result_envelope={"raw": True, "items": True, "pagination": True},
+        )
     ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
@@ -310,26 +299,23 @@ async def test_hub_card_validate_accepts_limit_and_optional_cursor_session_query
 
     fake_gateway = _FakeGateway()
     fake_gateway.card_payload["capabilities"]["extensions"] = [
-        {
-            "uri": "urn:opencode-a2a:session-query/v1",
-            "params": {
-                "provider": "opencode",
-                "methods": {
-                    "list_sessions": "opencode.sessions.list",
-                    "get_session_messages": "opencode.sessions.messages.list",
-                },
-                "pagination": {
-                    "mode": "limit_and_optional_cursor",
-                    "default_limit": 20,
-                    "max_limit": 100,
-                    "params": ["limit", "before"],
-                    "cursor_param": "before",
-                    "result_cursor_field": "next_cursor",
-                    "cursor_applies_to": ["opencode.sessions.messages.list"],
-                },
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
+        build_session_query_extension_payload(
+            uri="urn:opencode-a2a:session-query/v1",
+            methods={
+                "list_sessions": "opencode.sessions.list",
+                "get_session_messages": "opencode.sessions.messages.list",
             },
-        }
+            pagination={
+                "mode": "limit_and_optional_cursor",
+                "default_limit": 20,
+                "max_limit": 100,
+                "params": ["limit", "before"],
+                "cursor_param": "before",
+                "result_cursor_field": "next_cursor",
+                "cursor_applies_to": ["opencode.sessions.messages.list"],
+            },
+            result_envelope={"raw": True, "items": True, "pagination": True},
+        )
     ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)

@@ -3,7 +3,11 @@ import pytest
 from app.core.config import settings
 from app.features.agents.common.card_validation import fetch_and_validate_agent_card
 from app.features.invoke.service_streaming import A2AInvokeStreamingRuntime
-from tests.support.a2a import parse_agent_card
+from tests.support.a2a import (
+    build_agent_card_payload,
+    build_session_query_extension_payload,
+    parse_agent_card,
+)
 
 
 class _DummyCard:
@@ -14,6 +18,15 @@ class _DummyCard:
 class _DummyGateway:
     async def fetch_agent_card_detail(self, **kwargs):
         return _DummyCard()
+
+
+def _build_extension_card_payload(
+    *, extensions: list[dict[str, object]]
+) -> dict[str, object]:
+    payload = build_agent_card_payload(extensions=extensions)
+    payload["name"] = "dummy"
+    payload["description"] = "dummy"
+    return payload
 
 
 @pytest.mark.asyncio
@@ -71,54 +84,29 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
 ):
     class _ExtensionCard:
         def model_dump(self, **kwargs):
-            return {
-                "name": "dummy",
-                "description": "dummy",
-                "version": "1.0",
-                "supportedInterfaces": [
+            return _build_extension_card_payload(
+                extensions=[
+                    build_session_query_extension_payload(
+                        uri="urn:opencode-a2a:session-query/v1",
+                        pagination={
+                            "mode": "page_size",
+                            "default_size": 20,
+                        },
+                    ),
                     {
-                        "url": "https://example.com/jsonrpc",
-                        "protocolBinding": "JSONRPC",
-                    }
-                ],
-                "capabilities": {
-                    "extensions": [
-                        {
-                            "uri": "urn:opencode-a2a:session-query/v1",
-                            "params": {
-                                "provider": "opencode",
-                                "methods": {
-                                    "list_sessions": "shared.sessions.list",
-                                    "get_session_messages": (
-                                        "shared.sessions.messages.list"
-                                    ),
-                                },
-                                "pagination": {
-                                    "mode": "page_size",
-                                    "default_size": 20,
-                                },
+                        "uri": "urn:a2a:compatibility-profile/v1",
+                        "params": {
+                            "extension_retention": {},
+                            "method_retention": {},
+                            "service_behaviors": {
+                                "classification": "stable-service-semantics",
+                                "methods": {"tasks/cancel": {"retention": "stable"}},
                             },
+                            "consumer_guidance": ["Treat query methods as stable."],
                         },
-                        {
-                            "uri": "urn:a2a:compatibility-profile/v1",
-                            "params": {
-                                "extension_retention": {},
-                                "method_retention": {},
-                                "service_behaviors": {
-                                    "classification": "stable-service-semantics",
-                                    "methods": {
-                                        "tasks/cancel": {"retention": "stable"}
-                                    },
-                                },
-                                "consumer_guidance": ["Treat query methods as stable."],
-                            },
-                        },
-                    ]
-                },
-                "defaultInputModes": [],
-                "defaultOutputModes": [],
-                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
-            }
+                    },
+                ]
+            )
 
     class _ExtensionGateway:
         async def fetch_agent_card_detail(self, **kwargs):
@@ -140,52 +128,31 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
 ):
     class _ExtensionCard:
         def model_dump(self, **kwargs):
-            return {
-                "name": "dummy",
-                "description": "dummy",
-                "version": "1.0",
-                "supportedInterfaces": [
-                    {
-                        "url": "https://example.com/jsonrpc",
-                        "protocolBinding": "JSONRPC",
-                    }
-                ],
-                "capabilities": {
-                    "extensions": [
-                        {
-                            "uri": "urn:opencode-a2a:session-query/v1",
-                            "params": {
-                                "provider": "opencode",
-                                "methods": {
-                                    "list_sessions": "opencode.sessions.list",
-                                    "get_session_messages": (
-                                        "opencode.sessions.messages.list"
-                                    ),
-                                },
-                                "pagination": {
-                                    "mode": "limit_and_optional_cursor",
-                                    "default_limit": 20,
-                                    "max_limit": 100,
-                                    "params": ["limit", "before"],
-                                    "cursor_param": "before",
-                                    "result_cursor_field": "next_cursor",
-                                    "cursor_applies_to": [
-                                        "opencode.sessions.messages.list"
-                                    ],
-                                },
-                                "result_envelope": {
-                                    "raw": True,
-                                    "items": True,
-                                    "pagination": True,
-                                },
-                            },
-                        }
-                    ]
-                },
-                "defaultInputModes": [],
-                "defaultOutputModes": [],
-                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
-            }
+            return _build_extension_card_payload(
+                extensions=[
+                    build_session_query_extension_payload(
+                        uri="urn:opencode-a2a:session-query/v1",
+                        methods={
+                            "list_sessions": "opencode.sessions.list",
+                            "get_session_messages": ("opencode.sessions.messages.list"),
+                        },
+                        pagination={
+                            "mode": "limit_and_optional_cursor",
+                            "default_limit": 20,
+                            "max_limit": 100,
+                            "params": ["limit", "before"],
+                            "cursor_param": "before",
+                            "result_cursor_field": "next_cursor",
+                            "cursor_applies_to": ["opencode.sessions.messages.list"],
+                        },
+                        result_envelope={
+                            "raw": True,
+                            "items": True,
+                            "pagination": True,
+                        },
+                    )
+                ]
+            )
 
     class _ExtensionGateway:
         async def fetch_agent_card_detail(self, **kwargs):
@@ -210,79 +177,54 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
 ):
     class _ExtensionCard:
         def model_dump(self, **kwargs):
-            return {
-                "name": "dummy",
-                "description": "dummy",
-                "version": "1.0",
-                "supportedInterfaces": [
+            return _build_extension_card_payload(
+                extensions=[
+                    build_session_query_extension_payload(
+                        uri="urn:codex-a2a:codex-session-query/v1",
+                        provider="codex",
+                        methods={
+                            "list_sessions": "codex.sessions.list",
+                            "get_session_messages": "codex.sessions.messages.list",
+                            "prompt_async": "codex.sessions.prompt_async",
+                            "command": "codex.sessions.command",
+                        },
+                        pagination={
+                            "mode": "limit",
+                            "default_limit": 20,
+                            "max_limit": 100,
+                        },
+                        method_contracts={
+                            "codex.sessions.prompt_async": {
+                                "params": {"required": ["session_id", "request.parts"]}
+                            },
+                            "codex.sessions.command": {
+                                "params": {
+                                    "required": [
+                                        "session_id",
+                                        "request.command",
+                                    ],
+                                    "optional": ["request.arguments"],
+                                }
+                            },
+                        },
+                        result_envelope={},
+                    ),
                     {
-                        "url": "https://example.com/jsonrpc",
-                        "protocolBinding": "JSONRPC",
-                    }
-                ],
-                "capabilities": {
-                    "extensions": [
-                        {
-                            "uri": "urn:codex-a2a:codex-session-query/v1",
-                            "params": {
-                                "provider": "codex",
-                                "methods": {
-                                    "list_sessions": "codex.sessions.list",
-                                    "get_session_messages": (
-                                        "codex.sessions.messages.list"
-                                    ),
-                                    "prompt_async": "codex.sessions.prompt_async",
-                                    "command": "codex.sessions.command",
-                                },
-                                "pagination": {
-                                    "mode": "limit",
-                                    "default_limit": 20,
-                                    "max_limit": 100,
-                                },
-                                "method_contracts": {
-                                    "codex.sessions.prompt_async": {
-                                        "params": {
-                                            "required": [
-                                                "session_id",
-                                                "request.parts",
-                                            ]
-                                        }
-                                    },
-                                    "codex.sessions.command": {
-                                        "params": {
-                                            "required": [
-                                                "session_id",
-                                                "request.command",
-                                            ],
-                                            "optional": ["request.arguments"],
-                                        }
-                                    },
-                                },
-                                "result_envelope": {},
+                        "uri": "urn:a2a:compatibility-profile/v1",
+                        "params": {
+                            "extension_retention": {},
+                            "method_retention": {},
+                            "service_behaviors": {
+                                "classification": "stable-service-semantics",
+                                "methods": {"tasks/cancel": {"retention": "stable"}},
                             },
+                            "consumer_guidance": [
+                                "Treat codex session query methods as stable."
+                            ],
                         },
-                        {
-                            "uri": "urn:a2a:compatibility-profile/v1",
-                            "params": {
-                                "extension_retention": {},
-                                "method_retention": {},
-                                "service_behaviors": {
-                                    "classification": "stable-service-semantics",
-                                    "methods": {
-                                        "tasks/cancel": {"retention": "stable"}
-                                    },
-                                },
-                                "consumer_guidance": [
-                                    "Treat codex session query methods as stable."
-                                ],
-                            },
-                        },
-                    ]
-                },
-                "defaultInputModes": [],
-                "defaultOutputModes": [],
-                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
-            }
+                    },
+                ]
+            )
 
     class _ExtensionGateway:
         async def fetch_agent_card_detail(self, **kwargs):

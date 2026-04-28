@@ -8,47 +8,22 @@ from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     SHARED_SESSION_QUERY_URI,
 )
-from tests.support.a2a import parse_agent_card
-
-
-def _base_card_payload() -> dict:
-    return {
-        "name": "example",
-        "description": "example",
-        "version": "1.0",
-        "supportedInterfaces": [
-            {
-                "url": "https://example.com/jsonrpc",
-                "protocolBinding": "JSONRPC",
-            }
-        ],
-        "capabilities": {"extensions": []},
-        "defaultInputModes": [],
-        "defaultOutputModes": [],
-        "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
-    }
+from tests.support.a2a import (
+    build_agent_card_payload,
+    build_session_query_extension_payload,
+    parse_agent_card,
+)
 
 
 def test_diagnose_session_query_returns_supported_status_for_opencode() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": SHARED_SESSION_QUERY_URI,
-            "params": {
-                "provider": "opencode",
-                "methods": {
-                    "list_sessions": "shared.sessions.list",
-                    "get_session_messages": "shared.sessions.messages.list",
-                },
-                "pagination": {
-                    "mode": "page_size",
-                    "default_size": 20,
-                    "max_size": 100,
-                },
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
-            },
-        }
-    ]
+    payload = build_agent_card_payload(
+        extensions=[
+            build_session_query_extension_payload(
+                uri=SHARED_SESSION_QUERY_URI,
+                result_envelope={"raw": True, "items": True, "pagination": True},
+            )
+        ]
+    )
 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
@@ -59,26 +34,15 @@ def test_diagnose_session_query_returns_supported_status_for_opencode() -> None:
     assert diagnostic.pagination_mode == "page_size"
 
 
-def test_diagnose_session_query_returns_legacy_status_for_legacy_uri() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": "urn:shared-a2a:session-query:v1",
-            "params": {
-                "provider": "opencode",
-                "methods": {
-                    "list_sessions": "shared.sessions.list",
-                    "get_session_messages": "shared.sessions.messages.list",
-                },
-                "pagination": {
-                    "mode": "page_size",
-                    "default_size": 20,
-                    "max_size": 100,
-                },
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
-            },
-        }
-    ]
+def test_diagnose_session_query_returns_unsupported_status_for_legacy_uri() -> None:
+    payload = build_agent_card_payload(
+        extensions=[
+            build_session_query_extension_payload(
+                uri="urn:shared-a2a:session-query:v1",
+                result_envelope={"raw": True, "items": True, "pagination": True},
+            )
+        ]
+    )
 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
@@ -90,17 +54,15 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_uri() -> None:
 
 
 def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
-            "params": {
-                "provider": "opencode",
-                "methods": {
+    payload = build_agent_card_payload(
+        extensions=[
+            build_session_query_extension_payload(
+                uri=OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
+                methods={
                     "list_sessions": "opencode.sessions.list",
                     "get_session_messages": "opencode.sessions.messages.list",
                 },
-                "pagination": {
+                pagination={
                     "mode": "limit_and_optional_cursor",
                     "default_limit": 20,
                     "max_limit": 100,
@@ -109,10 +71,10 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
                     "result_cursor_field": "next_cursor",
                     "cursor_applies_to": ["opencode.sessions.messages.list"],
                 },
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
-            },
-        }
-    ]
+                result_envelope={"raw": True, "items": True, "pagination": True},
+            )
+        ]
+    )
 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
@@ -125,25 +87,19 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
 def test_diagnose_session_query_returns_invalid_status_for_legacy_limit_fields() -> (
     None
 ):
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": SHARED_SESSION_QUERY_URI,
-            "params": {
-                "provider": "opencode",
-                "methods": {
-                    "list_sessions": "shared.sessions.list",
-                    "get_session_messages": "shared.sessions.messages.list",
-                },
-                "pagination": {
+    payload = build_agent_card_payload(
+        extensions=[
+            build_session_query_extension_payload(
+                uri=SHARED_SESSION_QUERY_URI,
+                pagination={
                     "mode": "limit",
                     "default_size": 20,
                     "max_size": 100,
                 },
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
-            },
-        }
-    ]
+                result_envelope={"raw": True, "items": True, "pagination": True},
+            )
+        ]
+    )
 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
@@ -156,17 +112,15 @@ def test_diagnose_session_query_returns_invalid_status_for_legacy_limit_fields()
 
 
 def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": SHARED_SESSION_QUERY_URI,
-            "params": {
-                "provider": "opencode",
-                "methods": {
+    payload = build_agent_card_payload(
+        extensions=[
+            build_session_query_extension_payload(
+                uri=SHARED_SESSION_QUERY_URI,
+                methods={
                     "list_sessions": "opencode.sessions.list",
                     "get_session_messages": "opencode.sessions.messages.list",
                 },
-                "pagination": {
+                pagination={
                     "mode": "limit_and_optional_cursor",
                     "default_limit": 20,
                     "max_limit": 100,
@@ -175,10 +129,10 @@ def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None
                     "result_cursor_field": "next_cursor",
                     "cursor_applies_to": ["opencode.sessions.messages.list"],
                 },
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
-            },
-        }
-    ]
+                result_envelope={"raw": True, "items": True, "pagination": True},
+            )
+        ]
+    )
 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
@@ -190,7 +144,7 @@ def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None
 
 
 def test_diagnose_session_query_returns_unsupported_when_not_declared() -> None:
-    diagnostic = diagnose_session_query(parse_agent_card(_base_card_payload()))
+    diagnostic = diagnose_session_query(parse_agent_card(build_agent_card_payload()))
 
     assert diagnostic.declared is False
     assert diagnostic.status == "unsupported"
@@ -199,24 +153,23 @@ def test_diagnose_session_query_returns_unsupported_when_not_declared() -> None:
 
 
 def test_diagnose_session_query_returns_supported_status_for_codex() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": CODEX_SHARED_SESSION_QUERY_URI,
-            "params": {
-                "provider": "codex",
-                "methods": {
+    payload = build_agent_card_payload(
+        extensions=[
+            build_session_query_extension_payload(
+                uri=CODEX_SHARED_SESSION_QUERY_URI,
+                provider="codex",
+                methods={
                     "list_sessions": "codex.sessions.list",
                     "get_session_messages": "codex.sessions.messages.list",
                     "prompt_async": "codex.sessions.prompt_async",
                     "command": "codex.sessions.command",
                 },
-                "pagination": {
+                pagination={
                     "mode": "limit",
                     "default_limit": 20,
                     "max_limit": 100,
                 },
-                "method_contracts": {
+                method_contracts={
                     "codex.sessions.prompt_async": {
                         "params": {"required": ["session_id", "request.parts"]}
                     },
@@ -227,10 +180,10 @@ def test_diagnose_session_query_returns_supported_status_for_codex() -> None:
                         }
                     },
                 },
-                "result_envelope": {},
-            },
-        }
-    ]
+                result_envelope={},
+            )
+        ]
+    )
 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
@@ -242,23 +195,17 @@ def test_diagnose_session_query_returns_supported_status_for_codex() -> None:
 
 
 def test_diagnose_session_query_returns_invalid_for_bad_contract() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": SHARED_SESSION_QUERY_URI,
-            "params": {
-                "provider": "opencode",
-                "methods": {
-                    "list_sessions": "shared.sessions.list",
-                    "get_session_messages": "shared.sessions.messages.list",
-                },
-                "pagination": {
+    payload = build_agent_card_payload(
+        extensions=[
+            build_session_query_extension_payload(
+                uri=SHARED_SESSION_QUERY_URI,
+                pagination={
                     "mode": "page_size",
                     "default_size": 20,
                 },
-            },
-        }
-    ]
+            )
+        ]
+    )
 
     diagnostic = diagnose_session_query(parse_agent_card(payload))
 
