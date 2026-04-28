@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal
 
 from a2a.types import AgentCard
 
@@ -101,9 +101,11 @@ def _resolve_result_envelope_field(value: Any, *, field: str, default: str) -> s
     raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
 
 
-def _resolve_result_envelope(value: Any) -> Optional[ResultEnvelopeMapping]:
+def _resolve_result_envelope(value: Any) -> ResultEnvelopeMapping:
     if value is None:
-        return None
+        raise A2AExtensionContractError(
+            "Extension contract missing/invalid 'result_envelope'"
+        )
     if not isinstance(value, dict):
         raise A2AExtensionContractError(
             "Extension contract missing/invalid 'result_envelope'"

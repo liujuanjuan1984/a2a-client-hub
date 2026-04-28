@@ -17,7 +17,6 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
-    LEGACY_SHARED_SESSION_QUERY_URI,
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
@@ -113,8 +112,10 @@ def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> Non
 
 
 def test_resolve_runtime_session_query_rejects_legacy_uri() -> None:
-    with pytest.raises(A2AExtensionNotSupportedError, match="legacy URI"):
-        resolve_runtime_session_query(_build_card(uri=LEGACY_SHARED_SESSION_QUERY_URI))
+    with pytest.raises(A2AExtensionNotSupportedError, match="not supported by Hub"):
+        resolve_runtime_session_query(
+            _build_card(uri="urn:shared-a2a:session-query:v1")
+        )
 
 
 def test_resolve_runtime_session_query_selects_codex_compatibility() -> None:

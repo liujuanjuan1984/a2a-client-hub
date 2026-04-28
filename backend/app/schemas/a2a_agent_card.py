@@ -38,7 +38,7 @@ class SharedSessionQueryDiagnostic(BaseModel):
         description="Hub compatibility result for the declared session-query contract",
     )
     uri: Optional[str] = Field(default=None)
-    declared_contract_family: Optional[Literal["opencode", "codex", "legacy"]] = Field(
+    declared_contract_family: Optional[Literal["opencode", "codex"]] = Field(
         default=None,
         alias="declaredContractFamily",
         description="Family inferred from the upstream-declared session-query contract",
@@ -57,8 +57,6 @@ class SharedSessionQueryDiagnostic(BaseModel):
     pagination_params: List[str] = Field(default_factory=list)
     result_envelope_declared: Optional[bool] = Field(default=None)
     jsonrpc_interface_fallback_used: Optional[bool] = Field(default=None)
-    uses_legacy_uri: bool = Field(default=False)
-    uses_legacy_contract_fields: bool = Field(default=False)
     error: Optional[str] = Field(
         default=None,
         description="Structured validation error when the contract is invalid",

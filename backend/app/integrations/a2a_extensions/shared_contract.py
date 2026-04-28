@@ -29,7 +29,6 @@ OPENCODE_SHARED_SESSION_MANAGEMENT_URI = _spec_uri("opencode-session-management-
 # Deprecated upstream alias kept for older peers that still publish the
 # earlier public taxonomy.
 OPENCODE_SHARED_SESSION_QUERY_URI = _spec_uri("opencode-session-query-v1")
-LEGACY_SHARED_SESSION_QUERY_URI = "urn:shared-a2a:session-query:v1"
 CODEX_SHARED_SESSION_QUERY_URI = "urn:codex-a2a:codex-session-query/v1"
 SUPPORTED_SESSION_QUERY_URIS = (
     SHARED_SESSION_QUERY_URI,
@@ -84,7 +83,6 @@ SUPPORTED_INTERRUPT_RECOVERY_URIS = (
 
 SHARED_INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
 OPENCODE_INTERRUPT_CALLBACK_URI = _spec_uri("shared-interactive-interrupt-v1")
-LEGACY_SHARED_INTERRUPT_CALLBACK_URI = "urn:shared-a2a:interrupt-callback:v1"
 SUPPORTED_INTERRUPT_CALLBACK_URIS = (
     SHARED_INTERRUPT_CALLBACK_URI,
     OPENCODE_INTERRUPT_CALLBACK_URI,

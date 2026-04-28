@@ -9,7 +9,6 @@ from app.integrations.a2a_extensions.interrupt_callback import (
     resolve_interrupt_callback,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    LEGACY_SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
 )
 from tests.support.a2a import parse_agent_card
@@ -160,7 +159,7 @@ def test_resolve_rejects_legacy_interrupt_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": LEGACY_SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": "urn:shared-a2a:interrupt-callback:v1",
             "required": False,
             "params": {
                 "methods": {

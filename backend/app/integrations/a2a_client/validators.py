@@ -330,7 +330,7 @@ def _find_noncanonical_protojson_alias_paths(
         if nested_descriptor.full_name in _DYNAMIC_PROTO_FULL_NAMES:
             continue
 
-        if field.label == FieldDescriptor.LABEL_REPEATED:
+        if field.is_repeated:
             if nested_descriptor.GetOptions().map_entry:
                 value_field = nested_descriptor.fields_by_name.get("value")
                 if (

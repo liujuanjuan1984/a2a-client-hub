@@ -706,6 +706,7 @@ async def test_get_session_messages_forwards_before_and_normalizes_page_info(
             success=True,
             result={
                 "items": [{"id": "msg-1", "role": "assistant"}],
+                "pagination": {"page": 1, "size": 20},
                 "next_cursor": "cursor-2",
             },
             meta=dict(kwargs.get("selection_meta") or {}),
@@ -779,6 +780,7 @@ def test_normalize_envelope_excludes_raw_by_default() -> None:
         result,
         page=1,
         size=20,
+        result_envelope=ResultEnvelopeMapping(),
     )
 
     assert envelope == {
@@ -794,6 +796,7 @@ def test_normalize_envelope_includes_raw_when_requested() -> None:
         result,
         page=1,
         size=20,
+        result_envelope=ResultEnvelopeMapping(),
         include_raw=True,
     )
 
@@ -870,4 +873,5 @@ def test_normalize_envelope_rejects_non_object_items_in_result_list() -> None:
             ["invalid-item"],
             page=1,
             size=20,
+            result_envelope=ResultEnvelopeMapping(),
         )

@@ -12,7 +12,6 @@ from app.integrations.a2a_extensions.session_query import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
-    LEGACY_SHARED_SESSION_QUERY_URI,
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     SHARED_SESSION_QUERY_URI,
 )
@@ -569,6 +568,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
                     "max_size": 100,
                 },
                 "errors": {"business_codes": {}},
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
             },
         }
     ]
@@ -582,9 +582,37 @@ def test_resolve_rejects_legacy_session_query_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": LEGACY_SHARED_SESSION_QUERY_URI,
+            "uri": "urn:shared-a2a:session-query:v1",
             "required": False,
             "params": {
+                "methods": {
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "page_size",
+                    "default_size": 20,
+                    "max_size": 100,
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
+            },
+        }
+    ]
+
+    card = parse_agent_card(payload)
+    with pytest.raises(A2AExtensionNotSupportedError):
+        resolve_session_query(card)
+
+
+def test_resolve_rejects_missing_result_envelope() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "opencode",
                 "methods": {
                     "list_sessions": "shared.sessions.list",
                     "get_session_messages": "shared.sessions.messages.list",
@@ -599,6 +627,5 @@ def test_resolve_rejects_legacy_session_query_uri() -> None:
         }
     ]
 
-    card = parse_agent_card(payload)
-    with pytest.raises(A2AExtensionNotSupportedError):
-        resolve_session_query(card)
+    with pytest.raises(A2AExtensionContractError, match="result_envelope"):
+        resolve_session_query(parse_agent_card(payload))
