@@ -281,6 +281,9 @@ async def test_hub_card_validate_reports_shared_session_query_diagnostics(
         payload["shared_session_query"]["error"]
         == "Shared session query extension URI is not supported by Hub"
     )
+    assert payload["validation_warnings"] == [
+        "Shared session query extension URI is not supported by Hub"
+    ]
 
 
 @pytest.mark.asyncio

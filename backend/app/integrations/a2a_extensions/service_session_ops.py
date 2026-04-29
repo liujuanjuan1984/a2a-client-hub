@@ -125,6 +125,7 @@ class A2AExtensionSessionOperations:
             jsonrpc_url=jsonrpc_url,
             method_name=method_name,
             params=params,
+            requested_extensions=[CODEX_TURN_CONTROL_URI],
         )
 
         metric_key = f"{CODEX_TURN_CONTROL_URI}:{method_name}"

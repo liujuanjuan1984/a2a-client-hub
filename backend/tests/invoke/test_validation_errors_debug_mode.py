@@ -116,10 +116,16 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
         gateway=_ExtensionGateway(), resolved=object()
     )
 
-    assert resp.success is False
+    assert resp.success is True
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "invalid"
-    assert "Shared session query contract is invalid" in resp.message
+    assert resp.message == "Agent card validated with warnings"
+    assert resp.validation_warnings == [
+        (
+            "Shared session query contract is invalid: Extension contract "
+            "missing/invalid 'pagination.max_size' for mode 'page_size'"
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -295,10 +301,14 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
         gateway=_ExtensionGateway(), resolved=object()
     )
 
-    assert resp.success is False
+    assert resp.success is True
     assert resp.compatibility_profile is not None
     assert resp.compatibility_profile.status == "invalid"
-    assert "Compatibility profile contract is invalid" in resp.message
+    assert resp.message == "Agent card validated with warnings"
+    assert resp.validation_warnings == [
+        "Compatibility profile contract is invalid: Extension contract "
+        "missing/invalid 'params.method_retention'"
+    ]
 
 
 def test_serialize_stream_event_validation_errors_gated(monkeypatch):

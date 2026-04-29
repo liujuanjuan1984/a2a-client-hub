@@ -51,6 +51,7 @@ class ProviderDiscoveryService:
             jsonrpc_url=jsonrpc_url,
             method_name=method_name,
             params=params,
+            requested_extensions=[ext.uri],
         )
 
         meta: Dict[str, Any] = {

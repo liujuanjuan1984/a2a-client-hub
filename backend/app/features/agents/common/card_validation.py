@@ -70,6 +70,7 @@ async def fetch_and_validate_agent_card(
         )
     validation_errors: list[str] = []
     validation_warnings: list[str] = []
+    extension_warnings: list[str] = []
     diagnostics_card: AgentCard | None = card if isinstance(card, AgentCard) else None
     strict_parse_error: str | None = None
 
@@ -114,30 +115,34 @@ async def fetch_and_validate_agent_card(
         else None
     )
     if session_query and session_query.status == "invalid" and session_query.error:
-        validation_errors.append(session_query.error)
+        extension_warnings.append(
+            f"Shared session query contract is invalid: {session_query.error}"
+        )
+    elif (
+        session_query
+        and session_query.status == "unsupported"
+        and session_query.declared
+    ):
+        extension_warnings.append(
+            session_query.error
+            or "Shared session query extension is not supported by Hub"
+        )
     if (
         compatibility_profile
         and compatibility_profile.status == "invalid"
         and compatibility_profile.error
     ):
-        validation_errors.append(compatibility_profile.error)
+        extension_warnings.append(
+            "Compatibility profile contract is invalid: "
+            f"{compatibility_profile.error}"
+        )
+    validation_warnings.extend(extension_warnings)
 
     success = not validation_errors
     if success and validation_warnings:
         message = "Agent card validated with warnings"
     elif success:
         message = "Agent card validated"
-    elif session_query and session_query.status == "invalid" and session_query.error:
-        message = f"Shared session query contract is invalid: {session_query.error}"
-    elif (
-        compatibility_profile
-        and compatibility_profile.status == "invalid"
-        and compatibility_profile.error
-    ):
-        message = (
-            "Compatibility profile contract is invalid: "
-            f"{compatibility_profile.error}"
-        )
     else:
         message = "Agent card validation issues detected"
 
