@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
+from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
 
 
 def build_extension_request_headers(
@@ -19,11 +20,22 @@ def build_extension_request_headers(
         for key, value in (base_headers or {}).items()
         if key is not None and value is not None
     }
-    normalized_extensions = [
-        extension.strip()
-        for extension in (requested_extensions or ())
-        if isinstance(extension, str) and extension.strip()
-    ]
+    normalized_extensions = sorted(
+        get_requested_extensions(
+            [
+                *(
+                    [headers.get(HTTP_EXTENSION_HEADER, "")]
+                    if headers.get(HTTP_EXTENSION_HEADER)
+                    else []
+                ),
+                *[
+                    extension
+                    for extension in (requested_extensions or ())
+                    if isinstance(extension, str) and extension.strip()
+                ],
+            ]
+        )
+    )
     if not normalized_extensions:
         return headers
     return ServiceParametersFactory.create_from(

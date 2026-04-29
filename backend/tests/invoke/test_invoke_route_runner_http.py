@@ -582,6 +582,7 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
 
     async def fake_consume_stream(**kwargs):
         captured["context_id"] = kwargs["context_id"]
+        captured["requested_extensions"] = kwargs["requested_extensions"]
         return StreamOutcome(
             success=True,
             finish_reason=StreamFinishReason.SUCCESS,
@@ -610,6 +611,11 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
         fake_consume_stream,
     )
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "resolve_core_invoke_requested_extensions",
+        lambda **kwargs: asyncio.sleep(0, result=("urn:a2a:stream-hints/v1",)),
+    )
 
     payload = A2AAgentInvokeRequest.model_validate(
         {
@@ -638,6 +644,7 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
     assert response.success is True
     assert response.content == "ok"
     assert captured["context_id"] == "ctx-reused"
+    assert captured["requested_extensions"] == ("urn:a2a:stream-hints/v1",)
 
 
 @pytest.mark.asyncio

@@ -18,6 +18,9 @@ from app.features.invoke import (
     route_runner_ws_ticket,
 )
 from app.features.invoke import session_binding as invoke_session_binding
+from app.features.invoke.extension_negotiation import (
+    resolve_core_invoke_requested_extensions,
+)
 from app.features.invoke.guard import (
     build_invoke_guard_key,
     guard_inflight_invoke,
@@ -606,6 +609,11 @@ async def run_http_invoke(
         stream_enabled=stream,
     )
     upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
+    requested_extensions = await resolve_core_invoke_requested_extensions(
+        runtime=runtime,
+        metadata=upstream_metadata,
+        require_stream_hints=True,
+    )
 
     if stream:
         on_event, on_finalized = _build_consume_stream_callbacks(
@@ -621,6 +629,7 @@ async def run_http_invoke(
                 query=payload.query,
                 context_id=state.context_id,
                 metadata=upstream_metadata,
+                requested_extensions=requested_extensions,
                 validate_message=validate_message,
                 logger=logger,
                 log_extra=stream_log_extra,
@@ -647,6 +656,7 @@ async def run_http_invoke(
             query=payload.query,
             context_id=state.context_id,
             metadata=upstream_metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -759,6 +769,11 @@ async def run_background_invoke(
         extra_persisted_metadata=extra_persisted_metadata,
     )
     upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
+    requested_extensions = await resolve_core_invoke_requested_extensions(
+        runtime=runtime,
+        metadata=upstream_metadata,
+        require_stream_hints=True,
+    )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
@@ -774,6 +789,7 @@ async def run_background_invoke(
             query=payload.query,
             context_id=state.context_id,
             metadata=upstream_metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -892,6 +908,11 @@ async def run_ws_invoke(
         stream_enabled=True,
     )
     upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
+    requested_extensions = await resolve_core_invoke_requested_extensions(
+        runtime=runtime,
+        metadata=upstream_metadata,
+        require_stream_hints=True,
+    )
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
         request=persistence_request,
@@ -906,6 +927,7 @@ async def run_ws_invoke(
             query=payload.query,
             context_id=state.context_id,
             metadata=upstream_metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,

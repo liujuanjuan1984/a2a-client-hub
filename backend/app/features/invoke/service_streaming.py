@@ -369,6 +369,7 @@ class A2AInvokeStreamingRuntime:
         query: str,
         context_id: str | None,
         metadata: dict[str, Any] | None,
+        requested_extensions: tuple[str, ...] = (),
         on_session_started: StreamSessionStartedCallbackFn | None = None,
     ) -> AsyncIterator[StreamEvent]:
         if invoke_session is not None:
@@ -379,6 +380,7 @@ class A2AInvokeStreamingRuntime:
                 query=query,
                 context_id=context_id,
                 metadata=metadata,
+                requested_extensions=requested_extensions,
             ):
                 yield payload
             return
@@ -396,6 +398,7 @@ class A2AInvokeStreamingRuntime:
                     query=query,
                     context_id=context_id,
                     metadata=metadata,
+                    requested_extensions=requested_extensions,
                 ):
                     yield payload
             return
@@ -405,6 +408,7 @@ class A2AInvokeStreamingRuntime:
             query=query,
             context_id=context_id,
             metadata=metadata,
+            requested_extensions=requested_extensions,
         ):
             yield payload
 
@@ -732,6 +736,7 @@ class A2AInvokeStreamingRuntime:
         query: str,
         context_id: str | None,
         metadata: dict[str, Any] | None,
+        requested_extensions: tuple[str, ...] = (),
         validate_message: ValidateMessageFn,
         logger: Any,
         log_extra: dict[str, Any],
@@ -753,6 +758,7 @@ class A2AInvokeStreamingRuntime:
             query=query,
             context_id=context_id,
             metadata=metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=log_extra,
@@ -775,6 +781,7 @@ class A2AInvokeStreamingRuntime:
         query: str,
         context_id: str | None,
         metadata: dict[str, Any] | None,
+        requested_extensions: tuple[str, ...] = (),
         validate_message: ValidateMessageFn,
         logger: Any,
         log_extra: dict[str, Any],
@@ -798,6 +805,7 @@ class A2AInvokeStreamingRuntime:
             query=query,
             context_id=context_id,
             metadata=metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=log_extra,
@@ -822,6 +830,7 @@ class A2AInvokeStreamingRuntime:
         query: str,
         context_id: str | None,
         metadata: dict[str, Any] | None,
+        requested_extensions: tuple[str, ...] = (),
         validate_message: ValidateMessageFn,
         logger: Any,
         log_extra: dict[str, Any],
@@ -844,6 +853,7 @@ class A2AInvokeStreamingRuntime:
             query=query,
             context_id=context_id,
             metadata=metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=log_extra,

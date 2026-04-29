@@ -73,6 +73,7 @@ class A2AGateway:
         query: str,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        requested_extensions: list[str] | tuple[str, ...] | None = None,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         timeout_seconds = float(max(timeout or self.settings.default_timeout, 1.0))
@@ -99,6 +100,7 @@ class A2AGateway:
                     query,
                     context_id=context_id,
                     metadata=metadata,
+                    requested_extensions=requested_extensions,
                 )
             )
             watchdog_task: Optional[asyncio.Task[Any]] = None
@@ -252,6 +254,7 @@ class A2AGateway:
         query: str,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        requested_extensions: list[str] | tuple[str, ...] | None = None,
         session: Optional[A2AInvokeSession] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         logger.info(
@@ -268,6 +271,7 @@ class A2AGateway:
                 query,
                 context_id=context_id,
                 metadata=metadata,
+                requested_extensions=requested_extensions,
             ):
                 yield payload
             return
@@ -281,6 +285,7 @@ class A2AGateway:
                     query,
                     context_id=context_id,
                     metadata=metadata,
+                    requested_extensions=requested_extensions,
                 ):
                     yield payload
             except A2AClientResetRequiredError:
