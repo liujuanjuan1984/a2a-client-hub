@@ -172,7 +172,6 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "supported"
     assert resp.shared_session_query.declared_contract_family == "opencode"
-    assert resp.shared_session_query.normalized_contract_family == "a2a_client_hub"
     assert resp.shared_session_query.pagination_mode == "limit_and_optional_cursor"
     assert resp.message == "Agent card validated"
 
@@ -244,7 +243,6 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "supported"
     assert resp.shared_session_query.declared_contract_family == "codex"
-    assert resp.shared_session_query.normalized_contract_family == "a2a_client_hub"
     assert resp.shared_session_query.pagination_mode == "limit"
     assert resp.message == "Agent card validated"
 

@@ -6,7 +6,7 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
 
 ## Status
 
-- Hub-private normalized contract family: `a2a_client_hub`
+- Hub-private normalization remains an internal runtime concern and is not exposed as a public contract-family field
 - Supported upstream declaration families currently include:
   - `opencode`: `urn:opencode-a2a:session-query/v1`
   - `opencode` HTTPS alias: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-management-v1`
@@ -14,7 +14,7 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
   - `legacy`: `urn:shared-a2a:session-query:v1`
   - `codex`: `urn:codex-a2a:codex-session-query/v1`
 - This document describes the Hub-private normalized contract only
-- Hub keeps the upstream-declared URI family and the normalized Hub contract family as separate diagnostic dimensions
+- Hub keeps the upstream-declared URI family as a public diagnostic dimension while retaining normalization details internally
 
 ## Contract Goals
 
@@ -22,7 +22,7 @@ The contract exists so that Hub can:
 
 - validate a peer during onboarding
 - classify the peer as `supported`, `unsupported`, or `invalid`
-- record the upstream-declared contract family separately from the Hub-private normalized contract family
+- record the upstream-declared contract family while keeping Hub-private normalization internal
 - choose the correct runtime parser path
 - reject ambiguous or unsafe declarations early
 
@@ -166,7 +166,7 @@ At onboarding time, Hub emits:
 
 - `status = supported | unsupported | invalid`
 - `declaredContractFamily = opencode | codex | legacy` when the declaration family is recognized
-- `normalizedContractFamily = a2a_client_hub` when the declaration maps into the Hub-private normalized contract
+- `selection_mode = direct | codex_compatibility` when Hub exposes runtime-selection metadata
 
 At runtime, Hub uses that classification to choose:
 

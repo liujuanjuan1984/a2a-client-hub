@@ -134,7 +134,6 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
         "session_query_declared_contract_family": "opencode",
-        "session_query_normalized_contract_family": "a2a_client_hub",
         "session_query_selection_mode": "direct",
     }
 
@@ -571,7 +570,6 @@ async def test_command_session_returns_method_not_supported_if_missing(
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
         "session_query_declared_contract_family": "opencode",
-        "session_query_normalized_contract_family": "a2a_client_hub",
         "session_query_selection_mode": "direct",
     }
 
@@ -912,7 +910,6 @@ async def test_extended_session_management_methods_delegate_to_session_service(
     assert captured["ext"] is ext
     assert captured["selection_meta"] == {
         "session_query_declared_contract_family": "opencode",
-        "session_query_normalized_contract_family": "a2a_client_hub",
         "session_query_selection_mode": "direct",
     }
 

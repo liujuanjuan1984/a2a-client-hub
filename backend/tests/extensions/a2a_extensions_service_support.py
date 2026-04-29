@@ -75,7 +75,6 @@ def _session_query_snapshot(
     ext: ResolvedExtension,
     *,
     declared_contract_family: str = "opencode",
-    normalized_contract_family: str = "a2a_client_hub",
     selection_mode: str = "direct",
 ) -> SessionQueryCapabilitySnapshot:
     control_methods = {
@@ -102,7 +101,6 @@ def _session_query_snapshot(
         capability=ResolvedSessionQueryRuntimeCapability(
             ext=ext,
             declared_contract_family=declared_contract_family,
-            normalized_contract_family=normalized_contract_family,
             selection_mode=selection_mode,
             control_methods=control_methods,
         ),

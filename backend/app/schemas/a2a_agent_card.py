@@ -43,14 +43,6 @@ class SharedSessionQueryDiagnostic(BaseModel):
         alias="declaredContractFamily",
         description="Family inferred from the upstream-declared session-query contract",
     )
-    normalized_contract_family: Optional[str] = Field(
-        default=None,
-        alias="normalizedContractFamily",
-        description=(
-            "Hub-private normalized contract family consumed after compatibility "
-            "mapping"
-        ),
-    )
     provider: Optional[str] = Field(default=None)
     methods: List[str] = Field(default_factory=list)
     pagination_mode: Optional[str] = Field(default=None)

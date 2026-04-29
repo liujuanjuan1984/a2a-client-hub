@@ -30,7 +30,6 @@ class ResolvedSessionQueryRuntimeCapability:
 
     ext: ResolvedExtension
     declared_contract_family: str
-    normalized_contract_family: str
     selection_mode: str
     control_methods: dict[str, ResolvedSessionControlMethodCapability]
 
@@ -48,7 +47,6 @@ def resolve_runtime_session_query(
         return ResolvedSessionQueryRuntimeCapability(
             ext=ext,
             declared_contract_family="opencode",
-            normalized_contract_family="a2a_client_hub",
             selection_mode="direct",
             control_methods=resolve_session_query_control_methods(card, ext=ext),
         )
@@ -61,7 +59,6 @@ def resolve_runtime_session_query(
         return ResolvedSessionQueryRuntimeCapability(
             ext=ext,
             declared_contract_family="codex",
-            normalized_contract_family="a2a_client_hub",
             selection_mode="codex_compatibility",
             control_methods=resolve_session_query_control_methods(card, ext=ext),
         )

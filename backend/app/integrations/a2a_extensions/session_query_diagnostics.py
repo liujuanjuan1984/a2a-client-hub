@@ -18,8 +18,6 @@ from app.integrations.a2a_extensions.shared_contract import (
 )
 from app.schemas.a2a_agent_card import SharedSessionQueryDiagnostic
 
-_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY = "a2a_client_hub"
-
 
 def _declared_contract_family(*, uses_codex_uri: bool) -> Literal["opencode", "codex"]:
     if uses_codex_uri:
@@ -96,7 +94,6 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
             status="invalid",
             uri=uri,
             declaredContractFamily=declared_contract_family,
-            normalizedContractFamily=_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY,
             provider=str(params.get("provider") or "").strip().lower() or None,
             methods=sorted(
                 key
@@ -120,7 +117,6 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         status="supported",
         uri=resolved.uri,
         declaredContractFamily=declared_contract_family,
-        normalizedContractFamily=_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY,
         provider=resolved.provider,
         methods=sorted(key for key, value in resolved.methods.items() if value),
         pagination_mode=(

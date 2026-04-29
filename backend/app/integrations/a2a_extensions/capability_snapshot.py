@@ -87,9 +87,6 @@ class SessionQueryCapabilitySnapshot:
             "session_query_declared_contract_family": (
                 self.capability.declared_contract_family
             ),
-            "session_query_normalized_contract_family": (
-                self.capability.normalized_contract_family
-            ),
             "session_query_selection_mode": self.capability.selection_mode,
         }
 
