@@ -130,8 +130,13 @@ def build_session_append_response(
     snapshot: Any,
     prompt_async: A2ASessionControlMethodResponse,
 ) -> A2ASessionAppendCapabilitiesResponse:
-    codex_turns = getattr(snapshot, "codex_turns", None)
-    turn_methods = dict(getattr(codex_turns, "methods", {}) or {})
+    families = getattr(snapshot, "upstream_method_families", None)
+    turns_family = None
+    if isinstance(families, dict):
+        turns_family = families.get("turns")
+    if turns_family is None:
+        turns_family = getattr(snapshot, "codex_turns", None)
+    turn_methods = dict(getattr(turns_family, "methods", {}) or {})
     steer = turn_methods.get("steer")
     steer_declared = bool(getattr(steer, "declared", False))
     steer_consumed = bool(getattr(steer, "consumed_by_hub", False))

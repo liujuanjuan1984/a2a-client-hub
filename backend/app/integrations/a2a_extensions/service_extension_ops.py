@@ -18,7 +18,7 @@ from app.integrations.a2a_extensions.provider_discovery_service import (
     ProviderDiscoveryService,
 )
 from app.integrations.a2a_extensions.service_capabilities import (
-    CODEX_DISCOVERY_METHODS,
+    UPSTREAM_DISCOVERY_METHODS,
     A2AExtensionCapabilityService,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
@@ -96,20 +96,24 @@ class A2AExtensionOperations:
             working_directory=working_directory,
         )
 
-    async def run_codex_discovery(
+    async def run_upstream_discovery(
         self,
         *,
         runtime: A2ARuntime,
         snapshot: Any,
         method_key: str,
         delegate_name: str,
-        capability_name: str = "Codex discovery",
+        capability_name: str = "Upstream discovery",
         meta_extra: dict[str, Any] | None = None,
         delegate_kwargs: dict[str, Any] | None = None,
     ) -> ExtensionCallResult:
+        discovery_capability = self._capabilities.resolve_upstream_method_family(
+            snapshot,
+            "discovery",
+        )
         capability, jsonrpc_url = (
             self._capabilities.require_declared_method_collection_capability(
-                snapshot.codex_discovery,
+                discovery_capability,
                 capability_name=capability_name,
             )
         )
@@ -136,7 +140,7 @@ class A2AExtensionOperations:
                 if snapshot.wire_contract.ext is not None
                 else None
             ),
-            "capability_area": "codex_discovery",
+            "capability_area": "upstream_discovery",
             "method_name": method.method,
         }
         if meta_extra:
@@ -145,7 +149,7 @@ class A2AExtensionOperations:
         kwargs.update(
             runtime=runtime,
             jsonrpc_url=jsonrpc_url,
-            method_name=method.method or CODEX_DISCOVERY_METHODS[method_key],
+            method_name=method.method or UPSTREAM_DISCOVERY_METHODS[method_key],
             meta=meta,
         )
         return cast(ExtensionCallResult, await delegate(**kwargs))

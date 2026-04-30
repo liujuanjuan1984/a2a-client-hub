@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -135,20 +136,26 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
 
 
 @pytest.mark.asyncio
-async def test_resolve_core_invoke_requested_extensions_tolerates_snapshot_failure():
+async def test_resolve_core_invoke_requested_extensions_tolerates_snapshot_failure(
+    caplog: pytest.LogCaptureFixture,
+):
     async def _explode(*, runtime):
         assert runtime is not None
         raise RuntimeError("boom")
 
-    requested = await resolve_core_invoke_requested_extensions(
-        runtime=SimpleNamespace(
-            resolved=SimpleNamespace(url="https://example.com/a2a")
-        ),
-        metadata={},
-        require_stream_hints=True,
-        extensions_service_getter=lambda: SimpleNamespace(
-            resolve_capability_snapshot=_explode
-        ),
-    )
+    runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com/a2a"))
+    with caplog.at_level(logging.WARNING):
+        requested = await resolve_core_invoke_requested_extensions(
+            runtime=runtime,
+            metadata={},
+            require_stream_hints=True,
+            extensions_service_getter=lambda: SimpleNamespace(
+                resolve_capability_snapshot=_explode
+            ),
+        )
 
     assert requested == ()
+    assert (
+        "Failed to resolve capability snapshot for core invoke negotiation"
+        in caplog.text
+    )

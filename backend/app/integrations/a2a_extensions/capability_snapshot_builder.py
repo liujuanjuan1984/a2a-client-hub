@@ -41,7 +41,7 @@ from app.integrations.a2a_extensions.interrupt_recovery import (
 from app.integrations.a2a_extensions.invoke_metadata import resolve_invoke_metadata
 from app.integrations.a2a_extensions.model_selection import resolve_model_selection
 from app.integrations.a2a_extensions.opencode_provider_discovery import (
-    resolve_opencode_provider_discovery,
+    resolve_provider_discovery,
 )
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.session_query_runtime_selection import (
@@ -442,7 +442,7 @@ def build_provider_discovery_snapshot(
     card: Any,
 ) -> ProviderDiscoveryCapabilitySnapshot:
     try:
-        ext = resolve_opencode_provider_discovery(card)
+        ext = resolve_provider_discovery(card)
     except A2AExtensionNotSupportedError as exc:
         return ProviderDiscoveryCapabilitySnapshot(
             status="unsupported",

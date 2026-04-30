@@ -39,18 +39,18 @@ from app.integrations.a2a_extensions.types import (
     ResolvedWireContractExtension,
 )
 
-CODEX_DISCOVERY_METHODS = {
+UPSTREAM_DISCOVERY_METHODS = {
     "skillsList": "codex.discovery.skills.list",
     "appsList": "codex.discovery.apps.list",
     "pluginsList": "codex.discovery.plugins.list",
     "pluginsRead": "codex.discovery.plugins.read",
     "watch": "codex.discovery.watch",
 }
-CODEX_TURNS_METHODS = {
+UPSTREAM_TURN_METHODS = {
     "steer": "codex.turns.steer",
 }
-CODEX_TURN_CONTROL_URI = "urn:codex-a2a:codex-turn-control/v1"
-CODEX_TURN_CONTROL_BUSINESS_CODE_MAP = {
+UPSTREAM_TURN_CONTROL_EXTENSION_URI = "urn:codex-a2a:codex-turn-control/v1"
+UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP = {
     -32007: "authorization_forbidden",
     -32012: "turn_not_steerable",
     -32013: "turn_forbidden",
@@ -193,6 +193,18 @@ class A2AExtensionCapabilityService:
             ),
         )
         return snapshot
+
+    @staticmethod
+    def resolve_upstream_method_family(
+        snapshot: ResolvedCapabilitySnapshot,
+        family_name: str,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        family = snapshot.upstream_method_families.get(family_name)
+        if family is None:
+            raise A2AExtensionNotSupportedError(
+                f"Upstream method family {family_name} is not available"
+            )
+        return family
 
     @staticmethod
     def require_session_query_capability(

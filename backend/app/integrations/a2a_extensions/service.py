@@ -511,7 +511,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_codex_discovery(
+        return await self._extension_ops.run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="skillsList",
@@ -524,7 +524,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_codex_discovery(
+        return await self._extension_ops.run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="appsList",
@@ -537,7 +537,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_codex_discovery(
+        return await self._extension_ops.run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="pluginsList",
@@ -558,7 +558,7 @@ class A2AExtensionsService:
         if not resolved_plugin_name:
             raise ValueError("plugin_name must be a non-empty string")
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_codex_discovery(
+        return await self._extension_ops.run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="pluginsRead",

@@ -1,4 +1,4 @@
-"""OpenCode provider/model discovery extension resolver and helpers."""
+"""Provider/model discovery extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ from app.integrations.a2a_extensions.shared_contract import (
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
 
 
-def resolve_opencode_provider_discovery(
+def resolve_provider_discovery(
     card: AgentCard,
 ) -> ResolvedProviderDiscoveryExtension:
-    """Resolve the OpenCode provider-discovery extension from an Agent Card."""
+    """Resolve the provider-discovery extension from an Agent Card."""
 
     capabilities = getattr(card, "capabilities", None)
     extensions = getattr(capabilities, "extensions", None) if capabilities else None
@@ -73,3 +73,11 @@ def resolve_opencode_provider_discovery(
         },
         business_code_map=code_to_error,
     )
+
+
+def resolve_opencode_provider_discovery(
+    card: AgentCard,
+) -> ResolvedProviderDiscoveryExtension:
+    """Backward-compatible alias for the provider discovery resolver."""
+
+    return resolve_provider_discovery(card)

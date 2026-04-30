@@ -11,9 +11,9 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.service_capabilities import (
-    CODEX_TURN_CONTROL_BUSINESS_CODE_MAP,
-    CODEX_TURN_CONTROL_URI,
-    CODEX_TURNS_METHODS,
+    UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP,
+    UPSTREAM_TURN_CONTROL_EXTENSION_URI,
+    UPSTREAM_TURN_METHODS,
     A2AExtensionCapabilityService,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
@@ -78,7 +78,7 @@ class A2AExtensionSessionOperations:
         sanitized_metadata.pop("shared", None)
         return sanitized_metadata or None
 
-    def prepare_codex_turn_steer(
+    def prepare_turn_steer_request(
         self,
         *,
         thread_id: str,
@@ -104,7 +104,7 @@ class A2AExtensionSessionOperations:
             "request": {"parts": list(parts)},
         }
 
-    async def steer_codex_turn(
+    async def steer_upstream_turn(
         self,
         *,
         runtime: A2ARuntime,
@@ -114,8 +114,8 @@ class A2AExtensionSessionOperations:
         turn_id: str,
         request_payload: Dict[str, Any],
     ) -> ExtensionCallResult:
-        method_name = CODEX_TURNS_METHODS["steer"]
-        params = self.prepare_codex_turn_steer(
+        method_name = UPSTREAM_TURN_METHODS["steer"]
+        params = self.prepare_turn_steer_request(
             thread_id=thread_id,
             turn_id=turn_id,
             request_payload=request_payload,
@@ -125,14 +125,14 @@ class A2AExtensionSessionOperations:
             jsonrpc_url=jsonrpc_url,
             method_name=method_name,
             params=params,
-            requested_extensions=[CODEX_TURN_CONTROL_URI],
+            requested_extensions=[UPSTREAM_TURN_CONTROL_EXTENSION_URI],
         )
 
-        metric_key = f"{CODEX_TURN_CONTROL_URI}:{method_name}"
+        metric_key = f"{UPSTREAM_TURN_CONTROL_EXTENSION_URI}:{method_name}"
         meta = {
-            "extension_uri": CODEX_TURN_CONTROL_URI,
+            "extension_uri": UPSTREAM_TURN_CONTROL_EXTENSION_URI,
             "method_name": method_name,
-            "control_method": "codex_turns_steer",
+            "control_method": "upstream_turns_steer",
             "session_id": session_id,
             "thread_id": thread_id,
             "expected_turn_id": turn_id,
@@ -158,7 +158,7 @@ class A2AExtensionSessionOperations:
         error = resp.error or {}
         error_details = self._support.build_upstream_error_details(
             error=error,
-            business_code_map=CODEX_TURN_CONTROL_BUSINESS_CODE_MAP,
+            business_code_map=UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP,
         )
         self._support.record_extension_metric(
             metric_key,
@@ -340,27 +340,31 @@ class A2AExtensionSessionOperations:
 
         thread_id, turn_id = self.resolve_shared_stream_turn_identity(metadata)
         metadata_for_upstream = self.strip_shared_metadata_for_upstream(metadata)
-        steer_capability = snapshot.codex_turns.methods.get("steer")
+        turns_family = self._capabilities.resolve_upstream_method_family(
+            snapshot,
+            "turns",
+        )
+        steer_capability = turns_family.methods.get("steer")
 
         if (
             steer_capability is not None
             and steer_capability.declared
             and steer_capability.consumed_by_hub
             and steer_capability.method
-            and snapshot.codex_turns.jsonrpc_url
+            and turns_family.jsonrpc_url
             and thread_id
             and turn_id
         ):
             preflight = self._capabilities.preflight_wire_contract_method(
                 snapshot=snapshot.wire_contract,
-                extension_uri=CODEX_TURN_CONTROL_URI,
+                extension_uri=UPSTREAM_TURN_CONTROL_EXTENSION_URI,
                 method_name=steer_capability.method,
             )
             if preflight is not None:
                 return preflight
-            return await self.steer_codex_turn(
+            return await self.steer_upstream_turn(
                 runtime=runtime,
-                jsonrpc_url=snapshot.codex_turns.jsonrpc_url,
+                jsonrpc_url=turns_family.jsonrpc_url,
                 session_id=session_id,
                 thread_id=thread_id,
                 turn_id=turn_id,

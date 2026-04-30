@@ -95,6 +95,8 @@ def _resolve_retention_map(
     *,
     field: str,
 ) -> Dict[str, CompatibilityRetentionEntry]:
+    if value is None:
+        return {}
     if not isinstance(value, dict):
         raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
     items = dict(value)
@@ -132,11 +134,15 @@ def resolve_compatibility_profile(
         raise A2AExtensionNotSupportedError("Compatibility profile extension not found")
 
     params = as_dict(getattr(ext, "params", None))
-    service_behaviors = as_dict(params.get("service_behaviors"))
-    if not service_behaviors:
-        raise A2AExtensionContractError(
-            "Extension contract missing/invalid 'params.service_behaviors'"
-        )
+    raw_service_behaviors = params.get("service_behaviors")
+    if raw_service_behaviors is None:
+        service_behaviors = {}
+    else:
+        service_behaviors = as_dict(raw_service_behaviors)
+        if not service_behaviors:
+            raise A2AExtensionContractError(
+                "Extension contract missing/invalid 'params.service_behaviors'"
+            )
     service_behavior_methods = service_behaviors.get("methods")
     if service_behavior_methods is not None and not isinstance(
         service_behavior_methods, dict
