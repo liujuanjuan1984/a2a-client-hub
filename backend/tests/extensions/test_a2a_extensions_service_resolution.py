@@ -479,7 +479,8 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
 
     assert result.success is True
     assert result.meta["session_binding_mode"] == "declared_contract"
-    assert result.meta["session_query_selection_mode"] == "direct"
+    assert result.meta["session_query_negotiation_mode"] == "declared_contract"
+    assert result.meta["session_query_compatibility_hints_applied"] is False
     assert fetch_calls == 1
 
 

@@ -9,8 +9,7 @@ from a2a.types import AgentCard
 from app.integrations.a2a_extensions.contract_utils import as_dict
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.session_query import (
-    resolve_canonical_session_query,
-    resolve_codex_session_query,
+    resolve_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
@@ -83,11 +82,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         )
 
     try:
-        if uses_codex_uri:
-            resolver = resolve_codex_session_query
-        else:
-            resolver = resolve_canonical_session_query
-        resolved = resolver(card)
+        resolved = resolve_session_query(card)
     except A2AExtensionContractError as exc:
         return SharedSessionQueryDiagnostic(
             declared=True,
@@ -125,6 +120,6 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
             else resolved.pagination.mode
         ),
         pagination_params=list(resolved.pagination.params),
-        result_envelope_declared=resolved.result_envelope is not None,
+        result_envelope_declared=result_envelope is not None,
         jsonrpc_interface_fallback_used=resolved.jsonrpc.fallback_used,
     )

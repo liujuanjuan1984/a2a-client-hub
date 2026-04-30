@@ -84,10 +84,10 @@ class SessionQueryCapabilitySnapshot:
         if self.capability is None:
             return {}
         return {
-            "session_query_declared_contract_family": (
-                self.capability.declared_contract_family
+            "session_query_negotiation_mode": self.capability.negotiation_mode,
+            "session_query_compatibility_hints_applied": (
+                self.capability.compatibility_hints_applied
             ),
-            "session_query_selection_mode": self.capability.selection_mode,
         }
 
 

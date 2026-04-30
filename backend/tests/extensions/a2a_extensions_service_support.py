@@ -74,8 +74,7 @@ from app.integrations.a2a_extensions.types import (
 def _session_query_snapshot(
     ext: ResolvedExtension,
     *,
-    declared_contract_family: str = "opencode",
-    selection_mode: str = "direct",
+    compatibility_hints_applied: bool = False,
 ) -> SessionQueryCapabilitySnapshot:
     control_methods = {
         "prompt_async": ResolvedSessionControlMethodCapability(
@@ -100,8 +99,8 @@ def _session_query_snapshot(
         status="supported",
         capability=ResolvedSessionQueryRuntimeCapability(
             ext=ext,
-            declared_contract_family=declared_contract_family,
-            selection_mode=selection_mode,
+            negotiation_mode="declared_contract",
+            compatibility_hints_applied=compatibility_hints_applied,
             control_methods=control_methods,
         ),
     )

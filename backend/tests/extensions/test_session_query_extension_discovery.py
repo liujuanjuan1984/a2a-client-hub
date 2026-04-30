@@ -605,7 +605,7 @@ def test_resolve_rejects_legacy_session_query_uri() -> None:
         resolve_session_query(card)
 
 
-def test_resolve_rejects_missing_result_envelope() -> None:
+def test_resolve_defaults_result_envelope_when_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -627,5 +627,6 @@ def test_resolve_rejects_missing_result_envelope() -> None:
         }
     ]
 
-    with pytest.raises(A2AExtensionContractError, match="result_envelope"):
-        resolve_session_query(parse_agent_card(payload))
+    resolved = resolve_session_query(parse_agent_card(payload))
+
+    assert resolved.result_envelope == ResultEnvelopeMapping()

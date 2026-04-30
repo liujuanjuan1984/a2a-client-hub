@@ -98,8 +98,8 @@ def _build_card(
 def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> None:
     capability = resolve_runtime_session_query(_build_card())
 
-    assert capability.declared_contract_family == "opencode"
-    assert capability.selection_mode == "direct"
+    assert capability.negotiation_mode == "declared_contract"
+    assert capability.compatibility_hints_applied is False
     assert capability.ext.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
     assert capability.control_methods["prompt_async"].declared is True
     assert capability.control_methods["prompt_async"].availability == "always"
@@ -129,8 +129,8 @@ def test_resolve_runtime_session_query_selects_codex_compatibility() -> None:
         )
     )
 
-    assert capability.declared_contract_family == "codex"
-    assert capability.selection_mode == "codex_compatibility"
+    assert capability.negotiation_mode == "declared_contract"
+    assert capability.compatibility_hints_applied is True
     assert capability.ext.uri == CODEX_SHARED_SESSION_QUERY_URI
 
 
@@ -178,8 +178,8 @@ async def test_resolve_capability_snapshot_uses_runtime_cache(
     assert first == second
     assert first.session_query.status == "supported"
     assert first.session_query.selection_meta == {
-        "session_query_declared_contract_family": "opencode",
-        "session_query_selection_mode": "direct",
+        "session_query_negotiation_mode": "declared_contract",
+        "session_query_compatibility_hints_applied": False,
     }
     assert first.session_binding.status == "supported"
     assert first.stream_hints.status == "supported"
@@ -284,6 +284,6 @@ async def test_resolve_capability_snapshot_reports_codex_selection_meta(
 
     assert snapshot.session_query.status == "supported"
     assert snapshot.session_query.selection_meta == {
-        "session_query_declared_contract_family": "codex",
-        "session_query_selection_mode": "codex_compatibility",
+        "session_query_negotiation_mode": "declared_contract",
+        "session_query_compatibility_hints_applied": True,
     }

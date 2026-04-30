@@ -103,9 +103,7 @@ def _resolve_result_envelope_field(value: Any, *, field: str, default: str) -> s
 
 def _resolve_result_envelope(value: Any) -> ResultEnvelopeMapping:
     if value is None:
-        raise A2AExtensionContractError(
-            "Extension contract missing/invalid 'result_envelope'"
-        )
+        return ResultEnvelopeMapping()
     if not isinstance(value, dict):
         raise A2AExtensionContractError(
             "Extension contract missing/invalid 'result_envelope'"
