@@ -482,12 +482,10 @@ async def test_hub_card_validate_reports_compatibility_profile_diagnostics(
     assert payload["success"] is True
     assert payload["compatibility_profile"]["declared"] is True
     assert payload["compatibility_profile"]["status"] == "supported"
-    assert payload["compatibility_profile"]["methodRetention"] == {
-        "opencode.sessions.shell": {
-            "surface": "extension",
-            "availability": "disabled",
-            "retention": "deployment-conditional",
-            "extensionUri": "urn:opencode-a2a:session-query/v1",
-            "toggle": "A2A_ENABLE_SESSION_SHELL",
-        }
-    }
+    assert payload["compatibility_profile"]["advisoryOnly"] is True
+    assert payload["compatibility_profile"]["methodRetentionCount"] == 1
+    assert payload["compatibility_profile"]["extensionRetentionCount"] == 1
+    assert payload["compatibility_profile"]["serviceBehaviorKeys"] == [
+        "classification",
+        "methods",
+    ]

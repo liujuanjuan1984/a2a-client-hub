@@ -18,7 +18,6 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_runtime_status_contract import runtime_status_contract_payload
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
-    A2ACompatibilityProfileEntry,
 )
 from app.schemas.a2a_extension import (
     A2ADeclaredMethodCapabilityResponse,
@@ -35,6 +34,7 @@ from app.schemas.a2a_extension import (
     A2ASessionControlCapabilitiesResponse,
     A2ASessionControlMethodResponse,
     A2AStreamHintsCapabilitiesResponse,
+    A2AUpstreamMethodFamiliesResponse,
     A2AWireContractCapabilitiesResponse,
     A2AWireContractConditionalMethodResponse,
     A2AWireContractUnsupportedMethodErrorResponse,
@@ -237,15 +237,13 @@ def build_compatibility_profile_response(
         declared=True,
         status=status_value,
         uri=getattr(ext, "uri", None),
-        extensionRetention={
-            name: A2ACompatibilityProfileEntry.model_validate(entry)
-            for name, entry in dict(getattr(ext, "extension_retention", {})).items()
-        },
-        methodRetention={
-            name: A2ACompatibilityProfileEntry.model_validate(entry)
-            for name, entry in dict(getattr(ext, "method_retention", {})).items()
-        },
-        serviceBehaviors=dict(getattr(ext, "service_behaviors", {}) or {}),
+        extensionRetentionCount=len(
+            dict(getattr(ext, "extension_retention", {}) or {})
+        ),
+        methodRetentionCount=len(dict(getattr(ext, "method_retention", {}) or {})),
+        serviceBehaviorKeys=sorted(
+            str(key) for key in dict(getattr(ext, "service_behaviors", {}) or {})
+        ),
         consumerGuidance=list(getattr(ext, "consumer_guidance", ()) or ()),
         error=error,
     )
@@ -500,6 +498,27 @@ def build_declared_single_method_response(
     )
 
 
+def build_upstream_method_families_response(
+    snapshot: Any,
+) -> A2AUpstreamMethodFamiliesResponse:
+    families = getattr(snapshot, "upstream_method_families", None)
+    if not isinstance(families, dict):
+        families = {
+            "discovery": getattr(snapshot, "codex_discovery", None),
+            "threads": getattr(snapshot, "codex_threads", None),
+            "turns": getattr(snapshot, "codex_turns", None),
+            "review": getattr(snapshot, "codex_review", None),
+            "exec": getattr(snapshot, "codex_exec", None),
+        }
+    return A2AUpstreamMethodFamiliesResponse(
+        discovery=build_declared_method_collection_response(families.get("discovery")),
+        threads=build_declared_method_collection_response(families.get("threads")),
+        turns=build_declared_method_collection_response(families.get("turns")),
+        review=build_declared_method_collection_response(families.get("review")),
+        exec=build_declared_method_collection_response(families.get("exec")),
+    )
+
+
 def build_extension_capabilities_response(
     snapshot: Any,
 ) -> A2AExtensionCapabilitiesResponse:
@@ -524,24 +543,7 @@ def build_extension_capabilities_response(
         streamHints=build_stream_hints_response(snapshot),
         wireContract=build_wire_contract_response(snapshot),
         compatibilityProfile=build_compatibility_profile_response(snapshot),
-        codexDiscovery=build_declared_method_collection_response(
-            getattr(snapshot, "codex_discovery", None)
-        ),
-        codexThreads=build_declared_method_collection_response(
-            getattr(snapshot, "codex_threads", None)
-        ),
-        codexTurns=build_declared_method_collection_response(
-            getattr(snapshot, "codex_turns", None)
-        ),
-        codexReview=build_declared_method_collection_response(
-            getattr(snapshot, "codex_review", None)
-        ),
-        codexThreadWatch=build_declared_single_method_response(
-            getattr(snapshot, "codex_thread_watch", None)
-        ),
-        codexExec=build_declared_method_collection_response(
-            getattr(snapshot, "codex_exec", None)
-        ),
+        upstreamMethodFamilies=build_upstream_method_families_response(snapshot),
         runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
             runtime_status_contract_payload()
         ),

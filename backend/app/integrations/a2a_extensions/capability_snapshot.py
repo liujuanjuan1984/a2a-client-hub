@@ -194,6 +194,18 @@ class ResolvedCapabilitySnapshot:
     codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot
     codex_exec: DeclaredMethodCollectionCapabilitySnapshot
 
+    @property
+    def upstream_method_families(
+        self,
+    ) -> dict[str, DeclaredMethodCollectionCapabilitySnapshot]:
+        return {
+            "discovery": self.codex_discovery,
+            "threads": self.codex_threads,
+            "turns": self.codex_turns,
+            "review": self.codex_review,
+            "exec": self.codex_exec,
+        }
+
 
 @dataclass(slots=True)
 class CapabilitySnapshotCacheEntry:

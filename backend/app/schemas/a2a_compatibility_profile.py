@@ -2,24 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
-
-
-class A2ACompatibilityProfileEntry(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-    surface: str
-    availability: str
-    retention: str
-    extension_uri: Optional[str] = Field(default=None, alias="extensionUri")
-    toggle: Optional[str] = None
-    implementation_scope: Optional[str] = Field(
-        default=None, alias="implementationScope"
-    )
-    identity_scope: Optional[str] = Field(default=None, alias="identityScope")
-    upstream_stability: Optional[str] = Field(default=None, alias="upstreamStability")
 
 
 class A2ACompatibilityProfileDiagnostic(BaseModel):
@@ -34,17 +19,30 @@ class A2ACompatibilityProfileDiagnostic(BaseModel):
         description="Hub compatibility classification for the declared profile",
     )
     uri: Optional[str] = None
-    extension_retention: Dict[str, A2ACompatibilityProfileEntry] = Field(
-        default_factory=dict,
-        alias="extensionRetention",
+    advisory_only: bool = Field(
+        default=True,
+        alias="advisoryOnly",
+        description="Compatibility-profile is treated as advisory metadata only.",
     )
-    method_retention: Dict[str, A2ACompatibilityProfileEntry] = Field(
-        default_factory=dict,
-        alias="methodRetention",
+    used_for: List[str] = Field(
+        default_factory=lambda: ["diagnostics", "retention_hints"],
+        alias="usedFor",
+        description="How the Hub currently uses the declared advisory profile.",
     )
-    service_behaviors: Dict[str, Any] = Field(
-        default_factory=dict,
-        alias="serviceBehaviors",
+    extension_retention_count: int = Field(
+        default=0,
+        alias="extensionRetentionCount",
+        description="Number of declared extension retention hints.",
+    )
+    method_retention_count: int = Field(
+        default=0,
+        alias="methodRetentionCount",
+        description="Number of declared method retention hints.",
+    )
+    service_behavior_keys: List[str] = Field(
+        default_factory=list,
+        alias="serviceBehaviorKeys",
+        description="Top-level advisory service-behavior keys declared upstream.",
     )
     consumer_guidance: List[str] = Field(
         default_factory=list,

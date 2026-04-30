@@ -6,9 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.a2a_compatibility_profile import (
-    A2ACompatibilityProfileDiagnostic,
-)
+from app.schemas.a2a_compatibility_profile import A2ACompatibilityProfileDiagnostic
 
 
 class A2AExtensionQueryRequest(BaseModel):
@@ -524,6 +522,16 @@ class A2ADeclaredSingleMethodCapabilitiesResponse(BaseModel):
     method: Optional[str] = None
 
 
+class A2AUpstreamMethodFamiliesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    discovery: A2ADeclaredMethodCollectionCapabilitiesResponse
+    threads: A2ADeclaredMethodCollectionCapabilitiesResponse
+    turns: A2ADeclaredMethodCollectionCapabilitiesResponse
+    review: A2ADeclaredMethodCollectionCapabilitiesResponse
+    exec: A2ADeclaredMethodCollectionCapabilitiesResponse
+
+
 class A2AWireContractCapabilitiesResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -761,55 +769,16 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         ...,
         alias="compatibilityProfile",
         description=(
-            "Declared compatibility-profile extension summary consumed by the hub "
-            "for compatibility diagnostics."
+            "Declared advisory compatibility-profile summary used by the hub for "
+            "diagnostics and retention hints only."
         ),
     )
-    codex_discovery: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
+    upstream_method_families: A2AUpstreamMethodFamiliesResponse = Field(
         ...,
-        alias="codexDiscovery",
+        alias="upstreamMethodFamilies",
         description=(
-            "Codex discovery methods declared via wire-contract that the hub "
-            "diagnoses and incrementally consumes through stable Hub APIs."
-        ),
-    )
-    codex_threads: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
-        ...,
-        alias="codexThreads",
-        description=(
-            "Codex thread lifecycle methods declared via wire-contract that the "
-            "hub currently leaves unsupported by design."
-        ),
-    )
-    codex_turns: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
-        ...,
-        alias="codexTurns",
-        description=(
-            "Codex turn control methods declared via wire-contract that the hub "
-            "incrementally consumes through stable Hub session-control append routing."
-        ),
-    )
-    codex_review: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
-        ...,
-        alias="codexReview",
-        description=(
-            "Codex review control methods declared via wire-contract that the "
-            "hub currently leaves unsupported by design."
-        ),
-    )
-    codex_thread_watch: A2ADeclaredSingleMethodCapabilitiesResponse = Field(
-        ...,
-        alias="codexThreadWatch",
-        description=(
-            "Compatibility alias for the declared codex.threads.watch method."
-        ),
-    )
-    codex_exec: A2ADeclaredMethodCollectionCapabilitiesResponse = Field(
-        ...,
-        alias="codexExec",
-        description=(
-            "Codex interactive exec methods declared via wire-contract that the "
-            "hub currently leaves unsupported by design."
+            "Provider-declared method families inferred from negotiated wire-contract "
+            "methods and exposed as generic capability groups."
         ),
     )
     runtime_status: A2ARuntimeStatusContractResponse = Field(

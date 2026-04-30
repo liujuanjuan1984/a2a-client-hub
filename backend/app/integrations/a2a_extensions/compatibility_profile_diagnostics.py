@@ -18,7 +18,6 @@ from app.integrations.a2a_extensions.shared_contract import (
 )
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
-    A2ACompatibilityProfileEntry,
 )
 
 
@@ -78,14 +77,8 @@ def diagnose_compatibility_profile(
         declared=True,
         status="supported",
         uri=resolved.uri,
-        extensionRetention={
-            name: A2ACompatibilityProfileEntry.model_validate(entry)
-            for name, entry in resolved.extension_retention.items()
-        },
-        methodRetention={
-            name: A2ACompatibilityProfileEntry.model_validate(entry)
-            for name, entry in resolved.method_retention.items()
-        },
-        serviceBehaviors=dict(resolved.service_behaviors),
+        extensionRetentionCount=len(resolved.extension_retention),
+        methodRetentionCount=len(resolved.method_retention),
+        serviceBehaviorKeys=sorted(str(key) for key in resolved.service_behaviors),
         consumerGuidance=list(resolved.consumer_guidance),
     )

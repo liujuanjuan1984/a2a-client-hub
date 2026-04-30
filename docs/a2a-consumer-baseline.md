@@ -113,6 +113,8 @@ The first implementation step in this repository is:
 - define validation success from core interoperability only
 - keep extension contract problems visible as warnings or diagnostics
 - expose a generic extension capability summary from `card:validate`
+- expose provider-declared wire-contract method families through generic capability groups instead of Hub-owned `codex*` top-level fields
+- treat compatibility-profile as advisory metadata, not a public provider-contract mirror
 - start issuing request-scoped `A2A-Extensions` headers on extension JSON-RPC calls
 
 Further refactors can then reduce remaining Hub-private normalization layers without losing observable behavior.

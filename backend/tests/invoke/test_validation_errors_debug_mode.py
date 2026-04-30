@@ -362,8 +362,8 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
     assert resp.compatibility_profile.status == "invalid"
     assert resp.message == "Agent card validated with warnings"
     assert resp.validation_warnings == [
-        "Compatibility profile contract is invalid: Extension contract "
-        "missing/invalid 'params.method_retention'"
+        "Compatibility profile advisory is invalid and will be ignored: "
+        "Extension contract missing/invalid 'params.method_retention'"
     ]
 
 

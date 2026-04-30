@@ -324,14 +324,11 @@ Endpoints:
 
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
-  - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
-  - `compatibilityProfile.extensionRetention` and `compatibilityProfile.methodRetention` now preserve optional machine-readable governance fields such as `implementationScope`, `identityScope`, and `upstreamStability` when upstream declares them.
-  - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
+  - The response includes a `compatibilityProfile` advisory summary when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI). Hub now exposes only advisory counts, top-level behavior keys, and `consumerGuidance` instead of re-exporting the full provider retention contract.
+  - The same capability response now folds provider-specific wire-contract diagnostics into a generic `upstreamMethodFamilies` block rather than exposing separate `codex*` top-level fields.
   - `sessionControl.append` now exposes a Hub-stable running-session append contract, including whether append is supported, which normalized route mode the Hub will use (`prompt_async`, `turn_steer`, or `hybrid`), and whether shared stream identity is required.
-  - The capability response also surfaces `codexThreads`, `codexTurns`, and `codexReview` collection diagnostics so newer upstream lifecycle/control families remain visible. `codexTurns` remains backend diagnostics and compatibility input when the downstream exposes `codex.turns.steer`, while `codexThreads` and `codexReview` remain diagnostics-only.
-  - Each declared Codex method now also reports method-level `availability`, `configKey`, `reason`, and `retention`, allowing deployment-conditional upstream surfaces to remain visible as `enabled`/`disabled` diagnostics instead of being flattened into plain unsupported responses.
-  - `codexDiscovery` also reports `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints can be surfaced without incorrectly promoting them to Hub-consumable support.
-  - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions without yet promoting them to a Hub-consumed feature surface.
+  - Each upstream method family still reports method-level `availability`, `configKey`, `reason`, `retention`, `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints stay visible without being promoted into a Hub-private taxonomy.
+  - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions as a consumed request-scoped capability surface.
   - `streamHints` surfaces whether the shared stream-hints contract is declared, whether Hub actively consumes it, which metadata fields are used, and whether Hub had to fall back to compatibility heuristics.
   - `interruptRecoveryDetails` surfaces adapter-local interrupt recovery scope diagnostics, including recovery data source, identity scope, implementation scope, and whether unresolved caller identity returns an empty item list.
 - Read Codex discovery lists through Hub-stable APIs:
@@ -357,7 +354,7 @@ Endpoints:
 
 Validation:
 
-- `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a `compatibility_profile` diagnostic when the upstream card declares the compatibility-profile extension.
+- `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a `compatibility_profile` advisory diagnostic and a generic `extensionCapabilities` summary when the upstream card declares compatible extensions.
 - When an upstream advertises top-level `supportsAuthenticatedExtendedCard`, Hub prefers fetching the authenticated extended card so provider-private extension contracts can still be resolved even if the public Agent Card is intentionally slimmed down.
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:continue`

@@ -150,7 +150,7 @@ async def fetch_and_validate_agent_card(
         and compatibility_profile.error
     ):
         extension_warnings.append(
-            "Compatibility profile contract is invalid: "
+            "Compatibility profile advisory is invalid and will be ignored: "
             f"{compatibility_profile.error}"
         )
     validation_warnings.extend(extension_warnings)
