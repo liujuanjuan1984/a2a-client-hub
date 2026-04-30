@@ -89,9 +89,9 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
             ),
         ),
         request_execution_options=RequestExecutionOptionsCapabilitySnapshot(
-            status="declared_not_consumed",
+            status="supported",
             declared=True,
-            consumed_by_hub=False,
+            consumed_by_hub=True,
             metadata_field="metadata.codex.execution",
             source_extensions=(session_query_ext.uri,),
         ),

@@ -638,9 +638,9 @@ def test_build_request_execution_options_snapshot_collects_declared_contracts() 
         card
     )
 
-    assert snapshot.status == "declared_not_consumed"
+    assert snapshot.status == "supported"
     assert snapshot.declared is True
-    assert snapshot.consumed_by_hub is False
+    assert snapshot.consumed_by_hub is True
     assert snapshot.metadata_field == "metadata.codex.execution"
     assert snapshot.fields == ("model", "effort", "summary", "personality")
     assert snapshot.persists_for_thread is True

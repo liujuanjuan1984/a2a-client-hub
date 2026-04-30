@@ -54,8 +54,8 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
         request_execution_options=SimpleNamespace(
             declared=True,
-            consumed_by_hub=False,
-            status="declared_not_consumed",
+            consumed_by_hub=True,
+            status="supported",
             metadata_field="metadata.codex.execution",
             fields=("model", "effort", "summary", "personality"),
             persists_for_thread=True,
@@ -408,8 +408,8 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         },
         "requestExecutionOptions": {
             "declared": True,
-            "consumedByHub": False,
-            "status": "declared_not_consumed",
+            "consumedByHub": True,
+            "status": "supported",
             "metadataField": "metadata.codex.execution",
             "fields": ["model", "effort", "summary", "personality"],
             "persistsForThread": True,

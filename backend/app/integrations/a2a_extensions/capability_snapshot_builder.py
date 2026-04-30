@@ -324,9 +324,9 @@ def build_request_execution_options_snapshot(
         )
 
     return RequestExecutionOptionsCapabilitySnapshot(
-        status="declared_not_consumed",
+        status="supported",
         declared=True,
-        consumed_by_hub=False,
+        consumed_by_hub=True,
         metadata_field=metadata_field,
         fields=tuple(fields),
         persists_for_thread=persists_for_thread,

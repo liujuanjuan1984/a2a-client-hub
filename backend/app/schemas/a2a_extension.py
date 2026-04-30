@@ -411,7 +411,7 @@ class A2ARequestExecutionOptionsCapabilitiesResponse(BaseModel):
 
     declared: bool
     consumed_by_hub: bool = Field(..., alias="consumedByHub")
-    status: Literal["unsupported", "declared_not_consumed", "invalid"]
+    status: Literal["supported", "unsupported", "declared_not_consumed", "invalid"]
     metadata_field: Optional[str] = Field(default=None, alias="metadataField")
     fields: List[str] = Field(default_factory=list)
     persists_for_thread: Optional[bool] = Field(default=None, alias="persistsForThread")

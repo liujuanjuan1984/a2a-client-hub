@@ -289,7 +289,7 @@ def build_request_execution_options_response(
         declared=bool(getattr(capability, "declared", False)),
         consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
         status=cast(
-            Literal["unsupported", "declared_not_consumed", "invalid"],
+            Literal["supported", "unsupported", "declared_not_consumed", "invalid"],
             getattr(capability, "status", "unsupported"),
         ),
         metadataField=getattr(capability, "metadata_field", None),

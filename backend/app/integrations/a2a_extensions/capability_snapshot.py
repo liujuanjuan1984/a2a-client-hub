@@ -109,7 +109,7 @@ class InvokeMetadataCapabilitySnapshot:
 
 @dataclass(frozen=True, slots=True)
 class RequestExecutionOptionsCapabilitySnapshot:
-    status: Literal["unsupported", "declared_not_consumed", "invalid"]
+    status: Literal["supported", "unsupported", "declared_not_consumed", "invalid"]
     declared: bool
     consumed_by_hub: bool
     metadata_field: str | None = None
