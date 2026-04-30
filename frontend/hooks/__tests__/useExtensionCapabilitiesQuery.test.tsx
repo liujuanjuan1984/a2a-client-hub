@@ -126,6 +126,94 @@ const createInvokeMetadata = (overrides?: {
   ...overrides,
 });
 
+const createCapabilityPayload = (overrides?: {
+  modelSelection?: boolean;
+  providerDiscovery?: boolean;
+  interruptRecovery?: boolean;
+  sessionPromptAsync?: boolean;
+  sessionControl?: ReturnType<typeof createSessionControl>;
+  invokeMetadata?: ReturnType<typeof createInvokeMetadata>;
+}) => ({
+  modelSelection: false,
+  providerDiscovery: false,
+  interruptRecovery: false,
+  interruptRecoveryDetails: {
+    declared: false,
+    consumedByHub: false,
+    status: "unsupported" as const,
+    methods: {},
+  },
+  sessionPromptAsync: false,
+  sessionControl: createSessionControl(),
+  invokeMetadata: createInvokeMetadata(),
+  requestExecutionOptions: {
+    declared: false,
+    consumedByHub: false,
+    status: "unsupported" as const,
+    fields: [],
+    sourceExtensions: [],
+    notes: [],
+  },
+  streamHints: {
+    declared: false,
+    consumedByHub: false,
+    status: "unsupported" as const,
+  },
+  wireContract: {
+    declared: true,
+    consumedByHub: true,
+    status: "supported" as const,
+    additionalTransports: [],
+    allJsonrpcMethods: [],
+    extensionUris: [],
+    conditionalMethods: {},
+  },
+  compatibilityProfile: {
+    declared: false,
+    status: "unsupported" as const,
+    advisoryOnly: true,
+    usedFor: ["diagnostics", "retention_hints"],
+    extensionRetentionCount: 0,
+    methodRetentionCount: 0,
+    serviceBehaviorKeys: [],
+    consumerGuidance: [],
+  },
+  upstreamMethodFamilies: {
+    discovery: {
+      declared: false,
+      consumedByHub: false,
+      status: "unsupported" as const,
+      methods: {},
+    },
+    threads: {
+      declared: false,
+      consumedByHub: false,
+      status: "unsupported" as const,
+      methods: {},
+    },
+    turns: {
+      declared: false,
+      consumedByHub: false,
+      status: "unsupported" as const,
+      methods: {},
+    },
+    review: {
+      declared: false,
+      consumedByHub: false,
+      status: "unsupported" as const,
+      methods: {},
+    },
+    exec: {
+      declared: false,
+      consumedByHub: false,
+      status: "unsupported" as const,
+      methods: {},
+    },
+  },
+  runtimeStatus: createRuntimeStatus(),
+  ...overrides,
+});
+
 describe("useExtensionCapabilitiesQuery", () => {
   let queryClient: QueryClient;
 
@@ -139,19 +227,20 @@ describe("useExtensionCapabilitiesQuery", () => {
   });
 
   it("returns supported when model selection is available", async () => {
-    mockedGetExtensionCapabilities.mockResolvedValue({
-      modelSelection: true,
-      providerDiscovery: true,
-      interruptRecovery: true,
-      sessionPromptAsync: true,
-      sessionControl: createSessionControl({
-        append: {
-          routeMode: "hybrid",
-        },
+    mockedGetExtensionCapabilities.mockResolvedValue(
+      createCapabilityPayload({
+        modelSelection: true,
+        providerDiscovery: true,
+        interruptRecovery: true,
+        sessionPromptAsync: true,
+        sessionControl: createSessionControl({
+          append: {
+            routeMode: "hybrid",
+          },
+        }),
+        invokeMetadata: createInvokeMetadata(),
       }),
-      invokeMetadata: createInvokeMetadata(),
-      runtimeStatus: createRuntimeStatus(),
-    });
+    );
 
     const { result } = renderHook(
       () =>
@@ -177,34 +266,35 @@ describe("useExtensionCapabilitiesQuery", () => {
   });
 
   it("returns unsupported when model selection is unavailable", async () => {
-    mockedGetExtensionCapabilities.mockResolvedValue({
-      modelSelection: false,
-      providerDiscovery: false,
-      interruptRecovery: false,
-      sessionPromptAsync: false,
-      sessionControl: createSessionControl({
-        append: {
-          declared: true,
-          consumedByHub: true,
-          status: "unsupported",
-          routeMode: "unsupported",
-          requiresStreamIdentity: false,
-        },
-        promptAsync: { declared: false, availability: "unsupported" },
-        command: {
-          declared: false,
-          consumedByHub: false,
-          availability: "unsupported",
-        },
-        shell: {
-          declared: false,
-          consumedByHub: false,
-          availability: "unsupported",
-        },
+    mockedGetExtensionCapabilities.mockResolvedValue(
+      createCapabilityPayload({
+        modelSelection: false,
+        providerDiscovery: false,
+        interruptRecovery: false,
+        sessionPromptAsync: false,
+        sessionControl: createSessionControl({
+          append: {
+            declared: true,
+            consumedByHub: true,
+            status: "unsupported",
+            routeMode: "unsupported",
+            requiresStreamIdentity: false,
+          },
+          promptAsync: { declared: false, availability: "unsupported" },
+          command: {
+            declared: false,
+            consumedByHub: false,
+            availability: "unsupported",
+          },
+          shell: {
+            declared: false,
+            consumedByHub: false,
+            availability: "unsupported",
+          },
+        }),
+        invokeMetadata: createInvokeMetadata(),
       }),
-      invokeMetadata: createInvokeMetadata(),
-      runtimeStatus: createRuntimeStatus(),
-    });
+    );
 
     const { result } = renderHook(
       () =>
@@ -225,21 +315,22 @@ describe("useExtensionCapabilitiesQuery", () => {
   });
 
   it("distinguishes model selection from provider discovery", async () => {
-    mockedGetExtensionCapabilities.mockResolvedValue({
-      modelSelection: true,
-      providerDiscovery: false,
-      interruptRecovery: false,
-      sessionPromptAsync: false,
-      sessionControl: createSessionControl({
-        promptAsync: { declared: false, availability: "unsupported" },
+    mockedGetExtensionCapabilities.mockResolvedValue(
+      createCapabilityPayload({
+        modelSelection: true,
+        providerDiscovery: false,
+        interruptRecovery: false,
+        sessionPromptAsync: false,
+        sessionControl: createSessionControl({
+          promptAsync: { declared: false, availability: "unsupported" },
+        }),
+        invokeMetadata: createInvokeMetadata({
+          declared: true,
+          status: "supported",
+          fields: [{ name: "project_id", required: true }],
+        }),
       }),
-      invokeMetadata: createInvokeMetadata({
-        declared: true,
-        status: "supported",
-        fields: [{ name: "project_id", required: true }],
-      }),
-      runtimeStatus: createRuntimeStatus(),
-    });
+    );
 
     const { result } = renderHook(
       () =>

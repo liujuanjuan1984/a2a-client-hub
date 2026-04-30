@@ -260,6 +260,12 @@ describe("assertExtensionSuccess", () => {
       modelSelection: false,
       providerDiscovery: true,
       interruptRecovery: true,
+      interruptRecoveryDetails: {
+        declared: true,
+        consumedByHub: true,
+        status: "supported",
+        methods: { list_permissions: "opencode.permissions.list" },
+      },
       sessionPromptAsync: true,
       sessionControl: {
         append: {
@@ -292,6 +298,7 @@ describe("assertExtensionSuccess", () => {
       invokeMetadata: {
         declared: true,
         consumedByHub: true,
+        status: "supported",
         metadataField: "metadata.shared.invoke",
         appliesToMethods: ["message/send", "message/stream"],
         fields: [
@@ -306,6 +313,88 @@ describe("assertExtensionSuccess", () => {
             description: "Channel scope.",
           },
         ],
+      },
+      requestExecutionOptions: {
+        declared: true,
+        consumedByHub: true,
+        status: "supported",
+        metadataField: "metadata.codex.execution",
+        fields: ["model", "effort"],
+        persistsForThread: true,
+        sourceExtensions: ["urn:opencode-a2a:session-query/v1"],
+        notes: ["Provider-private execution overrides."],
+      },
+      streamHints: {
+        declared: true,
+        consumedByHub: true,
+        status: "supported",
+        streamField: "metadata.shared.stream",
+        usageField: "metadata.shared.usage",
+        interruptField: "metadata.shared.interrupt",
+        sessionField: "metadata.shared.session",
+        mode: "declared_contract",
+        fallbackUsed: false,
+      },
+      wireContract: {
+        declared: true,
+        consumedByHub: true,
+        status: "supported",
+        protocolVersion: "0.3.0",
+        preferredTransport: "HTTP+JSON",
+        additionalTransports: ["JSON-RPC"],
+        allJsonrpcMethods: ["shared.sessions.prompt_async"],
+        extensionUris: ["urn:opencode-a2a:session-query/v1"],
+        conditionalMethods: {},
+        unsupportedMethodError: {
+          code: -32601,
+          type: "METHOD_NOT_SUPPORTED",
+          dataFields: ["method"],
+        },
+      },
+      compatibilityProfile: {
+        declared: true,
+        status: "supported",
+        advisoryOnly: true,
+        usedFor: ["diagnostics", "retention_hints"],
+        extensionRetentionCount: 1,
+        methodRetentionCount: 0,
+        serviceBehaviorKeys: ["classification"],
+        consumerGuidance: ["Treat as advisory metadata only."],
+      },
+      upstreamMethodFamilies: {
+        discovery: {
+          declared: true,
+          consumedByHub: true,
+          status: "supported",
+          methods: {},
+          declarationSource: "wire_contract",
+          declarationConfidence: "authoritative",
+          negotiationState: "supported",
+        },
+        threads: {
+          declared: false,
+          consumedByHub: false,
+          status: "unsupported_by_design",
+          methods: {},
+        },
+        turns: {
+          declared: true,
+          consumedByHub: true,
+          status: "supported",
+          methods: {},
+        },
+        review: {
+          declared: false,
+          consumedByHub: false,
+          status: "unsupported_by_design",
+          methods: {},
+        },
+        exec: {
+          declared: false,
+          consumedByHub: false,
+          status: "unsupported_by_design",
+          methods: {},
+        },
       },
       runtimeStatus: {
         version: "v1",
@@ -356,6 +445,9 @@ describe("assertExtensionSuccess", () => {
     expect(result.sessionControl.command.consumedByHub).toBe(true);
     expect(result.sessionControl.shell.availability).toBe("conditional");
     expect(result.invokeMetadata.metadataField).toBe("metadata.shared.invoke");
+    expect(result.requestExecutionOptions?.status).toBe("supported");
+    expect(result.compatibilityProfile?.advisoryOnly).toBe(true);
+    expect(result.upstreamMethodFamilies?.discovery.status).toBe("supported");
     expect(result.invokeMetadata.fields[0]?.name).toBe("project_id");
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
