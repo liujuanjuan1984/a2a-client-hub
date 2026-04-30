@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from app.integrations.a2a_extensions.capability_snapshot import (
@@ -61,42 +62,91 @@ from app.integrations.a2a_extensions.types import (
 )
 from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
 
-_CODEX_DISCOVERY_METHODS = {
-    "skillsList": "codex.discovery.skills.list",
-    "appsList": "codex.discovery.apps.list",
-    "pluginsList": "codex.discovery.plugins.list",
-    "pluginsRead": "codex.discovery.plugins.read",
-    "watch": "codex.discovery.watch",
-}
-_CODEX_DISCOVERY_HUB_CONSUMPTION = {
-    "skillsList": True,
-    "appsList": True,
-    "pluginsList": True,
-    "pluginsRead": True,
-    "watch": False,
-}
-_CODEX_EXEC_METHODS = {
-    "start": "codex.exec.start",
-    "write": "codex.exec.write",
-    "resize": "codex.exec.resize",
-    "terminate": "codex.exec.terminate",
-}
-_CODEX_THREADS_METHODS = {
-    "fork": "codex.threads.fork",
-    "archive": "codex.threads.archive",
-    "unarchive": "codex.threads.unarchive",
-    "metadataUpdate": "codex.threads.metadata.update",
-    "watch": "codex.threads.watch",
-}
-_CODEX_TURNS_METHODS = {
-    "steer": "codex.turns.steer",
-}
-_CODEX_TURNS_HUB_CONSUMPTION = {
-    "steer": True,
-}
-_CODEX_REVIEW_METHODS = {
-    "start": "codex.review.start",
-    "watch": "codex.review.watch",
+
+@dataclass(frozen=True, slots=True)
+class UpstreamMethodFamilySpec:
+    method_map: dict[str, str]
+    hub_consumption: dict[str, bool]
+    unsupported_status_when_declared: Literal[
+        "declared_not_consumed", "unsupported_by_design"
+    ]
+    declaration_source: (
+        Literal[
+            "none",
+            "wire_contract",
+            "wire_contract_fallback",
+            "extension_method_hint",
+            "extension_uri_hint",
+        ]
+        | None
+    ) = None
+    declaration_confidence: Literal["none", "fallback", "authoritative"] | None = None
+    negotiation_state: (
+        Literal["supported", "missing", "invalid", "unsupported"] | None
+    ) = None
+    supports_declaration_fallback: bool = False
+
+
+UPSTREAM_METHOD_FAMILY_SPECS: dict[str, UpstreamMethodFamilySpec] = {
+    "discovery": UpstreamMethodFamilySpec(
+        method_map={
+            "skillsList": "codex.discovery.skills.list",
+            "appsList": "codex.discovery.apps.list",
+            "pluginsList": "codex.discovery.plugins.list",
+            "pluginsRead": "codex.discovery.plugins.read",
+            "watch": "codex.discovery.watch",
+        },
+        hub_consumption={
+            "skillsList": True,
+            "appsList": True,
+            "pluginsList": True,
+            "pluginsRead": True,
+            "watch": False,
+        },
+        unsupported_status_when_declared="declared_not_consumed",
+        declaration_source="wire_contract",
+        declaration_confidence="authoritative",
+        negotiation_state="supported",
+        supports_declaration_fallback=True,
+    ),
+    "threads": UpstreamMethodFamilySpec(
+        method_map={
+            "fork": "codex.threads.fork",
+            "archive": "codex.threads.archive",
+            "unarchive": "codex.threads.unarchive",
+            "metadataUpdate": "codex.threads.metadata.update",
+            "watch": "codex.threads.watch",
+        },
+        hub_consumption={},
+        unsupported_status_when_declared="unsupported_by_design",
+    ),
+    "turns": UpstreamMethodFamilySpec(
+        method_map={
+            "steer": "codex.turns.steer",
+        },
+        hub_consumption={
+            "steer": True,
+        },
+        unsupported_status_when_declared="declared_not_consumed",
+    ),
+    "review": UpstreamMethodFamilySpec(
+        method_map={
+            "start": "codex.review.start",
+            "watch": "codex.review.watch",
+        },
+        hub_consumption={},
+        unsupported_status_when_declared="unsupported_by_design",
+    ),
+    "exec": UpstreamMethodFamilySpec(
+        method_map={
+            "start": "codex.exec.start",
+            "write": "codex.exec.write",
+            "resize": "codex.exec.resize",
+            "terminate": "codex.exec.terminate",
+        },
+        hub_consumption={},
+        unsupported_status_when_declared="unsupported_by_design",
+    ),
 }
 _CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
 _CODEX_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
@@ -685,17 +735,18 @@ def build_codex_discovery_snapshot(
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
+    spec = UPSTREAM_METHOD_FAMILY_SPECS["discovery"]
     if wire_contract.status == "supported":
         return build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
             compatibility_profile=compatibility_profile,
-            method_map=_CODEX_DISCOVERY_METHODS,
-            hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
-            unsupported_status_when_declared="declared_not_consumed",
+            method_map=spec.method_map,
+            hub_consumption=spec.hub_consumption,
+            unsupported_status_when_declared=spec.unsupported_status_when_declared,
             jsonrpc_url=jsonrpc_url,
-            declaration_source="wire_contract",
-            declaration_confidence="authoritative",
-            negotiation_state="supported",
+            declaration_source=spec.declaration_source,
+            declaration_confidence=spec.declaration_confidence,
+            negotiation_state=spec.negotiation_state,
         )
 
     fallback = diagnose_codex_discovery_fallback(
@@ -712,7 +763,7 @@ def build_codex_discovery_snapshot(
                     "always" if method_name in fallback.method_names else "unsupported"
                 ),
             )
-            for key, method_name in _CODEX_DISCOVERY_METHODS.items()
+            for key, method_name in spec.method_map.items()
         }
         return DeclaredMethodCollectionCapabilitySnapshot(
             declared=True,
@@ -729,9 +780,9 @@ def build_codex_discovery_snapshot(
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
-        method_map=_CODEX_DISCOVERY_METHODS,
-        hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
-        unsupported_status_when_declared="declared_not_consumed",
+        method_map=spec.method_map,
+        hub_consumption=spec.hub_consumption,
+        unsupported_status_when_declared=spec.unsupported_status_when_declared,
         jsonrpc_url=None,
         declaration_source=fallback.source,
         declaration_confidence=fallback.confidence,
@@ -746,12 +797,13 @@ def build_codex_exec_snapshot(
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
+    spec = UPSTREAM_METHOD_FAMILY_SPECS["exec"]
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
-        method_map=_CODEX_EXEC_METHODS,
-        hub_consumption={},
-        unsupported_status_when_declared="unsupported_by_design",
+        method_map=spec.method_map,
+        hub_consumption=spec.hub_consumption,
+        unsupported_status_when_declared=spec.unsupported_status_when_declared,
         jsonrpc_url=jsonrpc_url,
     )
 
@@ -762,12 +814,13 @@ def build_codex_threads_snapshot(
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
+    spec = UPSTREAM_METHOD_FAMILY_SPECS["threads"]
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
-        method_map=_CODEX_THREADS_METHODS,
-        hub_consumption={},
-        unsupported_status_when_declared="unsupported_by_design",
+        method_map=spec.method_map,
+        hub_consumption=spec.hub_consumption,
+        unsupported_status_when_declared=spec.unsupported_status_when_declared,
         jsonrpc_url=jsonrpc_url,
     )
 
@@ -778,12 +831,13 @@ def build_codex_turns_snapshot(
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
+    spec = UPSTREAM_METHOD_FAMILY_SPECS["turns"]
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
-        method_map=_CODEX_TURNS_METHODS,
-        hub_consumption=_CODEX_TURNS_HUB_CONSUMPTION,
-        unsupported_status_when_declared="declared_not_consumed",
+        method_map=spec.method_map,
+        hub_consumption=spec.hub_consumption,
+        unsupported_status_when_declared=spec.unsupported_status_when_declared,
         jsonrpc_url=jsonrpc_url,
     )
 
@@ -794,12 +848,13 @@ def build_codex_review_snapshot(
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
+    spec = UPSTREAM_METHOD_FAMILY_SPECS["review"]
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
-        method_map=_CODEX_REVIEW_METHODS,
-        hub_consumption={},
-        unsupported_status_when_declared="unsupported_by_design",
+        method_map=spec.method_map,
+        hub_consumption=spec.hub_consumption,
+        unsupported_status_when_declared=spec.unsupported_status_when_declared,
         jsonrpc_url=jsonrpc_url,
     )
 
