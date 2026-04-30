@@ -112,6 +112,7 @@ The first implementation step in this repository is:
 
 - define validation success from core interoperability only
 - keep extension contract problems visible as warnings or diagnostics
+- expose a generic extension capability summary from `card:validate`
 - start issuing request-scoped `A2A-Extensions` headers on extension JSON-RPC calls
 
 Further refactors can then reduce remaining Hub-private normalization layers without losing observable behavior.

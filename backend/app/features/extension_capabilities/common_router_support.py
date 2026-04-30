@@ -15,6 +15,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
+from app.integrations.a2a_runtime_status_contract import runtime_status_contract_payload
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
     A2ACompatibilityProfileEntry,
@@ -23,11 +24,13 @@ from app.schemas.a2a_extension import (
     A2ADeclaredMethodCapabilityResponse,
     A2ADeclaredMethodCollectionCapabilitiesResponse,
     A2ADeclaredSingleMethodCapabilitiesResponse,
+    A2AExtensionCapabilitiesResponse,
     A2AExtensionResponse,
     A2AInterruptRecoveryCapabilitiesResponse,
     A2AInvokeMetadataCapabilitiesResponse,
     A2AInvokeMetadataFieldResponse,
     A2ARequestExecutionOptionsCapabilitiesResponse,
+    A2ARuntimeStatusContractResponse,
     A2ASessionAppendCapabilitiesResponse,
     A2ASessionControlCapabilitiesResponse,
     A2ASessionControlMethodResponse,
@@ -494,6 +497,54 @@ def build_declared_single_method_response(
         consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
         status=status_value,
         method=getattr(capability, "method", None),
+    )
+
+
+def build_extension_capabilities_response(
+    snapshot: Any,
+) -> A2AExtensionCapabilitiesResponse:
+    model_selection = snapshot.model_selection.status == "supported"
+    provider_discovery = snapshot.provider_discovery.status == "supported"
+    interrupt_recovery = snapshot.interrupt_recovery.status == "supported"
+    session_control = build_session_control_response(snapshot)
+    session_prompt_async = (
+        session_control.prompt_async.declared
+        and session_control.prompt_async.consumed_by_hub
+    )
+
+    return A2AExtensionCapabilitiesResponse(
+        modelSelection=model_selection,
+        providerDiscovery=provider_discovery,
+        interruptRecovery=interrupt_recovery,
+        interruptRecoveryDetails=build_interrupt_recovery_details_response(snapshot),
+        sessionPromptAsync=session_prompt_async,
+        sessionControl=session_control,
+        invokeMetadata=build_invoke_metadata_response(snapshot),
+        requestExecutionOptions=build_request_execution_options_response(snapshot),
+        streamHints=build_stream_hints_response(snapshot),
+        wireContract=build_wire_contract_response(snapshot),
+        compatibilityProfile=build_compatibility_profile_response(snapshot),
+        codexDiscovery=build_declared_method_collection_response(
+            getattr(snapshot, "codex_discovery", None)
+        ),
+        codexThreads=build_declared_method_collection_response(
+            getattr(snapshot, "codex_threads", None)
+        ),
+        codexTurns=build_declared_method_collection_response(
+            getattr(snapshot, "codex_turns", None)
+        ),
+        codexReview=build_declared_method_collection_response(
+            getattr(snapshot, "codex_review", None)
+        ),
+        codexThreadWatch=build_declared_single_method_response(
+            getattr(snapshot, "codex_thread_watch", None)
+        ),
+        codexExec=build_declared_method_collection_response(
+            getattr(snapshot, "codex_exec", None)
+        ),
+        runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
+            runtime_status_contract_payload()
+        ),
     )
 
 

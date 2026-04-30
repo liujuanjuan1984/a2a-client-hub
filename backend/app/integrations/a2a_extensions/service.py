@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Optional
 
+from a2a.types import AgentCard
+
 from app.core.logging import get_logger
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.capability_snapshot import (
@@ -82,6 +84,13 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ResolvedCapabilitySnapshot:
         return await self._capabilities.resolve_capability_snapshot(runtime=runtime)
+
+    def build_capability_snapshot_from_card(
+        self,
+        *,
+        card: AgentCard,
+    ) -> ResolvedCapabilitySnapshot:
+        return self._capabilities.build_capability_snapshot_from_card(card=card)
 
     async def _resolve_session_extension_runtime(
         self,

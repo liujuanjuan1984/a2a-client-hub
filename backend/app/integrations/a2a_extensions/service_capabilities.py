@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Literal, Protocol
 
+from a2a.types import AgentCard
+
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions import capability_snapshot_builder
 from app.integrations.a2a_extensions.capability_snapshot import (
@@ -104,6 +106,19 @@ class A2AExtensionCapabilityService:
                 return cached.snapshot
 
         card = await self._support.fetch_card(runtime)
+        snapshot = self.build_capability_snapshot_from_card(card=card)
+        async with self._capability_snapshot_cache_lock:
+            self._capability_snapshot_cache[cache_key] = CapabilitySnapshotCacheEntry(
+                snapshot=snapshot,
+                expires_at=now + CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS,
+            )
+        return snapshot
+
+    def build_capability_snapshot_from_card(
+        self,
+        *,
+        card: AgentCard,
+    ) -> ResolvedCapabilitySnapshot:
         wire_contract = capability_snapshot_builder.build_wire_contract_snapshot(card)
         jsonrpc_url = None
         try:
@@ -177,11 +192,6 @@ class A2AExtensionCapabilityService:
                 jsonrpc_url=jsonrpc_url,
             ),
         )
-        async with self._capability_snapshot_cache_lock:
-            self._capability_snapshot_cache[cache_key] = CapabilitySnapshotCacheEntry(
-                snapshot=snapshot,
-                expires_at=now + CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS,
-            )
         return snapshot
 
     @staticmethod

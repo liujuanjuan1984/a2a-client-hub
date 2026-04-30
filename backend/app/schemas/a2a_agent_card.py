@@ -10,6 +10,7 @@ from app.features.agents.personal.schemas import A2AAuthType
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
 )
+from app.schemas.a2a_extension import A2AExtensionCapabilitiesResponse
 
 
 class A2AAgentCardProxyRequest(BaseModel):
@@ -70,6 +71,11 @@ class A2AAgentCardValidationResponse(BaseModel):
     validation_warnings: Optional[List[str]] = Field(
         default=None,
         description="Non-blocking validation warnings exposed to clients",
+    )
+    extension_capabilities: Optional[A2AExtensionCapabilitiesResponse] = Field(
+        default=None,
+        alias="extensionCapabilities",
+        description="Hub capability summary derived from declared extension contracts.",
     )
     shared_session_query: Optional[SharedSessionQueryDiagnostic] = Field(
         default=None,

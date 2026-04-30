@@ -21,9 +21,6 @@ from app.db.models.user import User
 from app.db.transaction import load_for_external_call
 from app.features.extension_capabilities import common_router_support
 from app.integrations.a2a_extensions import get_a2a_extensions_service
-from app.integrations.a2a_runtime_status_contract import (
-    runtime_status_contract_payload,
-)
 from app.schemas.a2a_extension import (
     A2ACodexDiscoveryAppsListResponse,
     A2ACodexDiscoveryPluginReadRequest,
@@ -46,7 +43,6 @@ from app.schemas.a2a_extension import (
     A2AExtensionSessionMutationRequest,
     A2AInterruptRecoveryResponse,
     A2AModelDiscoveryRequest,
-    A2ARuntimeStatusContractResponse,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -110,57 +106,7 @@ def create_extension_capability_router(
         snapshot = await _extensions_service().resolve_capability_snapshot(
             runtime=runtime
         )
-        model_selection = snapshot.model_selection.status == "supported"
-        provider_discovery = snapshot.provider_discovery.status == "supported"
-        interrupt_recovery = snapshot.interrupt_recovery.status == "supported"
-        session_control = common_router_support.build_session_control_response(snapshot)
-        session_prompt_async = (
-            session_control.prompt_async.declared
-            and session_control.prompt_async.consumed_by_hub
-        )
-
-        return A2AExtensionCapabilitiesResponse(
-            modelSelection=model_selection,
-            providerDiscovery=provider_discovery,
-            interruptRecovery=interrupt_recovery,
-            interruptRecoveryDetails=common_router_support.build_interrupt_recovery_details_response(
-                snapshot
-            ),
-            sessionPromptAsync=session_prompt_async,
-            sessionControl=session_control,
-            invokeMetadata=common_router_support.build_invoke_metadata_response(
-                snapshot
-            ),
-            requestExecutionOptions=common_router_support.build_request_execution_options_response(
-                snapshot
-            ),
-            streamHints=common_router_support.build_stream_hints_response(snapshot),
-            wireContract=common_router_support.build_wire_contract_response(snapshot),
-            compatibilityProfile=common_router_support.build_compatibility_profile_response(
-                snapshot
-            ),
-            codexDiscovery=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_discovery", None)
-            ),
-            codexThreads=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_threads", None)
-            ),
-            codexTurns=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_turns", None)
-            ),
-            codexReview=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_review", None)
-            ),
-            codexThreadWatch=common_router_support.build_declared_single_method_response(
-                getattr(snapshot, "codex_thread_watch", None)
-            ),
-            codexExec=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_exec", None)
-            ),
-            runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
-                runtime_status_contract_payload()
-            ),
-        )
+        return common_router_support.build_extension_capabilities_response(snapshot)
 
     @router.post(
         "/{agent_id}/extensions/models/providers:list",

@@ -338,6 +338,10 @@ async def test_hub_card_validate_accepts_limit_and_optional_cursor_session_query
     payload = resp.json()
     assert payload["success"] is True
     assert payload["message"] == "Agent card validated"
+    assert (
+        payload["extensionCapabilities"]["sessionControl"]["command"]["declared"]
+        is False
+    )
     assert payload["shared_session_query"]["status"] == "supported"
     assert payload["shared_session_query"]["declaredContractFamily"] == "opencode"
     assert "normalizedContractFamily" not in payload["shared_session_query"]
@@ -345,6 +349,73 @@ async def test_hub_card_validate_accepts_limit_and_optional_cursor_session_query
         "limit_and_optional_cursor"
     )
     assert payload["shared_session_query"]["pagination_params"] == ["limit", "before"]
+
+
+@pytest.mark.asyncio
+async def test_hub_card_validate_exposes_request_execution_options_capabilities(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_validate_exec_opts@example.com",
+        user_email="alice_validate_exec_opts@example.com",
+        token="secret-token-validate-exec-opts",
+    )
+
+    fake_gateway = _FakeGateway()
+    fake_gateway.card_payload["capabilities"]["extensions"] = [
+        build_session_query_extension_payload(
+            uri="urn:opencode-a2a:session-query/v1",
+            methods={
+                "list_sessions": "opencode.sessions.list",
+                "get_session_messages": "opencode.sessions.messages.list",
+            },
+            pagination={
+                "mode": "limit",
+                "default_limit": 20,
+                "max_limit": 100,
+            },
+            result_envelope={"raw": True, "items": True, "pagination": True},
+        )
+    ]
+    fake_gateway.card_payload["capabilities"]["extensions"][0]["params"][
+        "request_execution_options"
+    ] = {
+        "metadata_field": "metadata.codex.execution",
+        "fields": ["model", "effort"],
+        "persists_for_thread": True,
+        "notes": ["Execution overrides are provider-private."],
+    }
+    monkeypatch.setattr(
+        hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/card:validate"
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["success"] is True
+    assert payload["extensionCapabilities"]["requestExecutionOptions"] == {
+        "declared": True,
+        "consumedByHub": True,
+        "status": "supported",
+        "metadataField": "metadata.codex.execution",
+        "fields": ["model", "effort"],
+        "persistsForThread": True,
+        "sourceExtensions": ["urn:opencode-a2a:session-query/v1"],
+        "notes": ["Execution overrides are provider-private."],
+    }
 
 
 @pytest.mark.asyncio
