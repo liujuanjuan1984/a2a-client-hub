@@ -587,7 +587,7 @@ class A2AUpstreamDiscoverySkillResponse(BaseModel):
     enabled: bool
     scope: str
     interface: Optional[Dict[str, Any]] = None
-    codex: Dict[str, Any] = Field(default_factory=dict)
+    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
 
 
 class A2AUpstreamDiscoverySkillScopeResponse(BaseModel):
@@ -596,7 +596,7 @@ class A2AUpstreamDiscoverySkillScopeResponse(BaseModel):
     cwd: str
     skills: List[A2AUpstreamDiscoverySkillResponse] = Field(default_factory=list)
     errors: List[Dict[str, Any]] = Field(default_factory=list)
-    codex: Dict[str, Any] = Field(default_factory=dict)
+    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
 
 
 class A2AUpstreamDiscoverySkillsListResult(BaseModel):
@@ -621,7 +621,7 @@ class A2AUpstreamDiscoveryAppResponse(BaseModel):
     mention_path: str = Field(..., alias="mentionPath")
     branding: Optional[Dict[str, Any]] = None
     labels: List[Dict[str, Any]] = Field(default_factory=list)
-    codex: Dict[str, Any] = Field(default_factory=dict)
+    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
 
 
 class A2AUpstreamDiscoveryAppsListResult(BaseModel):
@@ -643,7 +643,7 @@ class A2AUpstreamDiscoveryPluginSummaryResponse(BaseModel):
     enabled: Optional[bool] = None
     interface: Optional[Dict[str, Any]] = None
     mention_path: str = Field(..., alias="mentionPath")
-    codex: Dict[str, Any] = Field(default_factory=dict)
+    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
 
 
 class A2AUpstreamDiscoveryPluginMarketplaceResponse(BaseModel):
@@ -655,7 +655,7 @@ class A2AUpstreamDiscoveryPluginMarketplaceResponse(BaseModel):
     plugins: List[A2AUpstreamDiscoveryPluginSummaryResponse] = Field(
         default_factory=list
     )
-    codex: Dict[str, Any] = Field(default_factory=dict)
+    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
 
 
 class A2AUpstreamDiscoveryPluginsListResult(BaseModel):
@@ -689,7 +689,7 @@ class A2AUpstreamDiscoveryPluginReadItemResponse(BaseModel):
     apps: List[Dict[str, Any]] = Field(default_factory=list)
     mcp_servers: List[str] = Field(default_factory=list, alias="mcpServers")
     interface: Optional[Dict[str, Any]] = None
-    codex: Dict[str, Any] = Field(default_factory=dict)
+    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
 
 
 class A2AUpstreamDiscoveryPluginReadResult(BaseModel):
@@ -747,7 +747,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         ...,
         alias="requestExecutionOptions",
         description=(
-            "Codex-private request execution override contract diagnostics "
+            "Provider-private request execution override contract diagnostics "
             "surfaced from session binding/session query extension params."
         ),
     )

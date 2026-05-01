@@ -75,9 +75,11 @@ def _extract_string_list(value: Any, *, field: str) -> list[str]:
     return normalized
 
 
-def _normalize_codex_envelope(payload: dict[str, Any], *, field: str) -> dict[str, Any]:
-    codex = _extract_dict(payload.get("codex"), field=field)
-    return codex or {}
+def _normalize_provider_private_payload(
+    payload: dict[str, Any], *, field: str
+) -> dict[str, Any]:
+    provider_private = _extract_dict(payload.get("codex"), field=field)
+    return provider_private or {}
 
 
 def _normalize_skill_item(payload: Any) -> dict[str, Any]:
@@ -95,7 +97,9 @@ def _normalize_skill_item(payload: Any) -> dict[str, Any]:
         "interface": _extract_dict(
             item.get("interface"), field="items[].skills[].interface"
         ),
-        "codex": _normalize_codex_envelope(item, field="items[].skills[].codex"),
+        "codex": _normalize_provider_private_payload(
+            item, field="items[].skills[].codex"
+        ),
     }
 
 
@@ -106,7 +110,7 @@ def _normalize_skill_scope(payload: Any) -> dict[str, Any]:
         "cwd": _require_string(scope.get("cwd"), field="items[].cwd"),
         "skills": [_normalize_skill_item(item) for item in skills],
         "errors": _extract_dict_list(scope.get("errors"), field="items[].errors"),
-        "codex": _normalize_codex_envelope(scope, field="items[].codex"),
+        "codex": _normalize_provider_private_payload(scope, field="items[].codex"),
     }
 
 
@@ -140,7 +144,7 @@ def _normalize_app_item(payload: Any) -> dict[str, Any]:
         "mentionPath": mention_path or f"app://{app_id}",
         "branding": _extract_dict(item.get("branding"), field="items[].branding"),
         "labels": _extract_dict_list(item.get("labels"), field="items[].labels"),
-        "codex": _normalize_codex_envelope(item, field="items[].codex"),
+        "codex": _normalize_provider_private_payload(item, field="items[].codex"),
     }
 
 
@@ -163,7 +167,9 @@ def _normalize_plugin_summary(payload: Any, *, marketplace_name: str) -> dict[st
             item.get("interface"), field="items[].plugins[].interface"
         ),
         "mentionPath": mention_path or f"plugin://{name}@{marketplace_name}",
-        "codex": _normalize_codex_envelope(item, field="items[].plugins[].codex"),
+        "codex": _normalize_provider_private_payload(
+            item, field="items[].plugins[].codex"
+        ),
     }
 
 
@@ -184,7 +190,7 @@ def _normalize_plugin_marketplace(payload: Any) -> dict[str, Any]:
             _normalize_plugin_summary(plugin, marketplace_name=marketplace_name)
             for plugin in plugins
         ],
-        "codex": _normalize_codex_envelope(item, field="items[].codex"),
+        "codex": _normalize_provider_private_payload(item, field="items[].codex"),
     }
 
 
@@ -215,7 +221,7 @@ def _normalize_plugin_detail(payload: Any) -> dict[str, Any]:
             field="item.mcpServers",
         ),
         "interface": _extract_dict(item.get("interface"), field="item.interface"),
-        "codex": _normalize_codex_envelope(item, field="item.codex"),
+        "codex": _normalize_provider_private_payload(item, field="item.codex"),
     }
 
 
