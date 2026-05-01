@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.contract_utils import as_dict
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
-    A2AExtensionNotSupportedError,
-)
 from app.integrations.a2a_extensions.service_capabilities import (
     UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP,
     UPSTREAM_TURN_CONTROL_EXTENSION_URI,
@@ -21,10 +17,6 @@ from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
 )
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
-from app.integrations.a2a_extensions.types import (
-    ResolvedInvokeMetadataExtension,
-    ResolvedSessionBindingExtension,
-)
 
 
 class A2AExtensionSessionOperations:
@@ -173,38 +165,6 @@ class A2AExtensionSessionOperations:
             missing_params=list(error_details.missing_params or []) or None,
             upstream_error=error_details.upstream_error,
             meta=meta,
-        )
-
-    async def resolve_session_binding(
-        self,
-        *,
-        snapshot: Any,
-    ) -> ResolvedSessionBindingExtension:
-        if snapshot.session_binding.ext is not None:
-            return cast(ResolvedSessionBindingExtension, snapshot.session_binding.ext)
-        if snapshot.session_binding.status == "invalid":
-            raise A2AExtensionContractError(
-                snapshot.session_binding.error
-                or "Shared session binding contract is invalid"
-            )
-        raise A2AExtensionNotSupportedError(
-            snapshot.session_binding.error
-            or "Shared session binding extension not found"
-        )
-
-    async def resolve_invoke_metadata(
-        self,
-        *,
-        snapshot: Any,
-    ) -> ResolvedInvokeMetadataExtension:
-        if snapshot.invoke_metadata.ext is not None:
-            return cast(ResolvedInvokeMetadataExtension, snapshot.invoke_metadata.ext)
-        if snapshot.invoke_metadata.status == "invalid":
-            raise A2AExtensionContractError(
-                snapshot.invoke_metadata.error or "Invoke metadata contract is invalid"
-            )
-        raise A2AExtensionNotSupportedError(
-            snapshot.invoke_metadata.error or "Invoke metadata extension not found"
         )
 
     async def list_sessions(

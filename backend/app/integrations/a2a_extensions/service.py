@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Optional
 
 from a2a.types import AgentCard
@@ -11,6 +12,10 @@ from app.core.logging import get_logger
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.capability_snapshot import (
     ResolvedCapabilitySnapshot,
+)
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
+    A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
@@ -22,12 +27,10 @@ from app.integrations.a2a_extensions.provider_discovery_service import (
     ProviderDiscoveryService,
 )
 from app.integrations.a2a_extensions.service_capabilities import (
+    UPSTREAM_DISCOVERY_METHODS,
     A2AExtensionCapabilityService,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
-from app.integrations.a2a_extensions.service_extension_ops import (
-    A2AExtensionOperations,
-)
 from app.integrations.a2a_extensions.service_session_ops import (
     A2AExtensionSessionOperations,
 )
@@ -66,12 +69,6 @@ class A2AExtensionsService:
             session_extensions=self._session_extensions,
             capabilities=self._capabilities,
         )
-        self._extension_ops = A2AExtensionOperations(
-            capabilities=self._capabilities,
-            provider_discovery=self._provider_discovery,
-            interrupt_extensions=self._interrupt_extensions,
-            interrupt_recovery=self._interrupt_recovery,
-        )
 
     async def shutdown(self) -> None:
         await self._support.shutdown()
@@ -91,6 +88,94 @@ class A2AExtensionsService:
     ) -> ResolvedCapabilitySnapshot:
         return self._capabilities.build_capability_snapshot_from_card(card=card)
 
+    @staticmethod
+    def _require_session_binding_extension(
+        snapshot: ResolvedCapabilitySnapshot,
+    ) -> ResolvedSessionBindingExtension:
+        if snapshot.session_binding.ext is not None:
+            return snapshot.session_binding.ext
+        if snapshot.session_binding.status == "invalid":
+            raise A2AExtensionContractError(
+                snapshot.session_binding.error
+                or "Shared session binding contract is invalid"
+            )
+        raise A2AExtensionNotSupportedError(
+            snapshot.session_binding.error
+            or "Shared session binding extension not found"
+        )
+
+    @staticmethod
+    def _require_invoke_metadata_extension(
+        snapshot: ResolvedCapabilitySnapshot,
+    ) -> ResolvedInvokeMetadataExtension:
+        if snapshot.invoke_metadata.ext is not None:
+            return snapshot.invoke_metadata.ext
+        if snapshot.invoke_metadata.status == "invalid":
+            raise A2AExtensionContractError(
+                snapshot.invoke_metadata.error or "Invoke metadata contract is invalid"
+            )
+        raise A2AExtensionNotSupportedError(
+            snapshot.invoke_metadata.error or "Invoke metadata extension not found"
+        )
+
+    async def _run_upstream_discovery(
+        self,
+        *,
+        runtime: A2ARuntime,
+        snapshot: ResolvedCapabilitySnapshot,
+        method_key: str,
+        delegate: Callable[..., Awaitable[ExtensionCallResult]],
+        capability_name: str = "Upstream discovery",
+        meta_extra: dict[str, Any] | None = None,
+        delegate_kwargs: dict[str, Any] | None = None,
+    ) -> ExtensionCallResult:
+        discovery_capability = self._capabilities.resolve_upstream_method_family(
+            snapshot,
+            "discovery",
+        )
+        capability, jsonrpc_url = (
+            self._capabilities.require_declared_method_collection_capability(
+                discovery_capability,
+                capability_name=capability_name,
+            )
+        )
+        method = self._capabilities.require_declared_method_capability(
+            capability,
+            method_key=method_key,
+            capability_name=capability_name,
+        )
+        preflight = self._capabilities.preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=(
+                snapshot.wire_contract.ext.uri
+                if snapshot.wire_contract.ext is not None
+                else "wire_contract"
+            ),
+            method_name=method.method,
+        )
+        if preflight is not None:
+            return preflight
+
+        meta = {
+            "extension_uri": (
+                snapshot.wire_contract.ext.uri
+                if snapshot.wire_contract.ext is not None
+                else None
+            ),
+            "capability_area": "upstream_discovery",
+            "method_name": method.method,
+        }
+        if meta_extra:
+            meta.update(meta_extra)
+        kwargs = dict(delegate_kwargs or {})
+        kwargs.update(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method.method or UPSTREAM_DISCOVERY_METHODS[method_key],
+            meta=meta,
+        )
+        return await delegate(**kwargs)
+
     async def _resolve_session_extension_runtime(
         self,
         *,
@@ -108,7 +193,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ResolvedSessionBindingExtension:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._session_ops.resolve_session_binding(snapshot=snapshot)
+        return self._require_session_binding_extension(snapshot)
 
     async def resolve_invoke_metadata(
         self,
@@ -116,7 +201,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ResolvedInvokeMetadataExtension:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._session_ops.resolve_invoke_metadata(snapshot=snapshot)
+        return self._require_invoke_metadata_extension(snapshot)
 
     async def list_sessions(
         self,
@@ -480,9 +565,20 @@ class A2AExtensionsService:
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.list_model_providers(
+        ext, jsonrpc_url = self._capabilities.require_provider_discovery_capability(
+            snapshot.provider_discovery
+        )
+        preflight = self._capabilities.preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=ext.uri,
+            method_name=ext.methods.get("list_providers"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._provider_discovery.list_model_providers(
             runtime=runtime,
-            snapshot=snapshot,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
             session_metadata=session_metadata,
             working_directory=working_directory,
         )
@@ -496,9 +592,20 @@ class A2AExtensionsService:
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.list_models(
+        ext, jsonrpc_url = self._capabilities.require_provider_discovery_capability(
+            snapshot.provider_discovery
+        )
+        preflight = self._capabilities.preflight_wire_contract_method(
+            snapshot=snapshot.wire_contract,
+            extension_uri=ext.uri,
+            method_name=ext.methods.get("list_models"),
+        )
+        if preflight is not None:
+            return preflight
+        return await self._provider_discovery.list_models(
             runtime=runtime,
-            snapshot=snapshot,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
             provider_id=provider_id,
             session_metadata=session_metadata,
             working_directory=working_directory,
@@ -510,7 +617,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_upstream_discovery(
+        return await self._run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="skillsList",
@@ -523,7 +630,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_upstream_discovery(
+        return await self._run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="appsList",
@@ -536,7 +643,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_upstream_discovery(
+        return await self._run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="pluginsList",
@@ -557,7 +664,7 @@ class A2AExtensionsService:
         if not resolved_plugin_name:
             raise ValueError("plugin_name must be a non-empty string")
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.run_upstream_discovery(
+        return await self._run_upstream_discovery(
             runtime=runtime,
             snapshot=snapshot,
             method_key="pluginsRead",
@@ -581,18 +688,26 @@ class A2AExtensionsService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._interrupt_extensions.prepare_reply_permission_interrupt(
+        (
+            resolved_request_id,
+            resolved_reply,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_permission_interrupt(
             request_id=request_id,
             reply=reply,
             metadata=metadata,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.reply_permission_interrupt(
+        ext, jsonrpc_url = self._capabilities.require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_permission_interrupt(
             runtime=runtime,
-            snapshot=snapshot,
-            request_id=request_id,
-            reply=reply,
-            metadata=metadata,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            reply=resolved_reply,
+            metadata=normalized_metadata,
             working_directory=working_directory,
         )
 
@@ -605,18 +720,26 @@ class A2AExtensionsService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._interrupt_extensions.prepare_reply_question_interrupt(
+        (
+            resolved_request_id,
+            resolved_answers,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_question_interrupt(
             request_id=request_id,
             answers=answers,
             metadata=metadata,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.reply_question_interrupt(
+        ext, jsonrpc_url = self._capabilities.require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_question_interrupt(
             runtime=runtime,
-            snapshot=snapshot,
-            request_id=request_id,
-            answers=answers,
-            metadata=metadata,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            answers=resolved_answers,
+            metadata=normalized_metadata,
             working_directory=working_directory,
         )
 
@@ -628,16 +751,23 @@ class A2AExtensionsService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._interrupt_extensions.prepare_reject_question_interrupt(
+        (
+            resolved_request_id,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reject_question_interrupt(
             request_id=request_id,
             metadata=metadata,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.reject_question_interrupt(
+        ext, jsonrpc_url = self._capabilities.require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reject_question_interrupt(
             runtime=runtime,
-            snapshot=snapshot,
-            request_id=request_id,
-            metadata=metadata,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            metadata=normalized_metadata,
             working_directory=working_directory,
         )
 
@@ -648,9 +778,13 @@ class A2AExtensionsService:
         session_id: str | None = None,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.recover_interrupts(
+        ext, jsonrpc_url = self._capabilities.require_interrupt_recovery_capability(
+            snapshot.interrupt_recovery
+        )
+        return await self._interrupt_recovery.recover_interrupts(
             runtime=runtime,
-            snapshot=snapshot,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
             session_id=session_id,
         )
 
@@ -664,20 +798,29 @@ class A2AExtensionsService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._interrupt_extensions.prepare_reply_permissions_interrupt(
+        (
+            resolved_request_id,
+            resolved_permissions,
+            resolved_scope,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_permissions_interrupt(
             request_id=request_id,
             permissions=permissions,
             scope=scope,
             metadata=metadata,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.reply_permissions_interrupt(
+        ext, jsonrpc_url = self._capabilities.require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_permissions_interrupt(
             runtime=runtime,
-            snapshot=snapshot,
-            request_id=request_id,
-            permissions=permissions,
-            scope=scope,
-            metadata=metadata,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            permissions=resolved_permissions,
+            scope=resolved_scope,
+            metadata=normalized_metadata,
             working_directory=working_directory,
         )
 
@@ -691,20 +834,29 @@ class A2AExtensionsService:
         metadata: Optional[Dict[str, Any]] = None,
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._interrupt_extensions.prepare_reply_elicitation_interrupt(
+        (
+            resolved_request_id,
+            resolved_action,
+            resolved_content,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_elicitation_interrupt(
             request_id=request_id,
             action=action,
             content=content,
             metadata=metadata,
         )
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
-        return await self._extension_ops.reply_elicitation_interrupt(
+        ext, jsonrpc_url = self._capabilities.require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_elicitation_interrupt(
             runtime=runtime,
-            snapshot=snapshot,
-            request_id=request_id,
-            action=action,
-            content=content,
-            metadata=metadata,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            action=resolved_action,
+            content=resolved_content,
+            metadata=normalized_metadata,
             working_directory=working_directory,
         )
 

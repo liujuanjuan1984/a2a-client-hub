@@ -73,11 +73,3 @@ def resolve_provider_discovery(
         },
         business_code_map=code_to_error,
     )
-
-
-def resolve_opencode_provider_discovery(
-    card: AgentCard,
-) -> ResolvedProviderDiscoveryExtension:
-    """Backward-compatible alias for the provider discovery resolver."""
-
-    return resolve_provider_discovery(card)
