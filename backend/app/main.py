@@ -125,7 +125,7 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
         async def _refresh_proxy_cache() -> None:
             # Initialise A2A proxy allowlist cache.
             await run_with_new_session(
-                a2a_proxy_service.prime_cache,
+                a2a_proxy_service.refresh_cache,
                 session_factory=AsyncSessionLocal,
             )
 

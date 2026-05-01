@@ -70,6 +70,14 @@ async def close_global_http_client() -> None:
     """Close the global httpx client and release resources."""
     global _global_http_client
     if _global_http_client is not None and not _global_http_client.is_closed:
-        await await_cancel_safe(_global_http_client.aclose())
-        logger.info("Global HTTP client closed")
+        try:
+            await await_cancel_safe(_global_http_client.aclose())
+            logger.info("Global HTTP client closed")
+        except RuntimeError as exc:
+            if "Event loop is closed" not in str(exc):
+                raise
+            logger.warning(
+                "Global HTTP client cleanup skipped after event loop closed",
+                extra={"http_client_cleanup_skipped": True},
+            )
     _global_http_client = None
