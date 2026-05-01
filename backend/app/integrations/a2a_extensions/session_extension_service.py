@@ -961,13 +961,13 @@ class SessionExtensionService:
             {
                 "binding_mode": "contextId+metadata",
                 "validated": True,
-                "provider": ext.provider,
+                "provider": ext.provider_key,
             }
         )
         meta.update(binding_meta)
         binding_metadata = merge_preferred_session_binding_metadata(
             {"contextId": resolved_session_id},
-            provider=ext.provider,
+            provider=ext.provider_key,
             external_session_id=resolved_session_id,
         )
         return ExtensionCallResult(
@@ -993,7 +993,7 @@ class SessionExtensionService:
         metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            metadata_namespace=ext.provider,
+            metadata_namespace=ext.provider_key,
             empty_as_none=True,
         )
         resolved_session_id, params = self.prepare_prompt_session_async(
@@ -1035,7 +1035,7 @@ class SessionExtensionService:
         metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            metadata_namespace=ext.provider,
+            metadata_namespace=ext.provider_key,
             empty_as_none=True,
         )
         resolved_session_id, params = self.prepare_session_command(

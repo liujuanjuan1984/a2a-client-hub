@@ -303,7 +303,7 @@ def _invoke_metadata_extension_fixture() -> ResolvedInvokeMetadataExtension:
     return ResolvedInvokeMetadataExtension(
         uri=INVOKE_METADATA_URI,
         required=False,
-        provider="commonground",
+        provider_key="commonground",
         metadata_field=SHARED_INVOKE_FIELD,
         behavior="merge_bound_metadata_into_invoke",
         applies_to_methods=("message/send", "message/stream"),
@@ -335,7 +335,7 @@ def _resolved_extension(
     return ResolvedExtension(
         uri=SHARED_SESSION_QUERY_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -382,7 +382,7 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
     return ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -438,8 +438,8 @@ def _provider_discovery_extension_fixture() -> ResolvedProviderDiscoveryExtensio
     return ResolvedProviderDiscoveryExtension(
         uri=PROVIDER_DISCOVERY_URI,
         required=False,
-        provider="opencode",
-        metadata_namespace="opencode",
+        provider_key="opencode",
+        provider_private_namespace="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -523,7 +523,7 @@ def _interrupt_recovery_extension_fixture() -> ResolvedInterruptRecoveryExtensio
     return ResolvedInterruptRecoveryExtension(
         uri=INTERRUPT_RECOVERY_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -559,7 +559,7 @@ def _stream_hints_extension_fixture() -> ResolvedStreamHintsExtension:
     return ResolvedStreamHintsExtension(
         uri=STREAM_HINTS_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         stream_field="metadata.shared.stream",
         usage_field="metadata.shared.usage",
         interrupt_field="metadata.shared.interrupt",

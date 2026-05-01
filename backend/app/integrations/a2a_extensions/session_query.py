@@ -539,7 +539,7 @@ def _resolve_extension(
     resolved = ResolvedExtension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         jsonrpc=contract_utils.resolve_jsonrpc_interface(card),
         methods={
             "list_sessions": list_sessions_method,

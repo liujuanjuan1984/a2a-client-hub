@@ -393,7 +393,7 @@ def build_extension_capabilities_response(
                     "unsupported",
                 ),
             ),
-            provider=getattr(interrupt_recovery_ext, "provider", None),
+            provider=getattr(interrupt_recovery_ext, "provider_key", None),
             methods=non_null_interrupt_recovery_methods,
             recoveryDataSource=getattr(
                 interrupt_recovery_ext, "recovery_data_source", None

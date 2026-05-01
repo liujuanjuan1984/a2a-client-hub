@@ -90,7 +90,7 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     resolved = resolve_session_query(card)
 
     assert resolved.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
     assert resolved.methods["list_sessions"] == "opencode.sessions.list"
     assert resolved.methods["get_session_messages"] == "opencode.sessions.messages.list"
     assert resolved.methods["prompt_async"] == "opencode.sessions.prompt_async"
@@ -315,7 +315,7 @@ def test_resolve_accepts_codex_session_query_contract() -> None:
     resolved = resolve_session_query(card)
 
     assert resolved.uri == CODEX_SHARED_SESSION_QUERY_URI
-    assert resolved.provider == "codex"
+    assert resolved.provider_key == "codex"
     assert resolved.pagination.mode == "limit"
     assert resolved.pagination.params == ("limit",)
     assert resolved.pagination.supports_offset is False
@@ -575,7 +575,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
 
     card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
 
 
 def test_resolve_rejects_legacy_session_query_uri() -> None:

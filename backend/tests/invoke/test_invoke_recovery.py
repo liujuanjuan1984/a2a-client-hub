@@ -72,7 +72,7 @@ def _invoke_metadata_extension() -> ResolvedInvokeMetadataExtension:
     return ResolvedInvokeMetadataExtension(
         uri="urn:a2a:invoke-metadata/v1",
         required=False,
-        provider="commonground",
+        provider_key="commonground",
         metadata_field="metadata.shared.invoke",
         behavior="merge_bound_metadata_into_invoke",
         applies_to_methods=("message/send", "message/stream"),

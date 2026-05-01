@@ -171,7 +171,7 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
     assert resp.success is True
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "supported"
-    assert resp.shared_session_query.declared_contract_family == "opencode"
+    assert resp.shared_session_query.declared_contract_variant == "opencode"
     assert resp.shared_session_query.pagination_mode == "limit_and_optional_cursor"
     assert resp.extension_capabilities is not None
     assert resp.extension_capabilities.session_control.command.declared is False
@@ -244,7 +244,7 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
     assert resp.success is True
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "supported"
-    assert resp.shared_session_query.declared_contract_family == "codex"
+    assert resp.shared_session_query.declared_contract_variant == "codex"
     assert resp.shared_session_query.pagination_mode == "limit"
     assert resp.extension_capabilities is not None
     assert resp.extension_capabilities.session_control.prompt_async.declared is True

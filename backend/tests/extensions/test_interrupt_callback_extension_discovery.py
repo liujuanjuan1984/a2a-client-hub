@@ -71,7 +71,7 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
     card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
 
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
     assert resolved.methods["reply_permission"] == "shared.permission.reply"
     assert resolved.methods["reply_question"] == "shared.question.reply"
     assert resolved.methods["reject_question"] == "shared.question.reject"
@@ -152,7 +152,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
 
     card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
 
 
 def test_resolve_rejects_legacy_interrupt_uri() -> None:

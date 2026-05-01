@@ -46,11 +46,11 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
             ext=ResolvedSessionBindingExtension(
                 uri=SHARED_SESSION_BINDING_URI,
                 required=False,
-                provider="commonground",
+                provider_key="commonground",
                 metadata_field=SHARED_SESSION_ID_FIELD,
                 behavior="request_scoped_session_routing",
                 supported_metadata=("shared.session.provider", "shared.session.id"),
-                provider_private_metadata=(),
+                provider_private_fields=(),
                 shared_workspace_across_consumers=True,
                 tenant_isolation="provider_managed",
             )
@@ -60,7 +60,7 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
             ext=ResolvedInvokeMetadataExtension(
                 uri=INVOKE_METADATA_URI,
                 required=False,
-                provider="commonground",
+                provider_key="commonground",
                 metadata_field="metadata.shared.invoke",
                 behavior="merge_bound_metadata_into_invoke",
                 applies_to_methods=("message/send", "message/stream"),
@@ -78,7 +78,7 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
             ext=ResolvedModelSelectionExtension(
                 uri=MODEL_SELECTION_URI,
                 required=False,
-                provider="commonground",
+                provider_key="commonground",
                 metadata_field=SHARED_MODEL_FIELD,
                 behavior="request_scoped_override",
                 applies_to_methods=("message/send", "message/stream"),
@@ -86,7 +86,7 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
                     "shared.model.providerID",
                     "shared.model.modelID",
                 ),
-                provider_private_metadata=(),
+                provider_private_fields=(),
             ),
         ),
         request_execution_options=RequestExecutionOptionsCapabilitySnapshot(

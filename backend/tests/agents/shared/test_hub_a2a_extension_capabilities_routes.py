@@ -39,7 +39,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             status="supported",
             error=None,
             ext=SimpleNamespace(
-                provider="opencode",
+                provider_key="opencode",
                 methods={
                     "list_permissions": "opencode.permissions.list",
                     "list_questions": "opencode.questions.list",

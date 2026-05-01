@@ -39,10 +39,10 @@ class SharedSessionQueryDiagnostic(BaseModel):
         description="Hub compatibility result for the declared session-query contract",
     )
     uri: Optional[str] = Field(default=None)
-    declared_contract_family: Optional[Literal["opencode", "codex"]] = Field(
+    declared_contract_variant: Optional[Literal["opencode", "codex"]] = Field(
         default=None,
-        alias="declaredContractFamily",
-        description="Family inferred from the upstream-declared session-query contract",
+        alias="declaredContractVariant",
+        description="Variant inferred from the upstream-declared session-query contract",
     )
     provider: Optional[str] = Field(default=None)
     methods: List[str] = Field(default_factory=list)

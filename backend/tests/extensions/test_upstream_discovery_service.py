@@ -43,11 +43,11 @@ async def test_list_skills_normalizes_skill_scopes() -> None:
                                 "enabled": True,
                                 "scope": "project",
                                 "interface": {"input": "rich-text"},
-                                "codex": {"raw": {"id": "planning"}},
+                                "providerPrivate": {"raw": {"id": "planning"}},
                             }
                         ],
                         "errors": [],
-                        "codex": {"raw": {"cwd": "/workspace/project"}},
+                        "providerPrivate": {"raw": {"cwd": "/workspace/project"}},
                     }
                 ]
             },
@@ -76,11 +76,11 @@ async def test_list_skills_normalizes_skill_scopes() -> None:
                         "enabled": True,
                         "scope": "project",
                         "interface": {"input": "rich-text"},
-                        "codex": {"raw": {"id": "planning"}},
+                        "providerPrivate": {"raw": {"id": "planning"}},
                     }
                 ],
                 "errors": [],
-                "codex": {"raw": {"cwd": "/workspace/project"}},
+                "providerPrivate": {"raw": {"cwd": "/workspace/project"}},
             }
         ]
     }
@@ -107,7 +107,7 @@ async def test_list_apps_normalizes_items_and_cursor() -> None:
                         "mention_path": "app://demo-app",
                         "branding": {"icon": "spark"},
                         "labels": [{"name": "beta"}],
-                        "codex": {"raw": {"id": "demo-app"}},
+                        "providerPrivate": {"raw": {"id": "demo-app"}},
                     }
                 ],
                 "next_cursor": "cursor-2",
@@ -137,7 +137,7 @@ async def test_list_apps_normalizes_items_and_cursor() -> None:
                 "mentionPath": "app://demo-app",
                 "branding": {"icon": "spark"},
                 "labels": [{"name": "beta"}],
-                "codex": {"raw": {"id": "demo-app"}},
+                "providerPrivate": {"raw": {"id": "demo-app"}},
             }
         ],
         "nextCursor": "cursor-2",
@@ -165,10 +165,10 @@ async def test_list_plugins_normalizes_marketplaces() -> None:
                                 "description": "Coordinates work.",
                                 "enabled": True,
                                 "mention_path": "plugin://planner@test",
-                                "codex": {"raw": {"name": "planner"}},
+                                "providerPrivate": {"raw": {"name": "planner"}},
                             }
                         ],
-                        "codex": {"raw": {"name": "test"}},
+                        "providerPrivate": {"raw": {"name": "test"}},
                     }
                 ],
                 "featuredPluginIds": ["test:planner"],
@@ -201,10 +201,10 @@ async def test_list_plugins_normalizes_marketplaces() -> None:
                         "enabled": True,
                         "interface": None,
                         "mentionPath": "plugin://planner@test",
-                        "codex": {"raw": {"name": "planner"}},
+                        "providerPrivate": {"raw": {"name": "planner"}},
                     }
                 ],
-                "codex": {"raw": {"name": "test"}},
+                "providerPrivate": {"raw": {"name": "test"}},
             }
         ],
         "featuredPluginIds": ["test:planner"],
@@ -236,7 +236,7 @@ async def test_read_plugin_normalizes_item_payload() -> None:
                     "apps": [{"id": "demo-app"}],
                     "mcp_servers": ["planner-server"],
                     "interface": {"transport": "mcp"},
-                    "codex": {"raw": {"name": "planner"}},
+                    "providerPrivate": {"raw": {"name": "planner"}},
                 }
             },
             meta=kwargs["meta"],
@@ -265,7 +265,7 @@ async def test_read_plugin_normalizes_item_payload() -> None:
             "apps": [{"id": "demo-app"}],
             "mcpServers": ["planner-server"],
             "interface": {"transport": "mcp"},
-            "codex": {"raw": {"name": "planner"}},
+            "providerPrivate": {"raw": {"name": "planner"}},
         }
     }
 

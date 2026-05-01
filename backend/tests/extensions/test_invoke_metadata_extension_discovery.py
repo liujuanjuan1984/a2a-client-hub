@@ -69,7 +69,7 @@ def test_resolve_extracts_invoke_metadata_contract() -> None:
     resolved = resolve_invoke_metadata(parse_agent_card(payload))
 
     assert resolved.uri == INVOKE_METADATA_URI
-    assert resolved.provider == "commonground"
+    assert resolved.provider_key == "commonground"
     assert resolved.metadata_field == SHARED_INVOKE_FIELD
     assert resolved.behavior == "merge_bound_metadata_into_invoke"
     assert resolved.applies_to_methods == ("message/send", "message/stream")

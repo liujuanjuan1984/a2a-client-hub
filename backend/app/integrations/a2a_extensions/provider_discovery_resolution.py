@@ -62,8 +62,8 @@ def resolve_provider_discovery_extension(
     return ResolvedProviderDiscoveryExtension(
         uri=str(getattr(ext, "uri", PROVIDER_DISCOVERY_URI)),
         required=required,
-        provider="opencode",
-        metadata_namespace="opencode",
+        provider_key="opencode",
+        provider_private_namespace="opencode",
         jsonrpc=resolve_jsonrpc_interface(card),
         methods={
             "list_providers": list_providers_method,

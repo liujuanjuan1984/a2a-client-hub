@@ -70,7 +70,7 @@ def resolve_interrupt_callback(
     return ResolvedInterruptCallbackExtension(
         uri=str(getattr(ext, "uri", SHARED_INTERRUPT_CALLBACK_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         jsonrpc=contract_utils.resolve_jsonrpc_interface(card),
         methods={
             "reply_permission": reply_permission_method,

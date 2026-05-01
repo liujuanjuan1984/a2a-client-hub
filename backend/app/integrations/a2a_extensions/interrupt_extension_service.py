@@ -177,7 +177,7 @@ class InterruptExtensionService:
         metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            metadata_namespace=ext.provider,
+            metadata_namespace=ext.provider_key,
             empty_as_none=True,
         )
         (
@@ -219,7 +219,7 @@ class InterruptExtensionService:
         metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            metadata_namespace=ext.provider,
+            metadata_namespace=ext.provider_key,
             empty_as_none=True,
         )
         (
@@ -260,7 +260,7 @@ class InterruptExtensionService:
         metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            metadata_namespace=ext.provider,
+            metadata_namespace=ext.provider_key,
             empty_as_none=True,
         )
         (
@@ -298,7 +298,7 @@ class InterruptExtensionService:
         metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            metadata_namespace=ext.provider,
+            metadata_namespace=ext.provider_key,
             empty_as_none=True,
         )
         (
@@ -345,7 +345,7 @@ class InterruptExtensionService:
         metadata_for_upstream = adapt_working_directory_metadata_for_upstream(
             metadata=metadata,
             working_directory=working_directory,
-            metadata_namespace=ext.provider,
+            metadata_namespace=ext.provider_key,
             empty_as_none=True,
         )
         (

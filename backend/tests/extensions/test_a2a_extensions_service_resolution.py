@@ -256,7 +256,7 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),

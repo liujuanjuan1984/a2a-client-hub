@@ -587,7 +587,10 @@ class A2AUpstreamDiscoverySkillResponse(BaseModel):
     enabled: bool
     scope: str
     interface: Optional[Dict[str, Any]] = None
-    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
+    provider_private: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="providerPrivate",
+    )
 
 
 class A2AUpstreamDiscoverySkillScopeResponse(BaseModel):
@@ -596,7 +599,10 @@ class A2AUpstreamDiscoverySkillScopeResponse(BaseModel):
     cwd: str
     skills: List[A2AUpstreamDiscoverySkillResponse] = Field(default_factory=list)
     errors: List[Dict[str, Any]] = Field(default_factory=list)
-    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
+    provider_private: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="providerPrivate",
+    )
 
 
 class A2AUpstreamDiscoverySkillsListResult(BaseModel):
@@ -621,7 +627,10 @@ class A2AUpstreamDiscoveryAppResponse(BaseModel):
     mention_path: str = Field(..., alias="mentionPath")
     branding: Optional[Dict[str, Any]] = None
     labels: List[Dict[str, Any]] = Field(default_factory=list)
-    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
+    provider_private: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="providerPrivate",
+    )
 
 
 class A2AUpstreamDiscoveryAppsListResult(BaseModel):
@@ -643,7 +652,10 @@ class A2AUpstreamDiscoveryPluginSummaryResponse(BaseModel):
     enabled: Optional[bool] = None
     interface: Optional[Dict[str, Any]] = None
     mention_path: str = Field(..., alias="mentionPath")
-    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
+    provider_private: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="providerPrivate",
+    )
 
 
 class A2AUpstreamDiscoveryPluginMarketplaceResponse(BaseModel):
@@ -655,7 +667,10 @@ class A2AUpstreamDiscoveryPluginMarketplaceResponse(BaseModel):
     plugins: List[A2AUpstreamDiscoveryPluginSummaryResponse] = Field(
         default_factory=list
     )
-    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
+    provider_private: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="providerPrivate",
+    )
 
 
 class A2AUpstreamDiscoveryPluginsListResult(BaseModel):
@@ -689,7 +704,10 @@ class A2AUpstreamDiscoveryPluginReadItemResponse(BaseModel):
     apps: List[Dict[str, Any]] = Field(default_factory=list)
     mcp_servers: List[str] = Field(default_factory=list, alias="mcpServers")
     interface: Optional[Dict[str, Any]] = None
-    provider_private: Dict[str, Any] = Field(default_factory=dict, alias="codex")
+    provider_private: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="providerPrivate",
+    )
 
 
 class A2AUpstreamDiscoveryPluginReadResult(BaseModel):

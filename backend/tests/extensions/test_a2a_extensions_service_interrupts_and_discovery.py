@@ -41,7 +41,7 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -107,7 +107,7 @@ async def test_reply_permission_interrupt_forwards_metadata(
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -178,7 +178,7 @@ async def test_reject_question_interrupt_uses_request_id(
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -263,7 +263,7 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     ext = ResolvedInterruptCallbackExtension(
         uri=ext.uri,
         required=ext.required,
-        provider=ext.provider,
+        provider_key=ext.provider_key,
         jsonrpc=ext.jsonrpc,
         methods={
             "reply_permission": "shared.permission.reply",
@@ -313,7 +313,7 @@ async def test_reply_permissions_interrupt_uses_request_id_permissions_and_scope
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -420,7 +420,7 @@ async def test_reply_elicitation_interrupt_uses_request_id_action_and_content_co
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -993,7 +993,7 @@ async def test_recover_interrupts_returns_method_not_supported_when_upstream_mis
     ext = ResolvedInterruptRecoveryExtension(
         uri=INTERRUPT_RECOVERY_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -1043,7 +1043,7 @@ async def test_recover_interrupts_supports_single_list_method_and_properties_pay
     ext = ResolvedInterruptRecoveryExtension(
         uri="urn:codex-a2a:codex-interrupt-recovery/v1",
         required=False,
-        provider="codex",
+        provider_key="codex",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),

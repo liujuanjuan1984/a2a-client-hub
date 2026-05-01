@@ -760,11 +760,11 @@ class _FakeExtensionsService:
                                 "enabled": True,
                                 "scope": "project",
                                 "interface": {"input": "rich-text"},
-                                "codex": {"raw": {"name": "planning"}},
+                                "providerPrivate": {"raw": {"name": "planning"}},
                             }
                         ],
                         "errors": [],
-                        "codex": {"raw": {"cwd": "/workspace/project"}},
+                        "providerPrivate": {"raw": {"cwd": "/workspace/project"}},
                     }
                 ]
             },
@@ -787,7 +787,7 @@ class _FakeExtensionsService:
                         "mentionPath": "app://app-1",
                         "branding": {"icon": "workspace"},
                         "labels": [],
-                        "codex": {"raw": {"id": "app-1"}},
+                        "providerPrivate": {"raw": {"id": "app-1"}},
                     }
                 ],
                 "nextCursor": None,
@@ -811,10 +811,10 @@ class _FakeExtensionsService:
                                 "description": "Coordinates work.",
                                 "enabled": True,
                                 "mentionPath": "plugin://planner@test",
-                                "codex": {"raw": {"name": "planner"}},
+                                "providerPrivate": {"raw": {"name": "planner"}},
                             }
                         ],
-                        "codex": {"raw": {"name": "test"}},
+                        "providerPrivate": {"raw": {"name": "test"}},
                     }
                 ],
                 "featuredPluginIds": ["test:planner"],
@@ -848,7 +848,7 @@ class _FakeExtensionsService:
                     "apps": [{"id": "app-1"}],
                     "mcpServers": ["planner-server"],
                     "interface": {"transport": "mcp"},
-                    "codex": {"raw": {"name": plugin_name}},
+                    "providerPrivate": {"raw": {"name": plugin_name}},
                 }
             },
             meta={"capability_area": "upstream_discovery"},

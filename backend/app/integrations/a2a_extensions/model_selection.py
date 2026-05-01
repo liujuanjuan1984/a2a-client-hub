@@ -73,7 +73,7 @@ def resolve_model_selection(card: AgentCard) -> ResolvedModelSelectionExtension:
     return ResolvedModelSelectionExtension(
         uri=str(getattr(ext, "uri", MODEL_SELECTION_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         metadata_field=metadata_field,
         behavior=behavior,
         applies_to_methods=applies_to_methods,
@@ -82,7 +82,7 @@ def resolve_model_selection(card: AgentCard) -> ResolvedModelSelectionExtension:
             field="params.supported_metadata",
             allow_missing=True,
         ),
-        provider_private_metadata=normalize_string_list(
+        provider_private_fields=normalize_string_list(
             params.get("provider_private_metadata"),
             field="params.provider_private_metadata",
             allow_missing=True,

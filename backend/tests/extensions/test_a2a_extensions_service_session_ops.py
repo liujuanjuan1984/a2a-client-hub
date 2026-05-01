@@ -94,7 +94,7 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     ext = ResolvedExtension(
         uri=ext.uri,
         required=ext.required,
-        provider=ext.provider,
+        provider_key=ext.provider_key,
         jsonrpc=ext.jsonrpc,
         methods={
             "list_sessions": ext.methods["list_sessions"],
@@ -528,7 +528,7 @@ async def test_command_session_returns_method_not_supported_if_missing(
     ext = ResolvedExtension(
         uri=ext.uri,
         required=ext.required,
-        provider=ext.provider,
+        provider_key=ext.provider_key,
         jsonrpc=ext.jsonrpc,
         methods={
             "list_sessions": ext.methods["list_sessions"],

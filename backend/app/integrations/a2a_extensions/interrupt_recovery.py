@@ -108,7 +108,7 @@ def resolve_interrupt_recovery(
     return ResolvedInterruptRecoveryExtension(
         uri=resolved_uri or str(getattr(ext, "uri", INTERRUPT_RECOVERY_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         jsonrpc=contract_utils.resolve_jsonrpc_interface(card),
         methods={
             "list": list_method,

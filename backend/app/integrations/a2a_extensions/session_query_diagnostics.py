@@ -18,7 +18,7 @@ from app.integrations.a2a_extensions.shared_contract import (
 from app.schemas.a2a_agent_card import SharedSessionQueryDiagnostic
 
 
-def _declared_contract_family(*, uses_codex_uri: bool) -> Literal["opencode", "codex"]:
+def _declared_contract_variant(*, uses_codex_uri: bool) -> Literal["opencode", "codex"]:
     if uses_codex_uri:
         return "codex"
     return "opencode"
@@ -54,7 +54,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     raw_pagination = as_dict(params.get("pagination"))
     result_envelope = params.get("result_envelope")
     uses_codex_uri = uri == CODEX_SHARED_SESSION_QUERY_URI
-    declared_contract_family = _declared_contract_family(
+    declared_contract_variant = _declared_contract_variant(
         uses_codex_uri=uses_codex_uri,
     )
 
@@ -88,7 +88,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
             declared=True,
             status="invalid",
             uri=uri,
-            declaredContractFamily=declared_contract_family,
+            declaredContractVariant=declared_contract_variant,
             provider=str(params.get("provider") or "").strip().lower() or None,
             methods=sorted(
                 key
@@ -111,8 +111,8 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         declared=True,
         status="supported",
         uri=resolved.uri,
-        declaredContractFamily=declared_contract_family,
-        provider=resolved.provider,
+        declaredContractVariant=declared_contract_variant,
+        provider=resolved.provider_key,
         methods=sorted(key for key, value in resolved.methods.items() if value),
         pagination_mode=(
             str(raw_pagination.get("mode")).strip()
