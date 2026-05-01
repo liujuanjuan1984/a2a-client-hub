@@ -303,11 +303,6 @@ class A2AExtensionSessionOperations:
         metadata: Optional[Dict[str, Any]],
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._session_extensions.prepare_prompt_session_async(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata,
-        )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -374,11 +369,6 @@ class A2AExtensionSessionOperations:
         capability = self._capabilities.require_session_query_capability(
             snapshot.session_query
         )
-        self._session_extensions.prepare_prompt_session_async(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata_for_upstream,
-        )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -407,11 +397,6 @@ class A2AExtensionSessionOperations:
         metadata: Optional[Dict[str, Any]],
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._session_extensions.prepare_session_command(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata,
-        )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -689,11 +674,6 @@ class A2AExtensionSessionOperations:
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]],
     ) -> ExtensionCallResult:
-        self._session_extensions.prepare_session_revert(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata,
-        )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
