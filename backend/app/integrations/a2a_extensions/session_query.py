@@ -589,24 +589,6 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
     )
 
 
-def resolve_canonical_session_query(card: AgentCard) -> ResolvedExtension:
-    """Resolve the canonical shared session query contract only."""
-
-    return _resolve_extension(
-        card,
-        variant="canonical",
-    )
-
-
-def resolve_codex_session_query(card: AgentCard) -> ResolvedExtension:
-    """Resolve the Codex-compatible shared session query contract explicitly."""
-
-    return _resolve_extension(
-        card,
-        variant="codex",
-    )
-
-
 def resolve_session_query_control_methods(
     card: AgentCard,
     *,

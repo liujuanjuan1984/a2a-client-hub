@@ -74,12 +74,6 @@ class A2AProxyService:
         return list(cls._cached_allowed_hosts)
 
     @classmethod
-    async def prime_cache(cls, db: AsyncSession) -> List[str]:
-        """Warm the process-local cache during application startup."""
-
-        return await cls.refresh_cache(db)
-
-    @classmethod
     async def _refresh_cache_locked(cls, db: AsyncSession) -> None:
         allowed_hosts = list(settings.a2a_proxy_allowed_hosts)
 

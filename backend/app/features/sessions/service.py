@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.features.sessions import block_store
 from app.features.sessions.history_projection_blocks import (
     SessionHistoryBlockProjectionService,
 )
@@ -567,10 +568,10 @@ class SessionHubService:
         user_id: UUID,
         agent_message_id: UUID,
     ) -> bool:
-        return await self._history_blocks.has_agent_message_blocks(
+        return await block_store.has_blocks_for_message(
             db,
             user_id=user_id,
-            agent_message_id=agent_message_id,
+            message_id=agent_message_id,
         )
 
 

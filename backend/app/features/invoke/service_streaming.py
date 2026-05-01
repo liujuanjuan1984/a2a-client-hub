@@ -55,12 +55,6 @@ class StreamTextAccumulator:
         self._blocks: list[dict[str, Any]] = []
         self._block_seq = 0
 
-    @staticmethod
-    def _extract_shared_stream_metadata(
-        payload: dict[str, Any], artifact: dict[str, Any]
-    ) -> dict[str, Any]:
-        return stream_payloads.extract_shared_stream_metadata(payload, artifact)
-
     def _find_block_index(self, block_id: str) -> int | None:
         for index, block in enumerate(self._blocks):
             if str(block.get("block_id") or "") == block_id:
