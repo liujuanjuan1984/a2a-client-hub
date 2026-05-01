@@ -1,4 +1,4 @@
-"""Fallback diagnostics for Codex discovery declaration hints."""
+"""Fallback diagnostics for upstream discovery declaration hints."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ from app.integrations.a2a_extensions.shared_contract import (
     is_supported_extension_uri,
 )
 
-_CODEX_DISCOVERY_PREFIX = "codex.discovery."
+_UPSTREAM_DISCOVERY_METHOD_PREFIX = "codex.discovery."
 
 
 @dataclass(frozen=True, slots=True)
-class CodexDiscoveryDeclarationFallback:
+class UpstreamDiscoveryDeclarationFallback:
     declared: bool
     source: Literal[
         "none",
@@ -70,7 +70,10 @@ def _extract_declared_method_hints(ext: Any) -> tuple[str, ...]:
 
     resolved: list[str] = []
     for candidate in candidates:
-        if candidate.startswith(_CODEX_DISCOVERY_PREFIX) and candidate not in resolved:
+        if (
+            candidate.startswith(_UPSTREAM_DISCOVERY_METHOD_PREFIX)
+            and candidate not in resolved
+        ):
             resolved.append(candidate)
     return tuple(resolved)
 
@@ -80,13 +83,13 @@ def _has_extension_uri_hint(ext: Any) -> bool:
     return bool(uri and "codex" in uri and "discovery" in uri)
 
 
-def diagnose_codex_discovery_fallback(
+def diagnose_upstream_discovery_fallback(
     card: AgentCard,
     *,
     wire_contract_status: Literal["supported", "unsupported", "invalid"],
-) -> CodexDiscoveryDeclarationFallback:
+) -> UpstreamDiscoveryDeclarationFallback:
     if wire_contract_status == "supported":
-        return CodexDiscoveryDeclarationFallback(
+        return UpstreamDiscoveryDeclarationFallback(
             declared=False,
             source="wire_contract",
             confidence="authoritative",
@@ -101,7 +104,7 @@ def diagnose_codex_discovery_fallback(
         ):
             method_names = _extract_declared_method_hints(ext)
             if method_names:
-                return CodexDiscoveryDeclarationFallback(
+                return UpstreamDiscoveryDeclarationFallback(
                     declared=True,
                     source="wire_contract_fallback",
                     confidence="fallback",
@@ -110,7 +113,7 @@ def diagnose_codex_discovery_fallback(
                     ),
                     method_names=method_names,
                     note=(
-                        "Codex discovery methods were inferred from raw wire-contract "
+                        "Upstream discovery methods were inferred from raw wire-contract "
                         "params because the authoritative wire-contract snapshot is "
                         "not available."
                     ),
@@ -123,7 +126,7 @@ def diagnose_codex_discovery_fallback(
             continue
         method_names = _extract_declared_method_hints(ext)
         if method_names:
-            return CodexDiscoveryDeclarationFallback(
+            return UpstreamDiscoveryDeclarationFallback(
                 declared=True,
                 source="extension_method_hint",
                 confidence="fallback",
@@ -132,14 +135,14 @@ def diagnose_codex_discovery_fallback(
                 ),
                 method_names=method_names,
                 note=(
-                    "Codex discovery methods were inferred from non-wire-contract "
+                    "Upstream discovery methods were inferred from non-wire-contract "
                     "extension params and are treated as weak declaration signals."
                 ),
             )
 
     for ext in extensions:
         if _has_extension_uri_hint(ext):
-            return CodexDiscoveryDeclarationFallback(
+            return UpstreamDiscoveryDeclarationFallback(
                 declared=True,
                 source="extension_uri_hint",
                 confidence="fallback",
@@ -147,12 +150,12 @@ def diagnose_codex_discovery_fallback(
                     "invalid" if wire_contract_status == "invalid" else "missing"
                 ),
                 note=(
-                    "A Codex discovery-like extension URI was declared, but no "
+                    "An upstream discovery-like extension URI was declared, but no "
                     "method matrix was available."
                 ),
             )
 
-    return CodexDiscoveryDeclarationFallback(
+    return UpstreamDiscoveryDeclarationFallback(
         declared=False,
         source="none",
         confidence="none",
@@ -160,7 +163,7 @@ def diagnose_codex_discovery_fallback(
             "invalid" if wire_contract_status == "invalid" else "unsupported"
         ),
         note=(
-            "Wire-contract is invalid and no Codex discovery fallback hints were found."
+            "Wire-contract is invalid and no upstream discovery fallback hints were found."
             if wire_contract_status == "invalid"
             else None
         ),

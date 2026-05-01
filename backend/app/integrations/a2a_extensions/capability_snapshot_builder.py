@@ -20,9 +20,6 @@ from app.integrations.a2a_extensions.capability_snapshot import (
     StreamHintsCapabilitySnapshot,
     WireContractCapabilitySnapshot,
 )
-from app.integrations.a2a_extensions.codex_declaration_diagnostics import (
-    diagnose_codex_discovery_fallback,
-)
 from app.integrations.a2a_extensions.compatibility_profile import (
     resolve_compatibility_profile,
 )
@@ -39,8 +36,8 @@ from app.integrations.a2a_extensions.interrupt_recovery import (
 )
 from app.integrations.a2a_extensions.invoke_metadata import resolve_invoke_metadata
 from app.integrations.a2a_extensions.model_selection import resolve_model_selection
-from app.integrations.a2a_extensions.opencode_provider_discovery import (
-    resolve_provider_discovery,
+from app.integrations.a2a_extensions.provider_discovery_resolution import (
+    resolve_provider_discovery_extension,
 )
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.session_query_runtime_selection import (
@@ -55,6 +52,9 @@ from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
+from app.integrations.a2a_extensions.upstream_discovery_declaration_diagnostics import (
+    diagnose_upstream_discovery_fallback,
+)
 from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
 
 
@@ -436,7 +436,7 @@ def build_provider_discovery_snapshot(
     card: Any,
 ) -> ProviderDiscoveryCapabilitySnapshot:
     try:
-        ext = resolve_provider_discovery(card)
+        ext = resolve_provider_discovery_extension(card)
     except A2AExtensionNotSupportedError as exc:
         return ProviderDiscoveryCapabilitySnapshot(
             status="unsupported",
@@ -732,7 +732,7 @@ def build_upstream_discovery_snapshot(
             negotiation_state=spec.negotiation_state,
         )
 
-    fallback = diagnose_codex_discovery_fallback(
+    fallback = diagnose_upstream_discovery_fallback(
         card,
         wire_contract_status=wire_contract.status,
     )

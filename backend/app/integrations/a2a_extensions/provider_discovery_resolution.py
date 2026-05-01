@@ -23,7 +23,7 @@ from app.integrations.a2a_extensions.shared_contract import (
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
 
 
-def resolve_provider_discovery(
+def resolve_provider_discovery_extension(
     card: AgentCard,
 ) -> ResolvedProviderDiscoveryExtension:
     """Resolve the provider-discovery extension from an Agent Card."""
@@ -42,9 +42,7 @@ def resolve_provider_discovery(
             ext = candidate
             break
     if ext is None:
-        raise A2AExtensionNotSupportedError(
-            "OpenCode provider discovery extension not found"
-        )
+        raise A2AExtensionNotSupportedError("Provider discovery extension not found")
 
     required = bool(getattr(ext, "required", False))
     params: Dict[str, Any] = as_dict(getattr(ext, "params", None))

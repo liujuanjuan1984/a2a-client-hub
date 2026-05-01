@@ -203,7 +203,7 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
     assert snapshot.ext.method_retention == {}
 
 
-def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
+def test_build_upstream_followup_snapshots_from_wire_contract_methods() -> None:
     card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(
         status="supported",
@@ -384,7 +384,7 @@ def test_build_upstream_followup_snapshots_return_unsupported_without_wire_contr
     assert all(method.declared is False for method in exec_capability.methods.values())
 
 
-def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
+def test_build_upstream_conditional_snapshots_mark_disabled_methods() -> None:
     compatibility_profile = _compatibility_profile_snapshot(
         status="supported",
         ext=ResolvedCompatibilityProfileExtension(
