@@ -69,7 +69,6 @@ class A2AExtensionsService:
         self._extension_ops = A2AExtensionOperations(
             capabilities=self._capabilities,
             provider_discovery=self._provider_discovery,
-            upstream_discovery=self._upstream_discovery,
             interrupt_extensions=self._interrupt_extensions,
             interrupt_recovery=self._interrupt_recovery,
         )
@@ -515,7 +514,7 @@ class A2AExtensionsService:
             runtime=runtime,
             snapshot=snapshot,
             method_key="skillsList",
-            delegate_name="list_skills",
+            delegate=self._upstream_discovery.list_skills,
         )
 
     async def list_upstream_apps(
@@ -528,7 +527,7 @@ class A2AExtensionsService:
             runtime=runtime,
             snapshot=snapshot,
             method_key="appsList",
-            delegate_name="list_apps",
+            delegate=self._upstream_discovery.list_apps,
         )
 
     async def list_upstream_plugins(
@@ -541,7 +540,7 @@ class A2AExtensionsService:
             runtime=runtime,
             snapshot=snapshot,
             method_key="pluginsList",
-            delegate_name="list_plugins",
+            delegate=self._upstream_discovery.list_plugins,
         )
 
     async def read_upstream_plugin(
@@ -562,7 +561,7 @@ class A2AExtensionsService:
             runtime=runtime,
             snapshot=snapshot,
             method_key="pluginsRead",
-            delegate_name="read_plugin",
+            delegate=self._upstream_discovery.read_plugin,
             meta_extra={
                 "marketplace_path": resolved_marketplace_path,
                 "plugin_name": resolved_plugin_name,

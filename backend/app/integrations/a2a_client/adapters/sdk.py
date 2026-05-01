@@ -132,24 +132,20 @@ class SDKA2AAdapter(A2AAdapter):
     def dialect(self) -> str:
         return SDK_DIALECT
 
-    @staticmethod
-    def _build_request_context(
-        request: A2AMessageRequest,
-    ) -> ClientCallContext | None:
-        service_parameters = build_extension_request_headers(
-            base_headers=None,
-            requested_extensions=request.requested_extensions,
-        )
-        if not service_parameters:
-            return None
-        return ClientCallContext(service_parameters=service_parameters)
-
     async def send_message(self, request: A2AMessageRequest) -> Any:
         async with self._operation_usage(), self._transport_usage():
             client = await self._get_client(streaming=False)
             try:
                 final_payload: Any = None
-                context = self._build_request_context(request)
+                service_parameters = build_extension_request_headers(
+                    base_headers=None,
+                    requested_extensions=request.requested_extensions,
+                )
+                context = (
+                    ClientCallContext(service_parameters=service_parameters)
+                    if service_parameters
+                    else None
+                )
                 sdk_request = SendMessageRequest(
                     message=build_a2a_message(request),
                     configuration=SendMessageConfiguration(
@@ -170,7 +166,15 @@ class SDKA2AAdapter(A2AAdapter):
         async with self._operation_usage(), self._transport_usage():
             client = await self._get_client(streaming=True)
             try:
-                context = self._build_request_context(request)
+                service_parameters = build_extension_request_headers(
+                    base_headers=None,
+                    requested_extensions=request.requested_extensions,
+                )
+                context = (
+                    ClientCallContext(service_parameters=service_parameters)
+                    if service_parameters
+                    else None
+                )
                 sdk_request = SendMessageRequest(
                     message=build_a2a_message(request),
                     configuration=SendMessageConfiguration(

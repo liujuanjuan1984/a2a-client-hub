@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, cast
+from collections.abc import Awaitable, Callable
+from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.interrupt_extension_service import (
@@ -19,9 +20,6 @@ from app.integrations.a2a_extensions.service_capabilities import (
     A2AExtensionCapabilityService,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
-from app.integrations.a2a_extensions.upstream_discovery_service import (
-    UpstreamDiscoveryService,
-)
 
 
 class A2AExtensionOperations:
@@ -32,13 +30,11 @@ class A2AExtensionOperations:
         *,
         capabilities: A2AExtensionCapabilityService,
         provider_discovery: ProviderDiscoveryService,
-        upstream_discovery: UpstreamDiscoveryService,
         interrupt_extensions: InterruptExtensionService,
         interrupt_recovery: InterruptRecoveryService,
     ) -> None:
         self._capabilities = capabilities
         self._provider_discovery = provider_discovery
-        self._upstream_discovery = upstream_discovery
         self._interrupt_extensions = interrupt_extensions
         self._interrupt_recovery = interrupt_recovery
 
@@ -102,7 +98,7 @@ class A2AExtensionOperations:
         runtime: A2ARuntime,
         snapshot: Any,
         method_key: str,
-        delegate_name: str,
+        delegate: Callable[..., Awaitable[ExtensionCallResult]],
         capability_name: str = "Upstream discovery",
         meta_extra: dict[str, Any] | None = None,
         delegate_kwargs: dict[str, Any] | None = None,
@@ -133,7 +129,6 @@ class A2AExtensionOperations:
         )
         if preflight is not None:
             return preflight
-        delegate = getattr(self._upstream_discovery, delegate_name)
         meta = {
             "extension_uri": (
                 snapshot.wire_contract.ext.uri
@@ -152,7 +147,7 @@ class A2AExtensionOperations:
             method_name=method.method or UPSTREAM_DISCOVERY_METHODS[method_key],
             meta=meta,
         )
-        return cast(ExtensionCallResult, await delegate(**kwargs))
+        return await delegate(**kwargs)
 
     async def reply_permission_interrupt(
         self,

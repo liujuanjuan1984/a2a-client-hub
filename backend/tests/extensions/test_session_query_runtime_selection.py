@@ -177,7 +177,7 @@ async def test_resolve_capability_snapshot_uses_runtime_cache(
 
     assert first == second
     assert first.session_query.status == "supported"
-    assert first.session_query.selection_meta == {
+    assert first.session_query.runtime_hints == {
         "session_query_negotiation_mode": "declared_contract",
         "session_query_compatibility_hints_applied": False,
     }
@@ -260,7 +260,7 @@ async def test_resolve_capability_snapshot_caches_invalid_query(
 
 
 @pytest.mark.asyncio
-async def test_resolve_capability_snapshot_reports_codex_selection_meta(
+async def test_resolve_capability_snapshot_reports_codex_runtime_hints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -283,7 +283,7 @@ async def test_resolve_capability_snapshot_reports_codex_selection_meta(
     snapshot = await service.resolve_capability_snapshot(runtime=runtime)
 
     assert snapshot.session_query.status == "supported"
-    assert snapshot.session_query.selection_meta == {
+    assert snapshot.session_query.runtime_hints == {
         "session_query_negotiation_mode": "declared_contract",
         "session_query_compatibility_hints_applied": True,
     }

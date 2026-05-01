@@ -56,10 +56,6 @@ from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
-from app.integrations.a2a_extensions.types import (
-    CompatibilityRetentionEntry,
-    ResolvedConditionalMethodAvailability,
-)
 from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
 
 
@@ -581,30 +577,6 @@ def build_wire_contract_snapshot(
     )
 
 
-def declared_wire_contract_methods(
-    snapshot: WireContractCapabilitySnapshot,
-) -> frozenset[str]:
-    if snapshot.status != "supported" or snapshot.ext is None:
-        return frozenset()
-    return frozenset(snapshot.ext.all_jsonrpc_methods)
-
-
-def conditional_wire_contract_methods(
-    snapshot: WireContractCapabilitySnapshot,
-) -> dict[str, ResolvedConditionalMethodAvailability]:
-    if snapshot.status != "supported" or snapshot.ext is None:
-        return {}
-    return dict(snapshot.ext.conditionally_available_methods)
-
-
-def compatibility_method_retention(
-    snapshot: CompatibilityProfileCapabilitySnapshot,
-) -> dict[str, CompatibilityRetentionEntry]:
-    if snapshot.status != "supported" or snapshot.ext is None:
-        return {}
-    return dict(snapshot.ext.method_retention)
-
-
 def resolve_declared_method_snapshot(
     *,
     wire_contract: WireContractCapabilitySnapshot,
@@ -612,11 +584,24 @@ def resolve_declared_method_snapshot(
     method_name: str,
     consumed_by_hub: bool,
 ) -> DeclaredMethodCapabilitySnapshot:
-    declared_methods = declared_wire_contract_methods(wire_contract)
-    conditional_methods = conditional_wire_contract_methods(wire_contract)
-    retention_map = compatibility_method_retention(compatibility_profile)
-    conditional = conditional_methods.get(method_name)
-    retention = retention_map.get(method_name)
+    declared_methods = (
+        frozenset(wire_contract.ext.all_jsonrpc_methods)
+        if wire_contract.status == "supported" and wire_contract.ext is not None
+        else frozenset()
+    )
+    conditional = (
+        wire_contract.ext.conditionally_available_methods.get(method_name)
+        if wire_contract.status == "supported" and wire_contract.ext is not None
+        else None
+    )
+    retention = (
+        compatibility_profile.ext.method_retention.get(method_name)
+        if (
+            compatibility_profile.status == "supported"
+            and compatibility_profile.ext is not None
+        )
+        else None
+    )
 
     active_declared = method_name in declared_methods
     deployment_conditional = conditional is not None or (
@@ -791,64 +776,14 @@ def build_upstream_discovery_snapshot(
     )
 
 
-def build_codex_exec_snapshot(
+def build_upstream_method_family_snapshot(
+    family_name: Literal["threads", "turns", "review", "exec"],
     wire_contract: WireContractCapabilitySnapshot,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot,
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
-    spec = UPSTREAM_METHOD_FAMILY_SPECS["exec"]
-    return build_declared_method_collection_snapshot(
-        wire_contract=wire_contract,
-        compatibility_profile=compatibility_profile,
-        method_map=spec.method_map,
-        hub_consumption=spec.hub_consumption,
-        unsupported_status_when_declared=spec.unsupported_status_when_declared,
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_threads_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredMethodCollectionCapabilitySnapshot:
-    spec = UPSTREAM_METHOD_FAMILY_SPECS["threads"]
-    return build_declared_method_collection_snapshot(
-        wire_contract=wire_contract,
-        compatibility_profile=compatibility_profile,
-        method_map=spec.method_map,
-        hub_consumption=spec.hub_consumption,
-        unsupported_status_when_declared=spec.unsupported_status_when_declared,
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_turns_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredMethodCollectionCapabilitySnapshot:
-    spec = UPSTREAM_METHOD_FAMILY_SPECS["turns"]
-    return build_declared_method_collection_snapshot(
-        wire_contract=wire_contract,
-        compatibility_profile=compatibility_profile,
-        method_map=spec.method_map,
-        hub_consumption=spec.hub_consumption,
-        unsupported_status_when_declared=spec.unsupported_status_when_declared,
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_review_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredMethodCollectionCapabilitySnapshot:
-    spec = UPSTREAM_METHOD_FAMILY_SPECS["review"]
+    spec = UPSTREAM_METHOD_FAMILY_SPECS[family_name]
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
@@ -864,7 +799,11 @@ def build_codex_thread_watch_snapshot(
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredSingleMethodCapabilitySnapshot:
-    declared_methods = declared_wire_contract_methods(wire_contract)
+    declared_methods = (
+        frozenset(wire_contract.ext.all_jsonrpc_methods)
+        if wire_contract.status == "supported" and wire_contract.ext is not None
+        else frozenset()
+    )
     declared = _CODEX_THREAD_WATCH_METHOD in declared_methods
     return DeclaredSingleMethodCapabilitySnapshot(
         declared=declared,

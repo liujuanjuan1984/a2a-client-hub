@@ -90,10 +90,6 @@ class SessionQueryCapabilitySnapshot:
             ),
         }
 
-    @property
-    def selection_meta(self) -> dict[str, Any]:
-        return self.runtime_hints
-
 
 @dataclass(frozen=True, slots=True)
 class SessionBindingCapabilitySnapshot:

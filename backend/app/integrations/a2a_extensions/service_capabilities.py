@@ -85,20 +85,16 @@ class A2AExtensionCapabilityService:
         async with self._capability_snapshot_cache_lock:
             self._capability_snapshot_cache.clear()
 
-    @staticmethod
-    def capability_snapshot_cache_key(
-        runtime: A2ARuntime,
-    ) -> tuple[str, tuple[tuple[str, str], ...]]:
-        resolved_headers = getattr(runtime.resolved, "headers", {}) or {}
-        headers = tuple(sorted(resolved_headers.items()))
-        return runtime.resolved.url, headers
-
     async def resolve_capability_snapshot(
         self,
         *,
         runtime: A2ARuntime,
     ) -> ResolvedCapabilitySnapshot:
-        cache_key = self.capability_snapshot_cache_key(runtime)
+        resolved_headers = getattr(runtime.resolved, "headers", {}) or {}
+        cache_key = (
+            runtime.resolved.url,
+            tuple(sorted(resolved_headers.items())),
+        )
         now = self._time.monotonic()
         async with self._capability_snapshot_cache_lock:
             cached = self._capability_snapshot_cache.get(cache_key)
@@ -131,7 +127,7 @@ class A2AExtensionCapabilityService:
         compatibility_profile = (
             capability_snapshot_builder.build_compatibility_profile_snapshot(card)
         )
-        snapshot = ResolvedCapabilitySnapshot(
+        return ResolvedCapabilitySnapshot(
             session_query=capability_snapshot_builder.build_session_query_snapshot(
                 card
             ),
@@ -168,17 +164,20 @@ class A2AExtensionCapabilityService:
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_threads=capability_snapshot_builder.build_codex_threads_snapshot(
+            codex_threads=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "threads",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_turns=capability_snapshot_builder.build_codex_turns_snapshot(
+            codex_turns=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "turns",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_review=capability_snapshot_builder.build_codex_review_snapshot(
+            codex_review=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "review",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
@@ -186,13 +185,13 @@ class A2AExtensionCapabilityService:
             codex_thread_watch=capability_snapshot_builder.build_codex_thread_watch_snapshot(
                 wire_contract, jsonrpc_url=jsonrpc_url
             ),
-            codex_exec=capability_snapshot_builder.build_codex_exec_snapshot(
+            codex_exec=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "exec",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
         )
-        return snapshot
 
     @staticmethod
     def resolve_upstream_method_family(

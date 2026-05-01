@@ -228,17 +228,20 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    threads = capability_snapshot_builder.build_codex_threads_snapshot(
+    threads = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "threads",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    turns = capability_snapshot_builder.build_codex_turns_snapshot(
+    turns = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "turns",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    review = capability_snapshot_builder.build_codex_review_snapshot(
+    review = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "review",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
@@ -247,7 +250,8 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         wire_contract,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
+    exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "exec",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
@@ -356,20 +360,20 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card, wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    threads = capability_snapshot_builder.build_codex_threads_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    threads = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "threads", wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    turns = capability_snapshot_builder.build_codex_turns_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    turns = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "turns", wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    review = capability_snapshot_builder.build_codex_review_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    review = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "review", wire_contract, compatibility_profile, jsonrpc_url=None
     )
     thread_watch = capability_snapshot_builder.build_codex_thread_watch_snapshot(
         wire_contract, jsonrpc_url=None
     )
-    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "exec", wire_contract, compatibility_profile, jsonrpc_url=None
     )
 
     assert discovery.declared is False
@@ -503,17 +507,20 @@ def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
         ),
     )
 
-    turns = capability_snapshot_builder.build_codex_turns_snapshot(
+    turns = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "turns",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    review = capability_snapshot_builder.build_codex_review_snapshot(
+    review = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "review",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
+    exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "exec",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
