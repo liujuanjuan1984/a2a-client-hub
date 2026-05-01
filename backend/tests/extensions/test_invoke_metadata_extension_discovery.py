@@ -46,7 +46,7 @@ def test_resolve_extracts_invoke_metadata_contract() -> None:
             "uri": INVOKE_METADATA_URI,
             "required": False,
             "params": {
-                    "provider": "example_provider",
+                "provider": "example_provider",
                 "metadata_field": SHARED_INVOKE_FIELD,
                 "behavior": "merge_bound_metadata_into_invoke",
                 "applies_to_methods": ["message/send", "message/stream"],
