@@ -471,10 +471,16 @@ async def test_set_enabled_is_not_blocked_by_user_row_lock(
 async def test_create_task_surfaces_service_busy_when_user_fk_check_is_blocked(
     async_db_session,
     async_session_maker,
+    monkeypatch,
 ) -> None:
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(
         async_db_session, user_id=user.id, suffix="create-user-lock"
+    )
+    monkeypatch.setattr(
+        a2a_schedule_service._support,
+        "_default_write_statement_timeout_ms",
+        200,
     )
 
     async with async_session_maker() as lock_db:
