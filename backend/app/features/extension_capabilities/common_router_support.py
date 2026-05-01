@@ -125,7 +125,7 @@ def build_session_append_response(
     if isinstance(families, dict):
         turns_family = families.get("turns")
     if turns_family is None:
-        turns_family = getattr(snapshot, "codex_turns", None)
+        turns_family = getattr(snapshot, "upstream_turns", None)
     turn_methods = dict(getattr(turns_family, "methods", {}) or {})
     steer = turn_methods.get("steer")
     steer_declared = bool(getattr(steer, "declared", False))
@@ -292,10 +292,10 @@ def build_upstream_method_families_response(
     if not isinstance(families, dict):
         families = {
             "discovery": getattr(snapshot, "upstream_discovery", None),
-            "threads": getattr(snapshot, "codex_threads", None),
-            "turns": getattr(snapshot, "codex_turns", None),
-            "review": getattr(snapshot, "codex_review", None),
-            "exec": getattr(snapshot, "codex_exec", None),
+            "threads": getattr(snapshot, "upstream_threads", None),
+            "turns": getattr(snapshot, "upstream_turns", None),
+            "review": getattr(snapshot, "upstream_review", None),
+            "exec": getattr(snapshot, "upstream_exec", None),
         }
     return A2AUpstreamMethodFamiliesResponse(
         discovery=build_declared_method_collection_response(families.get("discovery")),

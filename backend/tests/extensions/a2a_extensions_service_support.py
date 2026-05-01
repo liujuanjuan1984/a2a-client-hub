@@ -236,11 +236,10 @@ def _capability_snapshot(
     wire_contract: WireContractCapabilitySnapshot | None = None,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot | None = None,
     upstream_discovery: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_threads: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_turns: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_review: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot | None = None,
-    codex_exec: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_threads: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_turns: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_review: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_exec: DeclaredMethodCollectionCapabilitySnapshot | None = None,
 ) -> ResolvedCapabilitySnapshot:
     return ResolvedCapabilitySnapshot(
         session_query=session_query,
@@ -269,34 +268,28 @@ def _capability_snapshot(
             status="unsupported",
             methods={},
         ),
-        codex_threads=codex_threads
+        upstream_threads=upstream_threads
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
             status="unsupported",
             methods={},
         ),
-        codex_turns=codex_turns
+        upstream_turns=upstream_turns
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
             status="unsupported",
             methods={},
         ),
-        codex_review=codex_review
+        upstream_review=upstream_review
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
             status="unsupported",
             methods={},
         ),
-        codex_thread_watch=codex_thread_watch
-        or DeclaredSingleMethodCapabilitySnapshot(
-            declared=False,
-            consumed_by_hub=False,
-            status="unsupported",
-        ),
-        codex_exec=codex_exec
+        upstream_exec=upstream_exec
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,

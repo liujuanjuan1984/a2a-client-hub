@@ -9,7 +9,6 @@ from tests.extensions.a2a_extensions_service_support import (
     A2AExtensionsService,
     CompatibilityRetentionEntry,
     DeclaredMethodCapabilitySnapshot,
-    DeclaredSingleMethodCapabilitySnapshot,
     ResolvedCompatibilityProfileExtension,
     ResolvedConditionalMethodAvailability,
     SimpleNamespace,
@@ -246,10 +245,6 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    thread_watch = capability_snapshot_builder.build_codex_thread_watch_snapshot(
-        wire_contract,
-        jsonrpc_url="https://example.com/jsonrpc",
-    )
     exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
         "exec",
         wire_contract,
@@ -320,14 +315,6 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         method=None,
     )
 
-    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
-        declared=True,
-        consumed_by_hub=False,
-        status="unsupported_by_design",
-        method="codex.threads.watch",
-        jsonrpc_url="https://example.com/jsonrpc",
-    )
-
     assert exec_capability.declared is True
     assert exec_capability.consumed_by_hub is False
     assert exec_capability.status == "unsupported_by_design"
@@ -350,7 +337,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     )
 
 
-def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract() -> (
+def test_build_upstream_followup_snapshots_return_unsupported_without_wire_contract() -> (
     None
 ):
     card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
@@ -368,9 +355,6 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     )
     review = capability_snapshot_builder.build_upstream_method_family_snapshot(
         "review", wire_contract, compatibility_profile, jsonrpc_url=None
-    )
-    thread_watch = capability_snapshot_builder.build_codex_thread_watch_snapshot(
-        wire_contract, jsonrpc_url=None
     )
     exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
         "exec", wire_contract, compatibility_profile, jsonrpc_url=None
@@ -394,14 +378,6 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     assert review.declared is False
     assert review.status == "unsupported"
     assert all(method.declared is False for method in review.methods.values())
-
-    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
-        declared=False,
-        consumed_by_hub=False,
-        status="unsupported",
-        method=None,
-        jsonrpc_url=None,
-    )
 
     assert exec_capability.declared is False
     assert exec_capability.status == "unsupported"

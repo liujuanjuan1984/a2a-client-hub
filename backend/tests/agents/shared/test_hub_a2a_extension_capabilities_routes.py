@@ -209,7 +209,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 ),
             },
         ),
-        codex_threads=SimpleNamespace(
+        upstream_threads=SimpleNamespace(
             declared=True,
             consumed_by_hub=False,
             status="unsupported_by_design",
@@ -241,7 +241,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 ),
             },
         ),
-        codex_turns=SimpleNamespace(
+        upstream_turns=SimpleNamespace(
             declared=True,
             consumed_by_hub=True,
             status="supported",
@@ -253,7 +253,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 ),
             },
         ),
-        codex_review=SimpleNamespace(
+        upstream_review=SimpleNamespace(
             declared=True,
             consumed_by_hub=False,
             status="unsupported_by_design",
@@ -270,13 +270,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 ),
             },
         ),
-        codex_thread_watch=SimpleNamespace(
-            declared=True,
-            consumed_by_hub=False,
-            status="unsupported_by_design",
-            method="codex.threads.watch",
-        ),
-        codex_exec=SimpleNamespace(
+        upstream_exec=SimpleNamespace(
             declared=True,
             consumed_by_hub=False,
             status="unsupported_by_design",

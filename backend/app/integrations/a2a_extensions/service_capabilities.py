@@ -164,28 +164,25 @@ class A2AExtensionCapabilityService:
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_threads=capability_snapshot_builder.build_upstream_method_family_snapshot(
+            upstream_threads=capability_snapshot_builder.build_upstream_method_family_snapshot(
                 "threads",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_turns=capability_snapshot_builder.build_upstream_method_family_snapshot(
+            upstream_turns=capability_snapshot_builder.build_upstream_method_family_snapshot(
                 "turns",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_review=capability_snapshot_builder.build_upstream_method_family_snapshot(
+            upstream_review=capability_snapshot_builder.build_upstream_method_family_snapshot(
                 "review",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_thread_watch=capability_snapshot_builder.build_codex_thread_watch_snapshot(
-                wire_contract, jsonrpc_url=jsonrpc_url
-            ),
-            codex_exec=capability_snapshot_builder.build_upstream_method_family_snapshot(
+            upstream_exec=capability_snapshot_builder.build_upstream_method_family_snapshot(
                 "exec",
                 wire_contract,
                 compatibility_profile,

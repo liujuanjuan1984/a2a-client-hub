@@ -188,11 +188,10 @@ class ResolvedCapabilitySnapshot:
     wire_contract: WireContractCapabilitySnapshot
     compatibility_profile: CompatibilityProfileCapabilitySnapshot
     upstream_discovery: DeclaredMethodCollectionCapabilitySnapshot
-    codex_threads: DeclaredMethodCollectionCapabilitySnapshot
-    codex_turns: DeclaredMethodCollectionCapabilitySnapshot
-    codex_review: DeclaredMethodCollectionCapabilitySnapshot
-    codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot
-    codex_exec: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_threads: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_turns: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_review: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_exec: DeclaredMethodCollectionCapabilitySnapshot
 
     @property
     def upstream_method_families(
@@ -200,10 +199,10 @@ class ResolvedCapabilitySnapshot:
     ) -> dict[str, DeclaredMethodCollectionCapabilitySnapshot]:
         return {
             "discovery": self.upstream_discovery,
-            "threads": self.codex_threads,
-            "turns": self.codex_turns,
-            "review": self.codex_review,
-            "exec": self.codex_exec,
+            "threads": self.upstream_threads,
+            "turns": self.upstream_turns,
+            "review": self.upstream_review,
+            "exec": self.upstream_exec,
         }
 
 

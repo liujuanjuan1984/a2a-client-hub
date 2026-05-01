@@ -9,7 +9,6 @@ from app.integrations.a2a_extensions.capability_snapshot import (
     CompatibilityProfileCapabilitySnapshot,
     DeclaredMethodCapabilitySnapshot,
     DeclaredMethodCollectionCapabilitySnapshot,
-    DeclaredSingleMethodCapabilitySnapshot,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
     InvokeMetadataCapabilitySnapshot,
@@ -144,7 +143,6 @@ UPSTREAM_METHOD_FAMILY_SPECS: dict[str, UpstreamMethodFamilySpec] = {
         unsupported_status_when_declared="unsupported_by_design",
     ),
 }
-_CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
 _REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
 
 
@@ -790,25 +788,5 @@ def build_upstream_method_family_snapshot(
         method_map=spec.method_map,
         hub_consumption=spec.hub_consumption,
         unsupported_status_when_declared=spec.unsupported_status_when_declared,
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_thread_watch_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredSingleMethodCapabilitySnapshot:
-    declared_methods = (
-        frozenset(wire_contract.ext.all_jsonrpc_methods)
-        if wire_contract.status == "supported" and wire_contract.ext is not None
-        else frozenset()
-    )
-    declared = _CODEX_THREAD_WATCH_METHOD in declared_methods
-    return DeclaredSingleMethodCapabilitySnapshot(
-        declared=declared,
-        consumed_by_hub=False,
-        status="unsupported_by_design" if declared else "unsupported",
-        method=_CODEX_THREAD_WATCH_METHOD if declared else None,
         jsonrpc_url=jsonrpc_url,
     )
