@@ -116,16 +116,6 @@ def summarize_session_list_filters(
     }
 
 
-def is_session_control_method_supported(
-    method: A2ASessionControlMethodResponse,
-) -> bool:
-    return (
-        method.declared
-        and method.consumed_by_hub
-        and method.availability != "unsupported"
-    )
-
-
 def build_session_append_response(
     snapshot: Any,
     prompt_async: A2ASessionControlMethodResponse,
@@ -154,7 +144,11 @@ def build_session_append_response(
         and steer_consumed
         and steer_availability not in {"disabled", "unsupported"}
     )
-    prompt_async_supported = is_session_control_method_supported(prompt_async)
+    prompt_async_supported = (
+        prompt_async.declared
+        and prompt_async.consumed_by_hub
+        and prompt_async.availability != "unsupported"
+    )
 
     if prompt_async_supported and turn_steer_supported:
         return A2ASessionAppendCapabilitiesResponse(
@@ -218,218 +212,6 @@ def build_session_control_response(
         command=_build_method("command"),
         shell=_build_method("shell"),
         append=build_session_append_response(snapshot, prompt_async),
-    )
-
-
-def build_compatibility_profile_response(
-    snapshot: Any,
-) -> A2ACompatibilityProfileDiagnostic:
-    compatibility_snapshot = getattr(snapshot, "compatibility_profile", None)
-    status_value = cast(
-        Literal["supported", "unsupported", "invalid"],
-        getattr(compatibility_snapshot, "status", "unsupported"),
-    )
-    error = getattr(compatibility_snapshot, "error", None)
-    ext = getattr(compatibility_snapshot, "ext", None)
-    if ext is None:
-        return A2ACompatibilityProfileDiagnostic(
-            declared=status_value != "unsupported",
-            status=status_value,
-            error=error,
-        )
-
-    return A2ACompatibilityProfileDiagnostic(
-        declared=True,
-        status=status_value,
-        uri=getattr(ext, "uri", None),
-        extensionRetentionCount=len(
-            dict(getattr(ext, "extension_retention", {}) or {})
-        ),
-        methodRetentionCount=len(dict(getattr(ext, "method_retention", {}) or {})),
-        serviceBehaviorKeys=sorted(
-            str(key) for key in dict(getattr(ext, "service_behaviors", {}) or {})
-        ),
-        consumerGuidance=list(getattr(ext, "consumer_guidance", ()) or ()),
-        error=error,
-    )
-
-
-def build_invoke_metadata_response(
-    snapshot: Any,
-) -> A2AInvokeMetadataCapabilitiesResponse:
-    invoke_snapshot = getattr(snapshot, "invoke_metadata", None)
-    ext = getattr(invoke_snapshot, "ext", None)
-    fields = list(getattr(ext, "fields", ()) or ())
-    return A2AInvokeMetadataCapabilitiesResponse(
-        declared=bool(
-            getattr(
-                invoke_snapshot,
-                "meta",
-                {},
-            ).get("invoke_metadata_declared", ext is not None)
-        ),
-        consumedByHub=True,
-        status=cast(
-            Literal["supported", "unsupported", "invalid"],
-            getattr(invoke_snapshot, "status", "unsupported"),
-        ),
-        metadataField=getattr(ext, "metadata_field", None),
-        appliesToMethods=list(getattr(ext, "applies_to_methods", ()) or ()),
-        fields=[
-            A2AInvokeMetadataFieldResponse(
-                name=item.name,
-                required=item.required,
-                description=item.description,
-            )
-            for item in fields
-        ],
-        error=getattr(invoke_snapshot, "error", None),
-    )
-
-
-def build_request_execution_options_response(
-    snapshot: Any,
-) -> A2ARequestExecutionOptionsCapabilitiesResponse:
-    capability = getattr(snapshot, "request_execution_options", None)
-    return A2ARequestExecutionOptionsCapabilitiesResponse(
-        declared=bool(getattr(capability, "declared", False)),
-        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
-        status=cast(
-            Literal["supported", "unsupported", "declared_not_consumed", "invalid"],
-            getattr(capability, "status", "unsupported"),
-        ),
-        metadataField=getattr(capability, "metadata_field", None),
-        fields=list(getattr(capability, "fields", ()) or ()),
-        persistsForThread=getattr(capability, "persists_for_thread", None),
-        sourceExtensions=list(getattr(capability, "source_extensions", ()) or ()),
-        notes=list(getattr(capability, "notes", ()) or ()),
-        error=getattr(capability, "error", None),
-    )
-
-
-def build_stream_hints_response(snapshot: Any) -> A2AStreamHintsCapabilitiesResponse:
-    capability = getattr(snapshot, "stream_hints", None)
-    ext = getattr(capability, "ext", None)
-    meta = dict(getattr(capability, "meta", {}) or {})
-    return A2AStreamHintsCapabilitiesResponse(
-        declared=bool(meta.get("stream_hints_declared", ext is not None)),
-        consumedByHub=ext is not None,
-        status=cast(
-            Literal["supported", "unsupported", "invalid"],
-            getattr(capability, "status", "unsupported"),
-        ),
-        streamField=getattr(ext, "stream_field", None),
-        usageField=getattr(ext, "usage_field", None),
-        interruptField=getattr(ext, "interrupt_field", None),
-        sessionField=getattr(ext, "session_field", None),
-        mode=cast(Optional[str], meta.get("stream_hints_mode")),
-        fallbackUsed=cast(Optional[bool], meta.get("stream_hints_fallback_used")),
-        error=getattr(capability, "error", None),
-    )
-
-
-def build_interrupt_recovery_details_response(
-    snapshot: Any,
-) -> A2AInterruptRecoveryCapabilitiesResponse:
-    capability = getattr(snapshot, "interrupt_recovery", None)
-    ext = getattr(capability, "ext", None)
-    compatibility = getattr(
-        getattr(snapshot, "compatibility_profile", None), "ext", None
-    )
-
-    extension_entry = None
-    if compatibility is not None:
-        extension_entry = dict(
-            getattr(compatibility, "extension_retention", {}) or {}
-        ).get(getattr(ext, "uri", None))
-
-    methods = dict(getattr(ext, "methods", {}) or {})
-    non_null_methods = {
-        key: value for key, value in methods.items() if isinstance(value, str) and value
-    }
-    method_entries = []
-    if compatibility is not None:
-        retention_map = dict(getattr(compatibility, "method_retention", {}) or {})
-        method_entries = [
-            retention_map.get(method_name)
-            for method_name in non_null_methods.values()
-            if retention_map.get(method_name) is not None
-        ]
-
-    implementation_scope = getattr(ext, "implementation_scope", None) or getattr(
-        extension_entry, "implementation_scope", None
-    )
-    identity_scope = getattr(ext, "identity_scope", None) or getattr(
-        extension_entry, "identity_scope", None
-    )
-    if identity_scope is None:
-        for entry in method_entries:
-            if getattr(entry, "identity_scope", None):
-                identity_scope = getattr(entry, "identity_scope", None)
-                break
-    if implementation_scope is None:
-        for entry in method_entries:
-            if getattr(entry, "implementation_scope", None):
-                implementation_scope = getattr(entry, "implementation_scope", None)
-                break
-
-    return A2AInterruptRecoveryCapabilitiesResponse(
-        declared=ext is not None,
-        consumedByHub=ext is not None,
-        status=cast(
-            Literal["supported", "unsupported", "invalid"],
-            getattr(capability, "status", "unsupported"),
-        ),
-        provider=getattr(ext, "provider", None),
-        methods=non_null_methods,
-        recoveryDataSource=getattr(ext, "recovery_data_source", None),
-        identityScope=identity_scope,
-        implementationScope=implementation_scope,
-        emptyResultWhenIdentityUnavailable=getattr(
-            ext, "empty_result_when_identity_unavailable", None
-        ),
-        error=getattr(capability, "error", None),
-    )
-
-
-def build_wire_contract_response(snapshot: Any) -> A2AWireContractCapabilitiesResponse:
-    wire_snapshot = getattr(snapshot, "wire_contract", None)
-    ext = getattr(wire_snapshot, "ext", None)
-    status_value = cast(
-        Literal["supported", "unsupported", "invalid"],
-        getattr(wire_snapshot, "status", "unsupported"),
-    )
-    error = getattr(wire_snapshot, "error", None)
-    if ext is None:
-        return A2AWireContractCapabilitiesResponse(
-            declared=status_value != "unsupported",
-            consumedByHub=True,
-            status=status_value,
-            error=error,
-        )
-
-    return A2AWireContractCapabilitiesResponse(
-        declared=True,
-        consumedByHub=True,
-        status=status_value,
-        protocolVersion=ext.protocol_version,
-        preferredTransport=ext.preferred_transport,
-        additionalTransports=list(ext.additional_transports),
-        allJsonrpcMethods=list(ext.all_jsonrpc_methods),
-        extensionUris=list(ext.extension_uris),
-        conditionalMethods={
-            name: A2AWireContractConditionalMethodResponse(
-                reason=item.reason,
-                toggle=item.toggle,
-            )
-            for name, item in dict(ext.conditionally_available_methods).items()
-        },
-        unsupportedMethodError=A2AWireContractUnsupportedMethodErrorResponse(
-            code=ext.unsupported_method_error.code,
-            type=ext.unsupported_method_error.type,
-            dataFields=list(ext.unsupported_method_error.data_fields),
-        ),
-        error=error,
     )
 
 
@@ -535,19 +317,238 @@ def build_extension_capabilities_response(
         session_control.prompt_async.declared
         and session_control.prompt_async.consumed_by_hub
     )
+    invoke_snapshot = getattr(snapshot, "invoke_metadata", None)
+    invoke_metadata_ext = getattr(invoke_snapshot, "ext", None)
+    invoke_metadata_fields = list(getattr(invoke_metadata_ext, "fields", ()) or ())
+    request_execution_options = getattr(snapshot, "request_execution_options", None)
+    stream_hints = getattr(snapshot, "stream_hints", None)
+    stream_hints_ext = getattr(stream_hints, "ext", None)
+    stream_hints_meta = dict(getattr(stream_hints, "meta", {}) or {})
+    compatibility_snapshot = getattr(snapshot, "compatibility_profile", None)
+    compatibility_status = cast(
+        Literal["supported", "unsupported", "invalid"],
+        getattr(compatibility_snapshot, "status", "unsupported"),
+    )
+    compatibility_error = getattr(compatibility_snapshot, "error", None)
+    compatibility_ext = getattr(compatibility_snapshot, "ext", None)
+    interrupt_recovery_capability = getattr(snapshot, "interrupt_recovery", None)
+    interrupt_recovery_ext = getattr(interrupt_recovery_capability, "ext", None)
+    interrupt_recovery_extension_entry = None
+    if compatibility_ext is not None:
+        interrupt_recovery_extension_entry = dict(
+            getattr(compatibility_ext, "extension_retention", {}) or {}
+        ).get(getattr(interrupt_recovery_ext, "uri", None))
+    interrupt_recovery_methods = dict(
+        getattr(interrupt_recovery_ext, "methods", {}) or {}
+    )
+    non_null_interrupt_recovery_methods = {
+        key: value
+        for key, value in interrupt_recovery_methods.items()
+        if isinstance(value, str) and value
+    }
+    interrupt_recovery_method_entries = []
+    if compatibility_ext is not None:
+        retention_map = dict(getattr(compatibility_ext, "method_retention", {}) or {})
+        interrupt_recovery_method_entries = [
+            retention_map.get(method_name)
+            for method_name in non_null_interrupt_recovery_methods.values()
+            if retention_map.get(method_name) is not None
+        ]
+    implementation_scope = getattr(
+        interrupt_recovery_ext, "implementation_scope", None
+    ) or getattr(interrupt_recovery_extension_entry, "implementation_scope", None)
+    identity_scope = getattr(interrupt_recovery_ext, "identity_scope", None) or getattr(
+        interrupt_recovery_extension_entry, "identity_scope", None
+    )
+    if identity_scope is None:
+        for entry in interrupt_recovery_method_entries:
+            if getattr(entry, "identity_scope", None):
+                identity_scope = getattr(entry, "identity_scope", None)
+                break
+    if implementation_scope is None:
+        for entry in interrupt_recovery_method_entries:
+            if getattr(entry, "implementation_scope", None):
+                implementation_scope = getattr(entry, "implementation_scope", None)
+                break
+    wire_snapshot = getattr(snapshot, "wire_contract", None)
+    wire_contract_ext = getattr(wire_snapshot, "ext", None)
+    wire_contract_status = cast(
+        Literal["supported", "unsupported", "invalid"],
+        getattr(wire_snapshot, "status", "unsupported"),
+    )
+    wire_contract_error = getattr(wire_snapshot, "error", None)
 
     return A2AExtensionCapabilitiesResponse(
         modelSelection=model_selection,
         providerDiscovery=provider_discovery,
         interruptRecovery=interrupt_recovery,
-        interruptRecoveryDetails=build_interrupt_recovery_details_response(snapshot),
+        interruptRecoveryDetails=A2AInterruptRecoveryCapabilitiesResponse(
+            declared=interrupt_recovery_ext is not None,
+            consumedByHub=interrupt_recovery_ext is not None,
+            status=cast(
+                Literal["supported", "unsupported", "invalid"],
+                getattr(
+                    interrupt_recovery_capability,
+                    "status",
+                    "unsupported",
+                ),
+            ),
+            provider=getattr(interrupt_recovery_ext, "provider", None),
+            methods=non_null_interrupt_recovery_methods,
+            recoveryDataSource=getattr(
+                interrupt_recovery_ext, "recovery_data_source", None
+            ),
+            identityScope=identity_scope,
+            implementationScope=implementation_scope,
+            emptyResultWhenIdentityUnavailable=getattr(
+                interrupt_recovery_ext,
+                "empty_result_when_identity_unavailable",
+                None,
+            ),
+            error=getattr(interrupt_recovery_capability, "error", None),
+        ),
         sessionPromptAsync=session_prompt_async,
         sessionControl=session_control,
-        invokeMetadata=build_invoke_metadata_response(snapshot),
-        requestExecutionOptions=build_request_execution_options_response(snapshot),
-        streamHints=build_stream_hints_response(snapshot),
-        wireContract=build_wire_contract_response(snapshot),
-        compatibilityProfile=build_compatibility_profile_response(snapshot),
+        invokeMetadata=A2AInvokeMetadataCapabilitiesResponse(
+            declared=bool(
+                getattr(invoke_snapshot, "meta", {}).get(
+                    "invoke_metadata_declared",
+                    invoke_metadata_ext is not None,
+                )
+            ),
+            consumedByHub=True,
+            status=cast(
+                Literal["supported", "unsupported", "invalid"],
+                getattr(invoke_snapshot, "status", "unsupported"),
+            ),
+            metadataField=getattr(invoke_metadata_ext, "metadata_field", None),
+            appliesToMethods=list(
+                getattr(invoke_metadata_ext, "applies_to_methods", ()) or ()
+            ),
+            fields=[
+                A2AInvokeMetadataFieldResponse(
+                    name=item.name,
+                    required=item.required,
+                    description=item.description,
+                )
+                for item in invoke_metadata_fields
+            ],
+            error=getattr(invoke_snapshot, "error", None),
+        ),
+        requestExecutionOptions=A2ARequestExecutionOptionsCapabilitiesResponse(
+            declared=bool(getattr(request_execution_options, "declared", False)),
+            consumedByHub=bool(
+                getattr(request_execution_options, "consumed_by_hub", False)
+            ),
+            status=cast(
+                Literal["supported", "unsupported", "declared_not_consumed", "invalid"],
+                getattr(request_execution_options, "status", "unsupported"),
+            ),
+            metadataField=getattr(
+                request_execution_options,
+                "metadata_field",
+                None,
+            ),
+            fields=list(getattr(request_execution_options, "fields", ()) or ()),
+            persistsForThread=getattr(
+                request_execution_options,
+                "persists_for_thread",
+                None,
+            ),
+            sourceExtensions=list(
+                getattr(request_execution_options, "source_extensions", ()) or ()
+            ),
+            notes=list(getattr(request_execution_options, "notes", ()) or ()),
+            error=getattr(request_execution_options, "error", None),
+        ),
+        streamHints=A2AStreamHintsCapabilitiesResponse(
+            declared=bool(
+                stream_hints_meta.get(
+                    "stream_hints_declared",
+                    stream_hints_ext is not None,
+                )
+            ),
+            consumedByHub=stream_hints_ext is not None,
+            status=cast(
+                Literal["supported", "unsupported", "invalid"],
+                getattr(stream_hints, "status", "unsupported"),
+            ),
+            streamField=getattr(stream_hints_ext, "stream_field", None),
+            usageField=getattr(stream_hints_ext, "usage_field", None),
+            interruptField=getattr(stream_hints_ext, "interrupt_field", None),
+            sessionField=getattr(stream_hints_ext, "session_field", None),
+            mode=cast(Optional[str], stream_hints_meta.get("stream_hints_mode")),
+            fallbackUsed=cast(
+                Optional[bool],
+                stream_hints_meta.get("stream_hints_fallback_used"),
+            ),
+            error=getattr(stream_hints, "error", None),
+        ),
+        wireContract=A2AWireContractCapabilitiesResponse(
+            declared=(
+                True
+                if wire_contract_ext is not None
+                else wire_contract_status != "unsupported"
+            ),
+            consumedByHub=True,
+            status=wire_contract_status,
+            protocolVersion=getattr(wire_contract_ext, "protocol_version", None),
+            preferredTransport=getattr(wire_contract_ext, "preferred_transport", None),
+            additionalTransports=list(
+                getattr(wire_contract_ext, "additional_transports", ()) or ()
+            ),
+            allJsonrpcMethods=list(
+                getattr(wire_contract_ext, "all_jsonrpc_methods", ()) or ()
+            ),
+            extensionUris=list(getattr(wire_contract_ext, "extension_uris", ()) or ()),
+            conditionalMethods={
+                name: A2AWireContractConditionalMethodResponse(
+                    reason=item.reason,
+                    toggle=item.toggle,
+                )
+                for name, item in dict(
+                    getattr(wire_contract_ext, "conditionally_available_methods", {})
+                    or {}
+                ).items()
+            },
+            unsupportedMethodError=(
+                A2AWireContractUnsupportedMethodErrorResponse(
+                    code=wire_contract_ext.unsupported_method_error.code,
+                    type=wire_contract_ext.unsupported_method_error.type,
+                    dataFields=list(
+                        wire_contract_ext.unsupported_method_error.data_fields
+                    ),
+                )
+                if wire_contract_ext is not None
+                else None
+            ),
+            error=wire_contract_error,
+        ),
+        compatibilityProfile=A2ACompatibilityProfileDiagnostic(
+            declared=(
+                True
+                if compatibility_ext is not None
+                else compatibility_status != "unsupported"
+            ),
+            status=compatibility_status,
+            uri=getattr(compatibility_ext, "uri", None),
+            extensionRetentionCount=len(
+                dict(getattr(compatibility_ext, "extension_retention", {}) or {})
+            ),
+            methodRetentionCount=len(
+                dict(getattr(compatibility_ext, "method_retention", {}) or {})
+            ),
+            serviceBehaviorKeys=sorted(
+                str(key)
+                for key in dict(
+                    getattr(compatibility_ext, "service_behaviors", {}) or {}
+                )
+            ),
+            consumerGuidance=list(
+                getattr(compatibility_ext, "consumer_guidance", ()) or ()
+            ),
+            error=compatibility_error,
+        ),
         upstreamMethodFamilies=build_upstream_method_families_response(snapshot),
         runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
             runtime_status_contract_payload()
