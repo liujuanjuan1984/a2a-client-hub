@@ -94,12 +94,11 @@ _InvokeState = InvokeState
 _prepare_state = prepare_state
 _register_inflight_invoke = register_inflight_invoke
 _validate_provider_aware_continue_session = validate_provider_aware_continue_session
-_finalize_outbound_invoke_payload_impl = finalize_outbound_invoke_payload
 _is_interrupt_requested = is_interrupt_requested
 _find_latest_agent_message_id = find_latest_agent_message_id
 _try_acquire_invoke_guard = try_acquire_invoke_guard
 _release_invoke_guard = release_invoke_guard
-_finalize_outbound_invoke_payload = _finalize_outbound_invoke_payload_impl
+_finalize_outbound_invoke_payload_impl = finalize_outbound_invoke_payload
 _diagnose_stream_hints_contract_gap = (
     route_runner_streaming.diagnose_stream_hints_contract_gap
 )
@@ -112,6 +111,12 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
 
 async def _close_open_transaction(db: AsyncSession) -> None:
     await prepare_for_external_call(db)
+
+
+async def _finalize_outbound_invoke_payload(
+    **kwargs: Any,
+) -> A2AAgentInvokeRequest:
+    return await _finalize_outbound_invoke_payload_impl(**kwargs)
 
 
 def _adapt_invoke_metadata_for_upstream(
