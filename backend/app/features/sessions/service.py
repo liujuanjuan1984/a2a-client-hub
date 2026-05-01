@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.features.sessions.history_projection import SessionHistoryProjectionService
+from app.features.sessions.history_projection_blocks import (
+    SessionHistoryBlockProjectionService,
+)
+from app.features.sessions.history_projection_events import SessionHistoryEventService
+from app.features.sessions.history_projection_messages import (
+    SessionHistoryMessageService,
+)
 from app.features.sessions.inflight_service import SessionInflightService
 from app.features.sessions.query_service import SessionQueryService
 from app.features.sessions.support import SessionHubSupport
@@ -31,7 +37,9 @@ class SessionHubService:
         self._support = SessionHubSupport()
         self._query = SessionQueryService(support=self._support)
         self._inflight = SessionInflightService(support=self._support)
-        self._history = SessionHistoryProjectionService(support=self._support)
+        self._history_messages = SessionHistoryMessageService(support=self._support)
+        self._history_events = SessionHistoryEventService(support=self._support)
+        self._history_blocks = SessionHistoryBlockProjectionService()
 
     async def list_sessions(
         self,
@@ -276,7 +284,7 @@ class SessionHubService:
         agent_source: SessionAgentSource,
         conversation_id: str | None,
     ) -> tuple[ConversationThread | None, SessionSource | None]:
-        return await self._history.ensure_local_session_for_invoke(
+        return await self._history_messages.ensure_local_session_for_invoke(
             db,
             user_id=user_id,
             agent_id=agent_id,
@@ -309,7 +317,7 @@ class SessionHubService:
         finish_reason: str | None = None,
         error_code: str | None = None,
     ) -> dict[str, UUID]:
-        return await self._history.record_local_invoke_messages(
+        return await self._history_messages.record_local_invoke_messages(
             db,
             session=session,
             source=source,
@@ -358,7 +366,7 @@ class SessionHubService:
         finish_reason: str | None = None,
         error_code: str | None = None,
     ) -> dict[str, UUID]:
-        return await self._history.record_local_invoke_messages_by_local_session_id(
+        return await self._history_messages.record_local_invoke_messages_by_local_session_id(
             db,
             local_session_id=local_session_id,
             source=source,
@@ -400,23 +408,21 @@ class SessionHubService:
         agent_message_id: UUID | None = None,
         user_sender: Literal["user", "automation"] = "user",
     ) -> dict[str, UUID]:
-        return (
-            await self._history.ensure_local_invoke_message_headers_by_local_session_id(
-                db,
-                local_session_id=local_session_id,
-                source=source,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                query=query,
-                context_id=context_id,
-                invoke_metadata=invoke_metadata,
-                extra_metadata=extra_metadata,
-                idempotency_key=idempotency_key,
-                user_message_id=user_message_id,
-                agent_message_id=agent_message_id,
-                user_sender=user_sender,
-            )
+        return await self._history_messages.ensure_local_invoke_message_headers_by_local_session_id(
+            db,
+            local_session_id=local_session_id,
+            source=source,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            context_id=context_id,
+            invoke_metadata=invoke_metadata,
+            extra_metadata=extra_metadata,
+            idempotency_key=idempotency_key,
+            user_message_id=user_message_id,
+            agent_message_id=agent_message_id,
+            user_sender=user_sender,
         )
 
     async def record_user_message_by_local_session_id(
@@ -430,7 +436,7 @@ class SessionHubService:
         idempotency_key: str | None = None,
         user_message_id: UUID | None = None,
     ) -> dict[str, UUID]:
-        return await self._history.record_user_message_by_local_session_id(
+        return await self._history_messages.record_user_message_by_local_session_id(
             db,
             local_session_id=local_session_id,
             user_id=user_id,
@@ -448,7 +454,7 @@ class SessionHubService:
         user_id: UUID,
         event: dict[str, Any],
     ) -> UUID | None:
-        return await self._history.record_interrupt_lifecycle_event_by_local_session_id(
+        return await self._history_events.record_interrupt_lifecycle_event_by_local_session_id(
             db,
             local_session_id=local_session_id,
             user_id=user_id,
@@ -463,7 +469,7 @@ class SessionHubService:
         user_id: UUID,
         event: dict[str, Any],
     ) -> UUID | None:
-        return await self._history.record_interrupt_lifecycle_event(
+        return await self._history_events.record_interrupt_lifecycle_event(
             db,
             conversation_id=conversation_id,
             user_id=user_id,
@@ -478,7 +484,7 @@ class SessionHubService:
         user_id: UUID,
         event: dict[str, Any],
     ) -> UUID | None:
-        return await self._history.record_preempt_event_by_local_session_id(
+        return await self._history_events.record_preempt_event_by_local_session_id(
             db,
             local_session_id=local_session_id,
             user_id=user_id,
@@ -493,7 +499,7 @@ class SessionHubService:
         user_id: UUID,
         event: dict[str, Any],
     ) -> UUID | None:
-        return await self._history.record_preempt_event(
+        return await self._history_events.record_preempt_event(
             db,
             conversation_id=conversation_id,
             user_id=user_id,
@@ -519,7 +525,7 @@ class SessionHubService:
         source: str | None = None,
         agent_message: Any | None = None,
     ) -> AgentMessageBlock | None:
-        return await self._history.append_agent_message_block_update(
+        return await self._history_blocks.append_agent_message_block_update(
             db,
             user_id=user_id,
             agent_message_id=agent_message_id,
@@ -546,7 +552,7 @@ class SessionHubService:
         updates: list[dict[str, Any]],
         agent_message: Any | None = None,
     ) -> list[AgentMessageBlock]:
-        return await self._history.append_agent_message_block_updates(
+        return await self._history_blocks.append_agent_message_block_updates(
             db,
             user_id=user_id,
             agent_message_id=agent_message_id,
@@ -561,7 +567,7 @@ class SessionHubService:
         user_id: UUID,
         agent_message_id: UUID,
     ) -> bool:
-        return await self._history.has_agent_message_blocks(
+        return await self._history_blocks.has_agent_message_blocks(
             db,
             user_id=user_id,
             agent_message_id=agent_message_id,
