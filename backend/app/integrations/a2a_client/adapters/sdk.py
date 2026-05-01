@@ -153,7 +153,14 @@ class SDKA2AAdapter(A2AAdapter):
                     ),
                     metadata=request.metadata,
                 )
-                async for payload in client.send_message(sdk_request, context=context):
+                if context is None:
+                    message_stream = client.send_message(sdk_request)
+                else:
+                    message_stream = client.send_message(
+                        sdk_request,
+                        context=context,
+                    )
+                async for payload in message_stream:
                     final_payload = payload
                 return final_payload
             except (A2AClientError, A2AError) as exc:
@@ -182,7 +189,14 @@ class SDKA2AAdapter(A2AAdapter):
                     ),
                     metadata=request.metadata,
                 )
-                async for payload in client.send_message(sdk_request, context=context):
+                if context is None:
+                    message_stream = client.send_message(sdk_request)
+                else:
+                    message_stream = client.send_message(
+                        sdk_request,
+                        context=context,
+                    )
+                async for payload in message_stream:
                     yield payload
             except (A2AClientError, A2AError) as exc:
                 raise _map_sdk_exception(exc) from exc
