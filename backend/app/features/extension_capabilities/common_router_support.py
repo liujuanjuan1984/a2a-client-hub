@@ -556,45 +556,6 @@ def build_extension_capabilities_response(
     )
 
 
-def to_extension_response(result: Any) -> A2AExtensionResponse:
-    return A2AExtensionResponse(
-        success=result.success,
-        result=result.result,
-        error_code=result.error_code,
-        source=result.source,
-        jsonrpc_code=result.jsonrpc_code,
-        missing_params=result.missing_params,
-        upstream_error=result.upstream_error,
-        meta=result.meta or {},
-    )
-
-
-def to_extension_error_response(
-    *,
-    error_code: str,
-    message: str,
-    source: Optional[str] = None,
-    jsonrpc_code: Optional[int] = None,
-    missing_params: Optional[list[dict[str, Any]]] = None,
-    upstream_error: Optional[Dict[str, Any]] = None,
-    meta: Optional[Dict[str, Any]] = None,
-) -> JSONResponse:
-    return build_error_response(
-        status_code=status_code_for_extension_error_code(error_code),
-        detail=build_error_detail(
-            message=message,
-            error_code=error_code,
-            source=source,
-            jsonrpc_code=jsonrpc_code,
-            missing_params=missing_params,
-            upstream_error=(
-                upstream_error if upstream_error is not None else {"message": message}
-            ),
-            meta=meta or {},
-        ),
-    )
-
-
 async def run_extension_call(
     call: Awaitable[Any],
 ) -> A2AExtensionResponse | JSONResponse:
@@ -608,9 +569,18 @@ async def run_extension_call(
             if isinstance(exc, A2AExtensionNotSupportedError)
             else "extension_contract_error"
         )
-        return to_extension_error_response(
-            error_code=error_code,
-            message=str(exc),
+        message = str(exc)
+        return build_error_response(
+            status_code=status_code_for_extension_error_code(error_code),
+            detail=build_error_detail(
+                message=message,
+                error_code=error_code,
+                source=None,
+                jsonrpc_code=None,
+                missing_params=None,
+                upstream_error={"message": message},
+                meta={},
+            ),
         )
     except A2AExtensionUpstreamError as exc:
         response = A2AExtensionResponse(
@@ -643,7 +613,16 @@ async def run_extension_call(
                 meta=response.meta or {},
             ),
         )
-    response = to_extension_response(result)
+    response = A2AExtensionResponse(
+        success=result.success,
+        result=result.result,
+        error_code=result.error_code,
+        source=result.source,
+        jsonrpc_code=result.jsonrpc_code,
+        missing_params=result.missing_params,
+        upstream_error=result.upstream_error,
+        meta=result.meta or {},
+    )
     status_code = status_code_for_extension_error_code(response.error_code)
     if response.success or status_code == status.HTTP_200_OK:
         return response
