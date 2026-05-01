@@ -86,7 +86,7 @@ class A2AScheduleProjectionService:
         )
         return task
 
-    async def list_tasks_with_status_summary(
+    async def list_tasks(
         self,
         db: AsyncSession,
         *,

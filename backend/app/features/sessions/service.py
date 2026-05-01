@@ -248,7 +248,7 @@ class SessionHubService:
         ),
         status_hint: str | None = None,
     ) -> bool:
-        binding = await conversation_upstream_task_service.record_binding(
+        binding = await conversation_upstream_task_service.record_upstream_task_binding(
             db,
             user_id=user_id,
             conversation_id=conversation_id,
@@ -269,7 +269,7 @@ class SessionHubService:
         conversation_id: UUID,
         task_id: str,
     ) -> bool:
-        return await conversation_upstream_task_service.verify_binding(
+        return await conversation_upstream_task_service.verify_upstream_task_binding(
             db,
             user_id=user_id,
             conversation_id=conversation_id,

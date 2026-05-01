@@ -65,7 +65,7 @@ class A2AScheduleService:
         page: int,
         size: int,
     ) -> tuple[list[A2AScheduleTask], int]:
-        return await self._projection.list_tasks_with_status_summary(
+        return await self._projection.list_tasks(
             db,
             user_id=user_id,
             page=page,
