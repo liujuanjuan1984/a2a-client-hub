@@ -10,11 +10,11 @@ from tests.schedules.a2a_schedule_job_support import (
     SimpleNamespace,
     _create_agent,
     _create_schedule_task,
-    _derive_recovery_timeouts,
     _refresh_ops_metrics,
     _try_hold_dispatch_leader_lock,
     a2a_schedule_service,
     create_user,
+    derive_schedule_recovery_timeouts,
     dispatch_due_a2a_schedules,
     logging,
     ops_metrics,
@@ -750,7 +750,9 @@ async def test_derive_recovery_timeouts_clamps_heartbeat_stale_to_invoke_timeout
         raising=False,
     )
 
-    heartbeat_timeout_seconds, hard_timeout_seconds = _derive_recovery_timeouts()
+    heartbeat_timeout_seconds, hard_timeout_seconds = (
+        derive_schedule_recovery_timeouts()
+    )
 
     assert heartbeat_timeout_seconds == 45
     assert hard_timeout_seconds == 45
