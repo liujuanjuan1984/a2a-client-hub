@@ -509,7 +509,8 @@ def build_upstream_method_families_response(
     families = getattr(snapshot, "upstream_method_families", None)
     if not isinstance(families, dict):
         families = {
-            "discovery": getattr(snapshot, "codex_discovery", None),
+            "discovery": getattr(snapshot, "upstream_discovery", None)
+            or getattr(snapshot, "codex_discovery", None),
             "threads": getattr(snapshot, "codex_threads", None),
             "turns": getattr(snapshot, "codex_turns", None),
             "review": getattr(snapshot, "codex_review", None),

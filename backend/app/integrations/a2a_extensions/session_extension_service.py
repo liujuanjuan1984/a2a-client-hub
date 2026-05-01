@@ -28,6 +28,15 @@ class SessionExtensionService:
         self._support = support
 
     @staticmethod
+    def _merge_runtime_hints(
+        meta: Dict[str, Any],
+        runtime_hints: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        if runtime_hints:
+            meta.update(dict(runtime_hints))
+        return meta
+
+    @staticmethod
     def prepare_session_lookup(*, session_id: str) -> str:
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
@@ -431,22 +440,23 @@ class SessionExtensionService:
         ext: ResolvedExtension,
         page: int,
         size: int,
-        selection_meta: Optional[Dict[str, Any]] = None,
+        runtime_hints: Optional[Dict[str, Any]] = None,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        meta = {
-            "extension_uri": ext.uri,
-            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "pagination_mode": ext.pagination.mode,
-            "pagination_params": list(ext.pagination.params),
-            "pagination_supports_offset": ext.pagination.supports_offset,
-            "page": page,
-            "size": size,
-            "max_size": ext.pagination.max_size,
-            "default_size": ext.pagination.default_size,
-        }
-        if selection_meta:
-            meta.update(selection_meta)
+        meta = SessionExtensionService._merge_runtime_hints(
+            {
+                "extension_uri": ext.uri,
+                "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
+                "pagination_mode": ext.pagination.mode,
+                "pagination_params": list(ext.pagination.params),
+                "pagination_supports_offset": ext.pagination.supports_offset,
+                "page": page,
+                "size": size,
+                "max_size": ext.pagination.max_size,
+                "default_size": ext.pagination.default_size,
+            },
+            runtime_hints,
+        )
         if meta_extra:
             meta.update(meta_extra)
         return meta
@@ -537,7 +547,7 @@ class SessionExtensionService:
         runtime: A2ARuntime,
         ext: ResolvedExtension,
         jsonrpc_url: str,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         method_key: str,
         params: Dict[str, Any],
         page: int,
@@ -548,9 +558,10 @@ class SessionExtensionService:
     ) -> ExtensionCallResult:
         method_name = ext.methods.get(method_key)
         if not method_name:
-            meta = {"extension_uri": ext.uri}
-            if selection_meta:
-                meta.update(selection_meta)
+            meta = self._merge_runtime_hints(
+                {"extension_uri": ext.uri},
+                runtime_hints,
+            )
             return ExtensionCallResult(
                 success=False,
                 error_code="method_not_supported",
@@ -572,7 +583,7 @@ class SessionExtensionService:
             ext=ext,
             page=page,
             size=size,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             meta_extra=meta_extra,
         )
 
@@ -620,7 +631,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         method_key: str,
         params: Dict[str, Any],
         include_raw: bool = False,
@@ -632,7 +643,7 @@ class SessionExtensionService:
             jsonrpc_url=self._support.ensure_outbound_allowed(
                 ext.jsonrpc.url, purpose="JSON-RPC interface URL"
             ),
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key=method_key,
             params=params,
             page=1,
@@ -656,7 +667,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         method_key: str,
         params: Dict[str, Any],
         include_raw: bool = False,
@@ -668,7 +679,7 @@ class SessionExtensionService:
             jsonrpc_url=self._support.ensure_outbound_allowed(
                 ext.jsonrpc.url, purpose="JSON-RPC interface URL"
             ),
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key=method_key,
             params=params,
             page=1,
@@ -692,7 +703,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         method_key: str,
         params: Dict[str, Any],
         include_raw: bool = False,
@@ -704,7 +715,7 @@ class SessionExtensionService:
             jsonrpc_url=self._support.ensure_outbound_allowed(
                 ext.jsonrpc.url, purpose="JSON-RPC interface URL"
             ),
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key=method_key,
             params=params,
             page=1,
@@ -728,7 +739,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
@@ -763,7 +774,7 @@ class SessionExtensionService:
                     ext=ext,
                     page=resolved_page,
                     size=resolved_size,
-                    selection_meta=selection_meta,
+                    runtime_hints=runtime_hints,
                     meta_extra={"short_circuit_reason": "limit_without_offset"},
                 ),
             )
@@ -780,7 +791,7 @@ class SessionExtensionService:
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="list_sessions",
             params=params,
             page=resolved_page,
@@ -794,7 +805,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         page: int,
         size: Optional[int],
@@ -843,7 +854,7 @@ class SessionExtensionService:
                     ext=ext,
                     page=resolved_page,
                     size=resolved_size,
-                    selection_meta=selection_meta,
+                    runtime_hints=runtime_hints,
                     meta_extra={
                         "session_id": resolved_session_id,
                         "short_circuit_reason": "limit_without_offset",
@@ -871,7 +882,7 @@ class SessionExtensionService:
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="get_session_messages",
             params=params,
             page=resolved_page,
@@ -911,7 +922,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         binding_meta: Dict[str, Any],
         session_id: str,
     ) -> ExtensionCallResult:
@@ -927,7 +938,7 @@ class SessionExtensionService:
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="get_session_messages",
             params={
                 "session_id": resolved_session_id,
@@ -973,7 +984,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
@@ -998,7 +1009,7 @@ class SessionExtensionService:
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="prompt_async",
             params=params,
             page=1,
@@ -1015,7 +1026,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
@@ -1040,7 +1051,7 @@ class SessionExtensionService:
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="command",
             params=params,
             page=1,
@@ -1057,7 +1068,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         include_raw: bool = False,
     ) -> ExtensionCallResult:
@@ -1065,7 +1076,7 @@ class SessionExtensionService:
         return await self.invoke_item_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="get_session",
             params={"session_id": resolved_session_id},
             include_raw=include_raw,
@@ -1077,7 +1088,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         include_raw: bool = False,
     ) -> ExtensionCallResult:
@@ -1085,7 +1096,7 @@ class SessionExtensionService:
         return await self.invoke_items_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="get_session_children",
             params={"session_id": resolved_session_id},
             include_raw=include_raw,
@@ -1097,7 +1108,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         include_raw: bool = False,
     ) -> ExtensionCallResult:
@@ -1105,7 +1116,7 @@ class SessionExtensionService:
         return await self.invoke_items_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="get_session_todo",
             params={"session_id": resolved_session_id},
             include_raw=include_raw,
@@ -1117,7 +1128,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         message_id: str | None = None,
         include_raw: bool = False,
@@ -1130,7 +1141,7 @@ class SessionExtensionService:
         return await self.invoke_items_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="get_session_diff",
             params=params,
             include_raw=include_raw,
@@ -1145,7 +1156,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         message_id: str,
         include_raw: bool = False,
@@ -1157,7 +1168,7 @@ class SessionExtensionService:
         return await self.invoke_item_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="get_session_message",
             params={
                 "session_id": resolved_session_id,
@@ -1175,7 +1186,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         request_payload: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -1188,7 +1199,7 @@ class SessionExtensionService:
         return await self.invoke_item_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="fork",
             params=params,
             meta_extra={"session_id": resolved_session_id},
@@ -1199,7 +1210,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
@@ -1210,7 +1221,7 @@ class SessionExtensionService:
         return await self.invoke_item_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="share",
             params=params,
             meta_extra={"session_id": resolved_session_id},
@@ -1221,7 +1232,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
@@ -1232,7 +1243,7 @@ class SessionExtensionService:
         return await self.invoke_item_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="unshare",
             params=params,
             meta_extra={"session_id": resolved_session_id},
@@ -1243,7 +1254,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         request_payload: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -1256,7 +1267,7 @@ class SessionExtensionService:
         return await self.invoke_ack_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="summarize",
             params=params,
             meta_extra={"session_id": resolved_session_id},
@@ -1267,7 +1278,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
@@ -1280,7 +1291,7 @@ class SessionExtensionService:
         return await self.invoke_item_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="revert",
             params=params,
             meta_extra={"session_id": resolved_session_id},
@@ -1291,7 +1302,7 @@ class SessionExtensionService:
         *,
         runtime: A2ARuntime,
         ext: ResolvedExtension,
-        selection_meta: Optional[Dict[str, Any]],
+        runtime_hints: Optional[Dict[str, Any]],
         session_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
@@ -1302,7 +1313,7 @@ class SessionExtensionService:
         return await self.invoke_item_method(
             runtime=runtime,
             ext=ext,
-            selection_meta=selection_meta,
+            runtime_hints=runtime_hints,
             method_key="unrevert",
             params=params,
             meta_extra={"session_id": resolved_session_id},

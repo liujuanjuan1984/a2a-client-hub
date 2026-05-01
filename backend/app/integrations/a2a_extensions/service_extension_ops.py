@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, cast
 
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.codex_discovery_service import (
-    CodexDiscoveryService,
+    UpstreamDiscoveryService,
 )
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
@@ -32,13 +32,13 @@ class A2AExtensionOperations:
         *,
         capabilities: A2AExtensionCapabilityService,
         provider_discovery: ProviderDiscoveryService,
-        codex_discovery: CodexDiscoveryService,
+        upstream_discovery: UpstreamDiscoveryService,
         interrupt_extensions: InterruptExtensionService,
         interrupt_recovery: InterruptRecoveryService,
     ) -> None:
         self._capabilities = capabilities
         self._provider_discovery = provider_discovery
-        self._codex_discovery = codex_discovery
+        self._upstream_discovery = upstream_discovery
         self._interrupt_extensions = interrupt_extensions
         self._interrupt_recovery = interrupt_recovery
 
@@ -133,7 +133,7 @@ class A2AExtensionOperations:
         )
         if preflight is not None:
             return preflight
-        delegate = getattr(self._codex_discovery, delegate_name)
+        delegate = getattr(self._upstream_discovery, delegate_name)
         meta = {
             "extension_uri": (
                 snapshot.wire_contract.ext.uri

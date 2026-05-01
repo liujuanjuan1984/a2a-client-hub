@@ -54,6 +54,21 @@ def _permission_reply_error_detail(
     return status.HTTP_400_BAD_REQUEST, message
 
 
+def _log_unexpected_hub_assistant_error(
+    *,
+    message: str,
+    user_id: str,
+    extra: dict[str, str],
+) -> None:
+    logger.exception(
+        message,
+        extra={
+            "user_id": user_id,
+            **extra,
+        },
+    )
+
+
 def _to_run_response(
     result: HubAssistantRunResult,
 ) -> HubAssistantRunResponse:
@@ -160,12 +175,10 @@ async def run_hub_assistant(
             detail=str(exc),
         ) from exc
     except Exception:
-        logger.exception(
-            "Hub Assistant run raised an unexpected error",
-            extra={
-                "user_id": str(current_user.id),
-                "conversation_id": payload.conversation_id,
-            },
+        _log_unexpected_hub_assistant_error(
+            message="Hub Assistant run raised an unexpected error",
+            user_id=str(current_user.id),
+            extra={"conversation_id": payload.conversation_id},
         )
         raise
 
@@ -259,10 +272,10 @@ async def reply_hub_assistant_permission_interrupt(
             detail=detail,
         ) from exc
     except Exception:
-        logger.exception(
-            "Hub Assistant permission reply raised an unexpected error",
+        _log_unexpected_hub_assistant_error(
+            message="Hub Assistant permission reply raised an unexpected error",
+            user_id=str(current_user.id),
             extra={
-                "user_id": str(current_user.id),
                 "request_id": payload.request_id,
                 "reply": payload.reply,
             },

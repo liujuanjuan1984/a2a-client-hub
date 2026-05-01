@@ -464,7 +464,7 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
         return ExtensionCallResult(
             success=True,
             result={"items": []},
-            meta=dict(kwargs.get("selection_meta") or {}),
+            meta=dict(kwargs.get("runtime_hints") or {}),
         )
 
     monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
@@ -710,7 +710,7 @@ async def test_get_session_messages_forwards_before_and_normalizes_page_info(
                 "pagination": {"page": 1, "size": 20},
                 "next_cursor": "cursor-2",
             },
-            meta=dict(kwargs.get("selection_meta") or {}),
+            meta=dict(kwargs.get("runtime_hints") or {}),
         )
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)

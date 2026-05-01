@@ -219,7 +219,7 @@ def _normalize_plugin_detail(payload: Any) -> dict[str, Any]:
     }
 
 
-class CodexDiscoveryService:
+class UpstreamDiscoveryService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
 
@@ -239,7 +239,7 @@ class CodexDiscoveryService:
             params=params,
         )
 
-        metric_key = f"codex_discovery:{method_name}"
+        metric_key = f"upstream_discovery:{method_name}"
         if resp.ok:
             self._support.record_extension_metric(
                 metric_key, success=True, error_code=None
@@ -269,7 +269,7 @@ class CodexDiscoveryService:
         return ExtensionCallResult(
             success=False,
             error_code="upstream_payload_error",
-            source="codex_discovery",
+            source="upstream_discovery",
             upstream_error={"message": message, "type": "UPSTREAM_PAYLOAD_ERROR"},
             meta=meta,
         )
@@ -428,3 +428,6 @@ class CodexDiscoveryService:
         except ValueError as exc:
             return self._payload_error(message=str(exc), meta=meta)
         return ExtensionCallResult(success=True, result=normalized, meta=meta)
+
+
+CodexDiscoveryService = UpstreamDiscoveryService

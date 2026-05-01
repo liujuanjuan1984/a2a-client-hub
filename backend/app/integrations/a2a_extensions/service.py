@@ -13,7 +13,7 @@ from app.integrations.a2a_extensions.capability_snapshot import (
     ResolvedCapabilitySnapshot,
 )
 from app.integrations.a2a_extensions.codex_discovery_service import (
-    CodexDiscoveryService,
+    UpstreamDiscoveryService,
 )
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
@@ -56,7 +56,7 @@ class A2AExtensionsService:
         self._interrupt_extensions = InterruptExtensionService(self._support)
         self._interrupt_recovery = InterruptRecoveryService(self._support)
         self._provider_discovery = ProviderDiscoveryService(self._support)
-        self._codex_discovery = CodexDiscoveryService(self._support)
+        self._upstream_discovery = UpstreamDiscoveryService(self._support)
         self._capabilities = A2AExtensionCapabilityService(
             support=self._support,
             time_module=time,
@@ -69,7 +69,7 @@ class A2AExtensionsService:
         self._extension_ops = A2AExtensionOperations(
             capabilities=self._capabilities,
             provider_discovery=self._provider_discovery,
-            codex_discovery=self._codex_discovery,
+            upstream_discovery=self._upstream_discovery,
             interrupt_extensions=self._interrupt_extensions,
             interrupt_recovery=self._interrupt_recovery,
         )
@@ -505,7 +505,7 @@ class A2AExtensionsService:
             working_directory=working_directory,
         )
 
-    async def list_codex_skills(
+    async def list_upstream_skills(
         self,
         *,
         runtime: A2ARuntime,
@@ -518,7 +518,7 @@ class A2AExtensionsService:
             delegate_name="list_skills",
         )
 
-    async def list_codex_apps(
+    async def list_upstream_apps(
         self,
         *,
         runtime: A2ARuntime,
@@ -531,7 +531,7 @@ class A2AExtensionsService:
             delegate_name="list_apps",
         )
 
-    async def list_codex_plugins(
+    async def list_upstream_plugins(
         self,
         *,
         runtime: A2ARuntime,
@@ -544,7 +544,7 @@ class A2AExtensionsService:
             delegate_name="list_plugins",
         )
 
-    async def read_codex_plugin(
+    async def read_upstream_plugin(
         self,
         *,
         runtime: A2ARuntime,
@@ -571,6 +571,40 @@ class A2AExtensionsService:
                 "marketplace_path": resolved_marketplace_path,
                 "plugin_name": resolved_plugin_name,
             },
+        )
+
+    async def list_codex_skills(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ExtensionCallResult:
+        return await self.list_upstream_skills(runtime=runtime)
+
+    async def list_codex_apps(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ExtensionCallResult:
+        return await self.list_upstream_apps(runtime=runtime)
+
+    async def list_codex_plugins(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ExtensionCallResult:
+        return await self.list_upstream_plugins(runtime=runtime)
+
+    async def read_codex_plugin(
+        self,
+        *,
+        runtime: A2ARuntime,
+        marketplace_path: str,
+        plugin_name: str,
+    ) -> ExtensionCallResult:
+        return await self.read_upstream_plugin(
+            runtime=runtime,
+            marketplace_path=marketplace_path,
+            plugin_name=plugin_name,
         )
 
     async def reply_permission_interrupt(

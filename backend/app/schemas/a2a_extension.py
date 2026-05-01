@@ -294,7 +294,7 @@ class A2AModelDiscoveryRequest(BaseModel):
     )
 
 
-class A2ACodexDiscoveryPluginReadRequest(BaseModel):
+class A2AUpstreamDiscoveryPluginReadRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     marketplace_path: str = Field(..., alias="marketplacePath", min_length=1)
@@ -578,7 +578,7 @@ class A2AInterruptRecoveryResponse(BaseModel):
     items: List[A2AInterruptRecoveryItemResponse] = Field(default_factory=list)
 
 
-class A2ACodexDiscoverySkillResponse(BaseModel):
+class A2AUpstreamDiscoverySkillResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     name: str
@@ -590,26 +590,26 @@ class A2ACodexDiscoverySkillResponse(BaseModel):
     codex: Dict[str, Any] = Field(default_factory=dict)
 
 
-class A2ACodexDiscoverySkillScopeResponse(BaseModel):
+class A2AUpstreamDiscoverySkillScopeResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     cwd: str
-    skills: List[A2ACodexDiscoverySkillResponse] = Field(default_factory=list)
+    skills: List[A2AUpstreamDiscoverySkillResponse] = Field(default_factory=list)
     errors: List[Dict[str, Any]] = Field(default_factory=list)
     codex: Dict[str, Any] = Field(default_factory=dict)
 
 
-class A2ACodexDiscoverySkillsListResult(BaseModel):
+class A2AUpstreamDiscoverySkillsListResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    items: List[A2ACodexDiscoverySkillScopeResponse] = Field(default_factory=list)
+    items: List[A2AUpstreamDiscoverySkillScopeResponse] = Field(default_factory=list)
 
 
-class A2ACodexDiscoverySkillsListResponse(A2AExtensionResponse):
-    result: Optional[A2ACodexDiscoverySkillsListResult] = None
+class A2AUpstreamDiscoverySkillsListResponse(A2AExtensionResponse):
+    result: Optional[A2AUpstreamDiscoverySkillsListResult] = None
 
 
-class A2ACodexDiscoveryAppResponse(BaseModel):
+class A2AUpstreamDiscoveryAppResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
@@ -624,18 +624,18 @@ class A2ACodexDiscoveryAppResponse(BaseModel):
     codex: Dict[str, Any] = Field(default_factory=dict)
 
 
-class A2ACodexDiscoveryAppsListResult(BaseModel):
+class A2AUpstreamDiscoveryAppsListResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    items: List[A2ACodexDiscoveryAppResponse] = Field(default_factory=list)
+    items: List[A2AUpstreamDiscoveryAppResponse] = Field(default_factory=list)
     next_cursor: Optional[str] = Field(default=None, alias="nextCursor")
 
 
-class A2ACodexDiscoveryAppsListResponse(A2AExtensionResponse):
-    result: Optional[A2ACodexDiscoveryAppsListResult] = None
+class A2AUpstreamDiscoveryAppsListResponse(A2AExtensionResponse):
+    result: Optional[A2AUpstreamDiscoveryAppsListResult] = None
 
 
-class A2ACodexDiscoveryPluginSummaryResponse(BaseModel):
+class A2AUpstreamDiscoveryPluginSummaryResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     name: str
@@ -646,20 +646,22 @@ class A2ACodexDiscoveryPluginSummaryResponse(BaseModel):
     codex: Dict[str, Any] = Field(default_factory=dict)
 
 
-class A2ACodexDiscoveryPluginMarketplaceResponse(BaseModel):
+class A2AUpstreamDiscoveryPluginMarketplaceResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     marketplace_name: str = Field(..., alias="marketplaceName")
     marketplace_path: str = Field(..., alias="marketplacePath")
     interface: Optional[Dict[str, Any]] = None
-    plugins: List[A2ACodexDiscoveryPluginSummaryResponse] = Field(default_factory=list)
+    plugins: List[A2AUpstreamDiscoveryPluginSummaryResponse] = Field(
+        default_factory=list
+    )
     codex: Dict[str, Any] = Field(default_factory=dict)
 
 
-class A2ACodexDiscoveryPluginsListResult(BaseModel):
+class A2AUpstreamDiscoveryPluginsListResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    items: List[A2ACodexDiscoveryPluginMarketplaceResponse] = Field(
+    items: List[A2AUpstreamDiscoveryPluginMarketplaceResponse] = Field(
         default_factory=list
     )
     featured_plugin_ids: List[str] = Field(
@@ -671,11 +673,11 @@ class A2ACodexDiscoveryPluginsListResult(BaseModel):
     remote_sync_error: Optional[str] = Field(default=None, alias="remoteSyncError")
 
 
-class A2ACodexDiscoveryPluginsListResponse(A2AExtensionResponse):
-    result: Optional[A2ACodexDiscoveryPluginsListResult] = None
+class A2AUpstreamDiscoveryPluginsListResponse(A2AExtensionResponse):
+    result: Optional[A2AUpstreamDiscoveryPluginsListResult] = None
 
 
-class A2ACodexDiscoveryPluginReadItemResponse(BaseModel):
+class A2AUpstreamDiscoveryPluginReadItemResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     name: str
@@ -690,12 +692,31 @@ class A2ACodexDiscoveryPluginReadItemResponse(BaseModel):
     codex: Dict[str, Any] = Field(default_factory=dict)
 
 
-class A2ACodexDiscoveryPluginReadResult(BaseModel):
-    item: A2ACodexDiscoveryPluginReadItemResponse
+class A2AUpstreamDiscoveryPluginReadResult(BaseModel):
+    item: A2AUpstreamDiscoveryPluginReadItemResponse
 
 
-class A2ACodexDiscoveryPluginReadResponse(A2AExtensionResponse):
-    result: Optional[A2ACodexDiscoveryPluginReadResult] = None
+class A2AUpstreamDiscoveryPluginReadResponse(A2AExtensionResponse):
+    result: Optional[A2AUpstreamDiscoveryPluginReadResult] = None
+
+
+A2ACodexDiscoveryPluginReadRequest = A2AUpstreamDiscoveryPluginReadRequest
+A2ACodexDiscoverySkillResponse = A2AUpstreamDiscoverySkillResponse
+A2ACodexDiscoverySkillScopeResponse = A2AUpstreamDiscoverySkillScopeResponse
+A2ACodexDiscoverySkillsListResult = A2AUpstreamDiscoverySkillsListResult
+A2ACodexDiscoverySkillsListResponse = A2AUpstreamDiscoverySkillsListResponse
+A2ACodexDiscoveryAppResponse = A2AUpstreamDiscoveryAppResponse
+A2ACodexDiscoveryAppsListResult = A2AUpstreamDiscoveryAppsListResult
+A2ACodexDiscoveryAppsListResponse = A2AUpstreamDiscoveryAppsListResponse
+A2ACodexDiscoveryPluginSummaryResponse = A2AUpstreamDiscoveryPluginSummaryResponse
+A2ACodexDiscoveryPluginMarketplaceResponse = (
+    A2AUpstreamDiscoveryPluginMarketplaceResponse
+)
+A2ACodexDiscoveryPluginsListResult = A2AUpstreamDiscoveryPluginsListResult
+A2ACodexDiscoveryPluginsListResponse = A2AUpstreamDiscoveryPluginsListResponse
+A2ACodexDiscoveryPluginReadItemResponse = A2AUpstreamDiscoveryPluginReadItemResponse
+A2ACodexDiscoveryPluginReadResult = A2AUpstreamDiscoveryPluginReadResult
+A2ACodexDiscoveryPluginReadResponse = A2AUpstreamDiscoveryPluginReadResponse
 
 
 class A2AExtensionCapabilitiesResponse(BaseModel):

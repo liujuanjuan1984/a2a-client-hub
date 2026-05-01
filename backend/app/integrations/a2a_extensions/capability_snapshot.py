@@ -80,7 +80,7 @@ class SessionQueryCapabilitySnapshot:
     error: str | None = None
 
     @property
-    def selection_meta(self) -> dict[str, Any]:
+    def runtime_hints(self) -> dict[str, Any]:
         if self.capability is None:
             return {}
         return {
@@ -89,6 +89,10 @@ class SessionQueryCapabilitySnapshot:
                 self.capability.compatibility_hints_applied
             ),
         }
+
+    @property
+    def selection_meta(self) -> dict[str, Any]:
+        return self.runtime_hints
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +197,10 @@ class ResolvedCapabilitySnapshot:
     codex_review: DeclaredMethodCollectionCapabilitySnapshot
     codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot
     codex_exec: DeclaredMethodCollectionCapabilitySnapshot
+
+    @property
+    def upstream_discovery(self) -> DeclaredMethodCollectionCapabilitySnapshot:
+        return self.codex_discovery
 
     @property
     def upstream_method_families(

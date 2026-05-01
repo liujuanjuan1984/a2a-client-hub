@@ -165,15 +165,15 @@ If an upstream server needs to describe method-specific result structures, that 
 At onboarding time, Hub emits:
 
 - `status = supported | unsupported | invalid`
-- `declaredContractFamily = opencode | codex | legacy` when the declaration family is recognized
-- `selection_mode = direct | codex_compatibility` when Hub exposes runtime-selection metadata
+- `declaredContractFamily` only as a diagnostic declaration summary
+- capability summaries that describe whether Hub can negotiate and consume the extension
 
-At runtime, Hub uses that classification to choose:
+At runtime, Hub does not rely on a long-lived provider family branch. Instead it:
 
-- the direct parser path for `opencode`
-- the explicit legacy compatibility path
-- the explicit Codex compatibility path
-- or fast-fail for unsupported / invalid contracts
+- consumes the declared shared session query contract directly
+- attaches runtime negotiation hints when compatibility adaptations were required
+- treats provider-private compatibility details as advisory diagnostics
+- fast-fails only for unsupported / invalid contracts
 
 ## Reference Payloads
 

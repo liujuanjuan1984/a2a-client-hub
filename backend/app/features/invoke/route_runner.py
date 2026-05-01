@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Literal
+import inspect
+from typing import Any, Awaitable, Callable, Literal, cast
 from uuid import UUID
 
 from fastapi import WebSocket
@@ -252,6 +253,22 @@ async def _unregister_inflight_invoke(
         state=state,
         user_id=user_id,
     )
+
+
+async def _run_with_inflight_cleanup_on_error(
+    *,
+    state: InvokeState,
+    user_id: UUID,
+    operation: Callable[[], Any],
+) -> Any:
+    try:
+        result = operation()
+        if inspect.isawaitable(result):
+            return await result
+        return result
+    except Exception:
+        await _unregister_inflight_invoke(state=state, user_id=user_id)
+        raise
 
 
 async def _try_acquire_invoke_guard(guard_key: str) -> bool:
@@ -622,8 +639,42 @@ async def run_http_invoke(
             logger=logger,
             log_extra=stream_log_extra,
         )
-        try:
-            return a2a_invoke_streaming_runtime.stream_sse(
+        return cast(
+            StreamingResponse,
+            await _run_with_inflight_cleanup_on_error(
+                state=state,
+                user_id=user_id,
+                operation=lambda: a2a_invoke_streaming_runtime.stream_sse(
+                    gateway=gateway,
+                    resolved=runtime.resolved,
+                    query=payload.query,
+                    context_id=state.context_id,
+                    metadata=upstream_metadata,
+                    requested_extensions=requested_extensions,
+                    validate_message=validate_message,
+                    logger=logger,
+                    log_extra=stream_log_extra,
+                    on_event=on_event,
+                    on_finalized=on_finalized,
+                    on_session_started=on_session_started,
+                    resume_from_sequence=payload.resume_from_sequence,
+                    cache_key=state.user_message_id,
+                ),
+            ),
+        )
+
+    on_event, on_finalized = _build_consume_stream_callbacks(
+        state=state,
+        request=persistence_request,
+        logger=logger,
+        log_extra=stream_log_extra,
+    )
+    outcome = cast(
+        StreamOutcome,
+        await _run_with_inflight_cleanup_on_error(
+            state=state,
+            user_id=user_id,
+            operation=lambda: a2a_invoke_streaming_runtime.consume_stream(
                 gateway=gateway,
                 resolved=runtime.resolved,
                 query=payload.query,
@@ -636,37 +687,9 @@ async def run_http_invoke(
                 on_event=on_event,
                 on_finalized=on_finalized,
                 on_session_started=on_session_started,
-                resume_from_sequence=payload.resume_from_sequence,
-                cache_key=state.user_message_id,
-            )
-        except Exception:
-            await _unregister_inflight_invoke(state=state, user_id=user_id)
-            raise
-
-    on_event, on_finalized = _build_consume_stream_callbacks(
-        state=state,
-        request=persistence_request,
-        logger=logger,
-        log_extra=stream_log_extra,
+            ),
+        ),
     )
-    try:
-        outcome = await a2a_invoke_streaming_runtime.consume_stream(
-            gateway=gateway,
-            resolved=runtime.resolved,
-            query=payload.query,
-            context_id=state.context_id,
-            metadata=upstream_metadata,
-            requested_extensions=requested_extensions,
-            validate_message=validate_message,
-            logger=logger,
-            log_extra=stream_log_extra,
-            on_event=on_event,
-            on_finalized=on_finalized,
-            on_session_started=on_session_started,
-        )
-    except Exception:
-        await _unregister_inflight_invoke(state=state, user_id=user_id)
-        raise
     success = bool(outcome.success)
     content = state.persisted_response_content
     if content is None:
@@ -781,27 +804,30 @@ async def run_background_invoke(
         logger=logger,
         log_extra=stream_log_extra,
     )
-    try:
-        outcome = await a2a_invoke_streaming_runtime.consume_stream(
-            gateway=gateway,
-            invoke_session=invoke_session,
-            resolved=runtime.resolved,
-            query=payload.query,
-            context_id=state.context_id,
-            metadata=upstream_metadata,
-            requested_extensions=requested_extensions,
-            validate_message=validate_message,
-            logger=logger,
-            log_extra=stream_log_extra,
-            on_event=on_event,
-            on_finalized=on_finalized,
-            on_session_started=on_session_started,
-            total_timeout_seconds=total_timeout_seconds,
-            idle_timeout_seconds=idle_timeout_seconds,
-        )
-    except Exception:
-        await _unregister_inflight_invoke(state=state, user_id=user_id)
-        raise
+    outcome = cast(
+        StreamOutcome,
+        await _run_with_inflight_cleanup_on_error(
+            state=state,
+            user_id=user_id,
+            operation=lambda: a2a_invoke_streaming_runtime.consume_stream(
+                gateway=gateway,
+                invoke_session=invoke_session,
+                resolved=runtime.resolved,
+                query=payload.query,
+                context_id=state.context_id,
+                metadata=upstream_metadata,
+                requested_extensions=requested_extensions,
+                validate_message=validate_message,
+                logger=logger,
+                log_extra=stream_log_extra,
+                on_event=on_event,
+                on_finalized=on_finalized,
+                on_session_started=on_session_started,
+                total_timeout_seconds=total_timeout_seconds,
+                idle_timeout_seconds=idle_timeout_seconds,
+            ),
+        ),
+    )
     success = bool(outcome.success)
     response_content = state.persisted_response_content
     if response_content is None:

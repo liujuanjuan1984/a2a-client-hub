@@ -331,14 +331,14 @@ Endpoints:
   - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions as a consumed request-scoped capability surface.
   - `streamHints` surfaces whether the shared stream-hints contract is declared, whether Hub actively consumes it, which metadata fields are used, and whether Hub had to fall back to compatibility heuristics.
   - `interruptRecoveryDetails` surfaces adapter-local interrupt recovery scope diagnostics, including recovery data source, identity scope, implementation scope, and whether unresolved caller identity returns an empty item list.
-- Read Codex discovery lists through Hub-stable APIs:
+- Read upstream discovery lists through Hub-stable APIs:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/skills`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/apps`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins`
-- Read Codex plugin details through a Hub-stable API:
+- Read upstream plugin details through a Hub-stable API:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins:read`
     - body: `{ "marketplacePath": "plugin://marketplace/codex-default", "pluginName": "planner" }`
-  - Codex discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
+  - Upstream discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body: `{ "workingDirectory": "/workspace/app" }`

@@ -229,7 +229,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.list_sessions(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             page=page,
             size=size,
             query=query,
@@ -260,7 +260,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_messages(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             page=page,
             size=size,
@@ -287,7 +287,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.continue_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             binding_meta=dict(snapshot.session_binding.meta or {}),
             session_id=session_id,
         )
@@ -318,7 +318,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.prompt_session_async(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -389,7 +389,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.prompt_session_async(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata_for_upstream,
@@ -422,7 +422,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.command_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -449,7 +449,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             include_raw=include_raw,
         )
@@ -474,7 +474,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_children(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             include_raw=include_raw,
         )
@@ -499,7 +499,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_todo(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             include_raw=include_raw,
         )
@@ -525,7 +525,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_diff(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             message_id=message_id,
             include_raw=include_raw,
@@ -555,7 +555,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_message(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             message_id=message_id,
             include_raw=include_raw,
@@ -586,7 +586,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.fork_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -615,7 +615,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.share_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             metadata=metadata,
         )
@@ -643,7 +643,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.unshare_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             metadata=metadata,
         )
@@ -673,7 +673,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.summarize_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -704,7 +704,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.revert_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -733,7 +733,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.unrevert_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             metadata=metadata,
         )

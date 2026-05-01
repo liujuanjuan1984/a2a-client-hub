@@ -149,7 +149,7 @@ UPSTREAM_METHOD_FAMILY_SPECS: dict[str, UpstreamMethodFamilySpec] = {
     ),
 }
 _CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
-_CODEX_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
+_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
 
 
 def build_session_query_snapshot(card: Any) -> SessionQueryCapabilitySnapshot:
@@ -303,7 +303,7 @@ def build_request_execution_options_snapshot(
                 contract.get("metadata_field"),
                 field="params.request_execution_options.metadata_field",
             )
-            if current_metadata_field != _CODEX_REQUEST_EXECUTION_METADATA_FIELD:
+            if current_metadata_field != _REQUEST_EXECUTION_METADATA_FIELD:
                 raise A2AExtensionContractError(
                     "Extension contract missing/invalid "
                     "'params.request_execution_options.metadata_field'"
@@ -728,7 +728,7 @@ def build_declared_method_collection_snapshot(
     )
 
 
-def build_codex_discovery_snapshot(
+def build_upstream_discovery_snapshot(
     card: Any,
     wire_contract: WireContractCapabilitySnapshot,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot,
@@ -788,6 +788,21 @@ def build_codex_discovery_snapshot(
         declaration_confidence=fallback.confidence,
         negotiation_state=fallback.negotiation_state,
         diagnostic_note=fallback.note,
+    )
+
+
+def build_codex_discovery_snapshot(
+    card: Any,
+    wire_contract: WireContractCapabilitySnapshot,
+    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
+    *,
+    jsonrpc_url: str | None,
+) -> DeclaredMethodCollectionCapabilitySnapshot:
+    return build_upstream_discovery_snapshot(
+        card,
+        wire_contract,
+        compatibility_profile,
+        jsonrpc_url=jsonrpc_url,
     )
 
 

@@ -617,7 +617,7 @@ async def test_list_model_providers_returns_method_not_supported_when_wire_contr
 
 
 @pytest.mark.asyncio
-async def test_list_codex_skills_invokes_codex_discovery_service(
+async def test_list_upstream_skills_invokes_upstream_discovery_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -679,27 +679,29 @@ async def test_list_codex_skills_invokes_codex_discovery_service(
         )
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
-    monkeypatch.setattr(service._codex_discovery, "list_skills", _fake_list_skills)
+    monkeypatch.setattr(service._upstream_discovery, "list_skills", _fake_list_skills)
 
-    result = await service.list_codex_skills(runtime=runtime)
+    result = await service.list_upstream_skills(runtime=runtime)
 
     assert result.success is True
     assert result.result == {"items": []}
 
 
 @pytest.mark.asyncio
-async def test_read_codex_plugin_validates_marketplace_path_and_plugin_name() -> None:
+async def test_read_upstream_plugin_validates_marketplace_path_and_plugin_name() -> (
+    None
+):
     service = A2AExtensionsService()
     runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
 
     with pytest.raises(ValueError):
-        await service.read_codex_plugin(
+        await service.read_upstream_plugin(
             runtime=runtime,
             marketplace_path="   ",
             plugin_name="planner",
         )
     with pytest.raises(ValueError):
-        await service.read_codex_plugin(
+        await service.read_upstream_plugin(
             runtime=runtime,
             marketplace_path="/workspace/.codex/plugins/marketplace.json",
             plugin_name="   ",
@@ -707,7 +709,7 @@ async def test_read_codex_plugin_validates_marketplace_path_and_plugin_name() ->
 
 
 @pytest.mark.asyncio
-async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract_disallows_method(
+async def test_read_upstream_plugin_returns_method_not_supported_when_wire_contract_disallows_method(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -766,10 +768,10 @@ async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(
-        service._codex_discovery, "read_plugin", _unexpected_read_plugin
+        service._upstream_discovery, "read_plugin", _unexpected_read_plugin
     )
 
-    result = await service.read_codex_plugin(
+    result = await service.read_upstream_plugin(
         runtime=runtime,
         marketplace_path="/workspace/.codex/plugins/marketplace.json",
         plugin_name="planner",

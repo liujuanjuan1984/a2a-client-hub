@@ -1295,7 +1295,7 @@ async def test_hub_generic_model_discovery_routes_forward_working_directory(
 
 
 @pytest.mark.asyncio
-async def test_hub_codex_discovery_routes_return_normalized_results(
+async def test_hub_upstream_discovery_routes_return_normalized_results(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
@@ -1303,9 +1303,9 @@ async def test_hub_codex_discovery_routes_return_normalized_results(
     agent_id, user = await _create_allowlisted_hub_agent(
         async_session_maker=async_session_maker,
         async_db_session=async_db_session,
-        admin_email="admin_codex_discovery@example.com",
-        user_email="alice_codex_discovery@example.com",
-        token="secret-token-codex-discovery",
+        admin_email="admin_upstream_discovery@example.com",
+        user_email="alice_upstream_discovery@example.com",
+        token="secret-token-upstream-discovery",
     )
 
     fake_extensions = _FakeExtensionsService()
@@ -1348,8 +1348,8 @@ async def test_hub_codex_discovery_routes_return_normalized_results(
         )
         assert plugin_payload["result"]["item"]["summary"] == ["Use for planning"]
 
-    assert fake_extensions.calls[0]["fn"] == "list_codex_skills"
-    assert fake_extensions.calls[1]["fn"] == "read_codex_plugin"
+    assert fake_extensions.calls[0]["fn"] == "list_upstream_skills"
+    assert fake_extensions.calls[1]["fn"] == "read_upstream_plugin"
     assert fake_extensions.calls[1]["marketplace_path"] == (
         "/workspace/project/.codex/plugins/marketplace.json"
     )

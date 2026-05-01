@@ -908,7 +908,7 @@ async def test_extended_session_management_methods_delegate_to_session_service(
     assert result.success is True
     assert result.result == delegate_result
     assert captured["ext"] is ext
-    assert captured["selection_meta"] == {
+    assert captured["runtime_hints"] == {
         "session_query_negotiation_mode": "declared_contract",
         "session_query_compatibility_hints_applied": False,
     }
