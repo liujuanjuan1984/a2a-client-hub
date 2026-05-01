@@ -343,7 +343,7 @@ async def test_personal_agent_http_invoke_injects_session_bound_invoke_metadata(
             invoke_metadata_ext=ResolvedInvokeMetadataExtension(
                 uri="urn:a2a:invoke-metadata/v1",
                 required=False,
-                provider_key="commonground",
+                provider_key="example_provider",
                 metadata_field="metadata.shared.invoke",
                 behavior="merge_bound_metadata_into_invoke",
                 applies_to_methods=("message/send", "message/stream"),
@@ -419,7 +419,7 @@ async def test_personal_agent_http_invoke_returns_preflight_binding_error_when_d
             invoke_metadata_ext=ResolvedInvokeMetadataExtension(
                 uri="urn:a2a:invoke-metadata/v1",
                 required=False,
-                provider_key="commonground",
+                provider_key="example_provider",
                 metadata_field="metadata.shared.invoke",
                 behavior="merge_bound_metadata_into_invoke",
                 applies_to_methods=("message/send", "message/stream"),

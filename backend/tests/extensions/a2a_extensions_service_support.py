@@ -303,7 +303,7 @@ def _invoke_metadata_extension_fixture() -> ResolvedInvokeMetadataExtension:
     return ResolvedInvokeMetadataExtension(
         uri=INVOKE_METADATA_URI,
         required=False,
-        provider_key="commonground",
+        provider_key="example_provider",
         metadata_field=SHARED_INVOKE_FIELD,
         behavior="merge_bound_metadata_into_invoke",
         applies_to_methods=("message/send", "message/stream"),
