@@ -428,6 +428,3 @@ class UpstreamDiscoveryService:
         except ValueError as exc:
             return self._payload_error(message=str(exc), meta=meta)
         return ExtensionCallResult(success=True, result=normalized, meta=meta)
-
-
-CodexDiscoveryService = UpstreamDiscoveryService

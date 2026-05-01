@@ -235,7 +235,7 @@ def _capability_snapshot(
     stream_hints: StreamHintsCapabilitySnapshot | None = None,
     wire_contract: WireContractCapabilitySnapshot | None = None,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot | None = None,
-    codex_discovery: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_discovery: DeclaredMethodCollectionCapabilitySnapshot | None = None,
     codex_threads: DeclaredMethodCollectionCapabilitySnapshot | None = None,
     codex_turns: DeclaredMethodCollectionCapabilitySnapshot | None = None,
     codex_review: DeclaredMethodCollectionCapabilitySnapshot | None = None,
@@ -262,7 +262,7 @@ def _capability_snapshot(
         wire_contract=wire_contract or _wire_contract_snapshot(),
         compatibility_profile=compatibility_profile
         or _compatibility_profile_snapshot(),
-        codex_discovery=codex_discovery
+        upstream_discovery=upstream_discovery
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,

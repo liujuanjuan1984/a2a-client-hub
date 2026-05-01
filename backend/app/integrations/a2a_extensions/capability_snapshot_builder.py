@@ -791,21 +791,6 @@ def build_upstream_discovery_snapshot(
     )
 
 
-def build_codex_discovery_snapshot(
-    card: Any,
-    wire_contract: WireContractCapabilitySnapshot,
-    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredMethodCollectionCapabilitySnapshot:
-    return build_upstream_discovery_snapshot(
-        card,
-        wire_contract,
-        compatibility_profile,
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
 def build_codex_exec_snapshot(
     wire_contract: WireContractCapabilitySnapshot,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot,

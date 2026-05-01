@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.integrations.a2a_extensions.codex_discovery_service import (
+from app.integrations.a2a_extensions.service_common import ExtensionCallResult
+from app.integrations.a2a_extensions.upstream_discovery_service import (
     UpstreamDiscoveryService,
 )
-from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 
 
 class _FakeSupport:

@@ -162,7 +162,7 @@ class A2AExtensionCapabilityService:
             stream_hints=capability_snapshot_builder.build_stream_hints_snapshot(card),
             wire_contract=wire_contract,
             compatibility_profile=compatibility_profile,
-            codex_discovery=capability_snapshot_builder.build_upstream_discovery_snapshot(
+            upstream_discovery=capability_snapshot_builder.build_upstream_discovery_snapshot(
                 card,
                 wire_contract,
                 compatibility_profile,

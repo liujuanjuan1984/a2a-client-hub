@@ -179,7 +179,7 @@ def create_extension_capability_router(
         )
 
     @router.get(
-        "/{agent_id}/extensions/codex/skills",
+        "/{agent_id}/extensions/upstream/skills",
         response_model=A2AUpstreamDiscoverySkillsListResponse,
         status_code=status.HTTP_200_OK,
     )
@@ -205,7 +205,7 @@ def create_extension_capability_router(
         )
 
     @router.get(
-        "/{agent_id}/extensions/codex/apps",
+        "/{agent_id}/extensions/upstream/apps",
         response_model=A2AUpstreamDiscoveryAppsListResponse,
         status_code=status.HTTP_200_OK,
     )
@@ -231,7 +231,7 @@ def create_extension_capability_router(
         )
 
     @router.get(
-        "/{agent_id}/extensions/codex/plugins",
+        "/{agent_id}/extensions/upstream/plugins",
         response_model=A2AUpstreamDiscoveryPluginsListResponse,
         status_code=status.HTTP_200_OK,
     )
@@ -257,7 +257,7 @@ def create_extension_capability_router(
         )
 
     @router.post(
-        "/{agent_id}/extensions/codex/plugins:read",
+        "/{agent_id}/extensions/upstream/plugins:read",
         response_model=A2AUpstreamDiscoveryPluginReadResponse,
         status_code=status.HTTP_200_OK,
     )

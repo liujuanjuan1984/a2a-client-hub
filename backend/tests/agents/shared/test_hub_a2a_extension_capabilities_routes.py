@@ -173,7 +173,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 ),
             ),
         ),
-        codex_discovery=SimpleNamespace(
+        upstream_discovery=SimpleNamespace(
             declared=True,
             consumed_by_hub=True,
             status="supported",
@@ -1322,7 +1322,7 @@ async def test_hub_upstream_discovery_routes_return_normalized_results(
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         skills_resp = await user_client.get(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/codex/skills"
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/upstream/skills"
         )
         assert skills_resp.status_code == 200
         skills_payload = skills_resp.json()
@@ -1333,7 +1333,7 @@ async def test_hub_upstream_discovery_routes_return_normalized_results(
         )
 
         plugin_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/codex/plugins:read",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/upstream/plugins:read",
             json={
                 "marketplacePath": "/workspace/project/.codex/plugins/marketplace.json",
                 "pluginName": "planner",

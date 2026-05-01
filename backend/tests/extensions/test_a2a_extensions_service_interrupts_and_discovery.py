@@ -636,7 +636,7 @@ async def test_list_upstream_skills_invokes_upstream_discovery_service(
                 status="supported", ext=wire_contract
             ),
             compatibility_profile=_compatibility_profile_snapshot(),
-            codex_discovery=DeclaredMethodCollectionCapabilitySnapshot(
+            upstream_discovery=DeclaredMethodCollectionCapabilitySnapshot(
                 declared=True,
                 consumed_by_hub=True,
                 status="supported",
@@ -724,7 +724,7 @@ async def test_read_upstream_plugin_returns_method_not_supported_when_wire_contr
             wire_contract=_wire_contract_snapshot(
                 status="supported", ext=wire_contract
             ),
-            codex_discovery=DeclaredMethodCollectionCapabilitySnapshot(
+            upstream_discovery=DeclaredMethodCollectionCapabilitySnapshot(
                 declared=True,
                 consumed_by_hub=True,
                 status="partially_consumed",

@@ -12,9 +12,6 @@ from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.capability_snapshot import (
     ResolvedCapabilitySnapshot,
 )
-from app.integrations.a2a_extensions.codex_discovery_service import (
-    UpstreamDiscoveryService,
-)
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
 )
@@ -44,6 +41,9 @@ from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     ResolvedInvokeMetadataExtension,
     ResolvedSessionBindingExtension,
+)
+from app.integrations.a2a_extensions.upstream_discovery_service import (
+    UpstreamDiscoveryService,
 )
 
 logger = get_logger(__name__)
@@ -571,40 +571,6 @@ class A2AExtensionsService:
                 "marketplace_path": resolved_marketplace_path,
                 "plugin_name": resolved_plugin_name,
             },
-        )
-
-    async def list_codex_skills(
-        self,
-        *,
-        runtime: A2ARuntime,
-    ) -> ExtensionCallResult:
-        return await self.list_upstream_skills(runtime=runtime)
-
-    async def list_codex_apps(
-        self,
-        *,
-        runtime: A2ARuntime,
-    ) -> ExtensionCallResult:
-        return await self.list_upstream_apps(runtime=runtime)
-
-    async def list_codex_plugins(
-        self,
-        *,
-        runtime: A2ARuntime,
-    ) -> ExtensionCallResult:
-        return await self.list_upstream_plugins(runtime=runtime)
-
-    async def read_codex_plugin(
-        self,
-        *,
-        runtime: A2ARuntime,
-        marketplace_path: str,
-        plugin_name: str,
-    ) -> ExtensionCallResult:
-        return await self.read_upstream_plugin(
-            runtime=runtime,
-            marketplace_path=marketplace_path,
-            plugin_name=plugin_name,
         )
 
     async def reply_permission_interrupt(

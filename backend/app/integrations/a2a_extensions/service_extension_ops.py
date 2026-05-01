@@ -5,9 +5,6 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, cast
 
 from app.features.agents.personal.runtime import A2ARuntime
-from app.integrations.a2a_extensions.codex_discovery_service import (
-    UpstreamDiscoveryService,
-)
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
 )
@@ -22,6 +19,9 @@ from app.integrations.a2a_extensions.service_capabilities import (
     A2AExtensionCapabilityService,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
+from app.integrations.a2a_extensions.upstream_discovery_service import (
+    UpstreamDiscoveryService,
+)
 
 
 class A2AExtensionOperations:

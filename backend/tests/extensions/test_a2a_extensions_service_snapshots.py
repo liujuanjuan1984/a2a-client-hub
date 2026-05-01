@@ -222,7 +222,7 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     )
 
     compatibility_profile = _compatibility_profile_snapshot()
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card,
         wire_contract,
         compatibility_profile,
@@ -353,7 +353,7 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
     compatibility_profile = _compatibility_profile_snapshot()
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card, wire_contract, compatibility_profile, jsonrpc_url=None
     )
     threads = capability_snapshot_builder.build_codex_threads_snapshot(
@@ -555,7 +555,7 @@ def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
     )
 
 
-def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
+def test_build_upstream_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -576,7 +576,7 @@ def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> N
         error="Extension contract missing/invalid 'params.protocol_version'",
     )
 
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card,
         wire_contract,
         _compatibility_profile_snapshot(),
@@ -681,7 +681,7 @@ def test_build_request_execution_options_snapshot_reports_invalid_contract() -> 
     )
 
 
-def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
+def test_build_upstream_discovery_snapshot_uses_extension_method_hints() -> None:
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -698,7 +698,7 @@ def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
     )
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card,
         wire_contract,
         _compatibility_profile_snapshot(),

@@ -191,7 +191,7 @@ class ResolvedCapabilitySnapshot:
     stream_hints: StreamHintsCapabilitySnapshot
     wire_contract: WireContractCapabilitySnapshot
     compatibility_profile: CompatibilityProfileCapabilitySnapshot
-    codex_discovery: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_discovery: DeclaredMethodCollectionCapabilitySnapshot
     codex_threads: DeclaredMethodCollectionCapabilitySnapshot
     codex_turns: DeclaredMethodCollectionCapabilitySnapshot
     codex_review: DeclaredMethodCollectionCapabilitySnapshot
@@ -199,15 +199,11 @@ class ResolvedCapabilitySnapshot:
     codex_exec: DeclaredMethodCollectionCapabilitySnapshot
 
     @property
-    def upstream_discovery(self) -> DeclaredMethodCollectionCapabilitySnapshot:
-        return self.codex_discovery
-
-    @property
     def upstream_method_families(
         self,
     ) -> dict[str, DeclaredMethodCollectionCapabilitySnapshot]:
         return {
-            "discovery": self.codex_discovery,
+            "discovery": self.upstream_discovery,
             "threads": self.codex_threads,
             "turns": self.codex_turns,
             "review": self.codex_review,
