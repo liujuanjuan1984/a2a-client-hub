@@ -152,9 +152,9 @@
     "expected": {
       "eventId": "stream:4",
       "seq": 4,
-      "messageId": null,
+      "messageId": "task:task-raw-1",
       "artifactId": "task-raw-1:stream:text",
-      "blockId": "task-raw-1:stream:text:primary_text",
+      "blockId": "task:task-raw-1:primary_text",
       "laneId": "primary_text",
       "blockType": "text",
       "op": "append",

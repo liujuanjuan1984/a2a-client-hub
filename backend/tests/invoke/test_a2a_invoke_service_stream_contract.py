@@ -468,8 +468,9 @@ def test_extract_stream_chunk_inferrs_artifact_text_payloads_without_explicit_bl
     assert chunk is not None
     assert chunk["event_id"] == "stream:4"
     assert chunk["seq"] == 4
-    assert chunk["message_id"] is None
+    assert chunk["message_id"] == "task:task-artifact-1"
     assert chunk["artifact_id"] == "task-artifact-1:stream:text"
+    assert chunk["block_id"] == "task:task-artifact-1:primary_text"
     assert chunk["block_type"] == "text"
     assert chunk["op"] == "append"
     assert chunk["append"] is True
