@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "scheme": "a2a-client-hub",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -28,7 +27,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#05070a"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.liujuanjuan.a2a.client",
       "predictiveBackGestureEnabled": true,
       "versionCode": 1

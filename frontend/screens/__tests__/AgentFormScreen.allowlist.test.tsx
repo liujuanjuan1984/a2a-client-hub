@@ -141,15 +141,18 @@ jest.mock("@/components/ui/Input", () => {
   const { TextInput } = require("react-native");
   return {
     Input: ({
+      label,
       placeholder,
       value,
       onChangeText,
     }: {
+      label?: string;
       placeholder?: string;
       value?: string;
       onChangeText?: (value: string) => void;
     }) => (
       <TextInput
+        accessibilityLabel={label}
         placeholder={placeholder}
         value={value}
         onChangeText={onChangeText}
@@ -198,14 +201,9 @@ describe("AgentFormScreen auto allowlist create flow", () => {
 
     const screen = renderScreen(<AgentFormScreen />);
 
+    fireEvent.changeText(screen.getByLabelText("Name"), "Admin Agent");
     fireEvent.changeText(
-      screen.getByPlaceholderText("Agent name"),
-      "Admin Agent",
-    );
-    fireEvent.changeText(
-      screen.getByPlaceholderText(
-        "https://agent.example.com/.well-known/agent.json",
-      ),
+      screen.getByLabelText("Agent Card URL"),
       "https://blocked.example.com:8443/agent.json",
     );
     fireEvent.press(screen.getByText("Save"));
@@ -262,9 +260,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
     const screen = renderScreen(<AgentFormScreen agentId="agent-1" />);
 
     fireEvent.changeText(
-      screen.getByPlaceholderText(
-        "https://agent.example.com/.well-known/agent.json",
-      ),
+      screen.getByLabelText("Agent Card URL"),
       "https://edited.example.com:8443/agent.json",
     );
     fireEvent.press(screen.getByText("Save"));

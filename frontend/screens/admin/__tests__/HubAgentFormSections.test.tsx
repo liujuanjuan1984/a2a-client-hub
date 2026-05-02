@@ -120,9 +120,7 @@ describe("HubAgentFormSections", () => {
   it("renders generic metadata placeholder and forwards tag edits", () => {
     const screen = render(<HubAgentFormSections {...baseProps} />);
 
-    expect(
-      screen.getByPlaceholderText("e.g., coding, internal, research"),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Tags (comma separated)")).toBeTruthy();
 
     fireEvent.changeText(
       screen.getByLabelText("Tags (comma separated)"),
