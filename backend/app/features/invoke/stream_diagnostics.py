@@ -26,10 +26,12 @@ _LOG_SAMPLE_SENSITIVE_KEYWORDS = (
 )
 
 
-def extract_artifact_validation_errors(
+def extract_stream_content_validation_errors(
     payload: dict[str, Any], *, validate_message: ValidateMessageFn
 ) -> list[str]:
-    if not any(field in payload for field in ("artifactUpdate", "message")):
+    if not any(
+        field in payload for field in ("artifactUpdate", "message", "statusUpdate")
+    ):
         return []
     return [str(item) for item in validate_message(payload)]
 

@@ -716,6 +716,55 @@ async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(cap
 
 
 @pytest.mark.asyncio
+async def test_sse_validates_status_message_content_events(caplog):
+    caplog.set_level(logging.WARNING)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "statusUpdate": {
+                        "status": {
+                            "state": "TASK_STATE_WORKING",
+                            "message": {
+                                "messageId": "msg-status-invalid",
+                                "role": "ROLE_AGENT",
+                                "parts": [{"text": "hello"}],
+                            },
+                        }
+                    }
+                },
+                _status_update_event(state="TASK_STATE_COMPLETED"),
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda payload: (
+            ["invalid_status_message"]
+            if payload.get("statusUpdate", {}).get("status", {}).get("message")
+            else []
+        ),
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    frames: list[str] = []
+    async for chunk in response.body_iterator:
+        frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped invalid stream event"
+    ]
+    assert len(warning_records) == 1
+    payload = "".join(frames)
+    assert '"msg-status-invalid"' not in payload
+    assert '"TASK_STATE_COMPLETED"' in payload
+
+
+@pytest.mark.asyncio
 async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     from app.features.invoke.stream_cache.memory_cache import global_stream_cache
 

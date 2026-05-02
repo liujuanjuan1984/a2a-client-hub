@@ -21,7 +21,7 @@ from app.features.invoke.service_types import (
 from app.features.invoke.stream_diagnostics import (
     build_artifact_update_log_sample,
     build_validation_errors_log_sample,
-    extract_artifact_validation_errors,
+    extract_stream_content_validation_errors,
     warn_non_contract_stream_content_once,
 )
 
@@ -186,7 +186,7 @@ async def consume_stream(
             runtime._ensure_outbound_stream_contract(
                 serialized, event_sequence=event_sequence
             )
-            validation_errors = extract_artifact_validation_errors(
+            validation_errors = extract_stream_content_validation_errors(
                 serialized,
                 validate_message=validate_message,
             )

@@ -24,7 +24,7 @@ from app.features.invoke.service_types import (
 from app.features.invoke.stream_diagnostics import (
     build_artifact_update_log_sample,
     build_validation_errors_log_sample,
-    extract_artifact_validation_errors,
+    extract_stream_content_validation_errors,
     warn_non_contract_stream_content_once,
 )
 from app.utils.json_encoder import json_dumps
@@ -113,7 +113,7 @@ def stream_sse(
                 serialized = runtime.serialize_stream_event(
                     event, validate_message=validate_message
                 )
-                validation_errors = extract_artifact_validation_errors(
+                validation_errors = extract_stream_content_validation_errors(
                     serialized,
                     validate_message=validate_message,
                 )
@@ -333,7 +333,7 @@ async def stream_ws(
             serialized = runtime.serialize_stream_event(
                 event, validate_message=validate_message
             )
-            validation_errors = extract_artifact_validation_errors(
+            validation_errors = extract_stream_content_validation_errors(
                 serialized,
                 validate_message=validate_message,
             )
