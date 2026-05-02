@@ -606,6 +606,52 @@ const resolveCanonicalStreamResponse = (
   return { kind: null, body: null };
 };
 
+const resolveCanonicalContentArtifact = (
+  kind: "artifact-update" | "message" | "status-update" | "task" | null,
+  body: Record<string, unknown> | null,
+  rootMetadata: Record<string, unknown> | null,
+) => {
+  if (kind === "artifact-update") {
+    return asRecord(body?.artifact);
+  }
+  if (kind === "message") {
+    if (!Array.isArray(body?.parts)) {
+      return null;
+    }
+    return {
+      parts: body.parts,
+      ...(rootMetadata ? { metadata: rootMetadata } : {}),
+      ...(typeof body?.messageId === "string"
+        ? { messageId: body.messageId }
+        : {}),
+      ...(typeof body?.taskId === "string" ? { taskId: body.taskId } : {}),
+      ...(typeof body?.role === "string" ? { role: body.role } : {}),
+      ...(body?.toolCall ? { toolCall: body.toolCall } : {}),
+    };
+  }
+  if (kind === "status-update") {
+    const status = asRecord(body?.status);
+    const message = asRecord(status?.message);
+    if (!Array.isArray(message?.parts)) {
+      return null;
+    }
+    const messageMetadata = asRecord(message?.metadata);
+    return {
+      parts: message.parts,
+      ...(messageMetadata ? { metadata: messageMetadata } : {}),
+      ...(typeof message?.messageId === "string"
+        ? { messageId: message.messageId }
+        : {}),
+      ...(typeof message?.taskId === "string"
+        ? { taskId: message.taskId }
+        : {}),
+      ...(typeof message?.role === "string" ? { role: message.role } : {}),
+      ...(message?.toolCall ? { toolCall: message.toolCall } : {}),
+    };
+  }
+  return null;
+};
+
 const extractToolCallView = (
   source: Record<string, unknown> | null,
 ): ToolCallView | null => {
@@ -662,19 +708,15 @@ export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
 ): StreamBlockUpdate | null => {
   const { kind, body } = resolveCanonicalStreamResponse(data);
-  if (kind !== "artifact-update" && kind !== "message") {
+  if (
+    kind !== "artifact-update" &&
+    kind !== "message" &&
+    kind !== "status-update"
+  ) {
     return null;
   }
   const rootMetadata = asRecord(body?.metadata);
-  const artifact =
-    kind === "artifact-update"
-      ? asRecord(body?.artifact)
-      : Array.isArray(body?.parts)
-        ? {
-            parts: body.parts,
-            ...(rootMetadata ? { metadata: rootMetadata } : {}),
-          }
-        : null;
+  const artifact = resolveCanonicalContentArtifact(kind, body, rootMetadata);
   const metadata = asRecord(artifact?.metadata) ?? rootMetadata;
   const sharedStream = extractSharedStreamMetadata(metadata, rootMetadata);
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
@@ -687,7 +729,7 @@ export const extractStreamBlockUpdate = (
   const explicitBlockType = parseBlockType(rawBlockType);
   const blockType =
     explicitBlockType ??
-    (kind === "message" && rawBlockType === null
+    ((kind === "message" || kind === "status-update") && rawBlockType === null
       ? dataFromParts
         ? "tool_call"
         : textFromParts
@@ -746,7 +788,9 @@ export const extractStreamBlockUpdate = (
     parseBlockOperation(pickString(rootMetadata, ["op", "operation"])) ??
     parseBlockOperation(pickString(artifact ?? null, ["op", "operation"])) ??
     parseBlockOperation(pickString(body ?? null, ["op", "operation"]));
-  const op = explicitOp ?? (kind === "message" ? "replace" : null);
+  const op =
+    explicitOp ??
+    (kind === "message" || kind === "status-update" ? "replace" : null);
   if (!op) {
     return null;
   }
@@ -804,6 +848,7 @@ export const extractStreamBlockUpdate = (
     pickInteger(body ?? null, ["baseSeq"]);
   const role = normalizeRole(
     pickString(body ?? null, ["role"]) ??
+      pickString(artifact ?? null, ["role"]) ??
       pickString(sharedStream, ["role"]) ??
       pickString(metadata, ["role"]) ??
       pickString(rootMetadata, ["role"]),

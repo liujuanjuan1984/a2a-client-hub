@@ -18,7 +18,6 @@ from app.features.invoke import (
     service_streaming_transport,
     stream_payloads,
 )
-from app.features.invoke.payload_helpers import dict_field as _dict_field
 from app.features.invoke.payload_helpers import (
     pick_first_non_empty_str,
     pick_non_empty_str,
@@ -438,11 +437,12 @@ class A2AInvokeStreamingRuntime:
         *,
         event_sequence: int,
     ) -> None:
-        kind = stream_payloads._resolved_stream_event_kind(payload)
+        content_envelope = stream_payloads.resolve_stream_content_envelope(payload)
+        kind = content_envelope.event_kind
         if kind not in {"artifact-update", "message", "status-update", "task"}:
             return
 
-        _, body = stream_payloads._resolve_stream_response_body(payload)
+        body = content_envelope.event_body
         if not body:
             return
 
@@ -463,11 +463,9 @@ class A2AInvokeStreamingRuntime:
 
         shared_stream["seq"] = event_sequence
 
-        artifact = stream_payloads._resolve_stream_artifact(payload)
-        artifact_metadata = _dict_field(artifact, "metadata")
-        artifact_shared_stream = stream_payloads.extract_shared_stream_metadata(
-            payload, artifact
-        )
+        artifact = content_envelope.artifact
+        artifact_metadata = content_envelope.artifact_metadata
+        artifact_shared_stream = content_envelope.shared_stream
         message_id = pick_first_non_empty_str(
             (
                 body,
@@ -510,12 +508,12 @@ class A2AInvokeStreamingRuntime:
         if message_id is not None:
             shared_stream["messageId"] = message_id
         shared_stream["eventId"] = event_id or fallback_event_id
-        if kind == "message":
+        if kind in {"message", "status-update"}:
             if (
                 not isinstance(shared_stream.get("blockType"), str)
                 or not str(shared_stream.get("blockType")).strip()
             ):
-                parts = body.get("parts")
+                parts = artifact.get("parts")
                 if stream_payloads.extract_stream_data_from_parts(parts):
                     shared_stream["blockType"] = "tool_call"
                 elif stream_payloads.extract_stream_text_from_parts(parts):

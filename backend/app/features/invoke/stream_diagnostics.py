@@ -26,10 +26,12 @@ _LOG_SAMPLE_SENSITIVE_KEYWORDS = (
 )
 
 
-def extract_artifact_validation_errors(
+def extract_stream_content_validation_errors(
     payload: dict[str, Any], *, validate_message: ValidateMessageFn
 ) -> list[str]:
-    if not any(field in payload for field in ("artifactUpdate", "message")):
+    if not any(
+        field in payload for field in ("artifactUpdate", "message", "statusUpdate")
+    ):
         return []
     return [str(item) for item in validate_message(payload)]
 
@@ -101,7 +103,7 @@ def _sanitize_log_sample(
     return _truncate_log_string(repr(value))
 
 
-def build_artifact_update_log_sample(payload: dict[str, Any]) -> dict[str, Any]:
+def build_stream_content_log_sample(payload: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], _sanitize_log_sample(payload))
 
 
@@ -112,7 +114,7 @@ def build_validation_errors_log_sample(validation_errors: list[str]) -> list[str
     ]
 
 
-def warn_non_contract_artifact_update_once(
+def warn_non_contract_stream_content_once(
     *,
     seen_reasons: set[str],
     reason: str | None,
@@ -127,16 +129,16 @@ def warn_non_contract_artifact_update_once(
     warning_payload = {
         **log_extra,
         "drop_reason": reason,
-        "artifact_update_sample": build_artifact_update_log_sample(payload),
+        "stream_content_sample": build_stream_content_log_sample(payload),
     }
     if callable(log_warning):
         log_warning(
-            "Dropped non-contract artifact-update event",
+            "Dropped non-contract stream content event",
             extra=warning_payload,
         )
         return
     if callable(log_info):
         log_info(
-            "Dropped non-contract artifact-update event",
+            "Dropped non-contract stream content event",
             extra=warning_payload,
         )

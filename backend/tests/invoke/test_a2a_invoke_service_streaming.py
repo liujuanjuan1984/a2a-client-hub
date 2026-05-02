@@ -19,7 +19,7 @@ from tests.invoke.a2a_invoke_service_support import (
     _GatewayWithUnstructuredError,
     a2a_invoke_service,
     asyncio,
-    build_artifact_update_log_sample,
+    build_stream_content_log_sample,
     json,
     logging,
     pytest,
@@ -599,11 +599,11 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -657,11 +657,11 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -707,12 +707,61 @@ async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(cap
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert warning_records == []
     payload = "".join(frames)
     assert '"artifactUpdate"' in payload
     assert '"blockType": "tool_call"' in payload
+
+
+@pytest.mark.asyncio
+async def test_sse_validates_status_message_content_events(caplog):
+    caplog.set_level(logging.WARNING)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "statusUpdate": {
+                        "status": {
+                            "state": "TASK_STATE_WORKING",
+                            "message": {
+                                "messageId": "msg-status-invalid",
+                                "role": "ROLE_AGENT",
+                                "parts": [{"text": "hello"}],
+                            },
+                        }
+                    }
+                },
+                _status_update_event(state="TASK_STATE_COMPLETED"),
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda payload: (
+            ["invalid_status_message"]
+            if payload.get("statusUpdate", {}).get("status", {}).get("message")
+            else []
+        ),
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    frames: list[str] = []
+    async for chunk in response.body_iterator:
+        frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped invalid stream event"
+    ]
+    assert len(warning_records) == 1
+    payload = "".join(frames)
+    assert '"msg-status-invalid"' not in payload
+    assert '"TASK_STATE_COMPLETED"' in payload
 
 
 @pytest.mark.asyncio
@@ -1316,11 +1365,11 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -1704,11 +1753,11 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -1718,8 +1767,8 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
     )
 
 
-def test_build_artifact_update_log_sample_redacts_sensitive_fields_and_truncates():
-    sample = build_artifact_update_log_sample(
+def test_build_stream_content_log_sample_redacts_sensitive_fields_and_truncates():
+    sample = build_stream_content_log_sample(
         {
             "kind": "artifact-update",
             "metadata": {
