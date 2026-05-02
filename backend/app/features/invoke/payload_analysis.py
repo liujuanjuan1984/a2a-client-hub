@@ -15,6 +15,12 @@ from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_preferred_session_binding_metadata,
 )
+from app.features.invoke.stream_field_aliases import (
+    EVENT_ID_KEYS,
+    MESSAGE_ID_KEYS,
+    SEQ_KEYS,
+    TASK_ID_KEYS,
+)
 from app.integrations.a2a_client.protobuf import (
     to_protojson_object,
 )
@@ -25,10 +31,7 @@ from app.utils.payload_extract import (
 
 logger = logging.getLogger(__name__)
 
-_MESSAGE_ID_KEYS = ("messageId", "message_id")
-_EVENT_ID_KEYS = ("eventId", "event_id")
-_SEQ_KEYS = ("seq", "sequence")
-_TASK_ID_KEYS = ("taskId", "task_id", "id")
+_TASK_ANALYSIS_KEYS = (*TASK_ID_KEYS, "id")
 
 
 @dataclass(frozen=True)
@@ -150,8 +153,8 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         root_metadata,
         stream_body,
     )
-    msg_id = pick_first_non_empty_str(identity_candidates, _MESSAGE_ID_KEYS)
-    evt_id = pick_first_non_empty_str(identity_candidates, _EVENT_ID_KEYS)
+    msg_id = pick_first_non_empty_str(identity_candidates, MESSAGE_ID_KEYS)
+    evt_id = pick_first_non_empty_str(identity_candidates, EVENT_ID_KEYS)
 
     task_id = pick_first_non_empty_str(
         (
@@ -161,7 +164,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
             _dict_field(status, "task"),
             _dict_field(result, "task"),
         ),
-        _TASK_ID_KEYS,
+        _TASK_ANALYSIS_KEYS,
     )
 
     seq = pick_first_int(
@@ -172,7 +175,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
             root_metadata,
             artifact_shared_stream,
         ),
-        _SEQ_KEYS,
+        SEQ_KEYS,
     )
 
     usage: dict[str, Any] = {}

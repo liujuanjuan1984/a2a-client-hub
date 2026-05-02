@@ -34,6 +34,11 @@ from app.features.invoke.service_types import (
     StreamTextCallbackFn,
     ValidateMessageFn,
 )
+from app.features.invoke.stream_field_aliases import (
+    BLOCK_TYPE_KEYS,
+    EVENT_ID_KEYS,
+    MESSAGE_ID_KEYS,
+)
 from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_client.protobuf import (
@@ -475,7 +480,7 @@ class A2AInvokeStreamingRuntime:
                 metadata,
                 shared_stream,
             ),
-            ("messageId",),
+            MESSAGE_ID_KEYS,
         )
 
         event_id = pick_first_non_empty_str(
@@ -486,7 +491,7 @@ class A2AInvokeStreamingRuntime:
                 artifact_metadata,
                 metadata,
             ),
-            ("eventId",),
+            EVENT_ID_KEYS,
         )
 
         fallback_event_id = (
@@ -496,7 +501,7 @@ class A2AInvokeStreamingRuntime:
         )
         if event_id == f"stream:{event_sequence}" and message_id is not None:
             event_id = None
-        shared_event_id = pick_non_empty_str(shared_stream, ("eventId",))
+        shared_event_id = pick_non_empty_str(shared_stream, EVENT_ID_KEYS)
         if event_id is None and shared_event_id not in (
             None,
             "",
@@ -509,10 +514,7 @@ class A2AInvokeStreamingRuntime:
             shared_stream["messageId"] = message_id
         shared_stream["eventId"] = event_id or fallback_event_id
         if kind in {"message", "status-update"}:
-            if (
-                not isinstance(shared_stream.get("blockType"), str)
-                or not str(shared_stream.get("blockType")).strip()
-            ):
+            if pick_non_empty_str(shared_stream, BLOCK_TYPE_KEYS) is None:
                 parts = artifact.get("parts")
                 if stream_payloads.extract_stream_data_from_parts(parts):
                     shared_stream["blockType"] = "tool_call"

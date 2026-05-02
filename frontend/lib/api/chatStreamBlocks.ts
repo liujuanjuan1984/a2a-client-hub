@@ -12,6 +12,16 @@ import {
   pickString,
   serializeStructuredStreamData,
 } from "./chatUtilsShared";
+import {
+  BASE_SEQ_KEYS,
+  BLOCK_ID_KEYS,
+  BLOCK_TYPE_KEYS,
+  EVENT_ID_KEYS,
+  LANE_ID_KEYS,
+  MESSAGE_ID_KEYS,
+  SEQ_KEYS,
+  TASK_ID_KEYS,
+} from "./streamFieldAliases";
 
 import { mergeSharedMetadataSection } from "@/lib/sharedMetadata";
 
@@ -108,15 +118,6 @@ const finalizeRunningToolCallView = (
     : toolCall;
 
 const BLOCK_OPERATION_TYPES = new Set(["append", "replace", "finalize"]);
-const BLOCK_TYPE_KEYS = ["blockType", "block_type"];
-const MESSAGE_ID_KEYS = ["messageId", "message_id"];
-const EVENT_ID_KEYS = ["eventId", "event_id"];
-const SEQ_KEYS = ["seq", "sequence"];
-const TASK_ID_KEYS = ["taskId", "task_id"];
-const BLOCK_ID_KEYS = ["blockId", "block_id"];
-const LANE_ID_KEYS = ["laneId", "lane_id"];
-const BASE_SEQ_KEYS = ["baseSeq", "base_seq"];
-
 const extractDataFromParts = (parts: unknown[]) =>
   parts
     .map((part) => {

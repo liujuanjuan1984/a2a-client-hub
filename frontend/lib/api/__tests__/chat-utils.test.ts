@@ -55,6 +55,31 @@ describe("runtime status contract", () => {
     });
   });
 
+  it("reads snake_case shared stream fields from runtime status events", () => {
+    expect(
+      extractRuntimeStatusEvent({
+        statusUpdate: {
+          status: { state: "TASK_STATE_INPUT_REQUIRED" },
+          metadata: {
+            shared: {
+              stream: {
+                message_id: "msg-status-snake-1",
+                sequence: 7,
+              },
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      state: "input-required",
+      isFinal: true,
+      interrupt: null,
+      seq: 7,
+      completionPhase: null,
+      messageId: "msg-status-snake-1",
+    });
+  });
+
   it("extracts shared stream turn identity from lifecycle event properties", () => {
     expect(
       extractSessionMeta({

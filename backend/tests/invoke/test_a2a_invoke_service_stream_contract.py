@@ -59,6 +59,30 @@ def test_extract_stream_identity_hints_from_serialized_event():
     }
 
 
+def test_extract_stream_identity_hints_accepts_snake_case_stream_fields():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "noop"}]},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "message_id": "msg-snake-1",
+                            "event_id": "evt-snake-1",
+                            "sequence": 13,
+                        }
+                    }
+                },
+            }
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-snake-1",
+        "upstream_event_id": "evt-snake-1",
+        "upstream_event_seq": 13,
+    }
+
+
 def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
@@ -249,7 +273,7 @@ def test_extract_stream_identity_hints_reads_shared_stream_metadata():
     assert hints["upstream_event_seq"] == 12
 
 
-def test_extract_stream_identity_hints_ignores_legacy_sequence_alias():
+def test_extract_stream_identity_hints_accepts_sequence_alias():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
             "artifactUpdate": {
@@ -269,7 +293,7 @@ def test_extract_stream_identity_hints_ignores_legacy_sequence_alias():
 
     assert hints["upstream_message_id"] == "msg-legacy-sequence"
     assert hints["upstream_event_id"] == "evt-legacy-sequence"
-    assert "upstream_event_seq" not in hints
+    assert hints["upstream_event_seq"] == 12
 
 
 def test_extract_stream_chunk_reads_canonical_event_and_message_ids():

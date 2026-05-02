@@ -9,6 +9,7 @@ import {
   pickString,
   resolveNestedValue,
 } from "./chatUtilsShared";
+import { MESSAGE_ID_KEYS, SEQ_KEYS } from "./streamFieldAliases";
 
 import {
   getPreferredInterruptMetadata,
@@ -526,11 +527,7 @@ export const extractRuntimeStatusEvent = (
       rawCompletionPhase?.trim().toLowerCase() === "persisted"
         ? "persisted"
         : null;
-    const messageId =
-      typeof sharedStream?.messageId === "string" &&
-      sharedStream.messageId.trim().length > 0
-        ? sharedStream.messageId.trim()
-        : null;
+    const messageId = pickString(sharedStream, MESSAGE_ID_KEYS);
     const resolvedContract = resolveRuntimeStatusContract(contract);
     const state = normalizeRuntimeState(status.state, resolvedContract);
     const isFinal = resolvedContract.terminalStates
@@ -541,8 +538,7 @@ export const extractRuntimeStatusEvent = (
       isFinal,
       interrupt: extractRuntimeInterrupt(statusUpdate, state, resolvedContract),
       seq:
-        pickInteger(sharedStream, ["seq", "sequence"]) ??
-        pickInteger(metadata, ["seq"]),
+        pickInteger(sharedStream, SEQ_KEYS) ?? pickInteger(metadata, SEQ_KEYS),
       completionPhase,
       messageId,
     };

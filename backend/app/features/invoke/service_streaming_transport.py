@@ -28,6 +28,7 @@ from app.features.invoke.stream_diagnostics import (
     extract_stream_content_validation_errors,
     warn_non_contract_stream_content_once,
 )
+from app.features.invoke.stream_field_aliases import SEQ_KEYS
 from app.utils.json_encoder import json_dumps
 
 
@@ -85,7 +86,7 @@ def stream_sse(
                         envelope.event_metadata,
                         envelope.artifact_metadata,
                     ),
-                    ("seq",),
+                    SEQ_KEYS,
                 )
                 if parsed_sequence is not None:
                     seq_counter = max(seq_counter, parsed_sequence)
@@ -307,7 +308,7 @@ async def stream_ws(
                     envelope.event_metadata,
                     envelope.artifact_metadata,
                 ),
-                ("seq",),
+                SEQ_KEYS,
             )
             if parsed_sequence is not None:
                 seq_counter = max(seq_counter, parsed_sequence)
