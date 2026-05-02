@@ -108,6 +108,14 @@ const finalizeRunningToolCallView = (
     : toolCall;
 
 const BLOCK_OPERATION_TYPES = new Set(["append", "replace", "finalize"]);
+const BLOCK_TYPE_KEYS = ["blockType", "block_type"];
+const MESSAGE_ID_KEYS = ["messageId", "message_id"];
+const EVENT_ID_KEYS = ["eventId", "event_id"];
+const SEQ_KEYS = ["seq", "sequence"];
+const TASK_ID_KEYS = ["taskId", "task_id"];
+const BLOCK_ID_KEYS = ["blockId", "block_id"];
+const LANE_ID_KEYS = ["laneId", "lane_id"];
+const BASE_SEQ_KEYS = ["baseSeq", "base_seq"];
 
 const extractDataFromParts = (parts: unknown[]) =>
   parts
@@ -725,9 +733,9 @@ export const extractStreamBlockUpdate = (
   const textFromParts = extractTextFromParts(parts);
   const dataFromParts = extractDataFromParts(parts);
   const rawBlockType =
-    pickString(sharedStream, ["blockType"]) ??
-    pickString(metadata, ["blockType"]) ??
-    pickString(rootMetadata, ["blockType"]);
+    pickString(sharedStream, BLOCK_TYPE_KEYS) ??
+    pickString(metadata, BLOCK_TYPE_KEYS) ??
+    pickString(rootMetadata, BLOCK_TYPE_KEYS);
   const explicitBlockType = parseBlockType(rawBlockType);
   const blockType =
     explicitBlockType ??
@@ -746,25 +754,25 @@ export const extractStreamBlockUpdate = (
   }
 
   const seq =
-    pickInteger(sharedStream, ["seq", "sequence"]) ??
-    pickInteger(body ?? null, ["seq"]) ??
-    pickInteger(artifact ?? null, ["seq"]) ??
-    pickInteger(metadata, ["seq"]) ??
-    pickInteger(rootMetadata, ["seq"]);
+    pickInteger(sharedStream, SEQ_KEYS) ??
+    pickInteger(body ?? null, SEQ_KEYS) ??
+    pickInteger(artifact ?? null, SEQ_KEYS) ??
+    pickInteger(metadata, SEQ_KEYS) ??
+    pickInteger(rootMetadata, SEQ_KEYS);
 
   const artifactId = pickString(artifact ?? null, ["artifactId", "id"]) ?? null;
   const taskIdHint =
-    pickString(body ?? null, ["taskId"]) ??
-    pickString(artifact ?? null, ["taskId"]) ??
-    pickString(rootMetadata, ["taskId"]) ??
+    pickString(body ?? null, TASK_ID_KEYS) ??
+    pickString(artifact ?? null, TASK_ID_KEYS) ??
+    pickString(rootMetadata, TASK_ID_KEYS) ??
     inferTaskIdFromArtifactId(artifactId);
 
   const upstreamMessageId =
-    pickString(sharedStream, ["messageId"]) ??
-    pickString(body ?? null, ["messageId"]) ??
-    pickString(artifact ?? null, ["messageId"]) ??
-    pickString(metadata, ["messageId"]) ??
-    pickString(rootMetadata, ["messageId"]);
+    pickString(sharedStream, MESSAGE_ID_KEYS) ??
+    pickString(body ?? null, MESSAGE_ID_KEYS) ??
+    pickString(artifact ?? null, MESSAGE_ID_KEYS) ??
+    pickString(metadata, MESSAGE_ID_KEYS) ??
+    pickString(rootMetadata, MESSAGE_ID_KEYS);
   const messageIdSource: StreamBlockUpdate["messageIdSource"] =
     upstreamMessageId !== null
       ? "upstream"
@@ -817,11 +825,11 @@ export const extractStreamBlockUpdate = (
     body?.lastChunk === true ||
     artifact?.lastChunk === true;
   const upstreamEventId =
-    pickString(sharedStream, ["eventId"]) ??
-    pickString(body ?? null, ["eventId"]) ??
-    pickString(artifact ?? null, ["eventId"]) ??
-    pickString(metadata, ["eventId"]) ??
-    pickString(rootMetadata, ["eventId"]);
+    pickString(sharedStream, EVENT_ID_KEYS) ??
+    pickString(body ?? null, EVENT_ID_KEYS) ??
+    pickString(artifact ?? null, EVENT_ID_KEYS) ??
+    pickString(metadata, EVENT_ID_KEYS) ??
+    pickString(rootMetadata, EVENT_ID_KEYS);
   const eventId = upstreamEventId
     ? upstreamEventId
     : buildFallbackEventId({
@@ -844,25 +852,25 @@ export const extractStreamBlockUpdate = (
     return null;
   }
   const laneId =
-    pickString(sharedStream, ["laneId"]) ??
-    pickString(metadata, ["laneId"]) ??
-    pickString(rootMetadata, ["laneId"]) ??
-    pickString(artifact ?? null, ["laneId"]) ??
-    pickString(body ?? null, ["laneId"]) ??
+    pickString(sharedStream, LANE_ID_KEYS) ??
+    pickString(metadata, LANE_ID_KEYS) ??
+    pickString(rootMetadata, LANE_ID_KEYS) ??
+    pickString(artifact ?? null, LANE_ID_KEYS) ??
+    pickString(body ?? null, LANE_ID_KEYS) ??
     defaultLaneIdForBlockType(blockType);
   const blockId =
-    pickString(sharedStream, ["blockId"]) ??
-    pickString(metadata, ["blockId"]) ??
-    pickString(rootMetadata, ["blockId"]) ??
-    pickString(artifact ?? null, ["blockId"]) ??
-    pickString(body ?? null, ["blockId"]) ??
+    pickString(sharedStream, BLOCK_ID_KEYS) ??
+    pickString(metadata, BLOCK_ID_KEYS) ??
+    pickString(rootMetadata, BLOCK_ID_KEYS) ??
+    pickString(artifact ?? null, BLOCK_ID_KEYS) ??
+    pickString(body ?? null, BLOCK_ID_KEYS) ??
     `${messageId}:${laneId}`;
   const baseSeq =
-    pickInteger(sharedStream, ["baseSeq"]) ??
-    pickInteger(metadata, ["baseSeq"]) ??
-    pickInteger(rootMetadata, ["baseSeq"]) ??
-    pickInteger(artifact ?? null, ["baseSeq"]) ??
-    pickInteger(body ?? null, ["baseSeq"]);
+    pickInteger(sharedStream, BASE_SEQ_KEYS) ??
+    pickInteger(metadata, BASE_SEQ_KEYS) ??
+    pickInteger(rootMetadata, BASE_SEQ_KEYS) ??
+    pickInteger(artifact ?? null, BASE_SEQ_KEYS) ??
+    pickInteger(body ?? null, BASE_SEQ_KEYS);
   const role = normalizeRole(
     pickString(body ?? null, ["role"]) ??
       pickString(artifact ?? null, ["role"]) ??

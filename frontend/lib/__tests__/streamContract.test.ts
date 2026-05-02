@@ -58,21 +58,48 @@ const buildBlockUpdatePayload = (input: {
   laneId?: string;
   op?: "append" | "replace" | "finalize";
   baseSeq?: number;
+  useSnakeCaseStreamHints?: boolean;
 }) => {
+  const streamIdentity = input.useSnakeCaseStreamHints
+    ? {
+        ...(input.messageId !== undefined
+          ? { message_id: input.messageId }
+          : { message_id: "msg-1" }),
+        ...(input.eventId !== undefined
+          ? { event_id: input.eventId }
+          : { event_id: "evt-1" }),
+        ...(input.seq !== undefined ? { sequence: input.seq } : {}),
+        block_type: input.blockType,
+      }
+    : {
+        ...(input.messageId !== undefined
+          ? { messageId: input.messageId }
+          : { messageId: "msg-1" }),
+        ...(input.eventId !== undefined
+          ? { eventId: input.eventId }
+          : { eventId: "evt-1" }),
+        ...(input.seq !== undefined ? { seq: input.seq } : {}),
+      };
   const artifactMetadata: Record<string, unknown> = {
-    blockType: input.blockType,
-    op: input.op ?? (input.append === false ? "replace" : "append"),
     source: input.source ?? "stream",
   };
+  if (!input.useSnakeCaseStreamHints) {
+    artifactMetadata.blockType = input.blockType;
+  }
   if (input.blockId !== undefined) {
-    artifactMetadata.blockId = input.blockId;
+    artifactMetadata[input.useSnakeCaseStreamHints ? "block_id" : "blockId"] =
+      input.blockId;
   }
   if (input.laneId !== undefined) {
-    artifactMetadata.laneId = input.laneId;
+    artifactMetadata[input.useSnakeCaseStreamHints ? "lane_id" : "laneId"] =
+      input.laneId;
   }
   if (input.baseSeq !== undefined) {
-    artifactMetadata.baseSeq = input.baseSeq;
+    artifactMetadata[input.useSnakeCaseStreamHints ? "base_seq" : "baseSeq"] =
+      input.baseSeq;
   }
+  artifactMetadata.op =
+    input.op ?? (input.append === false ? "replace" : "append");
   const payload: Record<string, unknown> = {
     artifactUpdate: {
       append: input.append ?? true,
@@ -84,15 +111,7 @@ const buildBlockUpdatePayload = (input: {
         metadata: {
           ...artifactMetadata,
           shared: {
-            stream: {
-              ...(input.messageId !== undefined
-                ? { messageId: input.messageId }
-                : { messageId: "msg-1" }),
-              ...(input.eventId !== undefined
-                ? { eventId: input.eventId }
-                : { eventId: "evt-1" }),
-              ...(input.seq !== undefined ? { seq: input.seq } : {}),
-            },
+            stream: streamIdentity,
           },
         },
       },
@@ -198,6 +217,25 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks?.[0]?.type).toBe("reasoning");
     expect(blocks?.[1]?.type).toBe("text");
+  });
+
+  it("parses snake_case stream-hints fields from shared stream metadata", () => {
+    const parsed = mustParse(
+      buildBlockUpdatePayload({
+        blockType: "reasoning",
+        delta: "thinking",
+        artifactId: "task-1:stream:reasoning",
+        messageId: "msg-snake-1",
+        eventId: "evt-snake-1",
+        seq: 9,
+        useSnakeCaseStreamHints: true,
+      }),
+    );
+
+    expect(parsed.blockType).toBe("reasoning");
+    expect(parsed.messageId).toBe("msg-snake-1");
+    expect(parsed.eventId).toBe("evt-snake-1");
+    expect(parsed.seq).toBe(9);
   });
 
   it("projects only text blocks into message content", () => {

@@ -35,6 +35,14 @@ _STREAM_RESPONSE_FIELD_TO_KIND = (
     ("message", "message"),
     ("task", "task"),
 )
+_BLOCK_TYPE_KEYS = ("blockType", "block_type")
+_MESSAGE_ID_KEYS = ("messageId", "message_id")
+_EVENT_ID_KEYS = ("eventId", "event_id")
+_SEQ_KEYS = ("seq", "sequence")
+_TASK_ID_KEYS = ("taskId", "task_id")
+_BLOCK_ID_KEYS = ("blockId", "block_id")
+_LANE_ID_KEYS = ("laneId", "lane_id")
+_BASE_SEQ_KEYS = ("baseSeq", "base_seq")
 
 
 @dataclass(frozen=True)
@@ -210,18 +218,17 @@ def extract_artifact_type(
     event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    raw = shared_stream.get("blockType")
-    if not isinstance(raw, str) or not raw.strip():
-        raw = metadata.get("blockType")
-    if not isinstance(raw, str) or not raw.strip():
-        raw = event_metadata.get("blockType")
+    raw = pick_first_non_empty_str(
+        (shared_stream, metadata, event_metadata),
+        _BLOCK_TYPE_KEYS,
+    )
 
-    if not isinstance(raw, str) or not raw.strip():
+    if raw is None:
         if kind in {"artifact-update", "message", "status-update"}:
             return _infer_canonical_block_type(artifact.get("parts"))
         return None
 
-    normalized = raw.strip().lower()
+    normalized = raw.lower()
     if normalized in {"text", "reasoning", "tool_call"}:
         return normalized
     return None
@@ -258,7 +265,7 @@ def extract_artifact_id(
         event_metadata,
         shared_stream,
     ):
-        artifact_id = _pick_non_empty_str(candidate, ("artifactId",))
+        artifact_id = _pick_non_empty_str(candidate, ("artifactId", "artifact_id"))
         if artifact_id is not None:
             return artifact_id
     return None
@@ -291,7 +298,7 @@ def extract_message_id(
             shared_stream,
             body,
         ),
-        ("messageId",),
+        _MESSAGE_ID_KEYS,
     )
     if message_id is not None:
         return message_id
@@ -306,7 +313,7 @@ def extract_message_id(
             event_metadata,
             shared_stream,
         ),
-        ("taskId",),
+        _TASK_ID_KEYS,
     ) or _infer_task_id_from_artifact_id(
         artifact_id
         if artifact_id is not None
@@ -371,7 +378,7 @@ def extract_block_id(
             event_metadata,
             artifact,
         ),
-        ("blockId",),
+        _BLOCK_ID_KEYS,
     )
     if block_id is not None:
         return block_id
@@ -399,7 +406,7 @@ def extract_lane_id(
             event_metadata,
             artifact,
         ),
-        ("laneId",),
+        _LANE_ID_KEYS,
     )
     if lane_id is not None:
         return lane_id
@@ -421,7 +428,7 @@ def extract_block_base_seq(
             event_metadata,
             artifact,
         ),
-        ("baseSeq",),
+        _BASE_SEQ_KEYS,
     )
 
 
@@ -456,7 +463,7 @@ def extract_stream_chunk_from_serialized_event(
             shared_stream,
             body,
         ),
-        ("eventId",),
+        _EVENT_ID_KEYS,
     )
     delta = extract_stream_content_from_parts(
         artifact.get("parts"), block_type=block_type
@@ -475,7 +482,7 @@ def extract_stream_chunk_from_serialized_event(
             event_metadata,
             shared_stream,
         ),
-        ("seq",),
+        _SEQ_KEYS,
     )
     source = extract_artifact_source(payload, artifact)
     artifact_id = extract_artifact_id(payload, artifact)

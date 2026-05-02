@@ -105,6 +105,36 @@ def test_extract_stream_chunk_prefers_shared_stream_block_type_over_text_part_ki
     assert chunk["source"] == "tool_part_update"
 
 
+def test_extract_stream_chunk_reads_snake_case_stream_hint_fields():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "artifactUpdate": {
+                "artifact": {
+                    "parts": [{"text": "thinking"}],
+                    "metadata": {
+                        "shared": {
+                            "stream": {
+                                "block_type": "reasoning",
+                                "op": "append",
+                                "source": "reasoning_part_update",
+                                "message_id": "msg-snake",
+                                "event_id": "evt-snake",
+                                "sequence": 11,
+                            }
+                        }
+                    },
+                }
+            }
+        }
+    )
+    assert chunk is not None
+    assert chunk["block_type"] == "reasoning"
+    assert chunk["message_id"] == "msg-snake"
+    assert chunk["event_id"] == "evt-snake"
+    assert chunk["seq"] == 11
+    assert chunk["source"] == "reasoning_part_update"
+
+
 def test_extract_stream_chunk_reads_tool_call_content_from_data_parts():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
