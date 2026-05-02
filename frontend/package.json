@@ -82,7 +82,6 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
-    "@xmldom/xmldom": "^0.8.13",
     "markdown-it": "^12.3.2",
     "postcss": "8.5.13"
   }
