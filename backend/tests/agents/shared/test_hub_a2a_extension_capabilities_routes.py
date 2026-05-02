@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from tests.agents.shared import hub_a2a_extensions_routes_support as support
 from tests.agents.shared.hub_a2a_extensions_routes_support import (
     SimpleNamespace,
@@ -989,6 +990,67 @@ async def test_hub_extension_capabilities_closes_read_only_transaction_before_up
     assert response.status_code == 200
     assert call_order == ["prepare_external_call", "resolve_capability_snapshot"]
     assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_hub_extension_capabilities_route_maps_upstream_timeout_to_structured_error(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_cap_timeout@example.com",
+        user_email="alice_opencode_cap_timeout@example.com",
+        token="secret-token-opencode-capability-timeout",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+
+    async def fake_resolve_capability_snapshot(*, runtime):
+        raise A2AExtensionUpstreamError(
+            message="A2A agent 'https://commons.kalos.art' timed out while fetching metadata",
+            error_code="agent_unavailable",
+            source="hub_gateway",
+            upstream_error={
+                "message": "A2A agent 'https://commons.kalos.art' timed out while fetching metadata",
+                "type": "A2AAgentUnavailableError",
+            },
+        )
+
+    monkeypatch.setattr(
+        fake_extensions,
+        "resolve_capability_snapshot",
+        fake_resolve_capability_snapshot,
+    )
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/capabilities"
+        )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["message"] == (
+        "A2A agent 'https://commons.kalos.art' timed out while fetching metadata"
+    )
+    assert detail["error_code"] == "agent_unavailable"
+    assert detail["source"] == "hub_gateway"
+    assert detail["upstream_error"] == {
+        "message": "A2A agent 'https://commons.kalos.art' timed out while fetching metadata",
+        "type": "A2AAgentUnavailableError",
+    }
 
 
 @pytest.mark.asyncio

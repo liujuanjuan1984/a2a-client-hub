@@ -125,6 +125,46 @@
     }
   },
   {
+    "name": "artifact_update_inferrs_text_append_from_canonical_fields",
+    "payload": {
+      "artifactUpdate": {
+        "taskId": "task-raw-1",
+        "append": true,
+        "lastChunk": false,
+        "artifact": {
+          "artifactId": "task-raw-1:stream:text",
+          "parts": [
+            {
+              "text": "Code"
+            }
+          ]
+        },
+        "metadata": {
+          "shared": {
+            "stream": {
+              "eventId": "stream:4",
+              "seq": 4
+            }
+          }
+        }
+      }
+    },
+    "expected": {
+      "eventId": "stream:4",
+      "seq": 4,
+      "messageId": "task:task-raw-1",
+      "artifactId": "task-raw-1:stream:text",
+      "blockId": "task:task-raw-1:primary_text",
+      "laneId": "primary_text",
+      "blockType": "text",
+      "op": "append",
+      "content": "Code",
+      "baseSeq": null,
+      "isFinished": false,
+      "source": null
+    }
+  },
+  {
     "name": "message_wrapper_inferrs_text_replace_without_artifact_update_compat",
     "payload": {
       "message": {

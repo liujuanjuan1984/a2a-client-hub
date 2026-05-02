@@ -518,6 +518,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         (message) => message.id === placeholderId,
       );
       if (hasActivePlaceholder) {
+        if (chunk.messageIdSource !== "upstream") {
+          streamMessageIdMap.set(chunk.messageId, placeholderId);
+          markActiveMessage(placeholderId);
+          return placeholderId;
+        }
         // Before rekeying, ensure we flush any pending chunks for the placeholder
         flushChunkBuffer();
         rekeyConversationMessage(

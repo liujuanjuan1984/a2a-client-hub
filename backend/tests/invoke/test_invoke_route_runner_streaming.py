@@ -511,6 +511,102 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
 
 
 @pytest.mark.asyncio
+async def test_persist_stream_block_update_inferrs_canonical_artifact_text_without_private_block_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    agent_message_id = str(uuid4())
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+    async def fake_append_agent_message_block_updates(_db, **kwargs):
+        captured.update(kwargs)
+        return [object()]
+
+    async def fake_commit_safely(_db):
+        return None
+
+    async def fake_ensure_local_message_headers(**_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_ensure_local_message_headers",
+        fake_ensure_local_message_headers,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_block_updates",
+        fake_append_agent_message_block_updates,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=str(uuid4()),
+        agent_message_id=agent_message_id,
+        message_refs=None,
+        next_event_seq=1,
+        persisted_block_count=0,
+    )
+
+    event_payload = {
+        "artifactUpdate": {
+            "taskId": "task-raw-1",
+            "append": True,
+            "lastChunk": True,
+            "artifact": {
+                "artifactId": "task-raw-1:stream:text",
+                "parts": [{"text": "Code"}],
+            },
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "eventId": "stream:4",
+                        "seq": 4,
+                    }
+                }
+            },
+        }
+    }
+
+    await invoke_route_runner._persist_stream_block_update(
+        state=state,
+        event_payload=event_payload,
+        request=_build_persistence_request(transport="ws"),
+    )
+
+    shared_stream = event_payload["artifactUpdate"]["metadata"]["shared"]["stream"]
+    assert shared_stream["messageId"] == agent_message_id
+    assert shared_stream["eventId"] == "stream:4"
+    assert shared_stream["seq"] == 1
+    updates = captured["updates"]
+    assert isinstance(updates, list)
+    assert len(updates) == 1
+    assert updates[0]["content"] == "Code"
+    assert updates[0]["append"] is True
+
+
+@pytest.mark.asyncio
 async def test_persist_stream_block_update_consumes_and_persists_optional_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

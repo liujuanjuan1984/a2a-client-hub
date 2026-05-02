@@ -410,7 +410,7 @@ async def test_sse_on_complete_supports_block_type():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_rejects_artifact_updates_without_block_type():
+async def test_sse_on_complete_accepts_artifact_updates_without_block_type():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -437,7 +437,7 @@ async def test_sse_on_complete_rejects_artifact_updates_without_block_type():
     async for _ in response.body_iterator:
         pass
 
-    assert completed == [""]
+    assert completed == ["Hello generic"]
 
 
 @pytest.mark.asyncio

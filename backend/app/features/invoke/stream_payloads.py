@@ -171,7 +171,7 @@ def extract_stream_data_from_parts(parts: Any) -> str:
     return "\n".join(collected)
 
 
-def _infer_message_block_type(parts: Any) -> str | None:
+def _infer_canonical_block_type(parts: Any) -> str | None:
     if extract_stream_data_from_parts(parts):
         return "tool_call"
     if extract_stream_text_from_parts(parts):
@@ -217,8 +217,8 @@ def extract_artifact_type(
         raw = event_metadata.get("blockType")
 
     if not isinstance(raw, str) or not raw.strip():
-        if kind in {"message", "status-update"}:
-            return _infer_message_block_type(artifact.get("parts"))
+        if kind in {"artifact-update", "message", "status-update"}:
+            return _infer_canonical_block_type(artifact.get("parts"))
         return None
 
     normalized = raw.strip().lower()
@@ -264,6 +264,59 @@ def extract_artifact_id(
     return None
 
 
+def _infer_task_id_from_artifact_id(artifact_id: str | None) -> str | None:
+    if not isinstance(artifact_id, str):
+        return None
+    normalized = artifact_id.strip()
+    if not normalized:
+        return None
+    task_id, _, _ = normalized.partition(":")
+    task_id = task_id.strip()
+    return task_id or None
+
+
+def extract_message_id(
+    payload: dict[str, Any], artifact: dict[str, Any], *, artifact_id: str | None = None
+) -> str | None:
+    artifact_metadata = _dict_field(artifact, "metadata")
+    event_metadata = _event_metadata(payload)
+    shared_stream = extract_shared_stream_metadata(payload, artifact)
+    kind, body = _resolve_stream_response_body(payload)
+
+    message_id = pick_first_non_empty_str(
+        (
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+            body,
+        ),
+        ("messageId",),
+    )
+    if message_id is not None:
+        return message_id
+    if kind != "artifact-update":
+        return None
+
+    task_id = pick_first_non_empty_str(
+        (
+            body,
+            artifact,
+            artifact_metadata,
+            event_metadata,
+            shared_stream,
+        ),
+        ("taskId",),
+    ) or _infer_task_id_from_artifact_id(
+        artifact_id
+        if artifact_id is not None
+        else extract_artifact_id(payload, artifact)
+    )
+    if task_id is None:
+        return None
+    return f"task:{task_id}"
+
+
 def _default_lane_id(block_type: str) -> str:
     return "primary_text" if block_type == "text" else block_type
 
@@ -292,9 +345,14 @@ def extract_block_operation(
             return normalized
     if (
         kind in {"message", "status-update"}
-        and _infer_message_block_type(artifact.get("parts")) is not None
+        and _infer_canonical_block_type(artifact.get("parts")) is not None
     ):
         return "replace"
+    if (
+        kind == "artifact-update"
+        and _infer_canonical_block_type(artifact.get("parts")) is not None
+    ):
+        return "append" if body.get("append") is True else "replace"
     return None
 
 
@@ -319,21 +377,12 @@ def extract_block_id(
         return block_id
 
     lane_id = extract_lane_id(payload, artifact, block_type=block_type)
-    message_id = pick_first_non_empty_str(
-        (
-            artifact,
-            artifact_metadata,
-            event_metadata,
-            shared_stream,
-            body,
-        ),
-        ("messageId",),
-    )
+    artifact_id = extract_artifact_id(payload, artifact)
+    message_id = extract_message_id(payload, artifact, artifact_id=artifact_id)
     if message_id is not None:
         return f"{message_id}:{lane_id}"
 
-    artifact_id = extract_artifact_id(payload, artifact) or "stream"
-    return f"{artifact_id}:{lane_id}"
+    return f"{artifact_id or 'stream'}:{lane_id}"
 
 
 def extract_lane_id(
@@ -409,17 +458,6 @@ def extract_stream_chunk_from_serialized_event(
         ),
         ("eventId",),
     )
-    message_id = pick_first_non_empty_str(
-        (
-            artifact,
-            artifact_metadata,
-            event_metadata,
-            shared_stream,
-            body,
-        ),
-        ("messageId",),
-    )
-
     delta = extract_stream_content_from_parts(
         artifact.get("parts"), block_type=block_type
     )
@@ -441,6 +479,7 @@ def extract_stream_chunk_from_serialized_event(
     )
     source = extract_artifact_source(payload, artifact)
     artifact_id = extract_artifact_id(payload, artifact)
+    message_id = extract_message_id(payload, artifact, artifact_id=artifact_id)
     if artifact_id is None and message_id is not None:
         artifact_id = f"{message_id}:{block_type}"
     stream_chunk: dict[str, Any] = {
