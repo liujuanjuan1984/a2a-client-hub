@@ -211,7 +211,10 @@ describe("useChatHistoryQuery", () => {
       pageInfo: { hasMoreBefore: true, nextBefore: "cursor-next" },
     });
 
-    const { rerender } = renderHook(
+    const { rerender } = renderHook<
+      ReturnType<typeof useSessionHistoryQuery>,
+      { conversationId: string }
+    >(
       ({ conversationId }) =>
         useSessionHistoryQuery({
           conversationId,

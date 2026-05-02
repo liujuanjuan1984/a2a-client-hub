@@ -295,6 +295,7 @@ export function ScheduledJobForm({
               {renderLabel("Start datetime (local) (optional)")}
               <TextInput
                 className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
+                accessibilityLabel="Start datetime (local)"
                 value={startAtInputValue}
                 onChangeText={(value) => {
                   isEditingStartAtRef.current = true;

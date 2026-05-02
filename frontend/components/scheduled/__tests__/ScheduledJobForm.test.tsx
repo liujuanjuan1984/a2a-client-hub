@@ -20,7 +20,7 @@ describe("ScheduledJobForm", () => {
 
   it("preserves typed characters while editing start datetime input", () => {
     const onChange = jest.fn();
-    const { getByPlaceholderText } = render(
+    const { getByLabelText } = render(
       <ScheduledJobForm
         form={basePayload}
         saving={false}
@@ -33,7 +33,7 @@ describe("ScheduledJobForm", () => {
       />,
     );
 
-    const input = getByPlaceholderText("2026-02-23T14:30");
+    const input = getByLabelText("Start datetime (local)");
     fireEvent.changeText(input, "2");
     fireEvent.changeText(input, "20");
     fireEvent.changeText(input, "2026-02-23T09:30");
@@ -49,7 +49,7 @@ describe("ScheduledJobForm", () => {
 
   it("preserves pasted datetime text without timezone shift", () => {
     const onChange = jest.fn();
-    const { getByPlaceholderText } = render(
+    const { getByLabelText } = render(
       <ScheduledJobForm
         form={basePayload}
         saving={false}
@@ -62,7 +62,7 @@ describe("ScheduledJobForm", () => {
       />,
     );
 
-    const input = getByPlaceholderText("2026-02-23T14:30");
+    const input = getByLabelText("Start datetime (local)");
     fireEvent.changeText(input, "2026-02-23T12:35");
 
     expect(input.props.value).toBe("2026-02-23T12:35");

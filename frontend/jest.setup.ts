@@ -1,4 +1,3 @@
-import "@testing-library/react-native/extend-expect";
 import { queryClient } from "@/services/queryClient";
 
 if (typeof globalThis.window === "undefined") {
