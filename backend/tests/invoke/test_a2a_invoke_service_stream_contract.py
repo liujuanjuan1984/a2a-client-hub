@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.features.invoke.stream_payloads import resolve_stream_content_envelope
 from tests.invoke.a2a_invoke_service_support import (
     _DumpableEvent,
     a2a_invoke_service,
@@ -8,6 +9,30 @@ from tests.invoke.a2a_invoke_service_support import (
     pytest,
     settings,
 )
+
+
+def test_resolve_stream_content_envelope_prefers_nested_status_message_content():
+    envelope = resolve_stream_content_envelope(
+        {
+            "statusUpdate": {
+                "status": {
+                    "state": "TASK_STATE_WORKING",
+                    "message": {
+                        "messageId": "msg-status-envelope",
+                        "parts": [{"text": "hello"}],
+                        "role": "ROLE_AGENT",
+                    },
+                },
+                "metadata": {"shared": {"stream": {"eventId": "evt-status-envelope"}}},
+            }
+        }
+    )
+
+    assert envelope.event_kind == "status-update"
+    assert envelope.content_source_kind == "status_message"
+    assert envelope.status_message["messageId"] == "msg-status-envelope"
+    assert envelope.artifact["parts"] == [{"text": "hello"}]
+    assert envelope.shared_stream["eventId"] == "evt-status-envelope"
 
 
 def test_extract_stream_identity_hints_from_serialized_event():

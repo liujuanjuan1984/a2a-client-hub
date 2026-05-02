@@ -14,12 +14,10 @@ from app.features.invoke.payload_helpers import pick_int as _pick_int
 from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_preferred_session_binding_metadata,
-    merge_shared_metadata_sections,
 )
 from app.integrations.a2a_client.protobuf import (
     to_protojson_object,
 )
-from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.utils.payload_extract import (
     extract_context_id,
     extract_provider_and_external_session_id,
@@ -103,19 +101,21 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
 def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     root = payload
 
-    stream_kind, stream_body = stream_payloads._resolve_stream_response_body(root)
-    event_metadata = _dict_field(stream_body, "metadata")
-    artifact = stream_payloads._resolve_stream_artifact(root)
-    artifact_metadata = _dict_field(artifact, "metadata")
+    content_envelope = stream_payloads.resolve_stream_content_envelope(root)
+    stream_kind = content_envelope.event_kind
+    stream_body = content_envelope.event_body
+    event_metadata = content_envelope.event_metadata
+    artifact = content_envelope.artifact
+    artifact_metadata = content_envelope.artifact_metadata
     message = stream_body if stream_kind == "message" else _dict_field(root, "message")
     message_metadata = _dict_field(message, "metadata")
     status = (
-        _dict_field(stream_body, "status")
+        content_envelope.status
         if stream_kind == "status-update"
         else _dict_field(root, "status")
     )
     status_metadata = _dict_field(status, "metadata")
-    status_message = stream_payloads._resolve_status_message(root)
+    status_message = content_envelope.status_message
     status_message_metadata = _dict_field(status_message, "metadata")
     task = stream_body if stream_kind == "task" else _dict_field(root, "task")
     task_status = _dict_field(task, "status")
@@ -124,14 +124,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     result_status = _dict_field(result, "status")
     result_status_metadata = _dict_field(result_status, "metadata")
     root_metadata = event_metadata if stream_body else _dict_field(root, "metadata")
-    artifact_shared_stream = merge_shared_metadata_sections(
-        tuple(
-            candidate
-            for candidate in ((stream_body if stream_body else root), artifact)
-            if candidate
-        ),
-        section=SHARED_STREAM_KEY,
-    )
+    artifact_shared_stream = content_envelope.shared_stream
 
     identity_candidates = (
         artifact,
