@@ -171,7 +171,7 @@ def extract_stream_data_from_parts(parts: Any) -> str:
     return "\n".join(collected)
 
 
-def _infer_message_block_type(parts: Any) -> str | None:
+def _infer_canonical_block_type(parts: Any) -> str | None:
     if extract_stream_data_from_parts(parts):
         return "tool_call"
     if extract_stream_text_from_parts(parts):
@@ -217,8 +217,8 @@ def extract_artifact_type(
         raw = event_metadata.get("blockType")
 
     if not isinstance(raw, str) or not raw.strip():
-        if kind in {"message", "status-update"}:
-            return _infer_message_block_type(artifact.get("parts"))
+        if kind in {"artifact-update", "message", "status-update"}:
+            return _infer_canonical_block_type(artifact.get("parts"))
         return None
 
     normalized = raw.strip().lower()
@@ -292,9 +292,14 @@ def extract_block_operation(
             return normalized
     if (
         kind in {"message", "status-update"}
-        and _infer_message_block_type(artifact.get("parts")) is not None
+        and _infer_canonical_block_type(artifact.get("parts")) is not None
     ):
         return "replace"
+    if (
+        kind == "artifact-update"
+        and _infer_canonical_block_type(artifact.get("parts")) is not None
+    ):
+        return "append" if body.get("append") is True else "replace"
     return None
 
 

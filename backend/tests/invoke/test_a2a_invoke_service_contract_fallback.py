@@ -154,6 +154,52 @@ def test_extract_stream_chunk_reads_tool_call_content_from_data_parts():
     }
 
 
+def test_extract_stream_chunk_inferrs_tool_call_from_canonical_data_parts():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "artifactUpdate": {
+                "taskId": "task-data-1",
+                "append": True,
+                "artifact": {
+                    "artifactId": "task-data-1:stream:data",
+                    "parts": [
+                        {
+                            "data": {
+                                "call_id": "call-2",
+                                "tool": "read",
+                                "status": "pending",
+                                "input": {"path": "README.md"},
+                            }
+                        }
+                    ],
+                },
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "eventId": "stream:data:1",
+                            "seq": 5,
+                        }
+                    }
+                },
+            }
+        }
+    )
+    assert chunk is not None
+    assert chunk["block_type"] == "tool_call"
+    assert chunk["op"] == "append"
+    assert chunk["content"] == (
+        '{"call_id":"call-2","input":{"path":"README.md"},"status":"pending","tool":"read"}'
+    )
+    assert chunk["tool_call"] == {
+        "name": "read",
+        "status": "running",
+        "callId": "call-2",
+        "arguments": {"path": "README.md"},
+        "result": None,
+        "error": None,
+    }
+
+
 def test_extract_stream_chunk_uses_message_lane_identity_when_artifact_id_is_shared():
     reasoning = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {

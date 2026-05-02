@@ -442,6 +442,41 @@ def test_extract_stream_chunk_inferrs_status_message_payloads_without_explicit_b
     assert chunk["source"] == "assistant_text"
 
 
+def test_extract_stream_chunk_inferrs_artifact_text_payloads_without_explicit_block_contract():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "artifactUpdate": {
+                "taskId": "task-artifact-1",
+                "append": True,
+                "lastChunk": False,
+                "artifact": {
+                    "artifactId": "task-artifact-1:stream:text",
+                    "parts": [{"text": "hello from artifact"}],
+                },
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "eventId": "stream:4",
+                            "seq": 4,
+                        }
+                    }
+                },
+            }
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["event_id"] == "stream:4"
+    assert chunk["seq"] == 4
+    assert chunk["message_id"] is None
+    assert chunk["artifact_id"] == "task-artifact-1:stream:text"
+    assert chunk["block_type"] == "text"
+    assert chunk["op"] == "append"
+    assert chunk["append"] is True
+    assert chunk["content"] == "hello from artifact"
+    assert chunk["is_finished"] is False
+
+
 def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
     payload = {
         "message": {
