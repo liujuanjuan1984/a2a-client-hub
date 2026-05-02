@@ -256,7 +256,7 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -464,7 +464,7 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
         return ExtensionCallResult(
             success=True,
             result={"items": []},
-            meta=dict(kwargs.get("selection_meta") or {}),
+            meta=dict(kwargs.get("runtime_hints") or {}),
         )
 
     monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
@@ -479,7 +479,8 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
 
     assert result.success is True
     assert result.meta["session_binding_mode"] == "declared_contract"
-    assert result.meta["session_query_selection_mode"] == "direct"
+    assert result.meta["session_query_negotiation_mode"] == "declared_contract"
+    assert result.meta["session_query_compatibility_hints_applied"] is False
     assert fetch_calls == 1
 
 
@@ -709,7 +710,7 @@ async def test_get_session_messages_forwards_before_and_normalizes_page_info(
                 "pagination": {"page": 1, "size": 20},
                 "next_cursor": "cursor-2",
             },
-            meta=dict(kwargs.get("selection_meta") or {}),
+            meta=dict(kwargs.get("runtime_hints") or {}),
         )
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)

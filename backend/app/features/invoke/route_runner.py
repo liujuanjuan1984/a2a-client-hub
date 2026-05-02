@@ -18,6 +18,9 @@ from app.features.invoke import (
     route_runner_ws_ticket,
 )
 from app.features.invoke import session_binding as invoke_session_binding
+from app.features.invoke.extension_negotiation import (
+    resolve_core_invoke_requested_extensions,
+)
 from app.features.invoke.guard import (
     build_invoke_guard_key,
     guard_inflight_invoke,
@@ -91,8 +94,11 @@ _InvokeState = InvokeState
 _prepare_state = prepare_state
 _register_inflight_invoke = register_inflight_invoke
 _validate_provider_aware_continue_session = validate_provider_aware_continue_session
-_finalize_outbound_invoke_payload_impl = finalize_outbound_invoke_payload
 _is_interrupt_requested = is_interrupt_requested
+_find_latest_agent_message_id = find_latest_agent_message_id
+_try_acquire_invoke_guard = try_acquire_invoke_guard
+_release_invoke_guard = release_invoke_guard
+_finalize_outbound_invoke_payload_impl = finalize_outbound_invoke_payload
 _diagnose_stream_hints_contract_gap = (
     route_runner_streaming.diagnose_stream_hints_contract_gap
 )
@@ -101,6 +107,16 @@ _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
+
+
+async def _close_open_transaction(db: AsyncSession) -> None:
+    await prepare_for_external_call(db)
+
+
+async def _finalize_outbound_invoke_payload(
+    **kwargs: Any,
+) -> A2AAgentInvokeRequest:
+    return await _finalize_outbound_invoke_payload_impl(**kwargs)
 
 
 def _adapt_invoke_metadata_for_upstream(
@@ -114,10 +130,6 @@ def _adapt_invoke_metadata_for_upstream(
         payload.working_directory,
         metadata_namespace=provider or "opencode",
     )
-
-
-async def _close_open_transaction(db: AsyncSession) -> None:
-    await prepare_for_external_call(db)
 
 
 async def _continue_session_with_short_transaction(
@@ -165,17 +177,6 @@ async def _recover_rebound_invoke_payload(
     return build_rebound_invoke_payload(
         payload=payload,
         continue_payload=continue_binding,
-    )
-
-
-async def _find_latest_agent_message_id(
-    *,
-    user_id: UUID,
-    conversation_id: UUID,
-) -> str | None:
-    return await find_latest_agent_message_id(
-        user_id=user_id,
-        conversation_id=conversation_id,
     )
 
 
@@ -248,29 +249,6 @@ async def _unregister_inflight_invoke(
     await unregister_inflight_invoke(
         state=state,
         user_id=user_id,
-    )
-
-
-async def _try_acquire_invoke_guard(guard_key: str) -> bool:
-    return await try_acquire_invoke_guard(guard_key)
-
-
-async def _release_invoke_guard(guard_key: str) -> None:
-    await release_invoke_guard(guard_key)
-
-
-async def _finalize_outbound_invoke_payload(
-    *,
-    payload: A2AAgentInvokeRequest,
-    runtime: Any,
-    logger: Any,
-    log_extra: dict[str, Any],
-) -> A2AAgentInvokeRequest:
-    return await _finalize_outbound_invoke_payload_impl(
-        payload=payload,
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
     )
 
 
@@ -606,6 +584,11 @@ async def run_http_invoke(
         stream_enabled=stream,
     )
     upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
+    requested_extensions = await resolve_core_invoke_requested_extensions(
+        runtime=runtime,
+        metadata=upstream_metadata,
+        require_stream_hints=True,
+    )
 
     if stream:
         on_event, on_finalized = _build_consume_stream_callbacks(
@@ -621,6 +604,7 @@ async def run_http_invoke(
                 query=payload.query,
                 context_id=state.context_id,
                 metadata=upstream_metadata,
+                requested_extensions=requested_extensions,
                 validate_message=validate_message,
                 logger=logger,
                 log_extra=stream_log_extra,
@@ -647,6 +631,7 @@ async def run_http_invoke(
             query=payload.query,
             context_id=state.context_id,
             metadata=upstream_metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -759,6 +744,11 @@ async def run_background_invoke(
         extra_persisted_metadata=extra_persisted_metadata,
     )
     upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
+    requested_extensions = await resolve_core_invoke_requested_extensions(
+        runtime=runtime,
+        metadata=upstream_metadata,
+        require_stream_hints=True,
+    )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
@@ -774,6 +764,7 @@ async def run_background_invoke(
             query=payload.query,
             context_id=state.context_id,
             metadata=upstream_metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,
@@ -892,6 +883,11 @@ async def run_ws_invoke(
         stream_enabled=True,
     )
     upstream_metadata = _adapt_invoke_metadata_for_upstream(payload)
+    requested_extensions = await resolve_core_invoke_requested_extensions(
+        runtime=runtime,
+        metadata=upstream_metadata,
+        require_stream_hints=True,
+    )
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
         request=persistence_request,
@@ -906,6 +902,7 @@ async def run_ws_invoke(
             query=payload.query,
             context_id=state.context_id,
             metadata=upstream_metadata,
+            requested_extensions=requested_extensions,
             validate_message=validate_message,
             logger=logger,
             log_extra=stream_log_extra,

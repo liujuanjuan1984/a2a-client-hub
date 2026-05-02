@@ -38,19 +38,35 @@ class _FakeGateway:
         self.invoke_response: dict[str, Any] = {"success": True, "content": "ok"}
         self.stream_events: list[dict[str, Any]] = [{"content": "ok"}]
 
-    async def invoke(self, *, resolved, query: str, context_id=None, metadata=None):
+    async def invoke(
+        self,
+        *,
+        resolved,
+        query: str,
+        context_id=None,
+        metadata=None,
+        requested_extensions=(),
+    ):
         self.calls.append(
             {
                 "resolved": resolved,
                 "query": query,
                 "context_id": context_id,
                 "metadata": metadata,
+                "requested_extensions": tuple(requested_extensions),
             }
         )
         return dict(self.invoke_response)
 
     async def stream(
-        self, *, session=None, resolved, query: str, context_id=None, metadata=None
+        self,
+        *,
+        session=None,
+        resolved,
+        query: str,
+        context_id=None,
+        metadata=None,
+        requested_extensions=(),
     ):
         self.calls.append(
             {
@@ -59,6 +75,7 @@ class _FakeGateway:
                 "query": query,
                 "context_id": context_id,
                 "metadata": metadata,
+                "requested_extensions": tuple(requested_extensions),
                 "stream": True,
             }
         )
@@ -326,7 +343,7 @@ async def test_personal_agent_http_invoke_injects_session_bound_invoke_metadata(
             invoke_metadata_ext=ResolvedInvokeMetadataExtension(
                 uri="urn:a2a:invoke-metadata/v1",
                 required=False,
-                provider="commonground",
+                provider_key="example_provider",
                 metadata_field="metadata.shared.invoke",
                 behavior="merge_bound_metadata_into_invoke",
                 applies_to_methods=("message/send", "message/stream"),
@@ -402,7 +419,7 @@ async def test_personal_agent_http_invoke_returns_preflight_binding_error_when_d
             invoke_metadata_ext=ResolvedInvokeMetadataExtension(
                 uri="urn:a2a:invoke-metadata/v1",
                 required=False,
-                provider="commonground",
+                provider_key="example_provider",
                 metadata_field="metadata.shared.invoke",
                 behavior="merge_bound_metadata_into_invoke",
                 applies_to_methods=("message/send", "message/stream"),

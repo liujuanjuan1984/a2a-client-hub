@@ -29,8 +29,7 @@ def test_diagnose_session_query_returns_supported_status_for_opencode() -> None:
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
-    assert diagnostic.declared_contract_family == "opencode"
-    assert diagnostic.normalized_contract_family == "a2a_client_hub"
+    assert diagnostic.declared_contract_variant == "opencode"
     assert diagnostic.pagination_mode == "page_size"
 
 
@@ -48,7 +47,6 @@ def test_diagnose_session_query_returns_unsupported_status_for_legacy_uri() -> N
 
     assert diagnostic.declared is True
     assert diagnostic.status == "unsupported"
-    assert diagnostic.normalized_contract_family is None
     assert diagnostic.uri == "urn:shared-a2a:session-query:v1"
     assert "URI is not supported by Hub" in str(diagnostic.error)
 
@@ -80,7 +78,7 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
-    assert diagnostic.declared_contract_family == "opencode"
+    assert diagnostic.declared_contract_variant == "opencode"
     assert diagnostic.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
 
 
@@ -105,7 +103,7 @@ def test_diagnose_session_query_returns_invalid_status_for_legacy_limit_fields()
 
     assert diagnostic.declared is True
     assert diagnostic.status == "invalid"
-    assert diagnostic.declared_contract_family == "opencode"
+    assert diagnostic.declared_contract_variant == "opencode"
     assert diagnostic.pagination_mode == "limit"
     assert "result_envelope" not in str(diagnostic.error)
     assert "pagination.default_limit" in str(diagnostic.error)
@@ -138,7 +136,7 @@ def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
-    assert diagnostic.declared_contract_family == "opencode"
+    assert diagnostic.declared_contract_variant == "opencode"
     assert diagnostic.pagination_mode == "limit_and_optional_cursor"
     assert diagnostic.pagination_params == ["limit", "before"]
 
@@ -148,8 +146,7 @@ def test_diagnose_session_query_returns_unsupported_when_not_declared() -> None:
 
     assert diagnostic.declared is False
     assert diagnostic.status == "unsupported"
-    assert diagnostic.declared_contract_family is None
-    assert diagnostic.normalized_contract_family is None
+    assert diagnostic.declared_contract_variant is None
 
 
 def test_diagnose_session_query_returns_supported_status_for_codex() -> None:
@@ -189,8 +186,7 @@ def test_diagnose_session_query_returns_supported_status_for_codex() -> None:
 
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
-    assert diagnostic.declared_contract_family == "codex"
-    assert diagnostic.normalized_contract_family == "a2a_client_hub"
+    assert diagnostic.declared_contract_variant == "codex"
     assert diagnostic.pagination_mode == "limit"
 
 
@@ -211,7 +207,6 @@ def test_diagnose_session_query_returns_invalid_for_bad_contract() -> None:
 
     assert diagnostic.declared is True
     assert diagnostic.status == "invalid"
-    assert diagnostic.declared_contract_family == "opencode"
-    assert diagnostic.normalized_contract_family == "a2a_client_hub"
+    assert diagnostic.declared_contract_variant == "opencode"
     assert diagnostic.error is not None
     assert "pagination.max_size" in diagnostic.error

@@ -61,7 +61,7 @@ async def test_get_effective_allowed_hosts_singleflights_expired_refresh(
 
 
 @pytest.mark.asyncio
-async def test_prime_cache_falls_back_to_settings_snapshot_on_db_failure(
+async def test_refresh_cache_falls_back_to_settings_snapshot_on_db_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -75,7 +75,7 @@ async def test_prime_cache_falls_back_to_settings_snapshot_on_db_failure(
 
     db = SimpleNamespace(execute=execute)
 
-    cached_hosts = await a2a_proxy_service.prime_cache(db)
+    cached_hosts = await a2a_proxy_service.refresh_cache(db)
 
     assert cached_hosts == ["settings.example.com"]
     assert a2a_proxy_service.get_effective_allowed_hosts_sync() == [

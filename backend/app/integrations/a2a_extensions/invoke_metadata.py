@@ -121,7 +121,7 @@ def resolve_invoke_metadata(card: AgentCard) -> ResolvedInvokeMetadataExtension:
     return ResolvedInvokeMetadataExtension(
         uri=str(getattr(ext, "uri", INVOKE_METADATA_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         metadata_field=metadata_field,
         behavior=behavior,
         applies_to_methods=applies_to_methods,

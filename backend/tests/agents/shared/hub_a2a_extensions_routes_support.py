@@ -744,8 +744,8 @@ class _FakeExtensionsService:
             meta={"extension_uri": "urn:opencode-a2a:provider-discovery/v1"},
         )
 
-    async def list_codex_skills(self, *, runtime):
-        self.calls.append({"fn": "list_codex_skills", "runtime": runtime})
+    async def list_upstream_skills(self, *, runtime):
+        self.calls.append({"fn": "list_upstream_skills", "runtime": runtime})
         return _FakeExtensionResult(
             success=True,
             result={
@@ -760,19 +760,19 @@ class _FakeExtensionsService:
                                 "enabled": True,
                                 "scope": "project",
                                 "interface": {"input": "rich-text"},
-                                "codex": {"raw": {"name": "planning"}},
+                                "providerPrivate": {"raw": {"name": "planning"}},
                             }
                         ],
                         "errors": [],
-                        "codex": {"raw": {"cwd": "/workspace/project"}},
+                        "providerPrivate": {"raw": {"cwd": "/workspace/project"}},
                     }
                 ]
             },
-            meta={"capability_area": "codex_discovery"},
+            meta={"capability_area": "upstream_discovery"},
         )
 
-    async def list_codex_apps(self, *, runtime):
-        self.calls.append({"fn": "list_codex_apps", "runtime": runtime})
+    async def list_upstream_apps(self, *, runtime):
+        self.calls.append({"fn": "list_upstream_apps", "runtime": runtime})
         return _FakeExtensionResult(
             success=True,
             result={
@@ -787,16 +787,16 @@ class _FakeExtensionsService:
                         "mentionPath": "app://app-1",
                         "branding": {"icon": "workspace"},
                         "labels": [],
-                        "codex": {"raw": {"id": "app-1"}},
+                        "providerPrivate": {"raw": {"id": "app-1"}},
                     }
                 ],
                 "nextCursor": None,
             },
-            meta={"capability_area": "codex_discovery"},
+            meta={"capability_area": "upstream_discovery"},
         )
 
-    async def list_codex_plugins(self, *, runtime):
-        self.calls.append({"fn": "list_codex_plugins", "runtime": runtime})
+    async def list_upstream_plugins(self, *, runtime):
+        self.calls.append({"fn": "list_upstream_plugins", "runtime": runtime})
         return _FakeExtensionResult(
             success=True,
             result={
@@ -811,25 +811,25 @@ class _FakeExtensionsService:
                                 "description": "Coordinates work.",
                                 "enabled": True,
                                 "mentionPath": "plugin://planner@test",
-                                "codex": {"raw": {"name": "planner"}},
+                                "providerPrivate": {"raw": {"name": "planner"}},
                             }
                         ],
-                        "codex": {"raw": {"name": "test"}},
+                        "providerPrivate": {"raw": {"name": "test"}},
                     }
                 ],
                 "featuredPluginIds": ["test:planner"],
                 "marketplaceLoadErrors": [],
                 "remoteSyncError": None,
             },
-            meta={"capability_area": "codex_discovery"},
+            meta={"capability_area": "upstream_discovery"},
         )
 
-    async def read_codex_plugin(
+    async def read_upstream_plugin(
         self, *, runtime, marketplace_path: str, plugin_name: str
     ):
         self.calls.append(
             {
-                "fn": "read_codex_plugin",
+                "fn": "read_upstream_plugin",
                 "runtime": runtime,
                 "marketplace_path": marketplace_path,
                 "plugin_name": plugin_name,
@@ -848,10 +848,10 @@ class _FakeExtensionsService:
                     "apps": [{"id": "app-1"}],
                     "mcpServers": ["planner-server"],
                     "interface": {"transport": "mcp"},
-                    "codex": {"raw": {"name": plugin_name}},
+                    "providerPrivate": {"raw": {"name": plugin_name}},
                 }
             },
-            meta={"capability_area": "codex_discovery"},
+            meta={"capability_area": "upstream_discovery"},
         )
 
     async def reject_question_interrupt(

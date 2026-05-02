@@ -6,7 +6,7 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
 
 ## Status
 
-- Hub-private normalized contract family: `a2a_client_hub`
+- Hub-private normalization remains an internal runtime concern and is not exposed as a public contract-family field
 - Supported upstream declaration families currently include:
   - `opencode`: `urn:opencode-a2a:session-query/v1`
   - `opencode` HTTPS alias: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-management-v1`
@@ -14,7 +14,7 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
   - `legacy`: `urn:shared-a2a:session-query:v1`
   - `codex`: `urn:codex-a2a:codex-session-query/v1`
 - This document describes the Hub-private normalized contract only
-- Hub keeps the upstream-declared URI family and the normalized Hub contract family as separate diagnostic dimensions
+- Hub keeps the upstream-declared URI family as a public diagnostic dimension while retaining normalization details internally
 
 ## Contract Goals
 
@@ -22,7 +22,7 @@ The contract exists so that Hub can:
 
 - validate a peer during onboarding
 - classify the peer as `supported`, `unsupported`, or `invalid`
-- record the upstream-declared contract family separately from the Hub-private normalized contract family
+- record the upstream-declared contract family while keeping Hub-private normalization internal
 - choose the correct runtime parser path
 - reject ambiguous or unsafe declarations early
 
@@ -165,15 +165,15 @@ If an upstream server needs to describe method-specific result structures, that 
 At onboarding time, Hub emits:
 
 - `status = supported | unsupported | invalid`
-- `declaredContractFamily = opencode | codex | legacy` when the declaration family is recognized
-- `normalizedContractFamily = a2a_client_hub` when the declaration maps into the Hub-private normalized contract
+- `declaredContractFamily` only as a diagnostic declaration summary
+- capability summaries that describe whether Hub can negotiate and consume the extension
 
-At runtime, Hub uses that classification to choose:
+At runtime, Hub does not rely on a long-lived provider family branch. Instead it:
 
-- the direct parser path for `opencode`
-- the explicit legacy compatibility path
-- the explicit Codex compatibility path
-- or fast-fail for unsupported / invalid contracts
+- consumes the declared shared session query contract directly
+- attaches runtime negotiation hints when compatibility adaptations were required
+- treats provider-private compatibility details as advisory diagnostics
+- fast-fails only for unsupported / invalid contracts
 
 ## Reference Payloads
 

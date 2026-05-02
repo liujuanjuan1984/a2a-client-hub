@@ -5,11 +5,13 @@ This logic is shared by both user-managed (/me) and hub catalog (/a2a) routes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from a2a.types import AgentCard
 
 import app.core.config
+from app.features.extension_capabilities import common_router_support
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
@@ -22,6 +24,7 @@ from app.integrations.a2a_client.protobuf import (
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
 )
+from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.compatibility_profile_diagnostics import (
     diagnose_compatibility_profile,
 )
@@ -39,6 +42,7 @@ async def fetch_and_validate_agent_card(
     *,
     gateway: A2AGateway,
     resolved: ResolvedAgent,
+    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
 ) -> A2AAgentCardValidationResponse:
     """Fetch the agent card and validate it.
 
@@ -70,6 +74,7 @@ async def fetch_and_validate_agent_card(
         )
     validation_errors: list[str] = []
     validation_warnings: list[str] = []
+    extension_warnings: list[str] = []
     diagnostics_card: AgentCard | None = card if isinstance(card, AgentCard) else None
     strict_parse_error: str | None = None
 
@@ -113,31 +118,48 @@ async def fetch_and_validate_agent_card(
         if diagnostics_card is not None
         else None
     )
+    extension_capabilities = None
+    if diagnostics_card is not None:
+        try:
+            snapshot = extensions_service_getter().build_capability_snapshot_from_card(
+                card=diagnostics_card
+            )
+            extension_capabilities = (
+                common_router_support.build_extension_capabilities_response(snapshot)
+            )
+        except Exception as exc:
+            extension_warnings.append(
+                f"Extension capability summary is unavailable: {exc}"
+            )
     if session_query and session_query.status == "invalid" and session_query.error:
-        validation_errors.append(session_query.error)
+        extension_warnings.append(
+            f"Shared session query contract is invalid: {session_query.error}"
+        )
+    elif (
+        session_query
+        and session_query.status == "unsupported"
+        and session_query.declared
+    ):
+        extension_warnings.append(
+            session_query.error
+            or "Shared session query extension is not supported by Hub"
+        )
     if (
         compatibility_profile
         and compatibility_profile.status == "invalid"
         and compatibility_profile.error
     ):
-        validation_errors.append(compatibility_profile.error)
+        extension_warnings.append(
+            "Compatibility profile advisory is invalid and will be ignored: "
+            f"{compatibility_profile.error}"
+        )
+    validation_warnings.extend(extension_warnings)
 
     success = not validation_errors
     if success and validation_warnings:
         message = "Agent card validated with warnings"
     elif success:
         message = "Agent card validated"
-    elif session_query and session_query.status == "invalid" and session_query.error:
-        message = f"Shared session query contract is invalid: {session_query.error}"
-    elif (
-        compatibility_profile
-        and compatibility_profile.status == "invalid"
-        and compatibility_profile.error
-    ):
-        message = (
-            "Compatibility profile contract is invalid: "
-            f"{compatibility_profile.error}"
-        )
     else:
         message = "Agent card validation issues detected"
 
@@ -147,6 +169,7 @@ async def fetch_and_validate_agent_card(
         "card_name": card_payload.get("name"),
         "card_description": card_payload.get("description"),
         "card": card_payload,
+        "extensionCapabilities": extension_capabilities,
         "shared_session_query": session_query,
         "compatibility_profile": compatibility_profile,
     }

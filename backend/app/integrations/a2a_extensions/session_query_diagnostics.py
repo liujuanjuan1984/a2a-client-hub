@@ -9,8 +9,7 @@ from a2a.types import AgentCard
 from app.integrations.a2a_extensions.contract_utils import as_dict
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.session_query import (
-    resolve_canonical_session_query,
-    resolve_codex_session_query,
+    resolve_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
@@ -18,10 +17,8 @@ from app.integrations.a2a_extensions.shared_contract import (
 )
 from app.schemas.a2a_agent_card import SharedSessionQueryDiagnostic
 
-_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY = "a2a_client_hub"
 
-
-def _declared_contract_family(*, uses_codex_uri: bool) -> Literal["opencode", "codex"]:
+def _declared_contract_variant(*, uses_codex_uri: bool) -> Literal["opencode", "codex"]:
     if uses_codex_uri:
         return "codex"
     return "opencode"
@@ -57,7 +54,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     raw_pagination = as_dict(params.get("pagination"))
     result_envelope = params.get("result_envelope")
     uses_codex_uri = uri == CODEX_SHARED_SESSION_QUERY_URI
-    declared_contract_family = _declared_contract_family(
+    declared_contract_variant = _declared_contract_variant(
         uses_codex_uri=uses_codex_uri,
     )
 
@@ -85,18 +82,13 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         )
 
     try:
-        if uses_codex_uri:
-            resolver = resolve_codex_session_query
-        else:
-            resolver = resolve_canonical_session_query
-        resolved = resolver(card)
+        resolved = resolve_session_query(card)
     except A2AExtensionContractError as exc:
         return SharedSessionQueryDiagnostic(
             declared=True,
             status="invalid",
             uri=uri,
-            declaredContractFamily=declared_contract_family,
-            normalizedContractFamily=_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY,
+            declaredContractVariant=declared_contract_variant,
             provider=str(params.get("provider") or "").strip().lower() or None,
             methods=sorted(
                 key
@@ -119,9 +111,8 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         declared=True,
         status="supported",
         uri=resolved.uri,
-        declaredContractFamily=declared_contract_family,
-        normalizedContractFamily=_HUB_PRIVATE_SESSION_QUERY_CONTRACT_FAMILY,
-        provider=resolved.provider,
+        declaredContractVariant=declared_contract_variant,
+        provider=resolved.provider_key,
         methods=sorted(key for key, value in resolved.methods.items() if value),
         pagination_mode=(
             str(raw_pagination.get("mode")).strip()
@@ -129,6 +120,6 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
             else resolved.pagination.mode
         ),
         pagination_params=list(resolved.pagination.params),
-        result_envelope_declared=resolved.result_envelope is not None,
+        result_envelope_declared=result_envelope is not None,
         jsonrpc_interface_fallback_used=resolved.jsonrpc.fallback_used,
     )

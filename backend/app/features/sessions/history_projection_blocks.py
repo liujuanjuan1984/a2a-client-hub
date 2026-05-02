@@ -508,16 +508,3 @@ class SessionHistoryBlockProjectionService:
             if persisted:
                 persisted_blocks.append(persisted)
         return persisted_blocks
-
-    async def has_agent_message_blocks(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        agent_message_id: UUID,
-    ) -> bool:
-        return await block_store.has_blocks_for_message(
-            db,
-            user_id=user_id,
-            message_id=agent_message_id,
-        )

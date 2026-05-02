@@ -944,6 +944,55 @@ async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> 
 
 
 @pytest.mark.asyncio
+async def test_call_agent_passes_requested_extensions_into_adapter_request() -> None:
+    captured: dict[str, object] = {}
+
+    async def _fake_send(request):
+        captured["requested_extensions"] = request.requested_extensions
+        return {"message": {"parts": [{"text": "ok"}]}}
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._send_with_fallback = _fake_send
+
+    result = await a2a_client.call_agent(
+        "hello",
+        requested_extensions=["urn:a2a:stream-hints/v1"],
+    )
+
+    assert result["success"] is True
+    assert captured["requested_extensions"] == ("urn:a2a:stream-hints/v1",)
+
+
+@pytest.mark.asyncio
+async def test_static_header_interceptor_preserves_existing_service_parameters() -> (
+    None
+):
+    interceptor = client_module.StaticHeaderInterceptor(
+        {"X-Static": "static", "A2A-Extensions": "urn:a2a:stream-hints/v1"}
+    )
+    args = client_module.BeforeArgs(
+        input={},
+        method="message/send",
+        agent_card=Mock(),
+        context=client_module.ClientCallContext(
+            service_parameters={
+                "X-Request": "request",
+                "A2A-Extensions": "urn:a2a:session-binding/v1",
+            }
+        ),
+    )
+
+    await interceptor.before(args)
+
+    assert args.context is not None
+    assert args.context.service_parameters == {
+        "X-Request": "request",
+        "X-Static": "static",
+        "A2A-Extensions": ("urn:a2a:session-binding/v1,urn:a2a:stream-hints/v1"),
+    }
+
+
+@pytest.mark.asyncio
 async def test_call_agent_returns_structured_protocol_error_details() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._send_with_fallback = AsyncMock(
@@ -1004,6 +1053,26 @@ async def test_stream_agent_maps_connect_timeout_to_timeout() -> None:
     with pytest.raises(A2AUpstreamTimeoutError, match="timed out while establishing"):
         async for _ in a2a_client.stream_agent("hello"):
             pass
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_passes_requested_extensions_into_adapter_request() -> None:
+    captured: dict[str, object] = {}
+
+    async def _fake_stream(request):
+        captured["requested_extensions"] = request.requested_extensions
+        yield {"message": {"parts": [{"text": "ok"}]}}
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._stream_with_fallback = _fake_stream
+
+    async for _ in a2a_client.stream_agent(
+        "hello",
+        requested_extensions=["urn:a2a:stream-hints/v1"],
+    ):
+        pass
+
+    assert captured["requested_extensions"] == ("urn:a2a:stream-hints/v1",)
 
 
 @pytest.mark.asyncio

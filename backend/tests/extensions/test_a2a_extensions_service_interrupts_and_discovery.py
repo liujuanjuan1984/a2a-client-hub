@@ -41,7 +41,7 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -107,7 +107,7 @@ async def test_reply_permission_interrupt_forwards_metadata(
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -178,7 +178,7 @@ async def test_reject_question_interrupt_uses_request_id(
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -263,7 +263,7 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     ext = ResolvedInterruptCallbackExtension(
         uri=ext.uri,
         required=ext.required,
-        provider=ext.provider,
+        provider_key=ext.provider_key,
         jsonrpc=ext.jsonrpc,
         methods={
             "reply_permission": "shared.permission.reply",
@@ -313,7 +313,7 @@ async def test_reply_permissions_interrupt_uses_request_id_permissions_and_scope
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -420,7 +420,7 @@ async def test_reply_elicitation_interrupt_uses_request_id_action_and_content_co
     ext = ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -617,7 +617,7 @@ async def test_list_model_providers_returns_method_not_supported_when_wire_contr
 
 
 @pytest.mark.asyncio
-async def test_list_codex_skills_invokes_codex_discovery_service(
+async def test_list_upstream_skills_invokes_upstream_discovery_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -636,7 +636,7 @@ async def test_list_codex_skills_invokes_codex_discovery_service(
                 status="supported", ext=wire_contract
             ),
             compatibility_profile=_compatibility_profile_snapshot(),
-            codex_discovery=DeclaredMethodCollectionCapabilitySnapshot(
+            upstream_discovery=DeclaredMethodCollectionCapabilitySnapshot(
                 declared=True,
                 consumed_by_hub=True,
                 status="supported",
@@ -679,27 +679,29 @@ async def test_list_codex_skills_invokes_codex_discovery_service(
         )
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
-    monkeypatch.setattr(service._codex_discovery, "list_skills", _fake_list_skills)
+    monkeypatch.setattr(service._upstream_discovery, "list_skills", _fake_list_skills)
 
-    result = await service.list_codex_skills(runtime=runtime)
+    result = await service.list_upstream_skills(runtime=runtime)
 
     assert result.success is True
     assert result.result == {"items": []}
 
 
 @pytest.mark.asyncio
-async def test_read_codex_plugin_validates_marketplace_path_and_plugin_name() -> None:
+async def test_read_upstream_plugin_validates_marketplace_path_and_plugin_name() -> (
+    None
+):
     service = A2AExtensionsService()
     runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
 
     with pytest.raises(ValueError):
-        await service.read_codex_plugin(
+        await service.read_upstream_plugin(
             runtime=runtime,
             marketplace_path="   ",
             plugin_name="planner",
         )
     with pytest.raises(ValueError):
-        await service.read_codex_plugin(
+        await service.read_upstream_plugin(
             runtime=runtime,
             marketplace_path="/workspace/.codex/plugins/marketplace.json",
             plugin_name="   ",
@@ -707,7 +709,7 @@ async def test_read_codex_plugin_validates_marketplace_path_and_plugin_name() ->
 
 
 @pytest.mark.asyncio
-async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract_disallows_method(
+async def test_read_upstream_plugin_returns_method_not_supported_when_wire_contract_disallows_method(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -722,7 +724,7 @@ async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract
             wire_contract=_wire_contract_snapshot(
                 status="supported", ext=wire_contract
             ),
-            codex_discovery=DeclaredMethodCollectionCapabilitySnapshot(
+            upstream_discovery=DeclaredMethodCollectionCapabilitySnapshot(
                 declared=True,
                 consumed_by_hub=True,
                 status="partially_consumed",
@@ -766,10 +768,10 @@ async def test_read_codex_plugin_returns_method_not_supported_when_wire_contract
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(
-        service._codex_discovery, "read_plugin", _unexpected_read_plugin
+        service._upstream_discovery, "read_plugin", _unexpected_read_plugin
     )
 
-    result = await service.read_codex_plugin(
+    result = await service.read_upstream_plugin(
         runtime=runtime,
         marketplace_path="/workspace/.codex/plugins/marketplace.json",
         plugin_name="planner",
@@ -991,7 +993,7 @@ async def test_recover_interrupts_returns_method_not_supported_when_upstream_mis
     ext = ResolvedInterruptRecoveryExtension(
         uri=INTERRUPT_RECOVERY_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -1041,7 +1043,7 @@ async def test_recover_interrupts_supports_single_list_method_and_properties_pay
     ext = ResolvedInterruptRecoveryExtension(
         uri="urn:codex-a2a:codex-interrupt-recovery/v1",
         required=False,
-        provider="codex",
+        provider_key="codex",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),

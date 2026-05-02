@@ -21,15 +21,7 @@ from app.db.models.user import User
 from app.db.transaction import load_for_external_call
 from app.features.extension_capabilities import common_router_support
 from app.integrations.a2a_extensions import get_a2a_extensions_service
-from app.integrations.a2a_runtime_status_contract import (
-    runtime_status_contract_payload,
-)
 from app.schemas.a2a_extension import (
-    A2ACodexDiscoveryAppsListResponse,
-    A2ACodexDiscoveryPluginReadRequest,
-    A2ACodexDiscoveryPluginReadResponse,
-    A2ACodexDiscoveryPluginsListResponse,
-    A2ACodexDiscoverySkillsListResponse,
     A2AExtensionCapabilitiesResponse,
     A2AExtensionElicitationReplyRequest,
     A2AExtensionInterruptRecoveryRequest,
@@ -46,7 +38,11 @@ from app.schemas.a2a_extension import (
     A2AExtensionSessionMutationRequest,
     A2AInterruptRecoveryResponse,
     A2AModelDiscoveryRequest,
-    A2ARuntimeStatusContractResponse,
+    A2AUpstreamDiscoveryAppsListResponse,
+    A2AUpstreamDiscoveryPluginReadRequest,
+    A2AUpstreamDiscoveryPluginReadResponse,
+    A2AUpstreamDiscoveryPluginsListResponse,
+    A2AUpstreamDiscoverySkillsListResponse,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -110,57 +106,7 @@ def create_extension_capability_router(
         snapshot = await _extensions_service().resolve_capability_snapshot(
             runtime=runtime
         )
-        model_selection = snapshot.model_selection.status == "supported"
-        provider_discovery = snapshot.provider_discovery.status == "supported"
-        interrupt_recovery = snapshot.interrupt_recovery.status == "supported"
-        session_control = common_router_support.build_session_control_response(snapshot)
-        session_prompt_async = (
-            session_control.prompt_async.declared
-            and session_control.prompt_async.consumed_by_hub
-        )
-
-        return A2AExtensionCapabilitiesResponse(
-            modelSelection=model_selection,
-            providerDiscovery=provider_discovery,
-            interruptRecovery=interrupt_recovery,
-            interruptRecoveryDetails=common_router_support.build_interrupt_recovery_details_response(
-                snapshot
-            ),
-            sessionPromptAsync=session_prompt_async,
-            sessionControl=session_control,
-            invokeMetadata=common_router_support.build_invoke_metadata_response(
-                snapshot
-            ),
-            requestExecutionOptions=common_router_support.build_request_execution_options_response(
-                snapshot
-            ),
-            streamHints=common_router_support.build_stream_hints_response(snapshot),
-            wireContract=common_router_support.build_wire_contract_response(snapshot),
-            compatibilityProfile=common_router_support.build_compatibility_profile_response(
-                snapshot
-            ),
-            codexDiscovery=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_discovery", None)
-            ),
-            codexThreads=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_threads", None)
-            ),
-            codexTurns=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_turns", None)
-            ),
-            codexReview=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_review", None)
-            ),
-            codexThreadWatch=common_router_support.build_declared_single_method_response(
-                getattr(snapshot, "codex_thread_watch", None)
-            ),
-            codexExec=common_router_support.build_declared_method_collection_response(
-                getattr(snapshot, "codex_exec", None)
-            ),
-            runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
-                runtime_status_contract_payload()
-            ),
-        )
+        return common_router_support.build_extension_capabilities_response(snapshot)
 
     @router.post(
         "/{agent_id}/extensions/models/providers:list",
@@ -233,11 +179,11 @@ def create_extension_capability_router(
         )
 
     @router.get(
-        "/{agent_id}/extensions/codex/skills",
-        response_model=A2ACodexDiscoverySkillsListResponse,
+        "/{agent_id}/extensions/upstream/skills",
+        response_model=A2AUpstreamDiscoverySkillsListResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def list_codex_skills(
+    async def list_upstream_skills(
         *,
         agent_id: UUID,
         response: Response,
@@ -247,7 +193,7 @@ def create_extension_capability_router(
         response.headers["Cache-Control"] = "no-store"
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
-            _scope_message("Codex discovery skills list requested"),
+            _scope_message("Upstream discovery skills list requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -255,15 +201,15 @@ def create_extension_capability_router(
             },
         )
         return await common_router_support.run_extension_call(
-            _extensions_service().list_codex_skills(runtime=runtime)
+            _extensions_service().list_upstream_skills(runtime=runtime)
         )
 
     @router.get(
-        "/{agent_id}/extensions/codex/apps",
-        response_model=A2ACodexDiscoveryAppsListResponse,
+        "/{agent_id}/extensions/upstream/apps",
+        response_model=A2AUpstreamDiscoveryAppsListResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def list_codex_apps(
+    async def list_upstream_apps(
         *,
         agent_id: UUID,
         response: Response,
@@ -273,7 +219,7 @@ def create_extension_capability_router(
         response.headers["Cache-Control"] = "no-store"
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
-            _scope_message("Codex discovery apps list requested"),
+            _scope_message("Upstream discovery apps list requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -281,15 +227,15 @@ def create_extension_capability_router(
             },
         )
         return await common_router_support.run_extension_call(
-            _extensions_service().list_codex_apps(runtime=runtime)
+            _extensions_service().list_upstream_apps(runtime=runtime)
         )
 
     @router.get(
-        "/{agent_id}/extensions/codex/plugins",
-        response_model=A2ACodexDiscoveryPluginsListResponse,
+        "/{agent_id}/extensions/upstream/plugins",
+        response_model=A2AUpstreamDiscoveryPluginsListResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def list_codex_plugins(
+    async def list_upstream_plugins(
         *,
         agent_id: UUID,
         response: Response,
@@ -299,7 +245,7 @@ def create_extension_capability_router(
         response.headers["Cache-Control"] = "no-store"
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
-            _scope_message("Codex discovery plugins list requested"),
+            _scope_message("Upstream discovery plugins list requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -307,18 +253,18 @@ def create_extension_capability_router(
             },
         )
         return await common_router_support.run_extension_call(
-            _extensions_service().list_codex_plugins(runtime=runtime)
+            _extensions_service().list_upstream_plugins(runtime=runtime)
         )
 
     @router.post(
-        "/{agent_id}/extensions/codex/plugins:read",
-        response_model=A2ACodexDiscoveryPluginReadResponse,
+        "/{agent_id}/extensions/upstream/plugins:read",
+        response_model=A2AUpstreamDiscoveryPluginReadResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def read_codex_plugin(
+    async def read_upstream_plugin(
         *,
         agent_id: UUID,
-        payload: A2ACodexDiscoveryPluginReadRequest,
+        payload: A2AUpstreamDiscoveryPluginReadRequest,
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
@@ -326,7 +272,7 @@ def create_extension_capability_router(
         response.headers["Cache-Control"] = "no-store"
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
         logger.info(
-            _scope_message("Codex discovery plugin read requested"),
+            _scope_message("Upstream discovery plugin read requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -336,7 +282,7 @@ def create_extension_capability_router(
             },
         )
         return await common_router_support.run_extension_call(
-            _extensions_service().read_codex_plugin(
+            _extensions_service().read_upstream_plugin(
                 runtime=runtime,
                 marketplace_path=payload.marketplace_path,
                 plugin_name=payload.plugin_name,

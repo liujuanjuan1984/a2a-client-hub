@@ -11,14 +11,14 @@ from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExten
 
 def _extract_provider_private_metadata(
     session_metadata: Optional[Dict[str, Any]],
-    metadata_namespace: str,
+    provider_private_namespace: str,
 ) -> Optional[Dict[str, Any]]:
     if not session_metadata:
         return None
-    section = session_metadata.get(metadata_namespace)
+    section = session_metadata.get(provider_private_namespace)
     if not isinstance(section, dict):
         return None
-    return {metadata_namespace: dict(section)}
+    return {provider_private_namespace: dict(section)}
 
 
 class ProviderDiscoveryService:
@@ -51,12 +51,13 @@ class ProviderDiscoveryService:
             jsonrpc_url=jsonrpc_url,
             method_name=method_name,
             params=params,
+            requested_extensions=[ext.uri],
         )
 
         meta: Dict[str, Any] = {
             "extension_uri": ext.uri,
             "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "provider": ext.provider,
+            "provider": ext.provider_key,
         }
         if meta_extra:
             meta.update(meta_extra)
@@ -108,12 +109,12 @@ class ProviderDiscoveryService:
         adapted_session_metadata = adapt_working_directory_metadata_for_upstream(
             session_metadata,
             working_directory,
-            metadata_namespace=ext.metadata_namespace,
+            metadata_namespace=ext.provider_private_namespace,
         )
         normalized_metadata = self._support.normalize_extension_metadata(
             _extract_provider_private_metadata(
                 adapted_session_metadata,
-                ext.metadata_namespace,
+                ext.provider_private_namespace,
             )
         )
         if normalized_metadata is not None:
@@ -143,12 +144,12 @@ class ProviderDiscoveryService:
         adapted_session_metadata = adapt_working_directory_metadata_for_upstream(
             session_metadata,
             working_directory,
-            metadata_namespace=ext.metadata_namespace,
+            metadata_namespace=ext.provider_private_namespace,
         )
         normalized_metadata = self._support.normalize_extension_metadata(
             _extract_provider_private_metadata(
                 adapted_session_metadata,
-                ext.metadata_namespace,
+                ext.provider_private_namespace,
             )
         )
         if normalized_metadata is not None:

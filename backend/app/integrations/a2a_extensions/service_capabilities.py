@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Literal, Protocol
 
+from a2a.types import AgentCard
+
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions import capability_snapshot_builder
 from app.integrations.a2a_extensions.capability_snapshot import (
@@ -37,18 +39,18 @@ from app.integrations.a2a_extensions.types import (
     ResolvedWireContractExtension,
 )
 
-CODEX_DISCOVERY_METHODS = {
+UPSTREAM_DISCOVERY_METHODS = {
     "skillsList": "codex.discovery.skills.list",
     "appsList": "codex.discovery.apps.list",
     "pluginsList": "codex.discovery.plugins.list",
     "pluginsRead": "codex.discovery.plugins.read",
     "watch": "codex.discovery.watch",
 }
-CODEX_TURNS_METHODS = {
+UPSTREAM_TURN_METHODS = {
     "steer": "codex.turns.steer",
 }
-CODEX_TURN_CONTROL_URI = "urn:codex-a2a:codex-turn-control/v1"
-CODEX_TURN_CONTROL_BUSINESS_CODE_MAP = {
+UPSTREAM_TURN_CONTROL_EXTENSION_URI = "urn:codex-a2a:codex-turn-control/v1"
+UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP = {
     -32007: "authorization_forbidden",
     -32012: "turn_not_steerable",
     -32013: "turn_forbidden",
@@ -83,20 +85,16 @@ class A2AExtensionCapabilityService:
         async with self._capability_snapshot_cache_lock:
             self._capability_snapshot_cache.clear()
 
-    @staticmethod
-    def capability_snapshot_cache_key(
-        runtime: A2ARuntime,
-    ) -> tuple[str, tuple[tuple[str, str], ...]]:
-        resolved_headers = getattr(runtime.resolved, "headers", {}) or {}
-        headers = tuple(sorted(resolved_headers.items()))
-        return runtime.resolved.url, headers
-
     async def resolve_capability_snapshot(
         self,
         *,
         runtime: A2ARuntime,
     ) -> ResolvedCapabilitySnapshot:
-        cache_key = self.capability_snapshot_cache_key(runtime)
+        resolved_headers = getattr(runtime.resolved, "headers", {}) or {}
+        cache_key = (
+            runtime.resolved.url,
+            tuple(sorted(resolved_headers.items())),
+        )
         now = self._time.monotonic()
         async with self._capability_snapshot_cache_lock:
             cached = self._capability_snapshot_cache.get(cache_key)
@@ -104,6 +102,19 @@ class A2AExtensionCapabilityService:
                 return cached.snapshot
 
         card = await self._support.fetch_card(runtime)
+        snapshot = self.build_capability_snapshot_from_card(card=card)
+        async with self._capability_snapshot_cache_lock:
+            self._capability_snapshot_cache[cache_key] = CapabilitySnapshotCacheEntry(
+                snapshot=snapshot,
+                expires_at=now + CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS,
+            )
+        return snapshot
+
+    def build_capability_snapshot_from_card(
+        self,
+        *,
+        card: AgentCard,
+    ) -> ResolvedCapabilitySnapshot:
         wire_contract = capability_snapshot_builder.build_wire_contract_snapshot(card)
         jsonrpc_url = None
         try:
@@ -116,7 +127,7 @@ class A2AExtensionCapabilityService:
         compatibility_profile = (
             capability_snapshot_builder.build_compatibility_profile_snapshot(card)
         )
-        snapshot = ResolvedCapabilitySnapshot(
+        return ResolvedCapabilitySnapshot(
             session_query=capability_snapshot_builder.build_session_query_snapshot(
                 card
             ),
@@ -147,42 +158,49 @@ class A2AExtensionCapabilityService:
             stream_hints=capability_snapshot_builder.build_stream_hints_snapshot(card),
             wire_contract=wire_contract,
             compatibility_profile=compatibility_profile,
-            codex_discovery=capability_snapshot_builder.build_codex_discovery_snapshot(
+            upstream_discovery=capability_snapshot_builder.build_upstream_discovery_snapshot(
                 card,
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_threads=capability_snapshot_builder.build_codex_threads_snapshot(
+            upstream_threads=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "threads",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_turns=capability_snapshot_builder.build_codex_turns_snapshot(
+            upstream_turns=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "turns",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_review=capability_snapshot_builder.build_codex_review_snapshot(
+            upstream_review=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "review",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
-            codex_thread_watch=capability_snapshot_builder.build_codex_thread_watch_snapshot(
-                wire_contract, jsonrpc_url=jsonrpc_url
-            ),
-            codex_exec=capability_snapshot_builder.build_codex_exec_snapshot(
+            upstream_exec=capability_snapshot_builder.build_upstream_method_family_snapshot(
+                "exec",
                 wire_contract,
                 compatibility_profile,
                 jsonrpc_url=jsonrpc_url,
             ),
         )
-        async with self._capability_snapshot_cache_lock:
-            self._capability_snapshot_cache[cache_key] = CapabilitySnapshotCacheEntry(
-                snapshot=snapshot,
-                expires_at=now + CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS,
+
+    @staticmethod
+    def resolve_upstream_method_family(
+        snapshot: ResolvedCapabilitySnapshot,
+        family_name: str,
+    ) -> DeclaredMethodCollectionCapabilitySnapshot:
+        family = snapshot.upstream_method_families.get(family_name)
+        if family is None:
+            raise A2AExtensionNotSupportedError(
+                f"Upstream method family {family_name} is not available"
             )
-        return snapshot
+        return family
 
     @staticmethod
     def require_session_query_capability(

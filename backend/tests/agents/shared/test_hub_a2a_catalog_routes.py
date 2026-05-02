@@ -16,6 +16,7 @@ from app.features.agents.shared.runtime import (
     SharedAgentRuntimeValidationError,
     SharedAgentUserCredentialRequiredError,
 )
+from tests.support.a2a import parse_agent_card
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
 
@@ -65,20 +66,63 @@ class _FakeGateway:
             ),
             {"statusUpdate": {"status": {"state": "TASK_STATE_COMPLETED"}}},
         ]
+        self.card = parse_agent_card(
+            {
+                "name": "Fake Agent",
+                "description": "Fake agent for shared catalog tests",
+                "version": "1.0",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://example.com/jsonrpc",
+                        "protocolBinding": "JSONRPC",
+                    }
+                ],
+                "capabilities": {"extensions": []},
+                "defaultInputModes": [],
+                "defaultOutputModes": [],
+                "skills": [
+                    {
+                        "id": "fake-skill",
+                        "name": "fake-skill",
+                        "description": "fake",
+                        "tags": [],
+                    }
+                ],
+            }
+        )
 
-    async def invoke(self, *, resolved, query: str, context_id=None, metadata=None):
+    async def fetch_agent_card_detail(self, **_kwargs):
+        return self.card
+
+    async def invoke(
+        self,
+        *,
+        resolved,
+        query: str,
+        context_id=None,
+        metadata=None,
+        requested_extensions=None,
+    ):
         self.calls.append(
             {
                 "resolved": resolved,
                 "query": query,
                 "context_id": context_id,
                 "metadata": metadata,
+                "requested_extensions": tuple(requested_extensions or ()),
             }
         )
         return dict(self.invoke_response)
 
     async def stream(
-        self, *, session=None, resolved, query: str, context_id=None, metadata=None
+        self,
+        *,
+        session=None,
+        resolved,
+        query: str,
+        context_id=None,
+        metadata=None,
+        requested_extensions=None,
     ):
         self.calls.append(
             {
@@ -87,6 +131,7 @@ class _FakeGateway:
                 "query": query,
                 "context_id": context_id,
                 "metadata": metadata,
+                "requested_extensions": tuple(requested_extensions or ()),
                 "stream": True,
             }
         )

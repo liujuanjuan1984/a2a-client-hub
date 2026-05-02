@@ -9,7 +9,6 @@ from tests.extensions.a2a_extensions_service_support import (
     A2AExtensionsService,
     CompatibilityRetentionEntry,
     DeclaredMethodCapabilitySnapshot,
-    DeclaredSingleMethodCapabilitySnapshot,
     ResolvedCompatibilityProfileExtension,
     ResolvedConditionalMethodAvailability,
     SimpleNamespace,
@@ -204,7 +203,7 @@ def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> N
     assert snapshot.ext.method_retention == {}
 
 
-def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
+def test_build_upstream_followup_snapshots_from_wire_contract_methods() -> None:
     card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(
         status="supported",
@@ -222,32 +221,32 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     )
 
     compatibility_profile = _compatibility_profile_snapshot()
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card,
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    threads = capability_snapshot_builder.build_codex_threads_snapshot(
+    threads = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "threads",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    turns = capability_snapshot_builder.build_codex_turns_snapshot(
+    turns = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "turns",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    review = capability_snapshot_builder.build_codex_review_snapshot(
+    review = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "review",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    thread_watch = capability_snapshot_builder.build_codex_thread_watch_snapshot(
-        wire_contract,
-        jsonrpc_url="https://example.com/jsonrpc",
-    )
-    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
+    exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "exec",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
@@ -316,14 +315,6 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
         method=None,
     )
 
-    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
-        declared=True,
-        consumed_by_hub=False,
-        status="unsupported_by_design",
-        method="codex.threads.watch",
-        jsonrpc_url="https://example.com/jsonrpc",
-    )
-
     assert exec_capability.declared is True
     assert exec_capability.consumed_by_hub is False
     assert exec_capability.status == "unsupported_by_design"
@@ -346,30 +337,27 @@ def test_build_codex_followup_snapshots_from_wire_contract_methods() -> None:
     )
 
 
-def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract() -> (
+def test_build_upstream_followup_snapshots_return_unsupported_without_wire_contract() -> (
     None
 ):
     card = SimpleNamespace(capabilities=SimpleNamespace(extensions=[]))
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
     compatibility_profile = _compatibility_profile_snapshot()
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card, wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    threads = capability_snapshot_builder.build_codex_threads_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    threads = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "threads", wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    turns = capability_snapshot_builder.build_codex_turns_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    turns = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "turns", wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    review = capability_snapshot_builder.build_codex_review_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    review = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "review", wire_contract, compatibility_profile, jsonrpc_url=None
     )
-    thread_watch = capability_snapshot_builder.build_codex_thread_watch_snapshot(
-        wire_contract, jsonrpc_url=None
-    )
-    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
-        wire_contract, compatibility_profile, jsonrpc_url=None
+    exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "exec", wire_contract, compatibility_profile, jsonrpc_url=None
     )
 
     assert discovery.declared is False
@@ -391,20 +379,12 @@ def test_build_codex_followup_snapshots_return_unsupported_without_wire_contract
     assert review.status == "unsupported"
     assert all(method.declared is False for method in review.methods.values())
 
-    assert thread_watch == DeclaredSingleMethodCapabilitySnapshot(
-        declared=False,
-        consumed_by_hub=False,
-        status="unsupported",
-        method=None,
-        jsonrpc_url=None,
-    )
-
     assert exec_capability.declared is False
     assert exec_capability.status == "unsupported"
     assert all(method.declared is False for method in exec_capability.methods.values())
 
 
-def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
+def test_build_upstream_conditional_snapshots_mark_disabled_methods() -> None:
     compatibility_profile = _compatibility_profile_snapshot(
         status="supported",
         ext=ResolvedCompatibilityProfileExtension(
@@ -503,17 +483,20 @@ def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
         ),
     )
 
-    turns = capability_snapshot_builder.build_codex_turns_snapshot(
+    turns = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "turns",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    review = capability_snapshot_builder.build_codex_review_snapshot(
+    review = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "review",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
     )
-    exec_capability = capability_snapshot_builder.build_codex_exec_snapshot(
+    exec_capability = capability_snapshot_builder.build_upstream_method_family_snapshot(
+        "exec",
         wire_contract,
         compatibility_profile,
         jsonrpc_url="https://example.com/jsonrpc",
@@ -555,7 +538,7 @@ def test_build_codex_conditional_snapshots_mark_disabled_methods() -> None:
     )
 
 
-def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
+def test_build_upstream_discovery_snapshot_uses_wire_contract_fallback_hints() -> None:
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -576,7 +559,7 @@ def test_build_codex_discovery_snapshot_uses_wire_contract_fallback_hints() -> N
         error="Extension contract missing/invalid 'params.protocol_version'",
     )
 
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card,
         wire_contract,
         _compatibility_profile_snapshot(),
@@ -638,9 +621,9 @@ def test_build_request_execution_options_snapshot_collects_declared_contracts() 
         card
     )
 
-    assert snapshot.status == "declared_not_consumed"
+    assert snapshot.status == "supported"
     assert snapshot.declared is True
-    assert snapshot.consumed_by_hub is False
+    assert snapshot.consumed_by_hub is True
     assert snapshot.metadata_field == "metadata.codex.execution"
     assert snapshot.fields == ("model", "effort", "summary", "personality")
     assert snapshot.persists_for_thread is True
@@ -681,7 +664,7 @@ def test_build_request_execution_options_snapshot_reports_invalid_contract() -> 
     )
 
 
-def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
+def test_build_upstream_discovery_snapshot_uses_extension_method_hints() -> None:
     card = SimpleNamespace(
         capabilities=SimpleNamespace(
             extensions=[
@@ -698,7 +681,7 @@ def test_build_codex_discovery_snapshot_uses_extension_method_hints() -> None:
     )
     wire_contract = _wire_contract_snapshot(status="unsupported")
 
-    discovery = capability_snapshot_builder.build_codex_discovery_snapshot(
+    discovery = capability_snapshot_builder.build_upstream_discovery_snapshot(
         card,
         wire_contract,
         _compatibility_profile_snapshot(),

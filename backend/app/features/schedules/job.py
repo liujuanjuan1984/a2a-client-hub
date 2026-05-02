@@ -146,10 +146,6 @@ def _resolve_schedule_failure_details(
     return error_code, normalize_non_empty_text(str(exc))
 
 
-def _derive_recovery_timeouts() -> tuple[int, int]:
-    return derive_schedule_recovery_timeouts()
-
-
 async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> bool:
     observed_at = utc_now()
     async with AsyncSessionLocal() as db:
@@ -965,7 +961,7 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
         # worker crashes after claiming a task but before persisting the execution.
         try:
             heartbeat_timeout_seconds, hard_timeout_seconds = (
-                _derive_recovery_timeouts()
+                derive_schedule_recovery_timeouts()
             )
             recovered = await a2a_schedule_service.recover_stale_running_tasks(
                 timeout_seconds=heartbeat_timeout_seconds,

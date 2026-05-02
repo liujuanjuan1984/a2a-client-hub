@@ -307,8 +307,9 @@ Contract references:
 
 - Canonical contract: [`docs/contracts/shared-session-query-canonical-contract.md`](../docs/contracts/shared-session-query-canonical-contract.md)
 - Reference payloads: [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
-- Hub recognizes the newer opencode public HTTPS alias `#opencode-session-management-v1` while preserving Hub-private normalized `session_query` naming internally.
-- Hub also accepts the Codex compatibility URI `urn:codex-a2a:codex-session-query/v1` when its declared pagination and control semantics stay losslessly mappable to the Hub-private normalized `a2a_client_hub` session-query contract family.
+- Consumer baseline and negotiation model: [`docs/a2a-consumer-baseline.md`](../docs/a2a-consumer-baseline.md)
+- Hub recognizes the newer opencode public HTTPS alias `#opencode-session-management-v1` and negotiates declared extensions per request instead of treating them as static global contracts.
+- Hub also accepts the Codex compatibility URI `urn:codex-a2a:codex-session-query/v1` when its declared pagination and control semantics remain safely consumable without redefining overall A2A interoperability.
 - Cross-cutting API examples: [`docs/architecture-and-api.md`](../docs/architecture-and-api.md)
 - Compatibility notes and non-goals: [`docs/compatibility-and-non-goals.md`](../docs/compatibility-and-non-goals.md)
 
@@ -323,24 +324,21 @@ Endpoints:
 
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
-  - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
-  - `compatibilityProfile.extensionRetention` and `compatibilityProfile.methodRetention` now preserve optional machine-readable governance fields such as `implementationScope`, `identityScope`, and `upstreamStability` when upstream declares them.
-  - The same capability response also surfaces `codexDiscovery`, `codexThreadWatch`, and `codexExec` diagnostics derived from the declared wire-contract method matrix. `codexDiscovery` now distinguishes `supported`, `partially_consumed`, `declared_not_consumed`, and `unsupported`, while `codexThreadWatch` and `codexExec` remain `unsupported_by_design`.
+  - The response includes a `compatibilityProfile` advisory summary when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI). Hub now exposes only advisory counts, top-level behavior keys, and `consumerGuidance` instead of re-exporting the full provider retention contract.
+  - The same capability response now folds provider-specific wire-contract diagnostics into a generic `upstreamMethodFamilies` block rather than exposing separate `codex*` top-level fields.
   - `sessionControl.append` now exposes a Hub-stable running-session append contract, including whether append is supported, which normalized route mode the Hub will use (`prompt_async`, `turn_steer`, or `hybrid`), and whether shared stream identity is required.
-  - The capability response also surfaces `codexThreads`, `codexTurns`, and `codexReview` collection diagnostics so newer upstream lifecycle/control families remain visible. `codexTurns` remains backend diagnostics and compatibility input when the downstream exposes `codex.turns.steer`, while `codexThreads` and `codexReview` remain diagnostics-only.
-  - Each declared Codex method now also reports method-level `availability`, `configKey`, `reason`, and `retention`, allowing deployment-conditional upstream surfaces to remain visible as `enabled`/`disabled` diagnostics instead of being flattened into plain unsupported responses.
-  - `codexDiscovery` also reports `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints can be surfaced without incorrectly promoting them to Hub-consumable support.
-  - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions without yet promoting them to a Hub-consumed feature surface.
+  - Each upstream method family still reports method-level `availability`, `configKey`, `reason`, `retention`, `declarationSource`, `declarationConfidence`, `negotiationState`, and `diagnosticNote` so weak fallback hints stay visible without being promoted into a Hub-private taxonomy.
+  - `requestExecutionOptions` surfaces declared `metadata.codex.execution` override contracts from session-binding/session-query extensions as a consumed request-scoped capability surface.
   - `streamHints` surfaces whether the shared stream-hints contract is declared, whether Hub actively consumes it, which metadata fields are used, and whether Hub had to fall back to compatibility heuristics.
   - `interruptRecoveryDetails` surfaces adapter-local interrupt recovery scope diagnostics, including recovery data source, identity scope, implementation scope, and whether unresolved caller identity returns an empty item list.
-- Read Codex discovery lists through Hub-stable APIs:
-  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/skills`
-  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/apps`
-  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins`
-- Read Codex plugin details through a Hub-stable API:
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/codex/plugins:read`
+- Read upstream discovery lists through Hub-stable APIs:
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/upstream/skills`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/upstream/apps`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/upstream/plugins`
+- Read upstream plugin details through a Hub-stable API:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/upstream/plugins:read`
     - body: `{ "marketplacePath": "plugin://marketplace/codex-default", "pluginName": "planner" }`
-  - Codex discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
+  - Upstream discovery list and read payloads preserve upstream-stable identifiers needed for downstream consumers, including skill `path`, app/plugin `mentionPath`, plugin `marketplacePath`, and per-item `codex` envelopes.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body: `{ "workingDirectory": "/workspace/app" }`
@@ -356,7 +354,7 @@ Endpoints:
 
 Validation:
 
-- `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a `compatibility_profile` diagnostic when the upstream card declares the compatibility-profile extension.
+- `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a `compatibility_profile` advisory diagnostic and a generic `extensionCapabilities` summary when the upstream card declares compatible extensions.
 - When an upstream advertises top-level `supportsAuthenticatedExtendedCard`, Hub prefers fetching the authenticated extended card so provider-private extension contracts can still be resolved even if the public Agent Card is intentionally slimmed down.
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:continue`

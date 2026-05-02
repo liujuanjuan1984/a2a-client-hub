@@ -27,12 +27,14 @@ from app.features.schedules.common import (
     ClaimedA2AScheduleTask,
 )
 from app.features.schedules.job import (
-    _derive_recovery_timeouts,
     _execute_claimed_task,
     _refresh_ops_metrics,
     _schedule_run_heartbeat_loop,
     _try_hold_dispatch_leader_lock,
     dispatch_due_a2a_schedules,
+)
+from app.features.schedules.runtime_summary import (
+    derive_schedule_recovery_timeouts,
 )
 from app.features.schedules.service import a2a_schedule_service
 from app.integrations.a2a_client.errors import A2AAgentUnavailableError
@@ -164,7 +166,7 @@ __all__ = [
     "_build_claim",
     "_create_agent",
     "_create_schedule_task",
-    "_derive_recovery_timeouts",
+    "derive_schedule_recovery_timeouts",
     "_execute_claimed_task",
     "_mark_task_claimed",
     "_mock_gateway_stream",

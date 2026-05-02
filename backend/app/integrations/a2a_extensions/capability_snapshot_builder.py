@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from app.integrations.a2a_extensions.capability_snapshot import (
     CompatibilityProfileCapabilitySnapshot,
     DeclaredMethodCapabilitySnapshot,
     DeclaredMethodCollectionCapabilitySnapshot,
-    DeclaredSingleMethodCapabilitySnapshot,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
     InvokeMetadataCapabilitySnapshot,
@@ -19,9 +19,6 @@ from app.integrations.a2a_extensions.capability_snapshot import (
     SessionQueryCapabilitySnapshot,
     StreamHintsCapabilitySnapshot,
     WireContractCapabilitySnapshot,
-)
-from app.integrations.a2a_extensions.codex_declaration_diagnostics import (
-    diagnose_codex_discovery_fallback,
 )
 from app.integrations.a2a_extensions.compatibility_profile import (
     resolve_compatibility_profile,
@@ -39,8 +36,8 @@ from app.integrations.a2a_extensions.interrupt_recovery import (
 )
 from app.integrations.a2a_extensions.invoke_metadata import resolve_invoke_metadata
 from app.integrations.a2a_extensions.model_selection import resolve_model_selection
-from app.integrations.a2a_extensions.opencode_provider_discovery import (
-    resolve_opencode_provider_discovery,
+from app.integrations.a2a_extensions.provider_discovery_resolution import (
+    resolve_provider_discovery_extension,
 )
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.session_query_runtime_selection import (
@@ -55,51 +52,98 @@ from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
-from app.integrations.a2a_extensions.types import (
-    CompatibilityRetentionEntry,
-    ResolvedConditionalMethodAvailability,
+from app.integrations.a2a_extensions.upstream_discovery_declaration_diagnostics import (
+    diagnose_upstream_discovery_fallback,
 )
 from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
 
-_CODEX_DISCOVERY_METHODS = {
-    "skillsList": "codex.discovery.skills.list",
-    "appsList": "codex.discovery.apps.list",
-    "pluginsList": "codex.discovery.plugins.list",
-    "pluginsRead": "codex.discovery.plugins.read",
-    "watch": "codex.discovery.watch",
+
+@dataclass(frozen=True, slots=True)
+class UpstreamMethodFamilySpec:
+    method_map: dict[str, str]
+    hub_consumption: dict[str, bool]
+    unsupported_status_when_declared: Literal[
+        "declared_not_consumed", "unsupported_by_design"
+    ]
+    declaration_source: (
+        Literal[
+            "none",
+            "wire_contract",
+            "wire_contract_fallback",
+            "extension_method_hint",
+            "extension_uri_hint",
+        ]
+        | None
+    ) = None
+    declaration_confidence: Literal["none", "fallback", "authoritative"] | None = None
+    negotiation_state: (
+        Literal["supported", "missing", "invalid", "unsupported"] | None
+    ) = None
+    supports_declaration_fallback: bool = False
+
+
+UPSTREAM_METHOD_FAMILY_SPECS: dict[str, UpstreamMethodFamilySpec] = {
+    "discovery": UpstreamMethodFamilySpec(
+        method_map={
+            "skillsList": "codex.discovery.skills.list",
+            "appsList": "codex.discovery.apps.list",
+            "pluginsList": "codex.discovery.plugins.list",
+            "pluginsRead": "codex.discovery.plugins.read",
+            "watch": "codex.discovery.watch",
+        },
+        hub_consumption={
+            "skillsList": True,
+            "appsList": True,
+            "pluginsList": True,
+            "pluginsRead": True,
+            "watch": False,
+        },
+        unsupported_status_when_declared="declared_not_consumed",
+        declaration_source="wire_contract",
+        declaration_confidence="authoritative",
+        negotiation_state="supported",
+        supports_declaration_fallback=True,
+    ),
+    "threads": UpstreamMethodFamilySpec(
+        method_map={
+            "fork": "codex.threads.fork",
+            "archive": "codex.threads.archive",
+            "unarchive": "codex.threads.unarchive",
+            "metadataUpdate": "codex.threads.metadata.update",
+            "watch": "codex.threads.watch",
+        },
+        hub_consumption={},
+        unsupported_status_when_declared="unsupported_by_design",
+    ),
+    "turns": UpstreamMethodFamilySpec(
+        method_map={
+            "steer": "codex.turns.steer",
+        },
+        hub_consumption={
+            "steer": True,
+        },
+        unsupported_status_when_declared="declared_not_consumed",
+    ),
+    "review": UpstreamMethodFamilySpec(
+        method_map={
+            "start": "codex.review.start",
+            "watch": "codex.review.watch",
+        },
+        hub_consumption={},
+        unsupported_status_when_declared="unsupported_by_design",
+    ),
+    "exec": UpstreamMethodFamilySpec(
+        method_map={
+            "start": "codex.exec.start",
+            "write": "codex.exec.write",
+            "resize": "codex.exec.resize",
+            "terminate": "codex.exec.terminate",
+        },
+        hub_consumption={},
+        unsupported_status_when_declared="unsupported_by_design",
+    ),
 }
-_CODEX_DISCOVERY_HUB_CONSUMPTION = {
-    "skillsList": True,
-    "appsList": True,
-    "pluginsList": True,
-    "pluginsRead": True,
-    "watch": False,
-}
-_CODEX_EXEC_METHODS = {
-    "start": "codex.exec.start",
-    "write": "codex.exec.write",
-    "resize": "codex.exec.resize",
-    "terminate": "codex.exec.terminate",
-}
-_CODEX_THREADS_METHODS = {
-    "fork": "codex.threads.fork",
-    "archive": "codex.threads.archive",
-    "unarchive": "codex.threads.unarchive",
-    "metadataUpdate": "codex.threads.metadata.update",
-    "watch": "codex.threads.watch",
-}
-_CODEX_TURNS_METHODS = {
-    "steer": "codex.turns.steer",
-}
-_CODEX_TURNS_HUB_CONSUMPTION = {
-    "steer": True,
-}
-_CODEX_REVIEW_METHODS = {
-    "start": "codex.review.start",
-    "watch": "codex.review.watch",
-}
-_CODEX_THREAD_WATCH_METHOD = "codex.threads.watch"
-_CODEX_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
+_REQUEST_EXECUTION_METADATA_FIELD = "metadata.codex.execution"
 
 
 def build_session_query_snapshot(card: Any) -> SessionQueryCapabilitySnapshot:
@@ -253,7 +297,7 @@ def build_request_execution_options_snapshot(
                 contract.get("metadata_field"),
                 field="params.request_execution_options.metadata_field",
             )
-            if current_metadata_field != _CODEX_REQUEST_EXECUTION_METADATA_FIELD:
+            if current_metadata_field != _REQUEST_EXECUTION_METADATA_FIELD:
                 raise A2AExtensionContractError(
                     "Extension contract missing/invalid "
                     "'params.request_execution_options.metadata_field'"
@@ -324,9 +368,9 @@ def build_request_execution_options_snapshot(
         )
 
     return RequestExecutionOptionsCapabilitySnapshot(
-        status="declared_not_consumed",
+        status="supported",
         declared=True,
-        consumed_by_hub=False,
+        consumed_by_hub=True,
         metadata_field=metadata_field,
         fields=tuple(fields),
         persists_for_thread=persists_for_thread,
@@ -392,7 +436,7 @@ def build_provider_discovery_snapshot(
     card: Any,
 ) -> ProviderDiscoveryCapabilitySnapshot:
     try:
-        ext = resolve_opencode_provider_discovery(card)
+        ext = resolve_provider_discovery_extension(card)
     except A2AExtensionNotSupportedError as exc:
         return ProviderDiscoveryCapabilitySnapshot(
             status="unsupported",
@@ -531,30 +575,6 @@ def build_wire_contract_snapshot(
     )
 
 
-def declared_wire_contract_methods(
-    snapshot: WireContractCapabilitySnapshot,
-) -> frozenset[str]:
-    if snapshot.status != "supported" or snapshot.ext is None:
-        return frozenset()
-    return frozenset(snapshot.ext.all_jsonrpc_methods)
-
-
-def conditional_wire_contract_methods(
-    snapshot: WireContractCapabilitySnapshot,
-) -> dict[str, ResolvedConditionalMethodAvailability]:
-    if snapshot.status != "supported" or snapshot.ext is None:
-        return {}
-    return dict(snapshot.ext.conditionally_available_methods)
-
-
-def compatibility_method_retention(
-    snapshot: CompatibilityProfileCapabilitySnapshot,
-) -> dict[str, CompatibilityRetentionEntry]:
-    if snapshot.status != "supported" or snapshot.ext is None:
-        return {}
-    return dict(snapshot.ext.method_retention)
-
-
 def resolve_declared_method_snapshot(
     *,
     wire_contract: WireContractCapabilitySnapshot,
@@ -562,11 +582,24 @@ def resolve_declared_method_snapshot(
     method_name: str,
     consumed_by_hub: bool,
 ) -> DeclaredMethodCapabilitySnapshot:
-    declared_methods = declared_wire_contract_methods(wire_contract)
-    conditional_methods = conditional_wire_contract_methods(wire_contract)
-    retention_map = compatibility_method_retention(compatibility_profile)
-    conditional = conditional_methods.get(method_name)
-    retention = retention_map.get(method_name)
+    declared_methods = (
+        frozenset(wire_contract.ext.all_jsonrpc_methods)
+        if wire_contract.status == "supported" and wire_contract.ext is not None
+        else frozenset()
+    )
+    conditional = (
+        wire_contract.ext.conditionally_available_methods.get(method_name)
+        if wire_contract.status == "supported" and wire_contract.ext is not None
+        else None
+    )
+    retention = (
+        compatibility_profile.ext.method_retention.get(method_name)
+        if (
+            compatibility_profile.status == "supported"
+            and compatibility_profile.ext is not None
+        )
+        else None
+    )
 
     active_declared = method_name in declared_methods
     deployment_conditional = conditional is not None or (
@@ -678,27 +711,28 @@ def build_declared_method_collection_snapshot(
     )
 
 
-def build_codex_discovery_snapshot(
+def build_upstream_discovery_snapshot(
     card: Any,
     wire_contract: WireContractCapabilitySnapshot,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot,
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
+    spec = UPSTREAM_METHOD_FAMILY_SPECS["discovery"]
     if wire_contract.status == "supported":
         return build_declared_method_collection_snapshot(
             wire_contract=wire_contract,
             compatibility_profile=compatibility_profile,
-            method_map=_CODEX_DISCOVERY_METHODS,
-            hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
-            unsupported_status_when_declared="declared_not_consumed",
+            method_map=spec.method_map,
+            hub_consumption=spec.hub_consumption,
+            unsupported_status_when_declared=spec.unsupported_status_when_declared,
             jsonrpc_url=jsonrpc_url,
-            declaration_source="wire_contract",
-            declaration_confidence="authoritative",
-            negotiation_state="supported",
+            declaration_source=spec.declaration_source,
+            declaration_confidence=spec.declaration_confidence,
+            negotiation_state=spec.negotiation_state,
         )
 
-    fallback = diagnose_codex_discovery_fallback(
+    fallback = diagnose_upstream_discovery_fallback(
         card,
         wire_contract_status=wire_contract.status,
     )
@@ -712,7 +746,7 @@ def build_codex_discovery_snapshot(
                     "always" if method_name in fallback.method_names else "unsupported"
                 ),
             )
-            for key, method_name in _CODEX_DISCOVERY_METHODS.items()
+            for key, method_name in spec.method_map.items()
         }
         return DeclaredMethodCollectionCapabilitySnapshot(
             declared=True,
@@ -729,9 +763,9 @@ def build_codex_discovery_snapshot(
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
-        method_map=_CODEX_DISCOVERY_METHODS,
-        hub_consumption=_CODEX_DISCOVERY_HUB_CONSUMPTION,
-        unsupported_status_when_declared="declared_not_consumed",
+        method_map=spec.method_map,
+        hub_consumption=spec.hub_consumption,
+        unsupported_status_when_declared=spec.unsupported_status_when_declared,
         jsonrpc_url=None,
         declaration_source=fallback.source,
         declaration_confidence=fallback.confidence,
@@ -740,81 +774,19 @@ def build_codex_discovery_snapshot(
     )
 
 
-def build_codex_exec_snapshot(
+def build_upstream_method_family_snapshot(
+    family_name: Literal["threads", "turns", "review", "exec"],
     wire_contract: WireContractCapabilitySnapshot,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot,
     *,
     jsonrpc_url: str | None,
 ) -> DeclaredMethodCollectionCapabilitySnapshot:
+    spec = UPSTREAM_METHOD_FAMILY_SPECS[family_name]
     return build_declared_method_collection_snapshot(
         wire_contract=wire_contract,
         compatibility_profile=compatibility_profile,
-        method_map=_CODEX_EXEC_METHODS,
-        hub_consumption={},
-        unsupported_status_when_declared="unsupported_by_design",
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_threads_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredMethodCollectionCapabilitySnapshot:
-    return build_declared_method_collection_snapshot(
-        wire_contract=wire_contract,
-        compatibility_profile=compatibility_profile,
-        method_map=_CODEX_THREADS_METHODS,
-        hub_consumption={},
-        unsupported_status_when_declared="unsupported_by_design",
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_turns_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredMethodCollectionCapabilitySnapshot:
-    return build_declared_method_collection_snapshot(
-        wire_contract=wire_contract,
-        compatibility_profile=compatibility_profile,
-        method_map=_CODEX_TURNS_METHODS,
-        hub_consumption=_CODEX_TURNS_HUB_CONSUMPTION,
-        unsupported_status_when_declared="declared_not_consumed",
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_review_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    compatibility_profile: CompatibilityProfileCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredMethodCollectionCapabilitySnapshot:
-    return build_declared_method_collection_snapshot(
-        wire_contract=wire_contract,
-        compatibility_profile=compatibility_profile,
-        method_map=_CODEX_REVIEW_METHODS,
-        hub_consumption={},
-        unsupported_status_when_declared="unsupported_by_design",
-        jsonrpc_url=jsonrpc_url,
-    )
-
-
-def build_codex_thread_watch_snapshot(
-    wire_contract: WireContractCapabilitySnapshot,
-    *,
-    jsonrpc_url: str | None,
-) -> DeclaredSingleMethodCapabilitySnapshot:
-    declared_methods = declared_wire_contract_methods(wire_contract)
-    declared = _CODEX_THREAD_WATCH_METHOD in declared_methods
-    return DeclaredSingleMethodCapabilitySnapshot(
-        declared=declared,
-        consumed_by_hub=False,
-        status="unsupported_by_design" if declared else "unsupported",
-        method=_CODEX_THREAD_WATCH_METHOD if declared else None,
+        method_map=spec.method_map,
+        hub_consumption=spec.hub_consumption,
+        unsupported_status_when_declared=spec.unsupported_status_when_declared,
         jsonrpc_url=jsonrpc_url,
     )

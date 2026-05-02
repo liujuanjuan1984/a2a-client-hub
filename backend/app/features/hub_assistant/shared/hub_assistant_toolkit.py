@@ -116,11 +116,24 @@ class HubAssistantToolkit:
         elif operation.operation_id == HUB_ASSISTANT_SESSIONS_GET.operation_id:
             payload = await self._get_session(args)
         elif operation.operation_id == HUB_ASSISTANT_FOLLOWUPS_GET.operation_id:
-            payload = await self._get_follow_up_state(args)
+            payload = await hub_assistant_task_service.get_follow_up_state(
+                db=self.db,
+                gateway=self.gateway,
+                current_user=self.current_user,
+            )
         elif (
             operation.operation_id == HUB_ASSISTANT_FOLLOWUPS_SET_SESSIONS.operation_id
         ):
-            payload = await self._set_follow_up_sessions(args)
+            payload = await hub_assistant_task_service.set_tracked_sessions(
+                db=self.db,
+                gateway=self.gateway,
+                current_user=self.current_user,
+                conversation_ids=self._as_optional_str_list(
+                    args.get("conversation_ids"),
+                    field_name="conversation_ids",
+                )
+                or [],
+            )
         elif (
             operation.operation_id
             == HUB_ASSISTANT_SESSIONS_GET_LATEST_MESSAGES.operation_id
@@ -344,25 +357,6 @@ class HubAssistantToolkit:
             conversation_id=conversation_id,
         )
         return {"session": self._serialize_session(session_item)}
-
-    async def _get_follow_up_state(self, _args: dict[str, Any]) -> dict[str, Any]:
-        return await hub_assistant_task_service.get_follow_up_state(
-            db=self.db,
-            gateway=self.gateway,
-            current_user=self.current_user,
-        )
-
-    async def _set_follow_up_sessions(self, args: dict[str, Any]) -> dict[str, Any]:
-        return await hub_assistant_task_service.set_tracked_sessions(
-            db=self.db,
-            gateway=self.gateway,
-            current_user=self.current_user,
-            conversation_ids=self._as_optional_str_list(
-                args.get("conversation_ids"),
-                field_name="conversation_ids",
-            )
-            or [],
-        )
 
     async def _get_latest_session_messages(
         self, args: dict[str, Any]

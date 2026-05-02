@@ -83,11 +83,11 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
     return ResolvedSessionBindingExtension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_BINDING_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         metadata_field=metadata_field,
         behavior=behavior,
         supported_metadata=supported_metadata,
-        provider_private_metadata=provider_private_metadata,
+        provider_private_fields=provider_private_metadata,
         shared_workspace_across_consumers=shared_workspace,
         tenant_isolation=tenant_isolation,
     )

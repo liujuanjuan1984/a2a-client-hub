@@ -24,7 +24,7 @@ UpstreamTaskBindingSource = Literal[
 class ConversationUpstreamTaskService:
     """Maintains local proof that an upstream task belongs to a conversation."""
 
-    async def record_binding(
+    async def record_upstream_task_binding(
         self,
         db: AsyncSession,
         *,
@@ -114,7 +114,7 @@ class ConversationUpstreamTaskService:
         )
         return binding
 
-    async def verify_binding(
+    async def verify_upstream_task_binding(
         self,
         db: AsyncSession,
         *,

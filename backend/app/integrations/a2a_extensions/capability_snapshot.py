@@ -80,17 +80,14 @@ class SessionQueryCapabilitySnapshot:
     error: str | None = None
 
     @property
-    def selection_meta(self) -> dict[str, Any]:
+    def runtime_hints(self) -> dict[str, Any]:
         if self.capability is None:
             return {}
         return {
-            "session_query_declared_contract_family": (
-                self.capability.declared_contract_family
+            "session_query_negotiation_mode": self.capability.negotiation_mode,
+            "session_query_compatibility_hints_applied": (
+                self.capability.compatibility_hints_applied
             ),
-            "session_query_normalized_contract_family": (
-                self.capability.normalized_contract_family
-            ),
-            "session_query_selection_mode": self.capability.selection_mode,
         }
 
 
@@ -112,7 +109,7 @@ class InvokeMetadataCapabilitySnapshot:
 
 @dataclass(frozen=True, slots=True)
 class RequestExecutionOptionsCapabilitySnapshot:
-    status: Literal["unsupported", "declared_not_consumed", "invalid"]
+    status: Literal["supported", "unsupported", "declared_not_consumed", "invalid"]
     declared: bool
     consumed_by_hub: bool
     metadata_field: str | None = None
@@ -190,12 +187,23 @@ class ResolvedCapabilitySnapshot:
     stream_hints: StreamHintsCapabilitySnapshot
     wire_contract: WireContractCapabilitySnapshot
     compatibility_profile: CompatibilityProfileCapabilitySnapshot
-    codex_discovery: DeclaredMethodCollectionCapabilitySnapshot
-    codex_threads: DeclaredMethodCollectionCapabilitySnapshot
-    codex_turns: DeclaredMethodCollectionCapabilitySnapshot
-    codex_review: DeclaredMethodCollectionCapabilitySnapshot
-    codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot
-    codex_exec: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_discovery: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_threads: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_turns: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_review: DeclaredMethodCollectionCapabilitySnapshot
+    upstream_exec: DeclaredMethodCollectionCapabilitySnapshot
+
+    @property
+    def upstream_method_families(
+        self,
+    ) -> dict[str, DeclaredMethodCollectionCapabilitySnapshot]:
+        return {
+            "discovery": self.upstream_discovery,
+            "threads": self.upstream_threads,
+            "turns": self.upstream_turns,
+            "review": self.upstream_review,
+            "exec": self.upstream_exec,
+        }
 
 
 @dataclass(slots=True)

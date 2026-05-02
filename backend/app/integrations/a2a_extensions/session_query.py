@@ -103,9 +103,7 @@ def _resolve_result_envelope_field(value: Any, *, field: str, default: str) -> s
 
 def _resolve_result_envelope(value: Any) -> ResultEnvelopeMapping:
     if value is None:
-        raise A2AExtensionContractError(
-            "Extension contract missing/invalid 'result_envelope'"
-        )
+        return ResultEnvelopeMapping()
     if not isinstance(value, dict):
         raise A2AExtensionContractError(
             "Extension contract missing/invalid 'result_envelope'"
@@ -541,7 +539,7 @@ def _resolve_extension(
     resolved = ResolvedExtension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         jsonrpc=contract_utils.resolve_jsonrpc_interface(card),
         methods={
             "list_sessions": list_sessions_method,
@@ -588,24 +586,6 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
     return _resolve_extension(
         card,
         variant="generic",
-    )
-
-
-def resolve_canonical_session_query(card: AgentCard) -> ResolvedExtension:
-    """Resolve the canonical shared session query contract only."""
-
-    return _resolve_extension(
-        card,
-        variant="canonical",
-    )
-
-
-def resolve_codex_session_query(card: AgentCard) -> ResolvedExtension:
-    """Resolve the Codex-compatible shared session query contract explicitly."""
-
-    return _resolve_extension(
-        card,
-        variant="codex",
     )
 
 

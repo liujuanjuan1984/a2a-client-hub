@@ -74,9 +74,7 @@ from app.integrations.a2a_extensions.types import (
 def _session_query_snapshot(
     ext: ResolvedExtension,
     *,
-    declared_contract_family: str = "opencode",
-    normalized_contract_family: str = "a2a_client_hub",
-    selection_mode: str = "direct",
+    compatibility_hints_applied: bool = False,
 ) -> SessionQueryCapabilitySnapshot:
     control_methods = {
         "prompt_async": ResolvedSessionControlMethodCapability(
@@ -101,9 +99,8 @@ def _session_query_snapshot(
         status="supported",
         capability=ResolvedSessionQueryRuntimeCapability(
             ext=ext,
-            declared_contract_family=declared_contract_family,
-            normalized_contract_family=normalized_contract_family,
-            selection_mode=selection_mode,
+            negotiation_mode="declared_contract",
+            compatibility_hints_applied=compatibility_hints_applied,
             control_methods=control_methods,
         ),
     )
@@ -238,12 +235,11 @@ def _capability_snapshot(
     stream_hints: StreamHintsCapabilitySnapshot | None = None,
     wire_contract: WireContractCapabilitySnapshot | None = None,
     compatibility_profile: CompatibilityProfileCapabilitySnapshot | None = None,
-    codex_discovery: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_threads: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_turns: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_review: DeclaredMethodCollectionCapabilitySnapshot | None = None,
-    codex_thread_watch: DeclaredSingleMethodCapabilitySnapshot | None = None,
-    codex_exec: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_discovery: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_threads: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_turns: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_review: DeclaredMethodCollectionCapabilitySnapshot | None = None,
+    upstream_exec: DeclaredMethodCollectionCapabilitySnapshot | None = None,
 ) -> ResolvedCapabilitySnapshot:
     return ResolvedCapabilitySnapshot(
         session_query=session_query,
@@ -265,41 +261,35 @@ def _capability_snapshot(
         wire_contract=wire_contract or _wire_contract_snapshot(),
         compatibility_profile=compatibility_profile
         or _compatibility_profile_snapshot(),
-        codex_discovery=codex_discovery
+        upstream_discovery=upstream_discovery
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
             status="unsupported",
             methods={},
         ),
-        codex_threads=codex_threads
+        upstream_threads=upstream_threads
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
             status="unsupported",
             methods={},
         ),
-        codex_turns=codex_turns
+        upstream_turns=upstream_turns
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
             status="unsupported",
             methods={},
         ),
-        codex_review=codex_review
+        upstream_review=upstream_review
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
             status="unsupported",
             methods={},
         ),
-        codex_thread_watch=codex_thread_watch
-        or DeclaredSingleMethodCapabilitySnapshot(
-            declared=False,
-            consumed_by_hub=False,
-            status="unsupported",
-        ),
-        codex_exec=codex_exec
+        upstream_exec=upstream_exec
         or DeclaredMethodCollectionCapabilitySnapshot(
             declared=False,
             consumed_by_hub=False,
@@ -313,7 +303,7 @@ def _invoke_metadata_extension_fixture() -> ResolvedInvokeMetadataExtension:
     return ResolvedInvokeMetadataExtension(
         uri=INVOKE_METADATA_URI,
         required=False,
-        provider="commonground",
+        provider_key="example_provider",
         metadata_field=SHARED_INVOKE_FIELD,
         behavior="merge_bound_metadata_into_invoke",
         applies_to_methods=("message/send", "message/stream"),
@@ -345,7 +335,7 @@ def _resolved_extension(
     return ResolvedExtension(
         uri=SHARED_SESSION_QUERY_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -392,7 +382,7 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
     return ResolvedInterruptCallbackExtension(
         uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -448,8 +438,8 @@ def _provider_discovery_extension_fixture() -> ResolvedProviderDiscoveryExtensio
     return ResolvedProviderDiscoveryExtension(
         uri=PROVIDER_DISCOVERY_URI,
         required=False,
-        provider="opencode",
-        metadata_namespace="opencode",
+        provider_key="opencode",
+        provider_private_namespace="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -533,7 +523,7 @@ def _interrupt_recovery_extension_fixture() -> ResolvedInterruptRecoveryExtensio
     return ResolvedInterruptRecoveryExtension(
         uri=INTERRUPT_RECOVERY_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
@@ -569,7 +559,7 @@ def _stream_hints_extension_fixture() -> ResolvedStreamHintsExtension:
     return ResolvedStreamHintsExtension(
         uri=STREAM_HINTS_URI,
         required=False,
-        provider="opencode",
+        provider_key="opencode",
         stream_field="metadata.shared.stream",
         usage_field="metadata.shared.usage",
         interrupt_field="metadata.shared.interrupt",

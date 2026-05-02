@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.features.invoke.service_streaming import a2a_invoke_streaming_runtime
 from tests.invoke.a2a_invoke_service_support import (
     StreamFinishReason,
     _artifact_data_event,
@@ -9,6 +10,7 @@ from tests.invoke.a2a_invoke_service_support import (
     _ClosedWebSocket,
     _DisconnectingWebSocket,
     _DummyWebSocket,
+    _DumpableEvent,
     _GatewayWithDelayedEvents,
     _GatewayWithEvents,
     _GatewayWithSingleEventThenPending,
@@ -798,6 +800,31 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     assert replay_shared_stream["eventId"] == "evt-cache-1"
 
     await global_stream_cache.mark_completed(cache_key)
+
+
+@pytest.mark.asyncio
+async def test_iter_gateway_stream_passes_requested_extensions_to_gateway():
+    captured: dict[str, object] = {}
+
+    class _GatewayWithCapture:
+        async def stream(self, **kwargs):
+            captured["requested_extensions"] = kwargs["requested_extensions"]
+            yield _DumpableEvent(_message_event(message_id="msg-1", text="ok"))
+
+    events = []
+    async for event in a2a_invoke_streaming_runtime._iter_gateway_stream(
+        gateway=_GatewayWithCapture(),
+        invoke_session=None,
+        resolved=object(),
+        query="hello",
+        context_id="ctx-1",
+        metadata={"shared": {"model": {"providerID": "openai"}}},
+        requested_extensions=("urn:a2a:model-selection/v1",),
+    ):
+        events.append(event)
+
+    assert len(events) == 1
+    assert captured["requested_extensions"] == ("urn:a2a:model-selection/v1",)
 
 
 @pytest.mark.asyncio

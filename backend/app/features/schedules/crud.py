@@ -42,22 +42,6 @@ class A2AScheduleCrudService:
         self._time_helper = time_helper
         self._projection = projection
 
-    @map_retryable_db_errors("Schedule task list")
-    async def list_tasks(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        page: int,
-        size: int,
-    ) -> tuple[list[A2AScheduleTask], int]:
-        return await self._projection.list_tasks_with_status_summary(
-            db,
-            user_id=user_id,
-            page=page,
-            size=size,
-        )
-
     @map_retryable_db_errors("Schedule task read")
     async def get_task(
         self,

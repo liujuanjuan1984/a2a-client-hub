@@ -58,7 +58,7 @@ def resolve_stream_hints(card: AgentCard) -> ResolvedStreamHintsExtension:
     return ResolvedStreamHintsExtension(
         uri=str(getattr(ext, "uri", STREAM_HINTS_URI)),
         required=required,
-        provider=provider,
+        provider_key=provider,
         stream_field=_resolve_field(
             params.get("stream_field"),
             field="params.stream_field",

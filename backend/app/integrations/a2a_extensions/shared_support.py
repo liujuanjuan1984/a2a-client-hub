@@ -27,6 +27,9 @@ from app.integrations.a2a_error_contract import (
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
+from app.integrations.a2a_extensions.negotiation import (
+    build_extension_request_headers,
+)
 from app.integrations.a2a_extensions.shared_contract import (
     CANONICAL_EXTERNAL_SESSION_ID_KEY,
     CANONICAL_PROVIDER_KEY,
@@ -139,14 +142,19 @@ class A2AExtensionSupport:
         jsonrpc_url: str,
         method_name: str,
         params: Dict[str, Any],
+        requested_extensions: tuple[str, ...] | list[str] | None = None,
     ) -> JsonRpcResponse:
         await self._get_http()
         try:
+            headers = build_extension_request_headers(
+                base_headers=runtime.resolved.headers,
+                requested_extensions=requested_extensions,
+            )
             return await self._call_with_retry(
                 url=jsonrpc_url,
                 method=method_name,
                 params=params,
-                headers=dict(runtime.resolved.headers),
+                headers=headers,
                 timeout_seconds=max(settings.a2a_default_timeout, 1.0),
             )
         except httpx.TransportError as exc:

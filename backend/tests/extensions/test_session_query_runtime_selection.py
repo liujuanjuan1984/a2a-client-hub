@@ -98,9 +98,8 @@ def _build_card(
 def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> None:
     capability = resolve_runtime_session_query(_build_card())
 
-    assert capability.declared_contract_family == "opencode"
-    assert capability.normalized_contract_family == "a2a_client_hub"
-    assert capability.selection_mode == "direct"
+    assert capability.negotiation_mode == "declared_contract"
+    assert capability.compatibility_hints_applied is False
     assert capability.ext.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
     assert capability.control_methods["prompt_async"].declared is True
     assert capability.control_methods["prompt_async"].availability == "always"
@@ -130,9 +129,8 @@ def test_resolve_runtime_session_query_selects_codex_compatibility() -> None:
         )
     )
 
-    assert capability.declared_contract_family == "codex"
-    assert capability.normalized_contract_family == "a2a_client_hub"
-    assert capability.selection_mode == "codex_compatibility"
+    assert capability.negotiation_mode == "declared_contract"
+    assert capability.compatibility_hints_applied is True
     assert capability.ext.uri == CODEX_SHARED_SESSION_QUERY_URI
 
 
@@ -179,10 +177,9 @@ async def test_resolve_capability_snapshot_uses_runtime_cache(
 
     assert first == second
     assert first.session_query.status == "supported"
-    assert first.session_query.selection_meta == {
-        "session_query_declared_contract_family": "opencode",
-        "session_query_normalized_contract_family": "a2a_client_hub",
-        "session_query_selection_mode": "direct",
+    assert first.session_query.runtime_hints == {
+        "session_query_negotiation_mode": "declared_contract",
+        "session_query_compatibility_hints_applied": False,
     }
     assert first.session_binding.status == "supported"
     assert first.stream_hints.status == "supported"
@@ -263,7 +260,7 @@ async def test_resolve_capability_snapshot_caches_invalid_query(
 
 
 @pytest.mark.asyncio
-async def test_resolve_capability_snapshot_reports_codex_selection_meta(
+async def test_resolve_capability_snapshot_reports_codex_runtime_hints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -286,8 +283,7 @@ async def test_resolve_capability_snapshot_reports_codex_selection_meta(
     snapshot = await service.resolve_capability_snapshot(runtime=runtime)
 
     assert snapshot.session_query.status == "supported"
-    assert snapshot.session_query.selection_meta == {
-        "session_query_declared_contract_family": "codex",
-        "session_query_normalized_contract_family": "a2a_client_hub",
-        "session_query_selection_mode": "codex_compatibility",
+    assert snapshot.session_query.runtime_hints == {
+        "session_query_negotiation_mode": "declared_contract",
+        "session_query_compatibility_hints_applied": True,
     }

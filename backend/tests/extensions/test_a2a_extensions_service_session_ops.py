@@ -94,7 +94,7 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     ext = ResolvedExtension(
         uri=ext.uri,
         required=ext.required,
-        provider=ext.provider,
+        provider_key=ext.provider_key,
         jsonrpc=ext.jsonrpc,
         methods={
             "list_sessions": ext.methods["list_sessions"],
@@ -133,9 +133,8 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     assert result.error_code == "method_not_supported"
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "session_query_declared_contract_family": "opencode",
-        "session_query_normalized_contract_family": "a2a_client_hub",
-        "session_query_selection_mode": "direct",
+        "session_query_negotiation_mode": "declared_contract",
+        "session_query_compatibility_hints_applied": False,
     }
 
 
@@ -235,7 +234,7 @@ async def test_prompt_session_async_rejects_non_object_metadata() -> None:
 
 
 @pytest.mark.asyncio
-async def test_append_session_control_prefers_codex_turn_steer_when_stream_identity_present(
+async def test_append_session_control_prefers_turn_steer_when_stream_identity_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -243,7 +242,7 @@ async def test_append_session_control_prefers_codex_turn_steer_when_stream_ident
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = _resolved_extension()
-    codex_turns = DeclaredMethodCollectionCapabilitySnapshot(
+    upstream_turns = DeclaredMethodCollectionCapabilitySnapshot(
         declared=True,
         consumed_by_hub=True,
         status="supported",
@@ -263,7 +262,7 @@ async def test_append_session_control_prefers_codex_turn_steer_when_stream_ident
         return _capability_snapshot(
             session_query=_session_query_snapshot(ext),
             session_binding=_binding_snapshot(status="unsupported"),
-            codex_turns=codex_turns,
+            upstream_turns=upstream_turns,
             wire_contract=_wire_contract_snapshot(
                 status="supported",
                 ext=_wire_contract_extension_fixture(
@@ -284,6 +283,7 @@ async def test_append_session_control_prefers_codex_turn_steer_when_stream_ident
                 "parts": [{"type": "text", "text": "continue"}],
             },
         }
+        assert kwargs["requested_extensions"] == ["urn:codex-a2a:codex-turn-control/v1"]
         return SimpleNamespace(ok=True, result={"ok": True, "turn_id": "turn-2"})
 
     monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
@@ -333,7 +333,7 @@ async def test_append_session_control_falls_back_to_prompt_async_without_stream_
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = _resolved_extension()
-    codex_turns = DeclaredMethodCollectionCapabilitySnapshot(
+    upstream_turns = DeclaredMethodCollectionCapabilitySnapshot(
         declared=True,
         consumed_by_hub=True,
         status="supported",
@@ -353,7 +353,7 @@ async def test_append_session_control_falls_back_to_prompt_async_without_stream_
         return _capability_snapshot(
             session_query=_session_query_snapshot(ext),
             session_binding=_binding_snapshot(status="unsupported"),
-            codex_turns=codex_turns,
+            upstream_turns=upstream_turns,
         )
 
     async def _fake_prompt_async(**kwargs):
@@ -528,7 +528,7 @@ async def test_command_session_returns_method_not_supported_if_missing(
     ext = ResolvedExtension(
         uri=ext.uri,
         required=ext.required,
-        provider=ext.provider,
+        provider_key=ext.provider_key,
         jsonrpc=ext.jsonrpc,
         methods={
             "list_sessions": ext.methods["list_sessions"],
@@ -569,9 +569,8 @@ async def test_command_session_returns_method_not_supported_if_missing(
     assert result.error_code == "method_not_supported"
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "session_query_declared_contract_family": "opencode",
-        "session_query_normalized_contract_family": "a2a_client_hub",
-        "session_query_selection_mode": "direct",
+        "session_query_negotiation_mode": "declared_contract",
+        "session_query_compatibility_hints_applied": False,
     }
 
 
@@ -909,10 +908,9 @@ async def test_extended_session_management_methods_delegate_to_session_service(
     assert result.success is True
     assert result.result == delegate_result
     assert captured["ext"] is ext
-    assert captured["selection_meta"] == {
-        "session_query_declared_contract_family": "opencode",
-        "session_query_normalized_contract_family": "a2a_client_hub",
-        "session_query_selection_mode": "direct",
+    assert captured["runtime_hints"] == {
+        "session_query_negotiation_mode": "declared_contract",
+        "session_query_compatibility_hints_applied": False,
     }
 
 

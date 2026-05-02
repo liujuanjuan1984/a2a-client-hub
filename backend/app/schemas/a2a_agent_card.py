@@ -10,6 +10,7 @@ from app.features.agents.personal.schemas import A2AAuthType
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
 )
+from app.schemas.a2a_extension import A2AExtensionCapabilitiesResponse
 
 
 class A2AAgentCardProxyRequest(BaseModel):
@@ -38,18 +39,10 @@ class SharedSessionQueryDiagnostic(BaseModel):
         description="Hub compatibility result for the declared session-query contract",
     )
     uri: Optional[str] = Field(default=None)
-    declared_contract_family: Optional[Literal["opencode", "codex"]] = Field(
+    declared_contract_variant: Optional[Literal["opencode", "codex"]] = Field(
         default=None,
-        alias="declaredContractFamily",
-        description="Family inferred from the upstream-declared session-query contract",
-    )
-    normalized_contract_family: Optional[str] = Field(
-        default=None,
-        alias="normalizedContractFamily",
-        description=(
-            "Hub-private normalized contract family consumed after compatibility "
-            "mapping"
-        ),
+        alias="declaredContractVariant",
+        description="Variant inferred from the upstream-declared session-query contract",
     )
     provider: Optional[str] = Field(default=None)
     methods: List[str] = Field(default_factory=list)
@@ -78,6 +71,11 @@ class A2AAgentCardValidationResponse(BaseModel):
     validation_warnings: Optional[List[str]] = Field(
         default=None,
         description="Non-blocking validation warnings exposed to clients",
+    )
+    extension_capabilities: Optional[A2AExtensionCapabilitiesResponse] = Field(
+        default=None,
+        alias="extensionCapabilities",
+        description="Hub capability summary derived from declared extension contracts.",
     )
     shared_session_query: Optional[SharedSessionQueryDiagnostic] = Field(
         default=None,

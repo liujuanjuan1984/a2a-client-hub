@@ -68,7 +68,7 @@ def test_resolve_extracts_interrupt_recovery_methods_and_provider() -> None:
     card = parse_agent_card(payload)
     resolved = resolve_interrupt_recovery(card)
 
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
     assert resolved.methods["list_permissions"] == "opencode.permissions.list"
     assert resolved.methods["list_questions"] == "opencode.questions.list"
     assert resolved.business_code_map[-32011] == "interrupt_query_forbidden"
@@ -93,7 +93,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
 
     card = parse_agent_card(payload)
     resolved = resolve_interrupt_recovery(card)
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
 
 
 def test_resolve_accepts_opencode_https_interrupt_recovery_uri() -> None:
@@ -157,7 +157,7 @@ def test_resolve_accepts_codex_interrupt_recovery_single_list_method() -> None:
     resolved = resolve_interrupt_recovery(card)
 
     assert resolved.uri == CODEX_INTERRUPT_RECOVERY_URI
-    assert resolved.provider == "codex"
+    assert resolved.provider_key == "codex"
     assert resolved.methods["list"] == "codex.interrupts.list"
     assert resolved.methods["list_permissions"] is None
     assert resolved.methods["list_questions"] is None

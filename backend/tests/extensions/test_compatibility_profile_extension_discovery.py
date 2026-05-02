@@ -107,6 +107,25 @@ def test_resolve_compatibility_profile_allows_empty_retention_maps() -> None:
     assert resolved.method_retention == {}
 
 
+def test_resolve_compatibility_profile_allows_missing_advisory_fields() -> None:
+    card = _build_card(
+        extension_payload={
+            "uri": COMPATIBILITY_PROFILE_URI,
+            "required": False,
+            "params": {
+                "consumer_guidance": ["Treat as advisory metadata only."],
+            },
+        }
+    )
+
+    resolved = resolve_compatibility_profile(card)
+
+    assert resolved.extension_retention == {}
+    assert resolved.method_retention == {}
+    assert resolved.service_behaviors == {}
+    assert resolved.consumer_guidance == ("Treat as advisory metadata only.",)
+
+
 def test_resolve_compatibility_profile_rejects_non_object_retention_map() -> None:
     card = _build_card(
         extension_payload={

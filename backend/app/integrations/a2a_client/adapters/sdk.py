@@ -15,6 +15,7 @@ from a2a.client import (
     ClientConfig,
     ClientFactory,
 )
+from a2a.client.client import ClientCallContext
 from a2a.client.errors import A2AClientError, A2AClientTimeoutError
 from a2a.types import (
     CancelTaskRequest,
@@ -50,6 +51,9 @@ from app.integrations.a2a_client.http_clients import (
 from app.integrations.a2a_client.lifecycle import AdapterLifecycleSnapshot
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.selection import build_a2a_message
+from app.integrations.a2a_extensions.negotiation import (
+    build_extension_request_headers,
+)
 from app.utils.async_cleanup import await_cancel_safe
 
 SDK_DIALECT = "sdk"
@@ -133,6 +137,15 @@ class SDKA2AAdapter(A2AAdapter):
             client = await self._get_client(streaming=False)
             try:
                 final_payload: Any = None
+                service_parameters = build_extension_request_headers(
+                    base_headers=None,
+                    requested_extensions=request.requested_extensions,
+                )
+                context = (
+                    ClientCallContext(service_parameters=service_parameters)
+                    if service_parameters
+                    else None
+                )
                 sdk_request = SendMessageRequest(
                     message=build_a2a_message(request),
                     configuration=SendMessageConfiguration(
@@ -140,7 +153,14 @@ class SDKA2AAdapter(A2AAdapter):
                     ),
                     metadata=request.metadata,
                 )
-                async for payload in client.send_message(sdk_request):
+                if context is None:
+                    message_stream = client.send_message(sdk_request)
+                else:
+                    message_stream = client.send_message(
+                        sdk_request,
+                        context=context,
+                    )
+                async for payload in message_stream:
                     final_payload = payload
                 return final_payload
             except (A2AClientError, A2AError) as exc:
@@ -153,6 +173,15 @@ class SDKA2AAdapter(A2AAdapter):
         async with self._operation_usage(), self._transport_usage():
             client = await self._get_client(streaming=True)
             try:
+                service_parameters = build_extension_request_headers(
+                    base_headers=None,
+                    requested_extensions=request.requested_extensions,
+                )
+                context = (
+                    ClientCallContext(service_parameters=service_parameters)
+                    if service_parameters
+                    else None
+                )
                 sdk_request = SendMessageRequest(
                     message=build_a2a_message(request),
                     configuration=SendMessageConfiguration(
@@ -160,7 +189,14 @@ class SDKA2AAdapter(A2AAdapter):
                     ),
                     metadata=request.metadata,
                 )
-                async for payload in client.send_message(sdk_request):
+                if context is None:
+                    message_stream = client.send_message(sdk_request)
+                else:
+                    message_stream = client.send_message(
+                        sdk_request,
+                        context=context,
+                    )
+                async for payload in message_stream:
                     yield payload
             except (A2AClientError, A2AError) as exc:
                 raise _map_sdk_exception(exc) from exc

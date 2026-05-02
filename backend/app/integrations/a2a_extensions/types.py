@@ -52,7 +52,7 @@ class SessionListFiltersContract:
 class ResolvedExtension:
     uri: str
     required: bool
-    provider: str
+    provider_key: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     pagination: PageSizePagination
@@ -96,7 +96,7 @@ class ResolvedInvokeMetadataField:
 class ResolvedInterruptCallbackExtension:
     uri: str
     required: bool
-    provider: str
+    provider_key: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]
@@ -106,7 +106,7 @@ class ResolvedInterruptCallbackExtension:
 class ResolvedInterruptRecoveryExtension:
     uri: str
     required: bool
-    provider: str
+    provider_key: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]
@@ -120,11 +120,11 @@ class ResolvedInterruptRecoveryExtension:
 class ResolvedSessionBindingExtension:
     uri: str
     required: bool
-    provider: str
+    provider_key: str
     metadata_field: str
     behavior: str
     supported_metadata: tuple[str, ...]
-    provider_private_metadata: tuple[str, ...]
+    provider_private_fields: tuple[str, ...]
     shared_workspace_across_consumers: bool | None
     tenant_isolation: str | None
 
@@ -133,7 +133,7 @@ class ResolvedSessionBindingExtension:
 class ResolvedInvokeMetadataExtension:
     uri: str
     required: bool
-    provider: str
+    provider_key: str
     metadata_field: str
     behavior: str
     applies_to_methods: tuple[str, ...]
@@ -145,8 +145,8 @@ class ResolvedInvokeMetadataExtension:
 class ResolvedProviderDiscoveryExtension:
     uri: str
     required: bool
-    provider: str
-    metadata_namespace: str
+    provider_key: str
+    provider_private_namespace: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]
@@ -156,19 +156,19 @@ class ResolvedProviderDiscoveryExtension:
 class ResolvedModelSelectionExtension:
     uri: str
     required: bool
-    provider: str
+    provider_key: str
     metadata_field: str
     behavior: str
     applies_to_methods: tuple[str, ...]
     supported_metadata: tuple[str, ...]
-    provider_private_metadata: tuple[str, ...]
+    provider_private_fields: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedStreamHintsExtension:
     uri: str
     required: bool
-    provider: str
+    provider_key: str
     stream_field: str
     usage_field: str
     interrupt_field: str

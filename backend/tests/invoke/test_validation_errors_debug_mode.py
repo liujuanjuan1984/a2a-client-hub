@@ -116,10 +116,16 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
         gateway=_ExtensionGateway(), resolved=object()
     )
 
-    assert resp.success is False
+    assert resp.success is True
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "invalid"
-    assert "Shared session query contract is invalid" in resp.message
+    assert resp.message == "Agent card validated with warnings"
+    assert resp.validation_warnings == [
+        (
+            "Shared session query contract is invalid: Extension contract "
+            "missing/invalid 'pagination.max_size' for mode 'page_size'"
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -165,9 +171,10 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
     assert resp.success is True
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "supported"
-    assert resp.shared_session_query.declared_contract_family == "opencode"
-    assert resp.shared_session_query.normalized_contract_family == "a2a_client_hub"
+    assert resp.shared_session_query.declared_contract_variant == "opencode"
     assert resp.shared_session_query.pagination_mode == "limit_and_optional_cursor"
+    assert resp.extension_capabilities is not None
+    assert resp.extension_capabilities.session_control.command.declared is False
     assert resp.message == "Agent card validated"
 
 
@@ -237,10 +244,65 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
     assert resp.success is True
     assert resp.shared_session_query is not None
     assert resp.shared_session_query.status == "supported"
-    assert resp.shared_session_query.declared_contract_family == "codex"
-    assert resp.shared_session_query.normalized_contract_family == "a2a_client_hub"
+    assert resp.shared_session_query.declared_contract_variant == "codex"
     assert resp.shared_session_query.pagination_mode == "limit"
+    assert resp.extension_capabilities is not None
+    assert resp.extension_capabilities.session_control.prompt_async.declared is True
     assert resp.message == "Agent card validated"
+
+
+@pytest.mark.asyncio
+async def test_fetch_and_validate_agent_card_exposes_extension_capabilities_summary() -> (
+    None
+):
+    class _ExtensionCard:
+        def model_dump(self, **kwargs):
+            payload = _build_extension_card_payload(
+                extensions=[
+                    build_session_query_extension_payload(
+                        uri="urn:opencode-a2a:session-query/v1",
+                        methods={
+                            "list_sessions": "opencode.sessions.list",
+                            "get_session_messages": "opencode.sessions.messages.list",
+                        },
+                        pagination={
+                            "mode": "limit",
+                            "default_limit": 20,
+                            "max_limit": 100,
+                        },
+                        result_envelope={
+                            "raw": True,
+                            "items": True,
+                            "pagination": True,
+                        },
+                    )
+                ]
+            )
+            payload["capabilities"]["extensions"][0]["params"][
+                "request_execution_options"
+            ] = {
+                "metadata_field": "metadata.codex.execution",
+                "fields": ["model", "effort"],
+                "persists_for_thread": True,
+                "notes": ["Execution overrides are provider-private."],
+            }
+            return payload
+
+    class _ExtensionGateway:
+        async def fetch_agent_card_detail(self, **kwargs):
+            return parse_agent_card(_ExtensionCard().model_dump())
+
+    resp = await fetch_and_validate_agent_card(
+        gateway=_ExtensionGateway(), resolved=object()
+    )
+
+    assert resp.success is True
+    assert resp.extension_capabilities is not None
+    assert resp.extension_capabilities.request_execution_options.status == "supported"
+    assert resp.extension_capabilities.request_execution_options.consumed_by_hub is True
+    assert resp.extension_capabilities.request_execution_options.source_extensions == [
+        "urn:opencode-a2a:session-query/v1"
+    ]
 
 
 @pytest.mark.asyncio
@@ -295,10 +357,14 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
         gateway=_ExtensionGateway(), resolved=object()
     )
 
-    assert resp.success is False
+    assert resp.success is True
     assert resp.compatibility_profile is not None
     assert resp.compatibility_profile.status == "invalid"
-    assert "Compatibility profile contract is invalid" in resp.message
+    assert resp.message == "Agent card validated with warnings"
+    assert resp.validation_warnings == [
+        "Compatibility profile advisory is invalid and will be ignored: "
+        "Extension contract missing/invalid 'params.method_retention'"
+    ]
 
 
 def test_serialize_stream_event_validation_errors_gated(monkeypatch):

@@ -64,6 +64,9 @@ from app.integrations.a2a_client.selection import (
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
+from app.integrations.a2a_extensions.negotiation import (
+    build_extension_request_headers,
+)
 from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.async_cleanup import await_cancel_safe
 from app.utils.logging_redaction import redact_url_for_logging
@@ -115,9 +118,16 @@ class StaticHeaderInterceptor(ClientCallInterceptor):
             return
         if args.context is None:
             args.context = ClientCallContext()
-        if args.context.service_parameters is None:
-            args.context.service_parameters = {}
-        args.context.service_parameters.update(self._headers)
+        existing_service_parameters = dict(args.context.service_parameters or {})
+        existing_extensions = (
+            [existing_service_parameters.get("A2A-Extensions", "")]
+            if existing_service_parameters
+            else None
+        )
+        args.context.service_parameters = build_extension_request_headers(
+            base_headers={**existing_service_parameters, **self._headers},
+            requested_extensions=existing_extensions,
+        )
 
     async def after(self, args: AfterArgs) -> None:
         _ = args
@@ -227,6 +237,7 @@ class A2AClient:
         *,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        requested_extensions: list[str] | tuple[str, ...] | None = None,
     ) -> Dict[str, Any]:
         """Execute a blocking request against the downstream agent."""
 
@@ -244,6 +255,7 @@ class A2AClient:
                     query=query,
                     context_id=context_id,
                     metadata=metadata,
+                    requested_extensions=tuple(requested_extensions or ()),
                 )
                 final_payload = await self._send_with_fallback(request)
 
@@ -337,6 +349,7 @@ class A2AClient:
         *,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        requested_extensions: list[str] | tuple[str, ...] | None = None,
     ) -> AsyncIterator[Any]:
         """Stream responses from the downstream agent."""
 
@@ -354,6 +367,7 @@ class A2AClient:
                     query=query,
                     context_id=context_id,
                     metadata=metadata,
+                    requested_extensions=tuple(requested_extensions or ()),
                 )
                 async for payload in self._stream_with_fallback(request):
                     yield payload

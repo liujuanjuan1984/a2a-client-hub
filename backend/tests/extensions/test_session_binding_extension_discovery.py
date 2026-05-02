@@ -61,14 +61,14 @@ def test_resolve_extracts_canonical_session_binding_contract() -> None:
     resolved = resolve_session_binding(card)
 
     assert resolved.uri == SHARED_SESSION_BINDING_URI
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
     assert resolved.metadata_field == SHARED_SESSION_ID_FIELD
     assert resolved.behavior == "prefer_metadata_binding_else_create_session"
     assert resolved.supported_metadata == (
         "shared.session.id",
         "opencode.directory",
     )
-    assert resolved.provider_private_metadata == ("opencode.directory",)
+    assert resolved.provider_private_fields == ("opencode.directory",)
     assert resolved.shared_workspace_across_consumers is True
     assert resolved.tenant_isolation == "none"
 
@@ -87,7 +87,7 @@ def test_resolve_defaults_provider_to_opencode() -> None:
     ]
 
     resolved = resolve_session_binding(parse_agent_card(payload))
-    assert resolved.provider == "opencode"
+    assert resolved.provider_key == "opencode"
 
 
 def test_resolve_accepts_opencode_https_session_binding_uri() -> None:

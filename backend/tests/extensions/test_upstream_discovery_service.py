@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.integrations.a2a_extensions.codex_discovery_service import (
-    CodexDiscoveryService,
-)
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
+from app.integrations.a2a_extensions.upstream_discovery_service import (
+    UpstreamDiscoveryService,
+)
 
 
 class _FakeSupport:
@@ -24,7 +24,7 @@ class _FakeSupport:
 
 @pytest.mark.asyncio
 async def test_list_skills_normalizes_skill_scopes() -> None:
-    service = CodexDiscoveryService(_FakeSupport())
+    service = UpstreamDiscoveryService(_FakeSupport())
     runtime = object()
 
     async def _fake_invoke_method(**kwargs):
@@ -43,11 +43,11 @@ async def test_list_skills_normalizes_skill_scopes() -> None:
                                 "enabled": True,
                                 "scope": "project",
                                 "interface": {"input": "rich-text"},
-                                "codex": {"raw": {"id": "planning"}},
+                                "providerPrivate": {"raw": {"id": "planning"}},
                             }
                         ],
                         "errors": [],
-                        "codex": {"raw": {"cwd": "/workspace/project"}},
+                        "providerPrivate": {"raw": {"cwd": "/workspace/project"}},
                     }
                 ]
             },
@@ -60,7 +60,7 @@ async def test_list_skills_normalizes_skill_scopes() -> None:
         runtime=runtime,
         jsonrpc_url="https://example.com/jsonrpc",
         method_name="codex.discovery.skills.list",
-        meta={"capability_area": "codex_discovery"},
+        meta={"capability_area": "upstream_discovery"},
     )
 
     assert result.success is True
@@ -76,11 +76,11 @@ async def test_list_skills_normalizes_skill_scopes() -> None:
                         "enabled": True,
                         "scope": "project",
                         "interface": {"input": "rich-text"},
-                        "codex": {"raw": {"id": "planning"}},
+                        "providerPrivate": {"raw": {"id": "planning"}},
                     }
                 ],
                 "errors": [],
-                "codex": {"raw": {"cwd": "/workspace/project"}},
+                "providerPrivate": {"raw": {"cwd": "/workspace/project"}},
             }
         ]
     }
@@ -88,7 +88,7 @@ async def test_list_skills_normalizes_skill_scopes() -> None:
 
 @pytest.mark.asyncio
 async def test_list_apps_normalizes_items_and_cursor() -> None:
-    service = CodexDiscoveryService(_FakeSupport())
+    service = UpstreamDiscoveryService(_FakeSupport())
     runtime = object()
 
     async def _fake_invoke_method(**kwargs):
@@ -107,7 +107,7 @@ async def test_list_apps_normalizes_items_and_cursor() -> None:
                         "mention_path": "app://demo-app",
                         "branding": {"icon": "spark"},
                         "labels": [{"name": "beta"}],
-                        "codex": {"raw": {"id": "demo-app"}},
+                        "providerPrivate": {"raw": {"id": "demo-app"}},
                     }
                 ],
                 "next_cursor": "cursor-2",
@@ -121,7 +121,7 @@ async def test_list_apps_normalizes_items_and_cursor() -> None:
         runtime=runtime,
         jsonrpc_url="https://example.com/jsonrpc",
         method_name="codex.discovery.apps.list",
-        meta={"capability_area": "codex_discovery"},
+        meta={"capability_area": "upstream_discovery"},
     )
 
     assert result.success is True
@@ -137,7 +137,7 @@ async def test_list_apps_normalizes_items_and_cursor() -> None:
                 "mentionPath": "app://demo-app",
                 "branding": {"icon": "spark"},
                 "labels": [{"name": "beta"}],
-                "codex": {"raw": {"id": "demo-app"}},
+                "providerPrivate": {"raw": {"id": "demo-app"}},
             }
         ],
         "nextCursor": "cursor-2",
@@ -146,7 +146,7 @@ async def test_list_apps_normalizes_items_and_cursor() -> None:
 
 @pytest.mark.asyncio
 async def test_list_plugins_normalizes_marketplaces() -> None:
-    service = CodexDiscoveryService(_FakeSupport())
+    service = UpstreamDiscoveryService(_FakeSupport())
     runtime = object()
 
     async def _fake_invoke_method(**kwargs):
@@ -165,10 +165,10 @@ async def test_list_plugins_normalizes_marketplaces() -> None:
                                 "description": "Coordinates work.",
                                 "enabled": True,
                                 "mention_path": "plugin://planner@test",
-                                "codex": {"raw": {"name": "planner"}},
+                                "providerPrivate": {"raw": {"name": "planner"}},
                             }
                         ],
-                        "codex": {"raw": {"name": "test"}},
+                        "providerPrivate": {"raw": {"name": "test"}},
                     }
                 ],
                 "featuredPluginIds": ["test:planner"],
@@ -184,7 +184,7 @@ async def test_list_plugins_normalizes_marketplaces() -> None:
         runtime=runtime,
         jsonrpc_url="https://example.com/jsonrpc",
         method_name="codex.discovery.plugins.list",
-        meta={"capability_area": "codex_discovery"},
+        meta={"capability_area": "upstream_discovery"},
     )
 
     assert result.success is True
@@ -201,10 +201,10 @@ async def test_list_plugins_normalizes_marketplaces() -> None:
                         "enabled": True,
                         "interface": None,
                         "mentionPath": "plugin://planner@test",
-                        "codex": {"raw": {"name": "planner"}},
+                        "providerPrivate": {"raw": {"name": "planner"}},
                     }
                 ],
-                "codex": {"raw": {"name": "test"}},
+                "providerPrivate": {"raw": {"name": "test"}},
             }
         ],
         "featuredPluginIds": ["test:planner"],
@@ -215,7 +215,7 @@ async def test_list_plugins_normalizes_marketplaces() -> None:
 
 @pytest.mark.asyncio
 async def test_read_plugin_normalizes_item_payload() -> None:
-    service = CodexDiscoveryService(_FakeSupport())
+    service = UpstreamDiscoveryService(_FakeSupport())
     runtime = object()
 
     async def _fake_invoke_method(**kwargs):
@@ -236,7 +236,7 @@ async def test_read_plugin_normalizes_item_payload() -> None:
                     "apps": [{"id": "demo-app"}],
                     "mcp_servers": ["planner-server"],
                     "interface": {"transport": "mcp"},
-                    "codex": {"raw": {"name": "planner"}},
+                    "providerPrivate": {"raw": {"name": "planner"}},
                 }
             },
             meta=kwargs["meta"],
@@ -250,7 +250,7 @@ async def test_read_plugin_normalizes_item_payload() -> None:
         method_name="codex.discovery.plugins.read",
         marketplace_path="/workspace/.codex/plugins/marketplace.json",
         plugin_name="planner",
-        meta={"capability_area": "codex_discovery"},
+        meta={"capability_area": "upstream_discovery"},
     )
 
     assert result.success is True
@@ -265,14 +265,14 @@ async def test_read_plugin_normalizes_item_payload() -> None:
             "apps": [{"id": "demo-app"}],
             "mcpServers": ["planner-server"],
             "interface": {"transport": "mcp"},
-            "codex": {"raw": {"name": "planner"}},
+            "providerPrivate": {"raw": {"name": "planner"}},
         }
     }
 
 
 @pytest.mark.asyncio
 async def test_list_skills_returns_payload_error_for_invalid_items() -> None:
-    service = CodexDiscoveryService(_FakeSupport())
+    service = UpstreamDiscoveryService(_FakeSupport())
     runtime = object()
 
     async def _fake_invoke_method(**kwargs):
@@ -288,9 +288,9 @@ async def test_list_skills_returns_payload_error_for_invalid_items() -> None:
         runtime=runtime,
         jsonrpc_url="https://example.com/jsonrpc",
         method_name="codex.discovery.skills.list",
-        meta={"capability_area": "codex_discovery"},
+        meta={"capability_area": "upstream_discovery"},
     )
 
     assert result.success is False
     assert result.error_code == "upstream_payload_error"
-    assert result.source == "codex_discovery"
+    assert result.source == "upstream_discovery"

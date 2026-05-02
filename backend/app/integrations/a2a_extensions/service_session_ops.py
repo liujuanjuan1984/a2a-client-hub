@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 from app.features.agents.personal.runtime import A2ARuntime
 from app.integrations.a2a_extensions.contract_utils import as_dict
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
-    A2AExtensionNotSupportedError,
-)
 from app.integrations.a2a_extensions.service_capabilities import (
-    CODEX_TURN_CONTROL_BUSINESS_CODE_MAP,
-    CODEX_TURN_CONTROL_URI,
-    CODEX_TURNS_METHODS,
+    UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP,
+    UPSTREAM_TURN_CONTROL_EXTENSION_URI,
+    UPSTREAM_TURN_METHODS,
     A2AExtensionCapabilityService,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
@@ -21,10 +17,6 @@ from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
 )
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
-from app.integrations.a2a_extensions.types import (
-    ResolvedInvokeMetadataExtension,
-    ResolvedSessionBindingExtension,
-)
 
 
 class A2AExtensionSessionOperations:
@@ -78,7 +70,7 @@ class A2AExtensionSessionOperations:
         sanitized_metadata.pop("shared", None)
         return sanitized_metadata or None
 
-    def prepare_codex_turn_steer(
+    def prepare_turn_steer_request(
         self,
         *,
         thread_id: str,
@@ -104,7 +96,7 @@ class A2AExtensionSessionOperations:
             "request": {"parts": list(parts)},
         }
 
-    async def steer_codex_turn(
+    async def steer_upstream_turn(
         self,
         *,
         runtime: A2ARuntime,
@@ -114,8 +106,8 @@ class A2AExtensionSessionOperations:
         turn_id: str,
         request_payload: Dict[str, Any],
     ) -> ExtensionCallResult:
-        method_name = CODEX_TURNS_METHODS["steer"]
-        params = self.prepare_codex_turn_steer(
+        method_name = UPSTREAM_TURN_METHODS["steer"]
+        params = self.prepare_turn_steer_request(
             thread_id=thread_id,
             turn_id=turn_id,
             request_payload=request_payload,
@@ -125,13 +117,14 @@ class A2AExtensionSessionOperations:
             jsonrpc_url=jsonrpc_url,
             method_name=method_name,
             params=params,
+            requested_extensions=[UPSTREAM_TURN_CONTROL_EXTENSION_URI],
         )
 
-        metric_key = f"{CODEX_TURN_CONTROL_URI}:{method_name}"
+        metric_key = f"{UPSTREAM_TURN_CONTROL_EXTENSION_URI}:{method_name}"
         meta = {
-            "extension_uri": CODEX_TURN_CONTROL_URI,
+            "extension_uri": UPSTREAM_TURN_CONTROL_EXTENSION_URI,
             "method_name": method_name,
-            "control_method": "codex_turns_steer",
+            "control_method": "upstream_turns_steer",
             "session_id": session_id,
             "thread_id": thread_id,
             "expected_turn_id": turn_id,
@@ -157,7 +150,7 @@ class A2AExtensionSessionOperations:
         error = resp.error or {}
         error_details = self._support.build_upstream_error_details(
             error=error,
-            business_code_map=CODEX_TURN_CONTROL_BUSINESS_CODE_MAP,
+            business_code_map=UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP,
         )
         self._support.record_extension_metric(
             metric_key,
@@ -172,38 +165,6 @@ class A2AExtensionSessionOperations:
             missing_params=list(error_details.missing_params or []) or None,
             upstream_error=error_details.upstream_error,
             meta=meta,
-        )
-
-    async def resolve_session_binding(
-        self,
-        *,
-        snapshot: Any,
-    ) -> ResolvedSessionBindingExtension:
-        if snapshot.session_binding.ext is not None:
-            return cast(ResolvedSessionBindingExtension, snapshot.session_binding.ext)
-        if snapshot.session_binding.status == "invalid":
-            raise A2AExtensionContractError(
-                snapshot.session_binding.error
-                or "Shared session binding contract is invalid"
-            )
-        raise A2AExtensionNotSupportedError(
-            snapshot.session_binding.error
-            or "Shared session binding extension not found"
-        )
-
-    async def resolve_invoke_metadata(
-        self,
-        *,
-        snapshot: Any,
-    ) -> ResolvedInvokeMetadataExtension:
-        if snapshot.invoke_metadata.ext is not None:
-            return cast(ResolvedInvokeMetadataExtension, snapshot.invoke_metadata.ext)
-        if snapshot.invoke_metadata.status == "invalid":
-            raise A2AExtensionContractError(
-                snapshot.invoke_metadata.error or "Invoke metadata contract is invalid"
-            )
-        raise A2AExtensionNotSupportedError(
-            snapshot.invoke_metadata.error or "Invoke metadata extension not found"
         )
 
     async def list_sessions(
@@ -228,7 +189,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.list_sessions(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             page=page,
             size=size,
             query=query,
@@ -259,7 +220,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_messages(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             page=page,
             size=size,
@@ -286,7 +247,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.continue_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             binding_meta=dict(snapshot.session_binding.meta or {}),
             session_id=session_id,
         )
@@ -302,11 +263,6 @@ class A2AExtensionSessionOperations:
         metadata: Optional[Dict[str, Any]],
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._session_extensions.prepare_prompt_session_async(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata,
-        )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -317,7 +273,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.prompt_session_async(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -339,27 +295,31 @@ class A2AExtensionSessionOperations:
 
         thread_id, turn_id = self.resolve_shared_stream_turn_identity(metadata)
         metadata_for_upstream = self.strip_shared_metadata_for_upstream(metadata)
-        steer_capability = snapshot.codex_turns.methods.get("steer")
+        turns_family = self._capabilities.resolve_upstream_method_family(
+            snapshot,
+            "turns",
+        )
+        steer_capability = turns_family.methods.get("steer")
 
         if (
             steer_capability is not None
             and steer_capability.declared
             and steer_capability.consumed_by_hub
             and steer_capability.method
-            and snapshot.codex_turns.jsonrpc_url
+            and turns_family.jsonrpc_url
             and thread_id
             and turn_id
         ):
             preflight = self._capabilities.preflight_wire_contract_method(
                 snapshot=snapshot.wire_contract,
-                extension_uri=CODEX_TURN_CONTROL_URI,
+                extension_uri=UPSTREAM_TURN_CONTROL_EXTENSION_URI,
                 method_name=steer_capability.method,
             )
             if preflight is not None:
                 return preflight
-            return await self.steer_codex_turn(
+            return await self.steer_upstream_turn(
                 runtime=runtime,
-                jsonrpc_url=snapshot.codex_turns.jsonrpc_url,
+                jsonrpc_url=turns_family.jsonrpc_url,
                 session_id=session_id,
                 thread_id=thread_id,
                 turn_id=turn_id,
@@ -368,11 +328,6 @@ class A2AExtensionSessionOperations:
 
         capability = self._capabilities.require_session_query_capability(
             snapshot.session_query
-        )
-        self._session_extensions.prepare_prompt_session_async(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata_for_upstream,
         )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
@@ -384,7 +339,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.prompt_session_async(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata_for_upstream,
@@ -402,11 +357,6 @@ class A2AExtensionSessionOperations:
         metadata: Optional[Dict[str, Any]],
         working_directory: str | None = None,
     ) -> ExtensionCallResult:
-        self._session_extensions.prepare_session_command(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata,
-        )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -417,7 +367,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.command_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -444,7 +394,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             include_raw=include_raw,
         )
@@ -469,7 +419,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_children(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             include_raw=include_raw,
         )
@@ -494,7 +444,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_todo(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             include_raw=include_raw,
         )
@@ -520,7 +470,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_diff(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             message_id=message_id,
             include_raw=include_raw,
@@ -550,7 +500,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.get_session_message(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             message_id=message_id,
             include_raw=include_raw,
@@ -581,7 +531,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.fork_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -610,7 +560,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.share_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             metadata=metadata,
         )
@@ -638,7 +588,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.unshare_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             metadata=metadata,
         )
@@ -668,7 +618,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.summarize_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -684,11 +634,6 @@ class A2AExtensionSessionOperations:
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]],
     ) -> ExtensionCallResult:
-        self._session_extensions.prepare_session_revert(
-            session_id=session_id,
-            request_payload=request_payload,
-            metadata=metadata,
-        )
         preflight = self._capabilities.preflight_wire_contract_method(
             snapshot=snapshot.wire_contract,
             extension_uri=capability.ext.uri,
@@ -699,7 +644,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.revert_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             request_payload=request_payload,
             metadata=metadata,
@@ -728,7 +673,7 @@ class A2AExtensionSessionOperations:
         return await self._session_extensions.unrevert_session(
             runtime=runtime,
             ext=capability.ext,
-            selection_meta=snapshot.session_query.selection_meta,
+            runtime_hints=snapshot.session_query.runtime_hints,
             session_id=session_id,
             metadata=metadata,
         )

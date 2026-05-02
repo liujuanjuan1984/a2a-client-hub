@@ -36,3 +36,4 @@ class A2AMessageRequest:
     query: str
     context_id: str | None = None
     metadata: dict[str, Any] | None = None
+    requested_extensions: tuple[str, ...] = ()

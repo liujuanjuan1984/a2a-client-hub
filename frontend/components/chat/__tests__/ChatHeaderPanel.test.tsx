@@ -66,10 +66,10 @@ describe("ChatHeaderPanel", () => {
     expect(screen.getByText("text -> text")).toBeTruthy();
     expect(screen.queryByText("Diagnostics")).toBeNull();
     expect(screen.queryByText("Test")).toBeNull();
-    expect(screen.queryByText("Codex Discovery")).toBeNull();
+    expect(screen.queryByText("Upstream Discovery")).toBeNull();
     expect(screen.queryByText("Browse")).toBeNull();
     expect(
-      screen.queryByText("This agent does not declare Codex discovery."),
+      screen.queryByText("This agent does not declare upstream discovery."),
     ).toBeNull();
     expect(screen.getByText("Capabilities")).toBeTruthy();
     expect(screen.getByText("Model Selection")).toBeTruthy();

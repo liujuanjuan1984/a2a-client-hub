@@ -49,10 +49,6 @@ def _as_record(value: Any) -> dict[str, Any] | None:
     return None
 
 
-def _normalize_agent_url(value: str) -> str:
-    return (value or "").strip().rstrip("/")
-
-
 def _compare_last_active(a: str | None, b: str | None) -> int:
     """Compare ISO timestamps (best-effort)."""
 
@@ -284,7 +280,10 @@ class ExternalSessionDirectoryService:
                     "title": normalized.title,
                     "last_active_at": normalized.last_active_at,
                 }
-                key = (_normalize_agent_url(agent.agent_url), normalized.session_id)
+                key = (
+                    (agent.agent_url or "").strip().rstrip("/"),
+                    normalized.session_id,
+                )
                 existing = dedup.get(key)
                 if existing is None:
                     dedup[key] = candidate

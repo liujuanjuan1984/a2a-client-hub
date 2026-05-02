@@ -17,10 +17,54 @@ type A2AExtensionResponse = {
   meta?: Record<string, unknown>;
 };
 
+type A2ADeclaredMethodCapability = {
+  declared: boolean;
+  consumedByHub: boolean;
+  method?: string | null;
+  availability: "always" | "enabled" | "disabled" | "unsupported";
+  configKey?: string | null;
+  reason?: string | null;
+  retention?: string | null;
+};
+
+type A2ADeclaredMethodCollection = {
+  declared: boolean;
+  consumedByHub: boolean;
+  status:
+    | "unsupported"
+    | "declared_not_consumed"
+    | "partially_consumed"
+    | "supported"
+    | "unsupported_by_design";
+  methods: Record<string, A2ADeclaredMethodCapability>;
+  declarationSource?:
+    | "none"
+    | "wire_contract"
+    | "wire_contract_fallback"
+    | "extension_method_hint"
+    | "extension_uri_hint"
+    | null;
+  declarationConfidence?: "none" | "fallback" | "authoritative" | null;
+  negotiationState?: "supported" | "missing" | "invalid" | "unsupported" | null;
+  diagnosticNote?: string | null;
+};
+
 type A2AExtensionCapabilities = {
   modelSelection: boolean;
   providerDiscovery: boolean;
   interruptRecovery: boolean;
+  interruptRecoveryDetails?: {
+    declared: boolean;
+    consumedByHub: boolean;
+    status: "supported" | "unsupported" | "invalid";
+    provider?: string | null;
+    methods: Record<string, string>;
+    recoveryDataSource?: string | null;
+    identityScope?: string | null;
+    implementationScope?: string | null;
+    emptyResultWhenIdentityUnavailable?: boolean | null;
+    error?: string | null;
+  };
   sessionPromptAsync: boolean;
   sessionControl: {
     append: {
@@ -71,7 +115,7 @@ type A2AExtensionCapabilities = {
   requestExecutionOptions?: {
     declared: boolean;
     consumedByHub: boolean;
-    status: "unsupported" | "declared_not_consumed" | "invalid";
+    status: "supported" | "unsupported" | "declared_not_consumed" | "invalid";
     metadataField?: string | null;
     fields: string[];
     persistsForThread?: boolean | null;
@@ -79,6 +123,57 @@ type A2AExtensionCapabilities = {
     notes: string[];
     error?: string | null;
   } | null;
+  streamHints?: {
+    declared: boolean;
+    consumedByHub: boolean;
+    status: "supported" | "unsupported" | "invalid";
+    streamField?: string | null;
+    usageField?: string | null;
+    interruptField?: string | null;
+    sessionField?: string | null;
+    mode?: string | null;
+    fallbackUsed?: boolean | null;
+    error?: string | null;
+  };
+  wireContract?: {
+    declared: boolean;
+    consumedByHub: boolean;
+    status: "supported" | "unsupported" | "invalid";
+    protocolVersion?: string | null;
+    preferredTransport?: string | null;
+    additionalTransports: string[];
+    allJsonrpcMethods: string[];
+    extensionUris: string[];
+    conditionalMethods: Record<
+      string,
+      { reason: string; toggle?: string | null }
+    >;
+    unsupportedMethodError?: {
+      code: number;
+      type: string;
+      dataFields: string[];
+    } | null;
+    error?: string | null;
+  };
+  compatibilityProfile?: {
+    declared: boolean;
+    status: "supported" | "unsupported" | "invalid";
+    uri?: string | null;
+    advisoryOnly?: boolean;
+    usedFor: string[];
+    extensionRetentionCount: number;
+    methodRetentionCount: number;
+    serviceBehaviorKeys: string[];
+    consumerGuidance: string[];
+    error?: string | null;
+  };
+  upstreamMethodFamilies?: {
+    discovery: A2ADeclaredMethodCollection;
+    threads: A2ADeclaredMethodCollection;
+    turns: A2ADeclaredMethodCollection;
+    review: A2ADeclaredMethodCollection;
+    exec: A2ADeclaredMethodCollection;
+  };
   runtimeStatus: RuntimeStatusContract;
 };
 
