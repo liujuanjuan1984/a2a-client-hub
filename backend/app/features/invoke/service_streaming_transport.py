@@ -239,6 +239,10 @@ def stream_sse(
                 if isinstance(finalized_callback_result, dict):
                     finalization_event = finalized_callback_result
             if finalization_event is not None and not client_disconnected:
+                runtime._ensure_outbound_stream_contract(
+                    finalization_event,
+                    event_sequence=seq_counter + 1,
+                )
                 yield f"data: {json_dumps(finalization_event, ensure_ascii=False)}\n\n"
             if not client_disconnected:
                 yield "event: stream_end\ndata: {}\n\n"
@@ -481,6 +485,10 @@ async def stream_ws(
             if isinstance(finalized_callback_result, dict):
                 finalization_event = finalized_callback_result
         if finalization_event is not None and not client_disconnected:
+            runtime._ensure_outbound_stream_contract(
+                finalization_event,
+                event_sequence=seq_counter + 1,
+            )
             await websocket.send_text(
                 json_dumps(finalization_event, ensure_ascii=False)
             )

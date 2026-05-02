@@ -14,6 +14,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from app.features.invoke import (
+    hub_stream_contract,
     service_streaming_consume,
     service_streaming_transport,
     stream_payloads,
@@ -465,6 +466,7 @@ class A2AInvokeStreamingRuntime:
         if not isinstance(shared_stream, dict):
             shared_stream = {}
             shared["stream"] = shared_stream
+        upstream_shared_stream = dict(shared_stream)
 
         shared_stream["seq"] = event_sequence
 
@@ -525,6 +527,11 @@ class A2AInvokeStreamingRuntime:
                 or not str(shared_stream.get("op")).strip()
             ):
                 shared_stream["op"] = "replace"
+
+        hub_stream_contract.attach_hub_stream_contract(
+            payload,
+            upstream_shared_stream=upstream_shared_stream,
+        )
 
     @classmethod
     def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:

@@ -16,6 +16,13 @@ import type {
   SessionMessageItem,
 } from "./chatRuntime.test.support";
 
+const normalizeRuntimeStateToken = (state: string) => {
+  const normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  return normalized.startsWith("task-state-")
+    ? normalized.slice("task-state-".length)
+    : normalized;
+};
+
 const buildStatusUpdate = ({
   state,
   messageId,
@@ -34,6 +41,21 @@ const buildStatusUpdate = ({
           ...(completionPhase ? { completionPhase } : {}),
         },
       },
+    },
+  },
+  hub: {
+    version: "v1",
+    eventKind: "status-update",
+    runtimeStatus: {
+      state: normalizeRuntimeStateToken(state),
+      isFinal:
+        state === "TASK_STATE_COMPLETED" ||
+        state === "TASK_STATE_FAILED" ||
+        state === "TASK_STATE_INPUT_REQUIRED",
+      interrupt: null,
+      seq: null,
+      completionPhase: completionPhase ?? null,
+      messageId: messageId ?? null,
     },
   },
 });
@@ -69,6 +91,29 @@ const buildArtifactUpdate = ({
       },
     },
   },
+  hub: {
+    version: "v1",
+    eventKind: "artifact-update",
+    streamBlock: {
+      eventId,
+      eventIdSource: "upstream",
+      messageIdSource: "upstream",
+      seq,
+      taskId: agentMessageId,
+      artifactId: `${agentMessageId}:stream:1`,
+      blockId: `${agentMessageId}:primary_text`,
+      laneId: "primary_text",
+      blockType: "text",
+      op: "append",
+      baseSeq: null,
+      source,
+      messageId: agentMessageId,
+      role: "agent",
+      delta: text,
+      append: true,
+      done: false,
+    },
+  },
 });
 
 const buildRawCompatArtifactUpdate = ({
@@ -102,6 +147,29 @@ const buildRawCompatArtifactUpdate = ({
           seq,
         },
       },
+    },
+  },
+  hub: {
+    version: "v1",
+    eventKind: "artifact-update",
+    streamBlock: {
+      eventId,
+      eventIdSource: "upstream",
+      messageIdSource: "task_fallback",
+      seq,
+      taskId,
+      artifactId: `${taskId}:stream:text`,
+      blockId: `task:${taskId}:primary_text`,
+      laneId: "primary_text",
+      blockType: "text",
+      op: append ? "append" : "replace",
+      baseSeq: null,
+      source: null,
+      messageId: `task:${taskId}`,
+      role: "agent",
+      delta: text,
+      append,
+      done: lastChunk,
     },
   },
 });
@@ -852,6 +920,29 @@ describe("executeChatRuntime empty-content recovery", () => {
               },
             },
           },
+          hub: {
+            version: "v1",
+            eventKind: "artifact-update",
+            streamBlock: {
+              eventId: `${agentMessageId}:1`,
+              eventIdSource: "upstream",
+              messageIdSource: "upstream",
+              seq: 1,
+              taskId: "task-compat-1",
+              artifactId: "stream-compat-1",
+              blockId: `${agentMessageId}:primary_text`,
+              laneId: "primary_text",
+              blockType: "text",
+              op: "append",
+              baseSeq: null,
+              source: "assistant_text",
+              messageId: agentMessageId,
+              role: "agent",
+              delta: "Hello from stream",
+              append: true,
+              done: false,
+            },
+          },
         });
         await new Promise((resolve) => setTimeout(resolve, 30));
         renderedDuringStream = getConversationMessages(conversationId).some(
@@ -983,6 +1074,42 @@ describe("executeChatRuntime empty-content recovery", () => {
               },
             },
           },
+          hub: {
+            version: "v1",
+            eventKind: "artifact-update",
+            streamBlock: {
+              eventId: `${agentMessageId}:1`,
+              eventIdSource: "upstream",
+              messageIdSource: "upstream",
+              seq: 1,
+              taskId: agentMessageId,
+              artifactId: `${agentMessageId}:stream`,
+              blockId: `${agentMessageId}:tool_call`,
+              laneId: "tool_call",
+              blockType: "tool_call",
+              op: "replace",
+              baseSeq: null,
+              source: "tool_part_update",
+              messageId: agentMessageId,
+              role: "agent",
+              delta: JSON.stringify({
+                call_id: "call-1",
+                tool: "bash",
+                status: "running",
+                input: { command: "pwd" },
+              }),
+              append: false,
+              done: false,
+              toolCall: {
+                name: "bash",
+                status: "running",
+                callId: "call-1",
+                arguments: { command: "pwd" },
+                result: null,
+                error: null,
+              },
+            },
+          },
         });
 
         const agentMessage = getConversationMessages(conversationId).find(
@@ -1097,6 +1224,29 @@ describe("executeChatRuntime empty-content recovery", () => {
                   },
                 },
               },
+            },
+          },
+          hub: {
+            version: "v1",
+            eventKind: "artifact-update",
+            streamBlock: {
+              eventId: `${agentMessageId}:1`,
+              eventIdSource: "upstream",
+              messageIdSource: "upstream",
+              seq: 1,
+              taskId: agentMessageId,
+              artifactId: `${agentMessageId}:stream`,
+              blockId: `${agentMessageId}:reasoning`,
+              laneId: "reasoning",
+              blockType: "reasoning",
+              op: "replace",
+              baseSeq: null,
+              source: "reasoning_part_update",
+              messageId: agentMessageId,
+              role: "agent",
+              delta: "Reasoning in progress",
+              append: false,
+              done: false,
             },
           },
         });

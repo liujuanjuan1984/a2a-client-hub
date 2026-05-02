@@ -4,26 +4,8 @@ import type {
   RuntimeInterrupt,
   StreamMissingParam,
 } from "./chatRuntimeStatus";
-import {
-  asRecord,
-  extractTextFromParts,
-  pickInteger,
-  pickRawString,
-  pickString,
-  serializeStructuredStreamData,
-} from "./chatUtilsShared";
-import {
-  BASE_SEQ_KEYS,
-  BLOCK_ID_KEYS,
-  BLOCK_TYPE_KEYS,
-  EVENT_ID_KEYS,
-  LANE_ID_KEYS,
-  MESSAGE_ID_KEYS,
-  SEQ_KEYS,
-  TASK_ID_KEYS,
-} from "./streamFieldAliases";
-
-import { mergeSharedMetadataSection } from "@/lib/sharedMetadata";
+import { asRecord, pickRawString, pickString } from "./chatUtilsShared";
+import { extractHubStreamEnvelope } from "./hubStreamEnvelope";
 
 export type ChatRole = "user" | "agent" | "system";
 
@@ -118,23 +100,6 @@ const finalizeRunningToolCallView = (
     : toolCall;
 
 const BLOCK_OPERATION_TYPES = new Set(["append", "replace", "finalize"]);
-const extractDataFromParts = (parts: unknown[]) =>
-  parts
-    .map((part) => {
-      if (!part || typeof part !== "object") {
-        return null;
-      }
-      const typed = part as {
-        data?: unknown;
-      };
-      if (!("data" in typed)) {
-        return null;
-      }
-      return serializeStructuredStreamData(typed.data);
-    })
-    .filter((item): item is string => Boolean(item))
-    .join("\n");
-
 const buildInterruptEventMessageCode = (
   interrupt: RuntimeInterrupt,
 ):
@@ -539,10 +504,6 @@ const parseBlockOperation = (
     : null;
 };
 
-const defaultLaneIdForBlockType = (
-  blockType: StreamBlockUpdate["blockType"],
-): string => (blockType === "text" ? "primary_text" : blockType);
-
 const findBlockIndexByBlockId = (
   blocks: MessageBlock[],
   blockId: string,
@@ -553,338 +514,37 @@ const adaptStreamBlockUpdateForReducer = (
   update: StreamBlockUpdate,
 ): StreamBlockUpdate => update;
 
-const inferTaskIdFromArtifactId = (
-  artifactId: string | null,
-): string | null => {
-  if (!artifactId) return null;
-  const firstSep = artifactId.indexOf(":");
-  if (firstSep <= 0) return null;
-  return artifactId.slice(0, firstSep);
-};
-
-const inferTaskIdFromMessageId = (messageId: string | null): string | null => {
-  if (!messageId) return null;
-  const normalized = messageId.trim();
-  if (!normalized.startsWith("task:")) {
-    return null;
-  }
-  const taskId = normalized.slice("task:".length).trim();
-  return taskId.length > 0 ? taskId : null;
-};
-
-const buildFallbackEventId = ({
-  messageId,
-  artifactId,
-  seq,
-}: {
-  messageId: string;
-  artifactId: string;
-  seq: number | null;
-}) => {
-  if (seq !== null) {
-    return `seq:${messageId}:${seq}`;
-  }
-  return `chunk:${messageId}:${artifactId}`;
-};
-
-const extractSharedStreamMetadata = (
-  artifactMetadata: Record<string, unknown> | null,
-  rootMetadata: Record<string, unknown> | null,
-) => mergeSharedMetadataSection([rootMetadata, artifactMetadata], "stream");
-
-const resolveCanonicalStreamResponse = (
-  data: Record<string, unknown>,
-): {
-  kind: "artifact-update" | "message" | "status-update" | "task" | null;
-  body: Record<string, unknown> | null;
-} => {
-  const artifactUpdate = asRecord(data.artifactUpdate);
-  if (artifactUpdate) {
-    return { kind: "artifact-update", body: artifactUpdate };
-  }
-  const message = asRecord(data.message);
-  if (message) {
-    return { kind: "message", body: message };
-  }
-  const statusUpdate = asRecord(data.statusUpdate);
-  if (statusUpdate) {
-    return { kind: "status-update", body: statusUpdate };
-  }
-  const task = asRecord(data.task);
-  if (task) {
-    return { kind: "task", body: task };
-  }
-  return { kind: null, body: null };
-};
-
-const resolveCanonicalContentArtifact = (
-  kind: "artifact-update" | "message" | "status-update" | "task" | null,
-  body: Record<string, unknown> | null,
-  rootMetadata: Record<string, unknown> | null,
-) => {
-  if (kind === "artifact-update") {
-    return asRecord(body?.artifact);
-  }
-  if (kind === "message") {
-    if (!Array.isArray(body?.parts)) {
-      return null;
-    }
-    return {
-      parts: body.parts,
-      ...(rootMetadata ? { metadata: rootMetadata } : {}),
-      ...(typeof body?.messageId === "string"
-        ? { messageId: body.messageId }
-        : {}),
-      ...(typeof body?.taskId === "string" ? { taskId: body.taskId } : {}),
-      ...(typeof body?.role === "string" ? { role: body.role } : {}),
-      ...(body?.toolCall ? { toolCall: body.toolCall } : {}),
-    };
-  }
-  if (kind === "status-update") {
-    const status = asRecord(body?.status);
-    const message = asRecord(status?.message);
-    if (!Array.isArray(message?.parts)) {
-      return null;
-    }
-    const messageMetadata = asRecord(message?.metadata);
-    return {
-      parts: message.parts,
-      ...(messageMetadata ? { metadata: messageMetadata } : {}),
-      ...(typeof message?.messageId === "string"
-        ? { messageId: message.messageId }
-        : {}),
-      ...(typeof message?.taskId === "string"
-        ? { taskId: message.taskId }
-        : {}),
-      ...(typeof message?.role === "string" ? { role: message.role } : {}),
-      ...(message?.toolCall ? { toolCall: message.toolCall } : {}),
-    };
-  }
-  return null;
-};
-
-const extractToolCallView = (
-  source: Record<string, unknown> | null,
-): ToolCallView | null => {
-  if (!source) {
-    return null;
-  }
-  const status = pickString(source, ["status"]);
-  if (
-    status !== "running" &&
-    status !== "success" &&
-    status !== "failed" &&
-    status !== "interrupted" &&
-    status !== "unknown"
-  ) {
-    return null;
-  }
-  return {
-    name:
-      pickRawString(source, ["name", "tool", "tool_name", "function_name"]) ??
-      null,
-    status,
-    callId: pickRawString(source, ["callId", "call_id"]) ?? null,
-    arguments: source.arguments,
-    result: source.result,
-    error: source.error,
-  };
-};
-
-const extractToolCallViewFromRawContent = (
-  rawContent: string,
-): ToolCallView | null => {
-  const trimmed = rawContent.trim();
-  if (!trimmed) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (Array.isArray(parsed)) {
-      for (let index = parsed.length - 1; index >= 0; index -= 1) {
-        const candidate = extractToolCallView(asRecord(parsed[index]));
-        if (candidate) {
-          return candidate;
-        }
-      }
-      return null;
-    }
-    return extractToolCallView(asRecord(parsed));
-  } catch {
-    return null;
-  }
-};
-
 export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
 ): StreamBlockUpdate | null => {
-  const { kind, body } = resolveCanonicalStreamResponse(data);
-  if (
-    kind !== "artifact-update" &&
-    kind !== "message" &&
-    kind !== "status-update"
-  ) {
+  const hub = extractHubStreamEnvelope(data);
+  const streamBlock = hub?.streamBlock;
+  if (!streamBlock) {
     return null;
   }
-  const rootMetadata = asRecord(body?.metadata);
-  const artifact = resolveCanonicalContentArtifact(kind, body, rootMetadata);
-  const metadata = asRecord(artifact?.metadata) ?? rootMetadata;
-  const sharedStream = extractSharedStreamMetadata(metadata, rootMetadata);
-  const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
-  const textFromParts = extractTextFromParts(parts);
-  const dataFromParts = extractDataFromParts(parts);
-  const rawBlockType =
-    pickString(sharedStream, BLOCK_TYPE_KEYS) ??
-    pickString(metadata, BLOCK_TYPE_KEYS) ??
-    pickString(rootMetadata, BLOCK_TYPE_KEYS);
-  const explicitBlockType = parseBlockType(rawBlockType);
-  const blockType =
-    explicitBlockType ??
-    ((kind === "artifact-update" ||
-      kind === "message" ||
-      kind === "status-update") &&
-    rawBlockType === null
-      ? dataFromParts
-        ? "tool_call"
-        : textFromParts
-          ? "text"
-          : null
-      : null);
+  const blockType = parseBlockType(pickString(streamBlock, ["blockType"]));
   if (!blockType) {
     return null;
   }
-
-  const seq =
-    pickInteger(sharedStream, SEQ_KEYS) ??
-    pickInteger(body ?? null, SEQ_KEYS) ??
-    pickInteger(artifact ?? null, SEQ_KEYS) ??
-    pickInteger(metadata, SEQ_KEYS) ??
-    pickInteger(rootMetadata, SEQ_KEYS);
-
-  const artifactId = pickString(artifact ?? null, ["artifactId", "id"]) ?? null;
-  const taskIdHint =
-    pickString(body ?? null, TASK_ID_KEYS) ??
-    pickString(artifact ?? null, TASK_ID_KEYS) ??
-    pickString(rootMetadata, TASK_ID_KEYS) ??
-    inferTaskIdFromArtifactId(artifactId);
-
-  const upstreamMessageId =
-    pickString(sharedStream, MESSAGE_ID_KEYS) ??
-    pickString(body ?? null, MESSAGE_ID_KEYS) ??
-    pickString(artifact ?? null, MESSAGE_ID_KEYS) ??
-    pickString(metadata, MESSAGE_ID_KEYS) ??
-    pickString(rootMetadata, MESSAGE_ID_KEYS);
-  const messageIdSource: StreamBlockUpdate["messageIdSource"] =
-    upstreamMessageId !== null
-      ? "upstream"
-      : taskIdHint
-        ? "task_fallback"
-        : "artifact_fallback";
-  const resolvedMessageId =
-    upstreamMessageId ?? (taskIdHint ? `task:${taskIdHint}` : null);
-  const resolvedArtifactId =
-    artifactId ?? `${resolvedMessageId ?? "stream"}:${blockType}`;
-  const taskId =
-    taskIdHint ??
-    inferTaskIdFromArtifactId(resolvedArtifactId) ??
-    inferTaskIdFromMessageId(resolvedMessageId) ??
-    resolvedMessageId ??
-    resolvedArtifactId;
-  const messageId = resolvedMessageId ?? `artifact:${resolvedArtifactId}`;
-
-  const delta =
-    (blockType === "tool_call"
-      ? dataFromParts || textFromParts
-      : textFromParts) ||
-    pickRawString(body ?? null, ["delta"]) ||
-    pickRawString(artifact ?? null, ["delta"]) ||
-    pickRawString(body ?? null, ["text"]) ||
-    pickRawString(artifact ?? null, ["text"]) ||
-    "";
-
-  const explicitOp =
-    parseBlockOperation(pickString(sharedStream, ["op", "operation"])) ??
-    parseBlockOperation(pickString(metadata, ["op", "operation"])) ??
-    parseBlockOperation(pickString(rootMetadata, ["op", "operation"])) ??
-    parseBlockOperation(pickString(artifact ?? null, ["op", "operation"])) ??
-    parseBlockOperation(pickString(body ?? null, ["op", "operation"]));
-  const op =
-    explicitOp ??
-    (kind === "message" || kind === "status-update"
-      ? "replace"
-      : kind === "artifact-update"
-        ? body?.append === true
-          ? "append"
-          : "replace"
-        : null);
+  const op = parseBlockOperation(pickString(streamBlock, ["op"]));
   if (!op) {
     return null;
   }
-  const append = op === "append";
-  const done =
-    op === "finalize" ||
-    body?.lastChunk === true ||
-    artifact?.lastChunk === true;
-  const upstreamEventId =
-    pickString(sharedStream, EVENT_ID_KEYS) ??
-    pickString(body ?? null, EVENT_ID_KEYS) ??
-    pickString(artifact ?? null, EVENT_ID_KEYS) ??
-    pickString(metadata, EVENT_ID_KEYS) ??
-    pickString(rootMetadata, EVENT_ID_KEYS);
-  const eventId = upstreamEventId
-    ? upstreamEventId
-    : buildFallbackEventId({
-        messageId,
-        artifactId: resolvedArtifactId,
-        seq: seq ?? null,
-      });
-  const eventIdSource: StreamBlockUpdate["eventIdSource"] = upstreamEventId
-    ? "upstream"
-    : seq !== null
-      ? "fallback_seq"
-      : "fallback_chunk";
 
-  const source =
-    pickString(sharedStream, ["source"]) ??
-    pickString(metadata, ["source"]) ??
-    pickString(rootMetadata, ["source"]) ??
-    null;
+  const eventId = pickString(streamBlock, ["eventId"]);
+  const messageId = pickString(streamBlock, ["messageId"]);
+  const taskId = pickString(streamBlock, ["taskId"]);
+  const artifactId = pickString(streamBlock, ["artifactId"]);
+  const blockId = pickString(streamBlock, ["blockId"]);
+  const laneId = pickString(streamBlock, ["laneId"]);
+  if (!eventId || !messageId || !taskId || !artifactId || !blockId || !laneId) {
+    return null;
+  }
+  const delta = pickRawString(streamBlock, ["delta"]) ?? "";
   if (!delta && op !== "finalize") {
     return null;
   }
-  const laneId =
-    pickString(sharedStream, LANE_ID_KEYS) ??
-    pickString(metadata, LANE_ID_KEYS) ??
-    pickString(rootMetadata, LANE_ID_KEYS) ??
-    pickString(artifact ?? null, LANE_ID_KEYS) ??
-    pickString(body ?? null, LANE_ID_KEYS) ??
-    defaultLaneIdForBlockType(blockType);
-  const blockId =
-    pickString(sharedStream, BLOCK_ID_KEYS) ??
-    pickString(metadata, BLOCK_ID_KEYS) ??
-    pickString(rootMetadata, BLOCK_ID_KEYS) ??
-    pickString(artifact ?? null, BLOCK_ID_KEYS) ??
-    pickString(body ?? null, BLOCK_ID_KEYS) ??
-    `${messageId}:${laneId}`;
-  const baseSeq =
-    pickInteger(sharedStream, BASE_SEQ_KEYS) ??
-    pickInteger(metadata, BASE_SEQ_KEYS) ??
-    pickInteger(rootMetadata, BASE_SEQ_KEYS) ??
-    pickInteger(artifact ?? null, BASE_SEQ_KEYS) ??
-    pickInteger(body ?? null, BASE_SEQ_KEYS);
-  const role = normalizeRole(
-    pickString(body ?? null, ["role"]) ??
-      pickString(artifact ?? null, ["role"]) ??
-      pickString(sharedStream, ["role"]) ??
-      pickString(metadata, ["role"]) ??
-      pickString(rootMetadata, ["role"]),
-  );
-  const toolCall =
-    blockType === "tool_call"
-      ? (extractToolCallView(
-          asRecord(body?.toolCall) ?? asRecord(artifact?.toolCall),
-        ) ?? extractToolCallViewFromRawContent(delta))
-      : null;
+  const toolCall = asRecord(streamBlock.toolCall);
   const interruptPayload =
     blockType === "interrupt_event"
       ? parseSerializedInterruptEventContent(delta)
@@ -892,23 +552,43 @@ export const extractStreamBlockUpdate = (
 
   return {
     eventId,
-    eventIdSource,
-    messageIdSource,
-    seq: seq ?? null,
+    eventIdSource:
+      streamBlock.eventIdSource === "upstream" ||
+      streamBlock.eventIdSource === "fallback_seq" ||
+      streamBlock.eventIdSource === "fallback_chunk"
+        ? streamBlock.eventIdSource
+        : "fallback_chunk",
+    messageIdSource:
+      streamBlock.messageIdSource === "upstream" ||
+      streamBlock.messageIdSource === "task_fallback" ||
+      streamBlock.messageIdSource === "artifact_fallback"
+        ? streamBlock.messageIdSource
+        : "artifact_fallback",
+    seq: typeof streamBlock.seq === "number" ? streamBlock.seq : null,
     taskId,
-    artifactId: resolvedArtifactId,
+    artifactId,
     blockId,
     laneId,
     blockType,
     op,
-    baseSeq: baseSeq ?? null,
-    source,
+    baseSeq:
+      typeof streamBlock.baseSeq === "number" ? streamBlock.baseSeq : null,
+    source: pickString(streamBlock, ["source"]),
     messageId,
-    role,
+    role: normalizeRole(pickString(streamBlock, ["role"])),
     delta: interruptPayload.content,
-    append,
-    done: op === "finalize" ? true : done,
-    toolCall,
+    append:
+      typeof streamBlock.append === "boolean"
+        ? streamBlock.append
+        : op === "append",
+    done:
+      typeof streamBlock.done === "boolean"
+        ? streamBlock.done
+        : op === "finalize",
+    toolCall:
+      blockType === "tool_call"
+        ? ((toolCall as ToolCallView | null) ?? null)
+        : null,
     interrupt: interruptPayload.interrupt,
   };
 };

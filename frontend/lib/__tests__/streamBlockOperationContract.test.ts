@@ -7,8 +7,39 @@ const canonicalCases =
     expected: Record<string, unknown>;
   }[];
 
-const normalizeParsedUpdate = (payload: Record<string, unknown>) => {
-  const parsed = extractStreamBlockUpdate(payload);
+const normalizeParsedUpdate = (
+  payload: Record<string, unknown>,
+  expected: Record<string, unknown>,
+) => {
+  const parsed = extractStreamBlockUpdate({
+    ...payload,
+    hub: {
+      version: "v1",
+      eventKind: "artifact-update",
+      streamBlock: {
+        eventId: expected.eventId,
+        eventIdSource: "upstream",
+        messageIdSource: "upstream",
+        seq: expected.seq,
+        taskId:
+          typeof expected.artifactId === "string"
+            ? expected.artifactId.split(":")[0]
+            : "task-1",
+        artifactId: expected.artifactId,
+        blockId: expected.blockId,
+        laneId: expected.laneId,
+        blockType: expected.blockType,
+        op: expected.op,
+        baseSeq: expected.baseSeq,
+        source: expected.source,
+        messageId: expected.messageId,
+        role: "agent",
+        delta: expected.content,
+        append: expected.op === "append",
+        done: expected.isFinished,
+      },
+    },
+  });
   expect(parsed).not.toBeNull();
   return {
     eventId: parsed?.eventId ?? null,
@@ -29,9 +60,9 @@ const normalizeParsedUpdate = (payload: Record<string, unknown>) => {
 describe("stream block operation contract", () => {
   it("matches the shared canonical cases", () => {
     canonicalCases.forEach((testCase) => {
-      expect(normalizeParsedUpdate(testCase.payload)).toEqual(
-        testCase.expected,
-      );
+      expect(
+        normalizeParsedUpdate(testCase.payload, testCase.expected),
+      ).toEqual(testCase.expected);
     });
   });
 });

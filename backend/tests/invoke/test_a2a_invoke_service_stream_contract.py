@@ -524,6 +524,11 @@ def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
     assert payload["message"]["parts"] == [{"text": "render me"}]
     assert payload["message"]["role"] == "ROLE_AGENT"
     assert payload["message"]["messageId"] == "msg-root-2"
+    assert payload["hub"]["version"] == "v1"
+    assert payload["hub"]["eventKind"] == "message"
+    assert payload["hub"]["streamBlock"]["messageId"] == "msg-root-2"
+    assert payload["hub"]["streamBlock"]["blockType"] == "text"
+    assert payload["hub"]["streamBlock"]["op"] == "replace"
 
 
 def test_ensure_outbound_stream_contract_adds_shared_stream_metadata_for_status_message():
@@ -554,6 +559,33 @@ def test_ensure_outbound_stream_contract_adds_shared_stream_metadata_for_status_
     assert payload["statusUpdate"]["status"]["message"]["parts"] == [
         {"text": "render status message"}
     ]
+    assert payload["hub"]["version"] == "v1"
+    assert payload["hub"]["eventKind"] == "status-update"
+    assert payload["hub"]["streamBlock"]["messageId"] == "msg-status-2"
+    assert payload["hub"]["runtimeStatus"]["state"] == "working"
+    assert payload["hub"]["runtimeStatus"]["isFinal"] is False
+
+
+def test_ensure_outbound_stream_contract_exposes_fallback_message_identity_in_hub():
+    payload = {
+        "artifactUpdate": {
+            "taskId": "task-fallback-1",
+            "append": True,
+            "artifact": {
+                "artifactId": "task-fallback-1:stream:text",
+                "parts": [{"text": "hello"}],
+            },
+        }
+    }
+
+    a2a_invoke_service._ensure_outbound_stream_contract(
+        payload,
+        event_sequence=6,
+    )
+
+    assert payload["hub"]["streamBlock"]["messageId"] == "task:task-fallback-1"
+    assert payload["hub"]["streamBlock"]["messageIdSource"] == "task_fallback"
+    assert payload["hub"]["streamBlock"]["eventIdSource"] == "fallback_seq"
 
 
 def test_serialize_stream_event_keeps_canonical_message_payload_before_validation(
