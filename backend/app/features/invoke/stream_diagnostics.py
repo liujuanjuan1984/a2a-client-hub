@@ -112,7 +112,7 @@ def build_validation_errors_log_sample(validation_errors: list[str]) -> list[str
     ]
 
 
-def warn_non_contract_artifact_update_once(
+def warn_non_contract_stream_content_once(
     *,
     seen_reasons: set[str],
     reason: str | None,
@@ -131,12 +131,12 @@ def warn_non_contract_artifact_update_once(
     }
     if callable(log_warning):
         log_warning(
-            "Dropped non-contract artifact-update event",
+            "Dropped non-contract stream content event",
             extra=warning_payload,
         )
         return
     if callable(log_info):
         log_info(
-            "Dropped non-contract artifact-update event",
+            "Dropped non-contract stream content event",
             extra=warning_payload,
         )

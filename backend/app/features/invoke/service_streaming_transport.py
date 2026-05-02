@@ -25,7 +25,7 @@ from app.features.invoke.stream_diagnostics import (
     build_artifact_update_log_sample,
     build_validation_errors_log_sample,
     extract_artifact_validation_errors,
-    warn_non_contract_artifact_update_once,
+    warn_non_contract_stream_content_once,
 )
 from app.utils.json_encoder import json_dumps
 
@@ -145,7 +145,7 @@ def stream_sse(
                 stream_block, non_contract_reason = (
                     stream_payloads.analyze_stream_chunk_contract(serialized)
                 )
-                warn_non_contract_artifact_update_once(
+                warn_non_contract_stream_content_once(
                     seen_reasons=non_contract_drop_reasons,
                     reason=non_contract_reason,
                     payload=serialized,
@@ -365,7 +365,7 @@ async def stream_ws(
             stream_block, non_contract_reason = (
                 stream_payloads.analyze_stream_chunk_contract(serialized)
             )
-            warn_non_contract_artifact_update_once(
+            warn_non_contract_stream_content_once(
                 seen_reasons=non_contract_drop_reasons,
                 reason=non_contract_reason,
                 payload=serialized,

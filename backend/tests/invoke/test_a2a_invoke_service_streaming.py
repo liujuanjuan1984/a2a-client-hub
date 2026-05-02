@@ -599,7 +599,7 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
@@ -657,7 +657,7 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
@@ -707,7 +707,7 @@ async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(cap
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert warning_records == []
     payload = "".join(frames)
@@ -1316,7 +1316,7 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
@@ -1704,7 +1704,7 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
         record
         for record in caplog.records
         if record.levelname == "WARNING"
-        and record.message == "Dropped non-contract artifact-update event"
+        and record.message == "Dropped non-contract stream content event"
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"

@@ -136,10 +136,6 @@ def resolve_stream_content_envelope(
     )
 
 
-def _resolve_status_message(payload: dict[str, Any]) -> dict[str, Any]:
-    return resolve_stream_content_envelope(payload).status_message
-
-
 def extract_stream_text_from_parts(parts: Any) -> str:
     if not isinstance(parts, list):
         return ""
@@ -188,10 +184,6 @@ def _infer_message_block_type(parts: Any) -> str | None:
     if extract_stream_text_from_parts(parts):
         return "text"
     return None
-
-
-def _resolve_stream_artifact(payload: dict[str, Any]) -> dict[str, Any]:
-    return resolve_stream_content_envelope(payload).artifact
 
 
 def coerce_message_event_to_artifact_update(payload: dict[str, Any]) -> None:
