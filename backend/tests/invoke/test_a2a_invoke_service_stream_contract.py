@@ -137,6 +137,25 @@ def test_extract_stream_identity_hints_from_status_metadata_message_id():
     assert hints["upstream_message_id"] == "msg-from-status-message"
 
 
+def test_extract_stream_identity_hints_from_nested_status_message_fields():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "statusUpdate": {
+                "status": {
+                    "state": "TASK_STATE_WORKING",
+                    "message": {
+                        "messageId": "msg-from-nested-status",
+                        "taskId": "task-from-nested-status",
+                        "parts": [{"text": "hello"}],
+                    },
+                }
+            }
+        }
+    )
+    assert hints["upstream_message_id"] == "msg-from-nested-status"
+    assert hints["upstream_task_id"] == "task-from-nested-status"
+
+
 def test_extract_stream_identity_hints_includes_upstream_task_id():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
@@ -603,6 +622,38 @@ def test_extract_usage_hints_from_serialized_event_ignores_legacy_root_metadata(
         }
     )
     assert usage == {}
+
+
+def test_extract_binding_hints_from_nested_status_message_metadata():
+    context_id, metadata = (
+        a2a_invoke_service.extract_binding_hints_from_serialized_event(
+            {
+                "statusUpdate": {
+                    "status": {
+                        "state": "TASK_STATE_WORKING",
+                        "message": {
+                            "messageId": "msg-status-binding",
+                            "parts": [{"text": "hello"}],
+                            "metadata": {
+                                "contextId": "ctx-status-binding",
+                                "shared": {
+                                    "session": {
+                                        "id": "sess-status-binding",
+                                        "provider": "status-provider",
+                                    }
+                                },
+                            },
+                        },
+                    }
+                }
+            }
+        )
+    )
+    assert context_id == "ctx-status-binding"
+    assert metadata["shared"]["session"] == {
+        "id": "sess-status-binding",
+        "provider": "status-provider",
+    }
 
 
 def test_coerce_payload_to_dict_raises_exception(caplog):

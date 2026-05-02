@@ -115,6 +115,8 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         else _dict_field(root, "status")
     )
     status_metadata = _dict_field(status, "metadata")
+    status_message = stream_payloads._resolve_status_message(root)
+    status_message_metadata = _dict_field(status_message, "metadata")
     task = stream_body if stream_kind == "task" else _dict_field(root, "task")
     task_status = _dict_field(task, "status")
     task_status_metadata = _dict_field(task_status, "metadata")
@@ -138,6 +140,8 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
         message_metadata,
         status,
         status_metadata,
+        status_message,
+        status_message_metadata,
         task,
         task_status,
         task_status_metadata,
@@ -154,6 +158,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     task_id = pick_first_non_empty_str(
         (
             stream_body,
+            status_message,
             task,
             _dict_field(status, "task"),
             _dict_field(result, "task"),
@@ -173,7 +178,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     )
 
     usage: dict[str, Any] = {}
-    for cand in (stream_body, artifact, message, status, task, result):
+    for cand in (stream_body, artifact, message, status_message, status, task, result):
         cand_usage = _extract_usage_from_candidate(cand)
         if cand_usage:
             usage.update(cand_usage)
@@ -183,7 +188,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     external_session_id = None
     binding_meta: dict[str, Any] = {}
 
-    for cand in (stream_body, message, result):
+    for cand in (stream_body, message, status_message, result):
         if context_id is None:
             context_id = extract_context_id(cand)
 
