@@ -100,13 +100,12 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionCapabilitiesResponse:
+    ) -> A2AExtensionCapabilitiesResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
         runtime = await _get_runtime_for_external_call(db, current_user, agent_id)
-        snapshot = await _extensions_service().resolve_capability_snapshot(
-            runtime=runtime
+        return await common_router_support.run_extension_capabilities_call(
+            _extensions_service().resolve_capability_snapshot(runtime=runtime)
         )
-        return common_router_support.build_extension_capabilities_response(snapshot)
 
     @router.post(
         "/{agent_id}/extensions/models/providers:list",
