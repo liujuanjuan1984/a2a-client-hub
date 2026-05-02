@@ -81,6 +81,7 @@ export type ChatMessage = {
 export type StreamBlockUpdate = {
   eventId: string;
   eventIdSource: "upstream" | "fallback_seq" | "fallback_chunk";
+  messageIdSource: "upstream" | "task_fallback" | "artifact_fallback";
   seq: number | null;
   taskId: string;
   artifactId: string;
@@ -450,6 +451,7 @@ export const buildInterruptEventBlockUpdate = ({
   return {
     eventId,
     eventIdSource: "upstream",
+    messageIdSource: "upstream",
     seq: null,
     taskId: `interrupt:${normalizedMessageId}`,
     artifactId: `${normalizedMessageId}:interrupt:${interrupt.requestId}:${interrupt.phase}`,
@@ -729,7 +731,10 @@ export const extractStreamBlockUpdate = (
   const explicitBlockType = parseBlockType(rawBlockType);
   const blockType =
     explicitBlockType ??
-    ((kind === "message" || kind === "status-update") && rawBlockType === null
+    ((kind === "artifact-update" ||
+      kind === "message" ||
+      kind === "status-update") &&
+    rawBlockType === null
       ? dataFromParts
         ? "tool_call"
         : textFromParts
@@ -760,6 +765,12 @@ export const extractStreamBlockUpdate = (
     pickString(artifact ?? null, ["messageId"]) ??
     pickString(metadata, ["messageId"]) ??
     pickString(rootMetadata, ["messageId"]);
+  const messageIdSource: StreamBlockUpdate["messageIdSource"] =
+    upstreamMessageId !== null
+      ? "upstream"
+      : taskIdHint
+        ? "task_fallback"
+        : "artifact_fallback";
   const resolvedMessageId =
     upstreamMessageId ?? (taskIdHint ? `task:${taskIdHint}` : null);
   const resolvedArtifactId =
@@ -790,7 +801,13 @@ export const extractStreamBlockUpdate = (
     parseBlockOperation(pickString(body ?? null, ["op", "operation"]));
   const op =
     explicitOp ??
-    (kind === "message" || kind === "status-update" ? "replace" : null);
+    (kind === "message" || kind === "status-update"
+      ? "replace"
+      : kind === "artifact-update"
+        ? body?.append === true
+          ? "append"
+          : "replace"
+        : null);
   if (!op) {
     return null;
   }
@@ -867,6 +884,7 @@ export const extractStreamBlockUpdate = (
   return {
     eventId,
     eventIdSource,
+    messageIdSource,
     seq: seq ?? null,
     taskId,
     artifactId: resolvedArtifactId,

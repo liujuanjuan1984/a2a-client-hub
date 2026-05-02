@@ -71,6 +71,41 @@ const buildArtifactUpdate = ({
   },
 });
 
+const buildRawCompatArtifactUpdate = ({
+  taskId,
+  text,
+  eventId,
+  seq,
+  append = true,
+  lastChunk = false,
+}: {
+  taskId: string;
+  text: string;
+  eventId: string;
+  seq: number;
+  append?: boolean;
+  lastChunk?: boolean;
+}) => ({
+  artifactUpdate: {
+    taskId,
+    contextId: "ctx-1",
+    append,
+    lastChunk,
+    artifact: {
+      artifactId: `${taskId}:stream:text`,
+      parts: [{ text }],
+    },
+    metadata: {
+      shared: {
+        stream: {
+          eventId,
+          seq,
+        },
+      },
+    },
+  },
+});
+
 describe("executeChatRuntime empty-content recovery", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -207,6 +242,123 @@ describe("executeChatRuntime empty-content recovery", () => {
     );
     expect(agentMessage?.status).toBe("done");
     expect(agentMessage?.content).toBe("Recovered response");
+  });
+
+  it("renders raw A2A artifact text chunks without rekeying the placeholder message", async () => {
+    const conversationId = "conv-raw-artifact-1";
+    const agentId = "agent-raw-artifact-1";
+    const userMessageId = "user-raw-artifact-1";
+    const agentMessageId = "agent-raw-artifact-1";
+    const taskId = "task-raw-artifact-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T05:10:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T05:10:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData(
+          buildStatusUpdate({ state: "TASK_STATE_WORKING" }),
+        );
+        params.callbacks.onData(
+          buildRawCompatArtifactUpdate({
+            taskId,
+            text: "Code",
+            eventId: "stream:4",
+            seq: 4,
+          }),
+        );
+        params.callbacks.onData(
+          buildRawCompatArtifactUpdate({
+            taskId,
+            text: "，你",
+            eventId: "stream:5",
+            seq: 5,
+          }),
+        );
+        params.callbacks.onData(
+          buildStatusUpdate({
+            state: "TASK_STATE_COMPLETED",
+            completionPhase: "persisted",
+          }),
+        );
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    await flushPromises();
+
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+    expect(state.sessions[conversationId]?.lastAgentMessageId).toBe(
+      agentMessageId,
+    );
+    expect(state.sessions[conversationId]?.streamState).toBe("idle");
+
+    const messages = getConversationMessages(conversationId);
+    expect(messages.find((message) => message.id === `task:${taskId}`)).toBe(
+      undefined,
+    );
+
+    const agentMessage = messages.find(
+      (message) => message.id === agentMessageId,
+    );
+    expect(agentMessage?.status).toBe("done");
+    expect(agentMessage?.content).toBe("Code，你");
+    expect(agentMessage?.blocks?.map((block) => block.type)).toEqual(["text"]);
   });
 
   it("marks the stream recoverable when terminal status is not followed by a persisted completion ack", async () => {

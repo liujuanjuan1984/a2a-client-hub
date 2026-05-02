@@ -630,6 +630,7 @@ describe("block-based stream parser and reducer", () => {
     blocks = applyStreamBlockUpdate(blocks, {
       eventId: "evt-tool-late-success",
       eventIdSource: "upstream",
+      messageIdSource: "upstream",
       seq: 3,
       taskId: "task-tools",
       artifactId: "task-tools:stream:tool-late-success",
@@ -1134,6 +1135,40 @@ describe("block-based stream parser and reducer", () => {
     ).artifact?.metadata?.shared?.stream?.messageId;
     const parsed = extractStreamBlockUpdate(payload);
     expect(parsed?.messageId).toBe("task:task-1");
+    expect(parsed?.messageIdSource).toBe("task_fallback");
+  });
+
+  it("accepts raw A2A artifact text chunks without custom block metadata", () => {
+    const payload = {
+      artifactUpdate: {
+        taskId: "task-raw-1",
+        contextId: "ctx-raw-1",
+        append: true,
+        lastChunk: false,
+        artifact: {
+          artifactId: "task-raw-1:stream:text",
+          parts: [{ text: "Code" }],
+        },
+        metadata: {
+          shared: {
+            stream: {
+              seq: 4,
+              eventId: "stream:4",
+            },
+          },
+        },
+      },
+    };
+
+    const parsed = extractStreamBlockUpdate(payload);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.blockType).toBe("text");
+    expect(parsed?.op).toBe("append");
+    expect(parsed?.delta).toBe("Code");
+    expect(parsed?.messageId).toBe("task:task-raw-1");
+    expect(parsed?.messageIdSource).toBe("task_fallback");
+    expect(parsed?.eventId).toBe("stream:4");
   });
 
   it("uses seq-based fallback when eventId is missing", () => {
