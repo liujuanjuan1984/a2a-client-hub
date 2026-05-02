@@ -51,13 +51,6 @@ class ResolvedStreamContentEnvelope:
     shared_stream: dict[str, Any]
 
 
-def _resolved_stream_event_kind(payload: dict[str, Any]) -> str | None:
-    for field_name, kind in _STREAM_RESPONSE_FIELD_TO_KIND:
-        if isinstance(payload.get(field_name), dict):
-            return kind
-    return None
-
-
 def _resolve_stream_response_body(
     payload: dict[str, Any],
 ) -> tuple[str | None, dict[str, Any]]:
@@ -183,10 +176,6 @@ def _infer_message_block_type(parts: Any) -> str | None:
         return "tool_call"
     if extract_stream_text_from_parts(parts):
         return "text"
-    return None
-
-
-def coerce_message_event_to_artifact_update(payload: dict[str, Any]) -> None:
     return None
 
 
@@ -384,20 +373,6 @@ def extract_block_base_seq(
             artifact,
         ),
         ("baseSeq",),
-    )
-
-
-def extract_stream_sequence_from_serialized_event(
-    payload: dict[str, Any],
-) -> int | None:
-    envelope = resolve_stream_content_envelope(payload)
-    return pick_first_int(
-        (
-            envelope.shared_stream,
-            envelope.event_metadata,
-            envelope.artifact_metadata,
-        ),
-        ("seq",),
     )
 
 

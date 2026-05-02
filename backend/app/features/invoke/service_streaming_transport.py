@@ -10,6 +10,7 @@ from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 
 from app.features.invoke import stream_payloads
+from app.features.invoke.payload_helpers import pick_first_int
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamEventPayloadCallbackFn,
@@ -22,7 +23,7 @@ from app.features.invoke.service_types import (
     ValidateMessageFn,
 )
 from app.features.invoke.stream_diagnostics import (
-    build_artifact_update_log_sample,
+    build_stream_content_log_sample,
     build_validation_errors_log_sample,
     extract_stream_content_validation_errors,
     warn_non_contract_stream_content_once,
@@ -77,10 +78,14 @@ def stream_sse(
                 cache_key, resume_from_sequence
             )
             for cached_sequence, cached_event in cached_events:
-                parsed_sequence = (
-                    stream_payloads.extract_stream_sequence_from_serialized_event(
-                        cached_event
-                    )
+                envelope = stream_payloads.resolve_stream_content_envelope(cached_event)
+                parsed_sequence = pick_first_int(
+                    (
+                        envelope.shared_stream,
+                        envelope.event_metadata,
+                        envelope.artifact_metadata,
+                    ),
+                    ("seq",),
                 )
                 if parsed_sequence is not None:
                     seq_counter = max(seq_counter, parsed_sequence)
@@ -126,8 +131,8 @@ def stream_sse(
                             "validation_errors_sample": (
                                 build_validation_errors_log_sample(validation_errors)
                             ),
-                            "artifact_update_sample": (
-                                build_artifact_update_log_sample(serialized)
+                            "stream_content_sample": (
+                                build_stream_content_log_sample(serialized)
                             ),
                         },
                     )
@@ -295,10 +300,14 @@ async def stream_ws(
             cache_key, resume_from_sequence
         )
         for cached_sequence, cached_event in cached_events:
-            parsed_sequence = (
-                stream_payloads.extract_stream_sequence_from_serialized_event(
-                    cached_event
-                )
+            envelope = stream_payloads.resolve_stream_content_envelope(cached_event)
+            parsed_sequence = pick_first_int(
+                (
+                    envelope.shared_stream,
+                    envelope.event_metadata,
+                    envelope.artifact_metadata,
+                ),
+                ("seq",),
             )
             if parsed_sequence is not None:
                 seq_counter = max(seq_counter, parsed_sequence)
@@ -346,8 +355,8 @@ async def stream_ws(
                         "validation_errors_sample": (
                             build_validation_errors_log_sample(validation_errors)
                         ),
-                        "artifact_update_sample": (
-                            build_artifact_update_log_sample(serialized)
+                        "stream_content_sample": (
+                            build_stream_content_log_sample(serialized)
                         ),
                     },
                 )

@@ -19,7 +19,7 @@ from tests.invoke.a2a_invoke_service_support import (
     _GatewayWithUnstructuredError,
     a2a_invoke_service,
     asyncio,
-    build_artifact_update_log_sample,
+    build_stream_content_log_sample,
     json,
     logging,
     pytest,
@@ -603,7 +603,7 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -661,7 +661,7 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -1369,7 +1369,7 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -1757,7 +1757,7 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
-    warning_sample = getattr(warning_records[0], "artifact_update_sample", None)
+    warning_sample = getattr(warning_records[0], "stream_content_sample", None)
     assert isinstance(warning_sample, dict)
     assert (
         warning_sample["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"][
@@ -1767,8 +1767,8 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
     )
 
 
-def test_build_artifact_update_log_sample_redacts_sensitive_fields_and_truncates():
-    sample = build_artifact_update_log_sample(
+def test_build_stream_content_log_sample_redacts_sensitive_fields_and_truncates():
+    sample = build_stream_content_log_sample(
         {
             "kind": "artifact-update",
             "metadata": {

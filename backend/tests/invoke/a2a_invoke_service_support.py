@@ -24,7 +24,7 @@ from app.features.invoke.service_streaming import (
     a2a_invoke_streaming_runtime,
 )
 from app.features.invoke.service_types import StreamFinishReason
-from app.features.invoke.stream_diagnostics import build_artifact_update_log_sample
+from app.features.invoke.stream_diagnostics import build_stream_content_log_sample
 from app.features.invoke.stream_payloads import (
     extract_interrupt_lifecycle_from_serialized_event,
     extract_stream_chunk_from_serialized_event,
@@ -266,7 +266,7 @@ __all__ = [
     "_artifact_event",
     "a2a_invoke_service",
     "asyncio",
-    "build_artifact_update_log_sample",
+    "build_stream_content_log_sample",
     "coerce_payload_to_dict",
     "json",
     "logging",

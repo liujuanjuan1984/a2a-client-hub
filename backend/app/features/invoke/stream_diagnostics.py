@@ -103,7 +103,7 @@ def _sanitize_log_sample(
     return _truncate_log_string(repr(value))
 
 
-def build_artifact_update_log_sample(payload: dict[str, Any]) -> dict[str, Any]:
+def build_stream_content_log_sample(payload: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], _sanitize_log_sample(payload))
 
 
@@ -129,7 +129,7 @@ def warn_non_contract_stream_content_once(
     warning_payload = {
         **log_extra,
         "drop_reason": reason,
-        "artifact_update_sample": build_artifact_update_log_sample(payload),
+        "stream_content_sample": build_stream_content_log_sample(payload),
     }
     if callable(log_warning):
         log_warning(

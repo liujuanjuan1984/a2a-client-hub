@@ -19,7 +19,7 @@ from app.features.invoke.service_types import (
     ValidateMessageFn,
 )
 from app.features.invoke.stream_diagnostics import (
-    build_artifact_update_log_sample,
+    build_stream_content_log_sample,
     build_validation_errors_log_sample,
     extract_stream_content_validation_errors,
     warn_non_contract_stream_content_once,
@@ -197,7 +197,7 @@ async def consume_stream(
                     "validation_errors_sample": build_validation_errors_log_sample(
                         validation_errors
                     ),
-                    "artifact_update_sample": build_artifact_update_log_sample(
+                    "stream_content_sample": build_stream_content_log_sample(
                         serialized
                     ),
                 }
