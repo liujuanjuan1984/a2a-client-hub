@@ -363,6 +363,41 @@ def test_extract_stream_chunk_inferrs_message_payloads_without_explicit_block_co
     assert chunk["source"] == "assistant_text"
 
 
+def test_extract_stream_chunk_inferrs_status_message_payloads_without_explicit_block_contract():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "statusUpdate": {
+                "status": {
+                    "state": "TASK_STATE_WORKING",
+                    "message": {
+                        "messageId": "msg-status-1",
+                        "taskId": "task-status-1",
+                        "parts": [{"text": "hello from status message"}],
+                        "role": "ROLE_AGENT",
+                    },
+                },
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "eventId": "evt-status-1",
+                            "source": "assistant_text",
+                        }
+                    }
+                },
+            }
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["event_id"] == "evt-status-1"
+    assert chunk["message_id"] == "msg-status-1"
+    assert chunk["artifact_id"] == "msg-status-1:text"
+    assert chunk["block_type"] == "text"
+    assert chunk["op"] == "replace"
+    assert chunk["content"] == "hello from status message"
+    assert chunk["source"] == "assistant_text"
+
+
 def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
     payload = {
         "message": {
@@ -385,6 +420,36 @@ def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
     assert payload["message"]["parts"] == [{"text": "render me"}]
     assert payload["message"]["role"] == "ROLE_AGENT"
     assert payload["message"]["messageId"] == "msg-root-2"
+
+
+def test_ensure_outbound_stream_contract_adds_shared_stream_metadata_for_status_message():
+    payload = {
+        "statusUpdate": {
+            "status": {
+                "state": "TASK_STATE_WORKING",
+                "message": {
+                    "messageId": "msg-status-2",
+                    "parts": [{"text": "render status message"}],
+                    "role": "ROLE_AGENT",
+                },
+            }
+        }
+    }
+
+    a2a_invoke_service._ensure_outbound_stream_contract(
+        payload,
+        event_sequence=5,
+    )
+
+    shared_stream = payload["statusUpdate"]["metadata"]["shared"]["stream"]
+    assert shared_stream["seq"] == 5
+    assert shared_stream["messageId"] == "msg-status-2"
+    assert shared_stream["eventId"] == "msg-status-2:5"
+    assert shared_stream["blockType"] == "text"
+    assert shared_stream["op"] == "replace"
+    assert payload["statusUpdate"]["status"]["message"]["parts"] == [
+        {"text": "render status message"}
+    ]
 
 
 def test_serialize_stream_event_keeps_canonical_message_payload_before_validation(

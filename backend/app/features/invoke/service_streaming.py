@@ -510,12 +510,12 @@ class A2AInvokeStreamingRuntime:
         if message_id is not None:
             shared_stream["messageId"] = message_id
         shared_stream["eventId"] = event_id or fallback_event_id
-        if kind == "message":
+        if kind in {"message", "status-update"}:
             if (
                 not isinstance(shared_stream.get("blockType"), str)
                 or not str(shared_stream.get("blockType")).strip()
             ):
-                parts = body.get("parts")
+                parts = artifact.get("parts")
                 if stream_payloads.extract_stream_data_from_parts(parts):
                     shared_stream["blockType"] = "tool_call"
                 elif stream_payloads.extract_stream_text_from_parts(parts):

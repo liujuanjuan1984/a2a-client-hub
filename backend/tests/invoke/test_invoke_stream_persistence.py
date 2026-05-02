@@ -439,6 +439,108 @@ async def test_persist_local_outcome_records_upstream_task_binding(
 
 
 @pytest.mark.asyncio
+async def test_persist_stream_block_update_accepts_status_message_content(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Status Message Stream",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    state = _FakeState(
+        local_session_id=thread.id,
+        local_source="manual",
+        context_id="ctx-status-message",
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        next_event_seq=1,
+    )
+
+    def _session_factory() -> _SessionContext:
+        return _SessionContext(async_db_session)
+
+    async def _commit(_db) -> None:
+        await async_db_session.flush()
+
+    async def _ensure_headers_adapter(**kwargs) -> None:
+        await ensure_local_message_headers(
+            **kwargs,
+            session_factory=_session_factory,
+            commit_fn=_commit,
+            session_hub=session_hub_service,
+        )
+
+    event_payload = {
+        "statusUpdate": {
+            "status": {
+                "state": "TASK_STATE_WORKING",
+                "message": {
+                    "messageId": "msg-status-stream-1",
+                    "taskId": "task-status-stream-1",
+                    "parts": [{"text": "hello from status message"}],
+                    "role": "ROLE_AGENT",
+                },
+            },
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "eventId": "evt-status-stream-1",
+                        "seq": 1,
+                        "source": "assistant_text",
+                    }
+                }
+            },
+        }
+    }
+
+    await persist_stream_block_update(
+        state=state,
+        event_payload=event_payload,
+        request=_build_request(user_id=user.id),
+        session_factory=_session_factory,
+        commit_fn=_commit,
+        session_hub=session_hub_service,
+        ensure_headers_fn=_ensure_headers_adapter,
+    )
+
+    await flush_stream_buffer(
+        state=state,
+        user_id=user.id,
+        session_factory=_session_factory,
+        commit_fn=_commit,
+        session_hub=session_hub_service,
+    )
+
+    agent_message = await async_db_session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.conversation_id == thread.id,
+            AgentMessage.sender == "agent",
+        )
+    )
+    assert agent_message is not None
+
+    persisted_blocks = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_message.id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    )
+    assert [block.block_type for block in persisted_blocks] == ["text"]
+    assert persisted_blocks[0].content == "hello from status message"
+
+
+@pytest.mark.asyncio
 async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_artifact_id(
     async_db_session,
 ) -> None:

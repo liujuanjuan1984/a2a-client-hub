@@ -1044,6 +1044,34 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.messageId).toBe("msg-message-9");
   });
 
+  it("infers text block type for status-update message wrappers", () => {
+    const parsed = extractStreamBlockUpdate({
+      statusUpdate: {
+        status: {
+          state: "TASK_STATE_WORKING",
+          message: {
+            messageId: "msg-status-9",
+            taskId: "task-status-9",
+            role: "ROLE_AGENT",
+            parts: [{ text: "hello from status message" }],
+          },
+        },
+        metadata: {
+          shared: {
+            stream: {
+              eventId: "evt-status-9",
+            },
+          },
+        },
+      },
+    });
+    expect(parsed?.blockType).toBe("text");
+    expect(parsed?.messageId).toBe("msg-status-9");
+    expect(parsed?.taskId).toBe("task-status-9");
+    expect(parsed?.eventId).toBe("evt-status-9");
+    expect(parsed?.delta).toBe("hello from status message");
+  });
+
   it("parses chunk when taskId is missing but messageId exists", () => {
     const parsed = extractStreamBlockUpdate({
       artifactUpdate: {

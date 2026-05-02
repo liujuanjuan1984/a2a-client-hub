@@ -58,6 +58,29 @@ def _event_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     return _dict_field(body, "metadata")
 
 
+def _build_synthetic_artifact_from_message(message: dict[str, Any]) -> dict[str, Any]:
+    parts = message.get("parts")
+    if not isinstance(parts, list):
+        return {}
+    synthetic_artifact: dict[str, Any] = {"parts": list(parts)}
+    metadata = _dict_field(message, "metadata")
+    if metadata:
+        synthetic_artifact["metadata"] = dict(metadata)
+    for field_name in ("messageId", "taskId", "role", "eventId", "toolCall"):
+        value = message.get(field_name)
+        if value is not None:
+            synthetic_artifact[field_name] = value
+    return synthetic_artifact
+
+
+def _resolve_status_message(payload: dict[str, Any]) -> dict[str, Any]:
+    kind, body = _resolve_stream_response_body(payload)
+    if kind != "status-update":
+        return {}
+    status = _dict_field(body, "status")
+    return _dict_field(status, "message")
+
+
 def extract_stream_text_from_parts(parts: Any) -> str:
     if not isinstance(parts, list):
         return ""
@@ -113,16 +136,13 @@ def _resolve_stream_artifact(payload: dict[str, Any]) -> dict[str, Any]:
     if kind == "artifact-update":
         artifact = body.get("artifact")
         return artifact if isinstance(artifact, dict) else {}
+    if kind == "message":
+        return _build_synthetic_artifact_from_message(body)
+    if kind == "status-update":
+        return _build_synthetic_artifact_from_message(_resolve_status_message(payload))
     if kind != "message":
         return {}
-    parts = body.get("parts")
-    if not isinstance(parts, list):
-        return {}
-    synthetic_artifact: dict[str, Any] = {"parts": list(parts)}
-    metadata = _dict_field(body, "metadata")
-    if metadata:
-        synthetic_artifact["metadata"] = dict(metadata)
-    return synthetic_artifact
+    return {}
 
 
 def coerce_message_event_to_artifact_update(payload: dict[str, Any]) -> None:
@@ -167,8 +187,8 @@ def extract_artifact_type(
         raw = event_metadata.get("blockType")
 
     if not isinstance(raw, str) or not raw.strip():
-        if kind == "message":
-            return _infer_message_block_type(body.get("parts"))
+        if kind in {"message", "status-update"}:
+            return _infer_message_block_type(artifact.get("parts"))
         return None
 
     normalized = raw.strip().lower()
@@ -240,7 +260,10 @@ def extract_block_operation(
         normalized = raw.lower()
         if normalized in BLOCK_OPERATION_TYPES:
             return normalized
-    if kind == "message" and _infer_message_block_type(body.get("parts")) is not None:
+    if (
+        kind in {"message", "status-update"}
+        and _infer_message_block_type(artifact.get("parts")) is not None
+    ):
         return "replace"
     return None
 
@@ -346,7 +369,7 @@ def extract_stream_chunk_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
     normalized_kind = _resolved_stream_event_kind(payload)
-    if normalized_kind not in ("artifact-update", "message"):
+    if normalized_kind not in ("artifact-update", "message", "status-update"):
         return None
 
     _, body = _resolve_stream_response_body(payload)
@@ -437,7 +460,7 @@ def analyze_stream_chunk_contract(
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
     normalized_kind = _resolved_stream_event_kind(payload)
-    if normalized_kind not in ("artifact-update", "message"):
+    if normalized_kind not in ("artifact-update", "message", "status-update"):
         return None, None
     stream_block = extract_stream_chunk_from_serialized_event(payload)
     if stream_block is not None:
