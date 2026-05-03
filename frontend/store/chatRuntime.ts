@@ -625,8 +625,8 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       meta.streamThreadId !== undefined ||
       meta.streamTurnId !== undefined ||
       meta.transport !== undefined ||
-      meta.inputModes !== null ||
-      meta.outputModes !== null;
+      meta.inputModes !== undefined ||
+      meta.outputModes !== undefined;
     if (chunk || runtimeStatusEvent || hasSessionMetaEvent) {
       hasObservedStreamEvent = true;
     }

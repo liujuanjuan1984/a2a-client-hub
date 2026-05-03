@@ -19,10 +19,6 @@ from app.features.invoke import (
     service_streaming_transport,
     stream_payloads,
 )
-from app.features.invoke.payload_helpers import (
-    pick_first_non_empty_str,
-    pick_non_empty_str,
-)
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamErrorPayload,
@@ -34,11 +30,6 @@ from app.features.invoke.service_types import (
     StreamSessionStartedCallbackFn,
     StreamTextCallbackFn,
     ValidateMessageFn,
-)
-from app.features.invoke.stream_field_aliases import (
-    BLOCK_TYPE_KEYS,
-    EVENT_ID_KEYS,
-    MESSAGE_ID_KEYS,
 )
 from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
@@ -451,86 +442,12 @@ class A2AInvokeStreamingRuntime:
         body = content_envelope.event_body
         if not body:
             return
-
-        metadata = body.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-            body["metadata"] = metadata
-
-        shared = metadata.get("shared")
-        if not isinstance(shared, dict):
-            shared = {}
-            metadata["shared"] = shared
-
-        shared_stream = shared.get("stream")
-        if not isinstance(shared_stream, dict):
-            shared_stream = {}
-            shared["stream"] = shared_stream
-        upstream_shared_stream = dict(shared_stream)
-
-        shared_stream["seq"] = event_sequence
-
-        artifact = content_envelope.artifact
-        artifact_metadata = content_envelope.artifact_metadata
-        artifact_shared_stream = content_envelope.shared_stream
-        message_id = pick_first_non_empty_str(
-            (
-                body,
-                artifact_shared_stream,
-                artifact,
-                artifact_metadata,
-                metadata,
-                shared_stream,
-            ),
-            MESSAGE_ID_KEYS,
-        )
-
-        event_id = pick_first_non_empty_str(
-            (
-                body,
-                artifact_shared_stream,
-                artifact,
-                artifact_metadata,
-                metadata,
-            ),
-            EVENT_ID_KEYS,
-        )
-
-        fallback_event_id = (
-            f"{message_id}:{event_sequence}"
-            if message_id
-            else f"stream:{event_sequence}"
-        )
-        if event_id == f"stream:{event_sequence}" and message_id is not None:
-            event_id = None
-        shared_event_id = pick_non_empty_str(shared_stream, EVENT_ID_KEYS)
-        if event_id is None and shared_event_id not in (
-            None,
-            "",
-            fallback_event_id,
-            f"stream:{event_sequence}",
-        ):
-            event_id = shared_event_id
-
-        if message_id is not None:
-            shared_stream["messageId"] = message_id
-        shared_stream["eventId"] = event_id or fallback_event_id
-        if kind in {"message", "status-update"}:
-            if pick_non_empty_str(shared_stream, BLOCK_TYPE_KEYS) is None:
-                parts = artifact.get("parts")
-                if stream_payloads.extract_stream_data_from_parts(parts):
-                    shared_stream["blockType"] = "tool_call"
-                elif stream_payloads.extract_stream_text_from_parts(parts):
-                    shared_stream["blockType"] = "text"
-            if (
-                not isinstance(shared_stream.get("op"), str)
-                or not str(shared_stream.get("op")).strip()
-            ):
-                shared_stream["op"] = "replace"
+        upstream_shared_stream = dict(content_envelope.shared_stream)
 
         hub_stream_contract.attach_hub_stream_contract(
             payload,
             upstream_shared_stream=upstream_shared_stream,
+            local_event_sequence=event_sequence,
         )
 
     @classmethod

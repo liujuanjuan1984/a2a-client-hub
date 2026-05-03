@@ -154,7 +154,11 @@ def _build_runtime_interrupt(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _build_runtime_status(payload: dict[str, Any]) -> dict[str, Any] | None:
+def _build_runtime_status(
+    payload: dict[str, Any],
+    *,
+    local_event_sequence: int,
+) -> dict[str, Any] | None:
     envelope = resolve_stream_content_envelope(payload)
     if envelope.event_kind != "status-update" or not envelope.status:
         return None
@@ -187,6 +191,7 @@ def _build_runtime_status(payload: dict[str, Any]) -> dict[str, Any] | None:
         ),
         SEQ_KEYS,
     )
+    resolved_seq = seq if isinstance(seq, int) else local_event_sequence
     raw_completion_phase = envelope.shared_stream.get("completionPhase")
     completion_phase = (
         "persisted"
@@ -198,7 +203,7 @@ def _build_runtime_status(payload: dict[str, Any]) -> dict[str, Any] | None:
         "state": state,
         "isFinal": state in TERMINAL_STREAM_RUNTIME_STATES,
         "interrupt": _build_runtime_interrupt(payload),
-        "seq": seq,
+        "seq": resolved_seq,
         "completionPhase": completion_phase,
         "messageId": message_id,
     }
@@ -220,6 +225,7 @@ def _build_stream_block(
     payload: dict[str, Any],
     *,
     upstream_shared_stream: Mapping[str, Any] | None = None,
+    local_event_sequence: int,
 ) -> dict[str, Any] | None:
     stream_chunk = extract_stream_chunk_from_serialized_event(payload)
     if not stream_chunk:
@@ -248,7 +254,7 @@ def _build_stream_block(
         return None
 
     seq = stream_chunk.get("seq")
-    resolved_seq = seq if isinstance(seq, int) else None
+    resolved_seq = seq if isinstance(seq, int) else local_event_sequence
 
     artifact_id = stream_chunk.get("artifact_id")
     resolved_artifact_id = artifact_id if isinstance(artifact_id, str) else None
@@ -397,6 +403,7 @@ def attach_hub_stream_contract(
     payload: dict[str, Any],
     *,
     upstream_shared_stream: Mapping[str, Any] | None = None,
+    local_event_sequence: int,
 ) -> None:
     envelope = resolve_stream_content_envelope(payload)
     kind = envelope.event_kind
@@ -410,10 +417,14 @@ def attach_hub_stream_contract(
     stream_block = _build_stream_block(
         payload,
         upstream_shared_stream=upstream_shared_stream,
+        local_event_sequence=local_event_sequence,
     )
     if stream_block is not None:
         hub_payload["streamBlock"] = stream_block
-    runtime_status = _build_runtime_status(payload)
+    runtime_status = _build_runtime_status(
+        payload,
+        local_event_sequence=local_event_sequence,
+    )
     if runtime_status is not None:
         hub_payload["runtimeStatus"] = runtime_status
     session_meta = _build_session_meta(payload)

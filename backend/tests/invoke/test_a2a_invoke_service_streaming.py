@@ -813,12 +813,14 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
         for payload in _extract_stream_payloads(initial_frames)
         if "artifactUpdate" in payload
     )
-    initial_shared_stream = initial_payload["artifactUpdate"]["metadata"]["shared"][
-        "stream"
-    ]
+    initial_shared_stream = initial_payload["artifactUpdate"]["artifact"]["metadata"][
+        "shared"
+    ]["stream"]
     assert initial_shared_stream["messageId"] == "msg-local-1"
-    assert initial_shared_stream["seq"] == 1
     assert initial_shared_stream["eventId"] == "evt-cache-1"
+    assert "seq" not in initial_shared_stream
+    assert initial_payload["hub"]["streamBlock"]["seq"] == 1
+    assert initial_payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
 
     replay = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents([]),
@@ -841,12 +843,14 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
         for payload in _extract_stream_payloads(replay_frames)
         if "artifactUpdate" in payload
     )
-    replay_shared_stream = replay_payload["artifactUpdate"]["metadata"]["shared"][
-        "stream"
-    ]
+    replay_shared_stream = replay_payload["artifactUpdate"]["artifact"]["metadata"][
+        "shared"
+    ]["stream"]
     assert replay_shared_stream["messageId"] == "msg-local-1"
-    assert replay_shared_stream["seq"] == 1
     assert replay_shared_stream["eventId"] == "evt-cache-1"
+    assert "seq" not in replay_shared_stream
+    assert replay_payload["hub"]["streamBlock"]["seq"] == 1
+    assert replay_payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
 
     await global_stream_cache.mark_completed(cache_key)
 
@@ -877,7 +881,7 @@ async def test_iter_gateway_stream_passes_requested_extensions_to_gateway():
 
 
 @pytest.mark.asyncio
-async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
+async def test_sse_preserves_upstream_seq_in_hub_stream_blocks():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
             [
@@ -934,11 +938,11 @@ async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
 
     payloads = _extract_stream_payloads(frames)
     artifact_payloads = [payload for payload in payloads if "artifactUpdate" in payload]
-    assert [
-        payload["artifactUpdate"]["metadata"]["shared"]["stream"]["seq"]
-        for payload in artifact_payloads
-    ] == [1, 2]
-    assert payloads[-1]["statusUpdate"]["metadata"]["shared"]["stream"]["seq"] == 3
+    assert [payload["hub"]["streamBlock"]["seq"] for payload in artifact_payloads] == [
+        9,
+        12,
+    ]
+    assert payloads[-1]["hub"]["runtimeStatus"]["seq"] == 3
 
 
 @pytest.mark.asyncio
@@ -970,13 +974,14 @@ async def test_sse_preserves_canonical_message_payload_for_upstream_message_even
     assert message_payload["message"]["messageId"] == "msg-upstream-sse-1"
     assert message_payload["message"]["role"] == "ROLE_AGENT"
     assert message_payload["message"]["parts"] == [{"text": "hello from raw message"}]
-    assert message_payload["message"]["metadata"]["shared"]["stream"] == {
-        "seq": 1,
-        "messageId": "msg-upstream-sse-1",
-        "eventId": "msg-upstream-sse-1:1",
-        "blockType": "text",
-        "op": "replace",
-    }
+    assert "metadata" not in message_payload["message"]
+    assert message_payload["hub"]["streamBlock"]["seq"] == 1
+    assert message_payload["hub"]["streamBlock"]["messageId"] == "msg-upstream-sse-1"
+    assert (
+        message_payload["hub"]["streamBlock"]["eventId"] == "seq:msg-upstream-sse-1:1"
+    )
+    assert message_payload["hub"]["streamBlock"]["blockType"] == "text"
+    assert message_payload["hub"]["streamBlock"]["op"] == "replace"
 
 
 @pytest.mark.asyncio
@@ -1120,13 +1125,12 @@ async def test_ws_preserves_canonical_message_payload_for_upstream_message_event
     assert message_payload["message"]["messageId"] == "msg-upstream-ws-1"
     assert message_payload["message"]["role"] == "ROLE_AGENT"
     assert message_payload["message"]["parts"] == [{"text": "hello from raw message"}]
-    assert message_payload["message"]["metadata"]["shared"]["stream"] == {
-        "seq": 1,
-        "messageId": "msg-upstream-ws-1",
-        "eventId": "msg-upstream-ws-1:1",
-        "blockType": "text",
-        "op": "replace",
-    }
+    assert "metadata" not in message_payload["message"]
+    assert message_payload["hub"]["streamBlock"]["seq"] == 1
+    assert message_payload["hub"]["streamBlock"]["messageId"] == "msg-upstream-ws-1"
+    assert message_payload["hub"]["streamBlock"]["eventId"] == "seq:msg-upstream-ws-1:1"
+    assert message_payload["hub"]["streamBlock"]["blockType"] == "text"
+    assert message_payload["hub"]["streamBlock"]["op"] == "replace"
 
 
 @pytest.mark.asyncio
@@ -1232,15 +1236,19 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
         if item.startswith("{") and '"artifactUpdate"' in item
     ]
     assert payloads
-    assert payloads[0]["artifactUpdate"]["metadata"]["shared"]["stream"] == {
-        "seq": 1,
+    assert payloads[0]["artifactUpdate"]["artifact"]["metadata"]["shared"][
+        "stream"
+    ] == {
+        "blockType": "text",
         "messageId": "msg-local-ws-1",
-        "eventId": "msg-local-ws-1:1",
     }
+    assert payloads[0]["hub"]["streamBlock"]["seq"] == 1
+    assert payloads[0]["hub"]["streamBlock"]["messageId"] == "msg-local-ws-1"
+    assert payloads[0]["hub"]["streamBlock"]["eventId"] == "seq:msg-local-ws-1:1"
 
 
 @pytest.mark.asyncio
-async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
+async def test_ws_preserves_upstream_seq_in_hub_stream_blocks():
     websocket = _DummyWebSocket()
 
     await a2a_invoke_service.stream_ws(
@@ -1302,11 +1310,11 @@ async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
         and ('"artifactUpdate"' in item or '"statusUpdate"' in item)
     ]
     artifact_payloads = [payload for payload in payloads if "artifactUpdate" in payload]
-    assert [
-        payload["artifactUpdate"]["metadata"]["shared"]["stream"]["seq"]
-        for payload in artifact_payloads
-    ] == [1, 2]
-    assert payloads[-1]["statusUpdate"]["metadata"]["shared"]["stream"]["seq"] == 3
+    assert [payload["hub"]["streamBlock"]["seq"] for payload in artifact_payloads] == [
+        9,
+        12,
+    ]
+    assert payloads[-1]["hub"]["runtimeStatus"]["seq"] == 3
 
 
 @pytest.mark.asyncio

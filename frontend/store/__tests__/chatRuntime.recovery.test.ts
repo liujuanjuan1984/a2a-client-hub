@@ -6,6 +6,7 @@ import {
   executeChatRuntime,
   flushPromises,
   getConversationMessages,
+  invokeAgent,
   mockedChatConnectionService,
   mockedListSessionMessagesPage,
   queryClient,
@@ -731,6 +732,108 @@ describe("executeChatRuntime empty-content recovery", () => {
     ).toMatchObject({
       status: "interrupted",
       content: "Hello before stream end.",
+    });
+  });
+
+  it("ignores empty hub envelopes and falls back to JSON when no stream event was observed", async () => {
+    const conversationId = "conv-empty-hub-envelope-1";
+    const agentId = "agent-empty-hub-envelope-1";
+    const userMessageId = "user-empty-hub-envelope-1";
+    const agentMessageId = "agent-empty-hub-envelope-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-23T10:20:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-23T10:20:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    invokeAgent.mockResolvedValueOnce({
+      success: true,
+      content: "JSON fallback response.",
+    });
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          hub: {
+            version: "v1",
+            eventKind: "artifact-update",
+          },
+        });
+        return false;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+    expect(invokeAgent).toHaveBeenCalledWith(
+      agentId,
+      expect.objectContaining({
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      }),
+    );
+    expect(state.sessions[conversationId]?.streamState).toBe("idle");
+    expect(state.sessions[conversationId]?.lastStreamError).toBeNull();
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      ),
+    ).toMatchObject({
+      status: "done",
+      content: "JSON fallback response.",
     });
   });
 
