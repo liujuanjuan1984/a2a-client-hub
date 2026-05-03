@@ -99,48 +99,10 @@ export const pickFirstArray = (
   return [];
 };
 
-export const pickInteger = (
-  source: Record<string, unknown> | null,
-  keys: string[],
-): number | null => {
-  if (!source) return null;
-  for (const key of keys) {
-    const value = source[key];
-    if (
-      typeof value === "number" &&
-      Number.isFinite(value) &&
-      Number.isInteger(value)
-    ) {
-      return value;
-    }
-    if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
-      return Number(value.trim());
-    }
-  }
-  return null;
-};
-
 export const coerceStringArray = (value: unknown) =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
     ? (value as string[])
     : undefined;
-
-export const extractTextFromParts = (parts: unknown[]) =>
-  parts
-    .map((part) => {
-      if (!part || typeof part !== "object") {
-        return null;
-      }
-      const typed = part as {
-        text?: unknown;
-      };
-      if (typeof typed.text === "string") {
-        return typed.text;
-      }
-      return null;
-    })
-    .filter((item): item is string => Boolean(item))
-    .join("");
 
 const sortSerializableValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {

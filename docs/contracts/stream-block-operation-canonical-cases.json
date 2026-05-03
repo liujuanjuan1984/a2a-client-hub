@@ -36,8 +36,7 @@
       "op": "append",
       "content": "Hello ",
       "baseSeq": null,
-      "isFinished": false,
-      "source": "stream"
+      "isFinished": false
     }
   },
   {
@@ -80,8 +79,7 @@
       "op": "replace",
       "content": "Final answer",
       "baseSeq": 7,
-      "isFinished": false,
-      "source": "canonical_v2"
+      "isFinished": false
     }
   },
   {
@@ -120,8 +118,7 @@
       "op": "finalize",
       "content": "",
       "baseSeq": 9,
-      "isFinished": true,
-      "source": "canonical_v2"
+      "isFinished": true
     }
   },
   {
@@ -160,8 +157,7 @@
       "op": "append",
       "content": "Code",
       "baseSeq": null,
-      "isFinished": false,
-      "source": null
+      "isFinished": false
     }
   },
   {
@@ -196,8 +192,7 @@
       "op": "replace",
       "content": "Message wrapper content",
       "baseSeq": null,
-      "isFinished": false,
-      "source": null
+      "isFinished": false
     }
   }
 ]

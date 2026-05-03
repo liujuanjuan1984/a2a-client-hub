@@ -184,16 +184,6 @@ def _build_runtime_status(
     if state is None:
         return None
 
-    message_id = pick_first_non_empty_str(
-        (
-            envelope.shared_stream,
-            envelope.event_metadata,
-            envelope.status_message,
-            envelope.status,
-            envelope.event_body,
-        ),
-        MESSAGE_ID_KEYS,
-    )
     seq = pick_first_int(
         (
             envelope.shared_stream,
@@ -218,20 +208,8 @@ def _build_runtime_status(
         "interrupt": _build_runtime_interrupt(payload),
         "seq": resolved_seq,
         "completionPhase": completion_phase,
-        "messageId": message_id,
     }
     return result
-
-
-def _normalize_role(value: Any) -> str:
-    if not isinstance(value, str):
-        return "agent"
-    normalized = value.strip().lower()
-    if normalized.startswith("role_"):
-        normalized = normalized[len("role_") :]
-    if normalized in {"user", "agent", "system"}:
-        return normalized
-    return "agent"
 
 
 def _build_stream_block(
@@ -312,13 +290,6 @@ def _build_stream_block(
     )
     if resolved_artifact_id is None:
         resolved_artifact_id = f"{resolved_message_id or 'stream'}:{block_type}"
-    task_id = (
-        task_id_hint
-        or _infer_task_id_from_artifact_id(resolved_artifact_id)
-        or _infer_task_id_from_message_id(resolved_message_id)
-        or resolved_message_id
-        or resolved_artifact_id
-    )
     message_id = resolved_message_id or f"artifact:{resolved_artifact_id}"
 
     local_event_id = pick_first_non_empty_str(local_context_candidates, ("event_id",))
@@ -353,7 +324,6 @@ def _build_stream_block(
 
     lane_id = stream_chunk.get("lane_id")
     block_id = stream_chunk.get("block_id")
-    source = stream_chunk.get("source")
     base_seq = stream_chunk.get("base_seq")
     local_block_id = pick_first_non_empty_str(local_context_candidates, ("block_id",))
     local_lane_id = pick_first_non_empty_str(local_context_candidates, ("lane_id",))
@@ -373,7 +343,6 @@ def _build_stream_block(
         "eventIdSource": event_id_source,
         "messageIdSource": message_id_source,
         "seq": resolved_seq,
-        "taskId": task_id,
         "artifactId": resolved_artifact_id,
         "blockId": (
             block_id if isinstance(block_id, str) else f"{message_id}:{block_type}"
@@ -382,22 +351,8 @@ def _build_stream_block(
         "blockType": block_type,
         "op": operation,
         "baseSeq": base_seq if isinstance(base_seq, int) else None,
-        "source": source if isinstance(source, str) else None,
         "messageId": message_id,
-        "role": _normalize_role(
-            pick_first_non_empty_str(
-                (
-                    body,
-                    artifact,
-                    source_shared_stream,
-                    artifact_metadata,
-                    event_metadata,
-                ),
-                ("role",),
-            )
-        ),
         "delta": content,
-        "append": bool(stream_chunk.get("append")),
         "done": bool(stream_chunk.get("is_finished")),
     }
     tool_call = stream_chunk.get("tool_call")

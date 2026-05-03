@@ -17,96 +17,10 @@ import type {
   SessionMessageItem,
 } from "./chatRuntime.test.support";
 
-const normalizeRuntimeStateToken = (state: string) => {
-  const normalized = state.trim().toLowerCase().replace(/_/g, "-");
-  return normalized.startsWith("task-state-")
-    ? normalized.slice("task-state-".length)
-    : normalized;
-};
-
-const buildStatusUpdate = ({
-  state,
-  messageId,
-  completionPhase,
-}: {
-  state: string;
-  messageId?: string;
-  completionPhase?: string;
-}) => ({
-  statusUpdate: {
-    status: { state },
-    metadata: {
-      shared: {
-        stream: {
-          ...(messageId ? { messageId } : {}),
-          ...(completionPhase ? { completionPhase } : {}),
-        },
-      },
-    },
-  },
-  version: "v1",
-  runtimeStatus: {
-    state: normalizeRuntimeStateToken(state),
-    isFinal:
-      state === "TASK_STATE_COMPLETED" ||
-      state === "TASK_STATE_FAILED" ||
-      state === "TASK_STATE_INPUT_REQUIRED",
-    ...(completionPhase ? { completionPhase } : {}),
-    ...(messageId ? { messageId } : {}),
-  },
-});
-
-const buildArtifactUpdate = ({
-  agentMessageId,
-  text,
-  eventId,
-  seq,
-  source = "assistant_text",
-}: {
-  agentMessageId: string;
-  text: string;
-  eventId: string;
-  seq: number;
-  source?: string;
-}) => ({
-  artifactUpdate: {
-    op: "append",
-    artifact: {
-      artifactId: `${agentMessageId}:stream:1`,
-      parts: [{ text }],
-      metadata: {
-        shared: {
-          stream: {
-            blockType: "text",
-            source,
-            messageId: agentMessageId,
-            eventId,
-            seq,
-          },
-        },
-      },
-    },
-  },
-  version: "v1",
-  streamBlock: {
-    eventId,
-    eventIdSource: "upstream",
-    messageIdSource: "upstream",
-    seq,
-    taskId: agentMessageId,
-    artifactId: `${agentMessageId}:stream:1`,
-    blockId: `${agentMessageId}:primary_text`,
-    laneId: "primary_text",
-    blockType: "text",
-    op: "append",
-    source,
-    messageId: agentMessageId,
-    role: "agent",
-    delta: text,
-    append: true,
-    done: false,
-  },
-});
+import {
+  buildStatusUpdatePayload as buildStatusUpdate,
+  buildTextArtifactUpdatePayload as buildArtifactUpdate,
+} from "@/test-utils/streamContractFixtures";
 
 const buildRawCompatArtifactUpdate = ({
   taskId,
@@ -147,16 +61,13 @@ const buildRawCompatArtifactUpdate = ({
     eventIdSource: "upstream",
     messageIdSource: "task_fallback",
     seq,
-    taskId,
     artifactId: `${taskId}:stream:text`,
     blockId: `task:${taskId}:primary_text`,
     laneId: "primary_text",
     blockType: "text",
     op: append ? "append" : "replace",
     messageId: `task:${taskId}`,
-    role: "agent",
     delta: text,
-    append,
     done: lastChunk,
   },
 });
@@ -1010,17 +921,13 @@ describe("executeChatRuntime empty-content recovery", () => {
             eventIdSource: "upstream",
             messageIdSource: "upstream",
             seq: 1,
-            taskId: "task-compat-1",
             artifactId: "stream-compat-1",
             blockId: `${agentMessageId}:primary_text`,
             laneId: "primary_text",
             blockType: "text",
             op: "append",
-            source: "assistant_text",
             messageId: agentMessageId,
-            role: "agent",
             delta: "Hello from stream",
-            append: true,
             done: false,
           },
         });
@@ -1160,22 +1067,18 @@ describe("executeChatRuntime empty-content recovery", () => {
             eventIdSource: "upstream",
             messageIdSource: "upstream",
             seq: 1,
-            taskId: agentMessageId,
             artifactId: `${agentMessageId}:stream`,
             blockId: `${agentMessageId}:tool_call`,
             laneId: "tool_call",
             blockType: "tool_call",
             op: "replace",
-            source: "tool_part_update",
             messageId: agentMessageId,
-            role: "agent",
             delta: JSON.stringify({
               call_id: "call-1",
               tool: "bash",
               status: "running",
               input: { command: "pwd" },
             }),
-            append: false,
             done: false,
             toolCall: {
               name: "bash",
@@ -1308,17 +1211,13 @@ describe("executeChatRuntime empty-content recovery", () => {
             eventIdSource: "upstream",
             messageIdSource: "upstream",
             seq: 1,
-            taskId: agentMessageId,
             artifactId: `${agentMessageId}:stream`,
             blockId: `${agentMessageId}:reasoning`,
             laneId: "reasoning",
             blockType: "reasoning",
             op: "replace",
-            source: "reasoning_part_update",
             messageId: agentMessageId,
-            role: "agent",
             delta: "Reasoning in progress",
-            append: false,
             done: false,
           },
         });

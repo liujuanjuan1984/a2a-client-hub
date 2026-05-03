@@ -33,20 +33,6 @@ const getSharedMetadataSection = (
   return asRecord(shared?.[section]);
 };
 
-export const mergeSharedMetadataSection = (
-  values: (Record<string, unknown> | null | undefined)[],
-  section: "interrupt" | "model" | "session" | "stream" | "usage",
-) => {
-  const resolved: Record<string, unknown> = {};
-  values.forEach((value) => {
-    const sharedSection = getSharedMetadataSection(value, section);
-    if (sharedSection) {
-      Object.assign(resolved, sharedSection);
-    }
-  });
-  return Object.keys(resolved).length > 0 ? resolved : null;
-};
-
 export const pickSharedMetadataSections = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
   sections: ("interrupt" | "model" | "session" | "stream" | "usage")[],
@@ -61,10 +47,6 @@ export const pickSharedMetadataSections = (
 
   return Object.keys(resolved).length > 0 ? { shared: resolved } : {};
 };
-
-export const getPreferredInterruptMetadata = (
-  payloadOrMetadata: Record<string, unknown> | null | undefined,
-) => getSharedMetadataSection(payloadOrMetadata, "interrupt");
 
 export const getPreferredSessionMetadata = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
