@@ -64,17 +64,18 @@ const buildStatusUpdate = ({
   },
   hub: {
     version: "v1",
-    eventKind: "status-update",
     runtimeStatus: {
       state: normalizeRuntimeStateToken(state),
       isFinal:
         state === "TASK_STATE_COMPLETED" ||
         state === "TASK_STATE_FAILED" ||
         state === "TASK_STATE_INPUT_REQUIRED",
-      interrupt: buildCanonicalInterrupt(interrupt),
-      seq: seq ?? null,
-      completionPhase: completionPhase ?? null,
-      messageId: messageId ?? null,
+      ...(buildCanonicalInterrupt(interrupt)
+        ? { interrupt: buildCanonicalInterrupt(interrupt) }
+        : {}),
+      ...(seq !== undefined ? { seq } : {}),
+      ...(completionPhase ? { completionPhase } : {}),
+      ...(messageId ? { messageId } : {}),
     },
   },
 });
@@ -112,7 +113,6 @@ const buildArtifactUpdate = ({
   },
   hub: {
     version: "v1",
-    eventKind: "artifact-update",
     streamBlock: {
       eventId,
       eventIdSource: "upstream",
@@ -124,7 +124,6 @@ const buildArtifactUpdate = ({
       laneId: "primary_text",
       blockType: "text",
       op: "append",
-      baseSeq: null,
       source,
       messageId: agentMessageId,
       role: "agent",

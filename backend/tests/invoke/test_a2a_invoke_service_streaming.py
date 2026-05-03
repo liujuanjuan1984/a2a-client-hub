@@ -61,12 +61,7 @@ def _extract_stream_payloads(frames: list[str]) -> list[dict]:
     return [
         json.loads(line.removeprefix("data: "))
         for line in "".join(frames).splitlines()
-        if line.startswith("data: ")
-        and (
-            '"artifactUpdate"' in line
-            or '"message"' in line
-            or '"statusUpdate"' in line
-        )
+        if line.startswith("data: ") and '"hub"' in line
     ]
 
 
@@ -711,7 +706,6 @@ async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(cap
     ]
     assert warning_records == []
     payload = "".join(frames)
-    assert '"artifactUpdate"' in payload
     assert '"blockType": "tool_call"' in payload
 
 
@@ -761,7 +755,7 @@ async def test_sse_validates_status_message_content_events(caplog):
     assert len(warning_records) == 1
     payload = "".join(frames)
     assert '"msg-status-invalid"' not in payload
-    assert '"TASK_STATE_COMPLETED"' in payload
+    assert '"state": "completed"' in payload
 
 
 @pytest.mark.asyncio
@@ -811,16 +805,11 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     initial_payload = next(
         payload
         for payload in _extract_stream_payloads(initial_frames)
-        if "artifactUpdate" in payload
+        if payload.get("hub", {}).get("streamBlock")
     )
-    initial_shared_stream = initial_payload["artifactUpdate"]["artifact"]["metadata"][
-        "shared"
-    ]["stream"]
-    assert initial_shared_stream["messageId"] == "msg-local-1"
-    assert initial_shared_stream["eventId"] == "evt-cache-1"
-    assert "seq" not in initial_shared_stream
     assert initial_payload["hub"]["streamBlock"]["seq"] == 1
     assert initial_payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
+    assert initial_payload["hub"]["streamBlock"]["eventId"] == "evt-cache-1"
 
     replay = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents([]),
@@ -841,16 +830,11 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     replay_payload = next(
         payload
         for payload in _extract_stream_payloads(replay_frames)
-        if "artifactUpdate" in payload
+        if payload.get("hub", {}).get("streamBlock")
     )
-    replay_shared_stream = replay_payload["artifactUpdate"]["artifact"]["metadata"][
-        "shared"
-    ]["stream"]
-    assert replay_shared_stream["messageId"] == "msg-local-1"
-    assert replay_shared_stream["eventId"] == "evt-cache-1"
-    assert "seq" not in replay_shared_stream
     assert replay_payload["hub"]["streamBlock"]["seq"] == 1
     assert replay_payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
+    assert replay_payload["hub"]["streamBlock"]["eventId"] == "evt-cache-1"
 
     await global_stream_cache.mark_completed(cache_key)
 
@@ -893,11 +877,8 @@ async def test_sse_rebuilds_hub_stream_block_after_on_event_text_mutation():
 
     payloads = _extract_stream_payloads(frames)
     artifact_payload = next(
-        payload for payload in payloads if "artifactUpdate" in payload
+        payload for payload in payloads if payload["hub"].get("streamBlock")
     )
-    assert artifact_payload["artifactUpdate"]["artifact"]["parts"] == [
-        {"text": "rewritten"}
-    ]
     assert artifact_payload["hub"]["streamBlock"]["delta"] == "rewritten"
     assert completed == ["rewritten"]
 
@@ -984,7 +965,9 @@ async def test_sse_preserves_upstream_seq_in_hub_stream_blocks():
         frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
     payloads = _extract_stream_payloads(frames)
-    artifact_payloads = [payload for payload in payloads if "artifactUpdate" in payload]
+    artifact_payloads = [
+        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
+    ]
     assert [payload["hub"]["streamBlock"]["seq"] for payload in artifact_payloads] == [
         9,
         12,
@@ -1017,11 +1000,9 @@ async def test_sse_preserves_canonical_message_payload_for_upstream_message_even
         frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
     payloads = _extract_stream_payloads(frames)
-    message_payload = next(payload for payload in payloads if "message" in payload)
-    assert message_payload["message"]["messageId"] == "msg-upstream-sse-1"
-    assert message_payload["message"]["role"] == "ROLE_AGENT"
-    assert message_payload["message"]["parts"] == [{"text": "hello from raw message"}]
-    assert "metadata" not in message_payload["message"]
+    message_payload = next(
+        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
+    )
     assert message_payload["hub"]["streamBlock"]["seq"] == 1
     assert message_payload["hub"]["streamBlock"]["messageId"] == "msg-upstream-sse-1"
     assert (
@@ -1053,7 +1034,7 @@ async def test_sse_breaks_stream_after_terminal_status_update():
         chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
     payload = "".join(chunks)
-    assert '"statusUpdate"' in payload
+    assert '"runtimeStatus"' in payload
     assert "should-not-be-forwarded" not in payload
     assert "event: stream_end" in payload
 
@@ -1127,7 +1108,7 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     )
 
     payloads = [json.loads(item) for item in websocket.sent]
-    assert "statusUpdate" in payloads[0]
+    assert "runtimeStatus" in payloads[0]["hub"]
     assert payloads[-1]["event"] == "stream_end"
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
@@ -1161,18 +1142,11 @@ async def test_ws_preserves_canonical_message_payload_for_upstream_message_event
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{")
-        and (
-            '"artifactUpdate"' in item
-            or '"message"' in item
-            or '"statusUpdate"' in item
-        )
+        if item.startswith("{") and '"hub"' in item
     ]
-    message_payload = next(payload for payload in payloads if "message" in payload)
-    assert message_payload["message"]["messageId"] == "msg-upstream-ws-1"
-    assert message_payload["message"]["role"] == "ROLE_AGENT"
-    assert message_payload["message"]["parts"] == [{"text": "hello from raw message"}]
-    assert "metadata" not in message_payload["message"]
+    message_payload = next(
+        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
+    )
     assert message_payload["hub"]["streamBlock"]["seq"] == 1
     assert message_payload["hub"]["streamBlock"]["messageId"] == "msg-upstream-ws-1"
     assert message_payload["hub"]["streamBlock"]["eventId"] == "seq:msg-upstream-ws-1:1"
@@ -1225,11 +1199,7 @@ async def test_ws_emits_persisted_completion_ack_before_stream_end():
     persisted_index = next(
         index
         for index, item in enumerate(payloads)
-        if item.get("statusUpdate", {})
-        .get("metadata", {})
-        .get("shared", {})
-        .get("stream", {})
-        .get("completionPhase")
+        if item.get("hub", {}).get("runtimeStatus", {}).get("completionPhase")
         == "persisted"
     )
     stream_end_index = next(
@@ -1280,18 +1250,13 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"artifactUpdate"' in item
+        if item.startswith("{") and '"hub"' in item
     ]
     assert payloads
-    assert payloads[0]["artifactUpdate"]["artifact"]["metadata"]["shared"][
-        "stream"
-    ] == {
-        "blockType": "text",
-        "messageId": "msg-local-ws-1",
-    }
-    assert payloads[0]["hub"]["streamBlock"]["seq"] == 1
-    assert payloads[0]["hub"]["streamBlock"]["messageId"] == "msg-local-ws-1"
-    assert payloads[0]["hub"]["streamBlock"]["eventId"] == "seq:msg-local-ws-1:1"
+    stream_block = payloads[0]["hub"]["streamBlock"]
+    assert stream_block["seq"] == 1
+    assert stream_block["messageId"] == "msg-local-ws-1"
+    assert stream_block["eventId"] == "seq:msg-local-ws-1:1"
 
 
 @pytest.mark.asyncio
@@ -1327,10 +1292,9 @@ async def test_ws_rebuilds_hub_stream_block_after_on_event_text_mutation():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"artifactUpdate"' in item
+        if item.startswith("{") and '"hub"' in item
     ]
     assert payloads
-    assert payloads[0]["artifactUpdate"]["artifact"]["parts"] == [{"text": "rewritten"}]
     assert payloads[0]["hub"]["streamBlock"]["delta"] == "rewritten"
 
 
@@ -1393,10 +1357,11 @@ async def test_ws_preserves_upstream_seq_in_hub_stream_blocks():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{")
-        and ('"artifactUpdate"' in item or '"statusUpdate"' in item)
+        if item.startswith("{") and '"hub"' in item
     ]
-    artifact_payloads = [payload for payload in payloads if "artifactUpdate" in payload]
+    artifact_payloads = [
+        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
+    ]
     assert [payload["hub"]["streamBlock"]["seq"] for payload in artifact_payloads] == [
         9,
         12,

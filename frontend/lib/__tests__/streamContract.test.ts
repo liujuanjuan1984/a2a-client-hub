@@ -47,19 +47,17 @@ const buildStatusUpdatePayload = (input: {
     },
     hub: {
       version: "v1",
-      eventKind: "status-update",
       runtimeStatus: {
         state: normalizeRuntimeState(input.state),
         isFinal: DEFAULT_RUNTIME_STATUS_CONTRACT.terminalStates
           .map((item) => normalizeRuntimeState(item))
           .includes(normalizeRuntimeState(input.state)),
-        interrupt: canonicalInterrupt,
-        seq: input.seq ?? null,
-        completionPhase:
-          input.completionPhase?.trim().toLowerCase() === "persisted"
-            ? "persisted"
-            : null,
-        messageId: input.messageId ?? null,
+        ...(canonicalInterrupt ? { interrupt: canonicalInterrupt } : {}),
+        ...(input.seq !== undefined ? { seq: input.seq } : {}),
+        ...(input.completionPhase?.trim().toLowerCase() === "persisted"
+          ? { completionPhase: "persisted" }
+          : {}),
+        ...(input.messageId ? { messageId: input.messageId } : {}),
       },
     },
   };
@@ -257,15 +255,10 @@ const buildCanonicalInterrupt = (
 const withHubStreamBlock = (
   payload: Record<string, unknown>,
   streamBlock: Record<string, unknown>,
-  eventKind:
-    | "artifact-update"
-    | "message"
-    | "status-update" = "artifact-update",
 ) => ({
   ...payload,
   hub: {
     version: "v1",
-    eventKind,
     streamBlock,
   },
 });
@@ -350,20 +343,19 @@ const buildBlockUpdatePayload = (input: {
   const messageId = input.messageId ?? "msg-1";
   payload.hub = {
     version: "v1",
-    eventKind: "artifact-update",
     streamBlock: {
       eventId: input.eventId ?? "evt-1",
       eventIdSource: "upstream",
       messageIdSource: "upstream",
-      seq: input.seq ?? null,
+      ...(input.seq !== undefined ? { seq: input.seq } : {}),
       taskId: input.taskId ?? "task-1",
       artifactId: input.artifactId,
       blockId: input.blockId ?? `${messageId}:${laneId}`,
       laneId,
       blockType: input.blockType,
       op: input.op ?? (input.append === false ? "replace" : "append"),
-      baseSeq: input.baseSeq ?? null,
-      source: input.source ?? "stream",
+      ...(input.baseSeq !== undefined ? { baseSeq: input.baseSeq } : {}),
+      ...(input.source ? { source: input.source } : { source: "stream" }),
       messageId,
       role: "agent",
       delta: input.delta ?? "",
@@ -373,7 +365,7 @@ const buildBlockUpdatePayload = (input: {
       toolCall:
         input.blockType === "tool_call"
           ? buildToolCallViewFromDelta(input.delta)
-          : null,
+          : undefined,
     },
   };
   return payload;
@@ -1414,7 +1406,6 @@ describe("block-based stream parser and reducer", () => {
           append: false,
           done: false,
         },
-        "message",
       ),
     );
     expect(parsed?.blockType).toBe("text");
@@ -1456,7 +1447,6 @@ describe("block-based stream parser and reducer", () => {
           append: false,
           done: false,
         },
-        "status-update",
       ),
     );
     expect(parsed?.blockType).toBe("text");

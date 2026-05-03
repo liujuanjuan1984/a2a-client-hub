@@ -46,17 +46,14 @@ const buildStatusUpdate = ({
   },
   hub: {
     version: "v1",
-    eventKind: "status-update",
     runtimeStatus: {
       state: normalizeRuntimeStateToken(state),
       isFinal:
         state === "TASK_STATE_COMPLETED" ||
         state === "TASK_STATE_FAILED" ||
         state === "TASK_STATE_INPUT_REQUIRED",
-      interrupt: null,
-      seq: null,
-      completionPhase: completionPhase ?? null,
-      messageId: messageId ?? null,
+      ...(completionPhase ? { completionPhase } : {}),
+      ...(messageId ? { messageId } : {}),
     },
   },
 });
@@ -94,7 +91,6 @@ const buildArtifactUpdate = ({
   },
   hub: {
     version: "v1",
-    eventKind: "artifact-update",
     streamBlock: {
       eventId,
       eventIdSource: "upstream",
@@ -106,7 +102,6 @@ const buildArtifactUpdate = ({
       laneId: "primary_text",
       blockType: "text",
       op: "append",
-      baseSeq: null,
       source,
       messageId: agentMessageId,
       role: "agent",
@@ -152,7 +147,6 @@ const buildRawCompatArtifactUpdate = ({
   },
   hub: {
     version: "v1",
-    eventKind: "artifact-update",
     streamBlock: {
       eventId,
       eventIdSource: "upstream",
@@ -164,8 +158,6 @@ const buildRawCompatArtifactUpdate = ({
       laneId: "primary_text",
       blockType: "text",
       op: append ? "append" : "replace",
-      baseSeq: null,
-      source: null,
       messageId: `task:${taskId}`,
       role: "agent",
       delta: text,

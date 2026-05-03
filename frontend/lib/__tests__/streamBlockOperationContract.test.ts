@@ -15,7 +15,6 @@ const normalizeParsedUpdate = (
     ...payload,
     hub: {
       version: "v1",
-      eventKind: "artifact-update",
       streamBlock: {
         eventId: expected.eventId,
         eventIdSource: "upstream",

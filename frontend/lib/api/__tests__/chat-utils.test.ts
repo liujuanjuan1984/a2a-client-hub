@@ -9,7 +9,6 @@ import {
 const withHubRuntimeStatus = (runtimeStatus: Record<string, unknown>) => ({
   hub: {
     version: "v1",
-    eventKind: "status-update",
     runtimeStatus,
   },
 });
@@ -17,7 +16,6 @@ const withHubRuntimeStatus = (runtimeStatus: Record<string, unknown>) => ({
 const withHubSessionMeta = (sessionMeta: Record<string, unknown>) => ({
   hub: {
     version: "v1",
-    eventKind: "artifact-update",
     sessionMeta,
   },
 });

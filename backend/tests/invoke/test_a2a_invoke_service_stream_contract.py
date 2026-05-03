@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.features.invoke.hub_stream_contract import project_hub_frontend_payload
 from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.stream_payloads import resolve_stream_content_envelope
 from tests.invoke.a2a_invoke_service_support import (
@@ -522,7 +523,6 @@ def test_ensure_outbound_stream_contract_attaches_hub_message_contract_only():
     assert payload["message"]["role"] == "ROLE_AGENT"
     assert payload["message"]["messageId"] == "msg-root-2"
     assert payload["hub"]["version"] == "v1"
-    assert payload["hub"]["eventKind"] == "message"
     assert payload["hub"]["streamBlock"]["seq"] == 4
     assert payload["hub"]["streamBlock"]["eventId"] == "seq:msg-root-2:4"
     assert payload["hub"]["streamBlock"]["messageId"] == "msg-root-2"
@@ -554,7 +554,6 @@ def test_ensure_outbound_stream_contract_attaches_hub_status_contract_only():
         {"text": "render status message"}
     ]
     assert payload["hub"]["version"] == "v1"
-    assert payload["hub"]["eventKind"] == "status-update"
     assert payload["hub"]["streamBlock"]["seq"] == 5
     assert payload["hub"]["streamBlock"]["eventId"] == "seq:msg-status-2:5"
     assert payload["hub"]["streamBlock"]["messageId"] == "msg-status-2"
@@ -641,6 +640,70 @@ def test_ensure_outbound_stream_contract_consumes_local_stream_overlay():
     assert payload["hub"]["streamBlock"]["blockId"] == "block-local-1"
     assert payload["hub"]["streamBlock"]["baseSeq"] == 2
     assert payload["hub"]["streamBlock"]["op"] == "replace"
+
+
+def test_project_hub_frontend_payload_omits_raw_event_and_none_fields():
+    payload = {
+        "artifactUpdate": {
+            "artifact": {"artifactId": "task-projected-1:stream:text"},
+        },
+        "hub": {
+            "version": "v1",
+            "streamBlock": {
+                "eventId": "evt-projected-1",
+                "seq": 7,
+                "taskId": "task-projected-1",
+                "artifactId": "task-projected-1:stream:text",
+                "blockId": "task-projected-1:primary_text",
+                "laneId": "primary_text",
+                "blockType": "text",
+                "op": "append",
+                "baseSeq": None,
+                "source": None,
+                "messageId": "msg-projected-1",
+                "role": "agent",
+                "delta": "hello",
+                "append": True,
+                "done": False,
+            },
+            "runtimeStatus": {
+                "state": "working",
+                "isFinal": False,
+                "interrupt": None,
+                "seq": 7,
+                "completionPhase": None,
+                "messageId": None,
+            },
+        },
+    }
+
+    projected = project_hub_frontend_payload(payload)
+
+    assert projected == {
+        "hub": {
+            "version": "v1",
+            "streamBlock": {
+                "eventId": "evt-projected-1",
+                "seq": 7,
+                "taskId": "task-projected-1",
+                "artifactId": "task-projected-1:stream:text",
+                "blockId": "task-projected-1:primary_text",
+                "laneId": "primary_text",
+                "blockType": "text",
+                "op": "append",
+                "messageId": "msg-projected-1",
+                "role": "agent",
+                "delta": "hello",
+                "append": True,
+                "done": False,
+            },
+            "runtimeStatus": {
+                "state": "working",
+                "isFinal": False,
+                "seq": 7,
+            },
+        }
+    }
 
 
 def test_serialize_stream_event_keeps_canonical_message_payload_before_validation(

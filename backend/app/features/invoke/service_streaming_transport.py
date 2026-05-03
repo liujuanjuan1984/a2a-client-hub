@@ -9,8 +9,7 @@ from typing import Any, Callable
 from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 
-from app.features.invoke import stream_payloads
-from app.features.invoke.payload_helpers import pick_first_int
+from app.features.invoke import hub_stream_contract, stream_payloads
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamEventPayloadCallbackFn,
@@ -28,8 +27,12 @@ from app.features.invoke.stream_diagnostics import (
     extract_stream_content_validation_errors,
     warn_non_contract_stream_content_once,
 )
-from app.features.invoke.stream_field_aliases import SEQ_KEYS
 from app.utils.json_encoder import json_dumps
+
+
+def _project_frontend_stream_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    projected = hub_stream_contract.project_hub_frontend_payload(payload)
+    return projected if projected is not None else payload
 
 
 def stream_sse(
@@ -79,19 +82,7 @@ def stream_sse(
                 cache_key, resume_from_sequence
             )
             for cached_sequence, cached_event in cached_events:
-                envelope = stream_payloads.resolve_stream_content_envelope(cached_event)
-                parsed_sequence = pick_first_int(
-                    (
-                        envelope.shared_stream,
-                        envelope.event_metadata,
-                        envelope.artifact_metadata,
-                    ),
-                    SEQ_KEYS,
-                )
-                if parsed_sequence is not None:
-                    seq_counter = max(seq_counter, parsed_sequence)
-                else:
-                    seq_counter = max(seq_counter, cached_sequence)
+                seq_counter = max(seq_counter, cached_sequence)
                 stream_text_accumulator.consume(cached_event)
                 yield f"data: {json_dumps(cached_event, ensure_ascii=False)}\n\n"
 
@@ -148,6 +139,7 @@ def stream_sse(
                 runtime._ensure_outbound_stream_contract(
                     serialized, event_sequence=event_sequence
                 )
+                outbound_payload = _project_frontend_stream_payload(serialized)
                 seq_counter = max(seq_counter, event_sequence)
                 stream_block, non_contract_reason = (
                     stream_payloads.analyze_stream_chunk_contract(serialized)
@@ -162,11 +154,11 @@ def stream_sse(
                 )
                 if cache_key:
                     await global_stream_cache.append_event(
-                        cache_key, serialized, seq_counter
+                        cache_key, outbound_payload, seq_counter
                     )
                 stream_text_accumulator.consume(serialized, stream_block=stream_block)
                 last_event_at = time.monotonic()
-                yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
+                yield f"data: {json_dumps(outbound_payload, ensure_ascii=False)}\n\n"
                 if runtime._is_terminal_status_event(serialized):
                     terminal_event_seen = True
                     break
@@ -239,7 +231,10 @@ def stream_sse(
                     finalization_event,
                     event_sequence=seq_counter + 1,
                 )
-                yield f"data: {json_dumps(finalization_event, ensure_ascii=False)}\n\n"
+                yield (
+                    "data: "
+                    f"{json_dumps(_project_frontend_stream_payload(finalization_event), ensure_ascii=False)}\n\n"
+                )
             if not client_disconnected:
                 yield "event: stream_end\ndata: {}\n\n"
 
@@ -301,19 +296,7 @@ async def stream_ws(
             cache_key, resume_from_sequence
         )
         for cached_sequence, cached_event in cached_events:
-            envelope = stream_payloads.resolve_stream_content_envelope(cached_event)
-            parsed_sequence = pick_first_int(
-                (
-                    envelope.shared_stream,
-                    envelope.event_metadata,
-                    envelope.artifact_metadata,
-                ),
-                SEQ_KEYS,
-            )
-            if parsed_sequence is not None:
-                seq_counter = max(seq_counter, parsed_sequence)
-            else:
-                seq_counter = max(seq_counter, cached_sequence)
+            seq_counter = max(seq_counter, cached_sequence)
             stream_text_accumulator.consume(cached_event)
             await websocket.send_text(json_dumps(cached_event, ensure_ascii=False))
 
@@ -372,6 +355,7 @@ async def stream_ws(
             runtime._ensure_outbound_stream_contract(
                 serialized, event_sequence=event_sequence
             )
+            outbound_payload = _project_frontend_stream_payload(serialized)
             seq_counter = max(seq_counter, event_sequence)
             stream_block, non_contract_reason = (
                 stream_payloads.analyze_stream_chunk_contract(serialized)
@@ -386,11 +370,11 @@ async def stream_ws(
             )
             if cache_key:
                 await global_stream_cache.append_event(
-                    cache_key, serialized, seq_counter
+                    cache_key, outbound_payload, seq_counter
                 )
             stream_text_accumulator.consume(serialized, stream_block=stream_block)
             last_event_at = time.monotonic()
-            await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
+            await websocket.send_text(json_dumps(outbound_payload, ensure_ascii=False))
             if runtime._is_terminal_status_event(serialized):
                 terminal_event_seen = True
                 break
@@ -482,7 +466,10 @@ async def stream_ws(
                 event_sequence=seq_counter + 1,
             )
             await websocket.send_text(
-                json_dumps(finalization_event, ensure_ascii=False)
+                json_dumps(
+                    _project_frontend_stream_payload(finalization_event),
+                    ensure_ascii=False,
+                )
             )
         if send_stream_end and not client_disconnected:
             await runtime.send_ws_stream_end(websocket)

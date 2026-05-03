@@ -32,6 +32,19 @@ _HUB_STREAM_VERSION = "v1"
 _VALID_EVENT_KINDS = frozenset({"artifact-update", "message", "status-update", "task"})
 
 
+def _compact_payload(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        compacted: dict[str, Any] = {}
+        for key, nested_value in value.items():
+            if nested_value is None:
+                continue
+            compacted[str(key)] = _compact_payload(nested_value)
+        return compacted
+    if isinstance(value, list):
+        return [_compact_payload(item) for item in value]
+    return value
+
+
 def _coerce_string_list(value: Any) -> list[str] | None:
     if not isinstance(value, list):
         return None
@@ -448,10 +461,7 @@ def attach_hub_stream_contract(
     if kind not in _VALID_EVENT_KINDS:
         return
 
-    hub_payload: dict[str, Any] = {
-        "version": _HUB_STREAM_VERSION,
-        "eventKind": kind,
-    }
+    hub_payload: dict[str, Any] = {"version": _HUB_STREAM_VERSION}
     stream_block = _build_stream_block(
         payload,
         upstream_shared_stream=upstream_shared_stream,
@@ -469,4 +479,20 @@ def attach_hub_stream_contract(
     session_meta = _build_session_meta(payload)
     if session_meta is not None:
         hub_payload["sessionMeta"] = session_meta
-    payload["hub"] = hub_payload
+    payload["hub"] = _compact_payload(hub_payload)
+
+
+def project_hub_frontend_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    hub = _dict_field(payload, "hub")
+    if hub.get("version") != _HUB_STREAM_VERSION:
+        return None
+
+    projected_hub: dict[str, Any] = {"version": _HUB_STREAM_VERSION}
+    for field_name in ("streamBlock", "runtimeStatus", "sessionMeta"):
+        field_value = _dict_field(hub, field_name)
+        if field_value:
+            projected_hub[field_name] = _compact_payload(field_value)
+
+    if len(projected_hub) == 1:
+        return None
+    return {"hub": projected_hub}
