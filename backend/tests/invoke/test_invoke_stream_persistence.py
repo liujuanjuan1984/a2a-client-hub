@@ -9,10 +9,10 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.conversation_upstream_task import ConversationUpstreamTask
+from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.service_types import StreamFinishReason, StreamOutcome
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
-    attach_local_stream_contract_context,
     build_stream_metadata_from_outcome,
     ensure_local_message_headers,
     flush_stream_buffer,
@@ -92,14 +92,14 @@ def test_build_stream_metadata_from_outcome_keeps_identity_and_usage() -> None:
     }
 
 
-def test_attach_local_stream_contract_context_stores_internal_overlay() -> None:
+def test_attach_local_stream_context_stores_internal_overlay() -> None:
     payload = {
         "artifactUpdate": {
             "artifact": {"metadata": {}, "parts": [{"text": "draft"}]},
         }
     }
 
-    attach_local_stream_contract_context(
+    attach_local_stream_context(
         payload,
         local_message_id="msg-local-1",
         event_id="evt-local-1",

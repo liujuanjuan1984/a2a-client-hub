@@ -449,18 +449,10 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
     async def fake_commit_safely(_db):
         return None
 
-    async def fake_ensure_local_message_headers(**_kwargs):
-        return None
-
     monkeypatch.setattr(
         invoke_route_runner,
         "AsyncSessionLocal",
         lambda: _DummySessionContext(),
-    )
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "_ensure_local_message_headers",
-        fake_ensure_local_message_headers,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -478,7 +470,10 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         stream_usage={},
         user_message_id=str(uuid4()),
         agent_message_id=agent_message_id,
-        message_refs=None,
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": agent_message_id,
+        },
         next_event_seq=1,
         persisted_block_count=0,
     )
@@ -538,18 +533,10 @@ async def test_persist_stream_block_update_inferrs_canonical_artifact_text_witho
     async def fake_commit_safely(_db):
         return None
 
-    async def fake_ensure_local_message_headers(**_kwargs):
-        return None
-
     monkeypatch.setattr(
         invoke_route_runner,
         "AsyncSessionLocal",
         lambda: _DummySessionContext(),
-    )
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "_ensure_local_message_headers",
-        fake_ensure_local_message_headers,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -567,7 +554,10 @@ async def test_persist_stream_block_update_inferrs_canonical_artifact_text_witho
         stream_usage={},
         user_message_id=str(uuid4()),
         agent_message_id=agent_message_id,
-        message_refs=None,
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": agent_message_id,
+        },
         next_event_seq=1,
         persisted_block_count=0,
     )

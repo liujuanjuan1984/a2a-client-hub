@@ -57,9 +57,6 @@ from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
 )
 from app.features.invoke.stream_persistence import (
-    ensure_local_message_headers as ensure_local_message_headers_impl,
-)
-from app.features.invoke.stream_persistence import (
     flush_stream_buffer as flush_stream_buffer_impl,
 )
 from app.features.invoke.stream_persistence import (
@@ -73,9 +70,6 @@ from app.features.invoke.stream_persistence import (
 )
 from app.features.invoke.stream_persistence import (
     persist_stream_block_update as persist_stream_block_update_impl,
-)
-from app.features.invoke.stream_persistence import (
-    persist_synthetic_final_block_if_needed as persist_synthetic_final_block_if_needed_impl,
 )
 from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
@@ -271,20 +265,6 @@ def _build_invoke_metadata_error_response(
     )
 
 
-async def _ensure_local_message_headers(
-    *,
-    state: InvokeState,
-    request: InvokePersistenceRequest,
-) -> None:
-    await ensure_local_message_headers_impl(
-        state=state,
-        request=request,
-        session_factory=AsyncSessionLocal,
-        commit_fn=commit_safely,
-        session_hub=session_hub_service,
-    )
-
-
 async def _flush_stream_buffer(
     *,
     state: InvokeState,
@@ -305,18 +285,6 @@ async def _persist_stream_block_update(
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
 ) -> None:
-    async def _ensure_headers_adapter(**kwargs: Any) -> None:
-        await _ensure_local_message_headers(
-            state=kwargs["state"],
-            request=kwargs["request"],
-        )
-
-    async def _flush_buffer_adapter(**kwargs: Any) -> None:
-        await _flush_stream_buffer(
-            state=kwargs["state"],
-            user_id=kwargs["user_id"],
-        )
-
     await persist_stream_block_update_impl(
         state=state,
         event_payload=event_payload,
@@ -324,8 +292,6 @@ async def _persist_stream_block_update(
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
-        ensure_headers_fn=_ensure_headers_adapter,
-        flush_buffer_fn=_flush_buffer_adapter,
     )
 
 
@@ -335,41 +301,11 @@ async def _persist_interrupt_lifecycle_event(
     event_payload: dict[str, Any],
     request: InvokePersistenceRequest,
 ) -> None:
-    async def _ensure_headers_adapter(**kwargs: Any) -> None:
-        await _ensure_local_message_headers(
-            state=kwargs["state"],
-            request=kwargs["request"],
-        )
-
-    async def _flush_buffer_adapter(**kwargs: Any) -> None:
-        await _flush_stream_buffer(
-            state=kwargs["state"],
-            user_id=kwargs["user_id"],
-        )
-
     await persist_interrupt_lifecycle_event_impl(
         state=state,
         event_payload=event_payload,
         request=request,
         build_interrupt_message_content=serialize_interrupt_event_block_content,
-        session_factory=AsyncSessionLocal,
-        commit_fn=commit_safely,
-        session_hub=session_hub_service,
-        ensure_headers_fn=_ensure_headers_adapter,
-        flush_buffer_fn=_flush_buffer_adapter,
-    )
-
-
-async def _persist_synthetic_final_block_if_needed(
-    *,
-    state: InvokeState,
-    outcome: StreamOutcome,
-    user_id: UUID,
-) -> None:
-    await persist_synthetic_final_block_if_needed_impl(
-        state=state,
-        outcome=outcome,
-        user_id=user_id,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
@@ -383,19 +319,6 @@ async def _persist_local_outcome(
     request: InvokePersistenceRequest,
     response_metadata: dict[str, Any] | None = None,
 ) -> None:
-    async def _ensure_headers_adapter(**kwargs: Any) -> None:
-        await _ensure_local_message_headers(
-            state=kwargs["state"],
-            request=kwargs["request"],
-        )
-
-    async def _persist_final_block_adapter(**kwargs: Any) -> None:
-        await _persist_synthetic_final_block_if_needed(
-            state=kwargs["state"],
-            outcome=kwargs["outcome"],
-            user_id=kwargs["user_id"],
-        )
-
     await persist_local_outcome_impl(
         state=state,
         outcome=outcome,
@@ -404,8 +327,6 @@ async def _persist_local_outcome(
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
-        ensure_headers_fn=_ensure_headers_adapter,
-        persist_final_block_fn=_persist_final_block_adapter,
     )
 
 
