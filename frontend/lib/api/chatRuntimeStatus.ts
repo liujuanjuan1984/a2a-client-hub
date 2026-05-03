@@ -33,7 +33,6 @@ type RuntimeStatusEvent = {
   interrupt: RuntimeInterrupt | null;
   seq: number | null;
   completionPhase: "persisted" | null;
-  messageId: string | null;
 };
 
 export type RuntimeStatusContract = {
@@ -476,7 +475,6 @@ export const extractRuntimeStatusEvent = (
       pickString(runtimeStatus, ["completionPhase"]) === "persisted"
         ? "persisted"
         : null,
-    messageId: pickString(runtimeStatus, ["messageId"]),
   };
 };
 

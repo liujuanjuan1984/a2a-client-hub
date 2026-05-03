@@ -560,7 +560,6 @@ def test_ensure_outbound_stream_contract_attaches_hub_status_contract_only():
     assert payload["runtimeStatus"]["state"] == "working"
     assert payload["runtimeStatus"]["isFinal"] is False
     assert payload["runtimeStatus"]["seq"] == 5
-    assert payload["runtimeStatus"]["messageId"] == "msg-status-2"
 
 
 def test_ensure_outbound_stream_contract_exposes_fallback_message_identity_in_hub():
@@ -651,18 +650,14 @@ def test_project_frontend_stream_payload_omits_raw_event_and_none_fields():
         "streamBlock": {
             "eventId": "evt-projected-1",
             "seq": 7,
-            "taskId": "task-projected-1",
             "artifactId": "task-projected-1:stream:text",
             "blockId": "task-projected-1:primary_text",
             "laneId": "primary_text",
             "blockType": "text",
             "op": "append",
             "baseSeq": None,
-            "source": None,
             "messageId": "msg-projected-1",
-            "role": "agent",
             "delta": "hello",
-            "append": True,
             "done": False,
         },
         "runtimeStatus": {
@@ -671,7 +666,6 @@ def test_project_frontend_stream_payload_omits_raw_event_and_none_fields():
             "interrupt": None,
             "seq": 7,
             "completionPhase": None,
-            "messageId": None,
         },
     }
 
@@ -682,16 +676,13 @@ def test_project_frontend_stream_payload_omits_raw_event_and_none_fields():
         "streamBlock": {
             "eventId": "evt-projected-1",
             "seq": 7,
-            "taskId": "task-projected-1",
             "artifactId": "task-projected-1:stream:text",
             "blockId": "task-projected-1:primary_text",
             "laneId": "primary_text",
             "blockType": "text",
             "op": "append",
             "messageId": "msg-projected-1",
-            "role": "agent",
             "delta": "hello",
-            "append": True,
             "done": False,
         },
         "runtimeStatus": {

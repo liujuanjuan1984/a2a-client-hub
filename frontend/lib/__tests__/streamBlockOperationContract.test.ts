@@ -19,21 +19,14 @@ const normalizeParsedUpdate = (
       eventIdSource: "upstream",
       messageIdSource: "upstream",
       seq: expected.seq,
-      taskId:
-        typeof expected.artifactId === "string"
-          ? expected.artifactId.split(":")[0]
-          : "task-1",
       artifactId: expected.artifactId,
       blockId: expected.blockId,
       laneId: expected.laneId,
       blockType: expected.blockType,
       op: expected.op,
       baseSeq: expected.baseSeq,
-      source: expected.source,
       messageId: expected.messageId,
-      role: "agent",
       delta: expected.content,
-      append: expected.op === "append",
       done: expected.isFinished,
     },
   });
@@ -50,7 +43,6 @@ const normalizeParsedUpdate = (
     content: parsed?.delta ?? null,
     baseSeq: parsed?.baseSeq ?? null,
     isFinished: parsed?.done ?? null,
-    source: parsed?.source ?? null,
   };
 };
 

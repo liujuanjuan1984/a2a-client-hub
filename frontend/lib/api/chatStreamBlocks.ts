@@ -83,18 +83,14 @@ export type StreamBlockUpdate = {
     | "artifact_fallback"
     | "local_persistence";
   seq: number | null;
-  taskId: string;
   artifactId: string;
   blockId: string;
   laneId: string;
   blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
   op: "append" | "replace" | "finalize";
   baseSeq: number | null;
-  source: string | null;
   messageId: string;
-  role: ChatRole;
   delta: string;
-  append: boolean;
   done: boolean;
   toolCall?: ToolCallView | null;
   interrupt?: RuntimeInterrupt | null;
@@ -435,18 +431,14 @@ export const buildInterruptEventBlockUpdate = ({
     eventIdSource: "upstream",
     messageIdSource: "upstream",
     seq: null,
-    taskId: `interrupt:${normalizedMessageId}`,
     artifactId: `${normalizedMessageId}:interrupt:${interrupt.requestId}:${interrupt.phase}`,
     blockId: `${normalizedMessageId}:interrupt:${interrupt.requestId}`,
     laneId: "interrupt_event",
     blockType: "interrupt_event",
     op: "replace",
     baseSeq: null,
-    source: "interrupt_lifecycle",
     messageId: normalizedMessageId,
-    role: "agent",
     delta: buildInterruptEventContent(interrupt),
-    append: false,
     done: true,
     interrupt,
   };
@@ -475,20 +467,6 @@ const parseSerializedInterruptEventContent = (
   } catch {
     return { content: raw, interrupt: null };
   }
-};
-
-const normalizeRole = (raw: string | null): ChatRole => {
-  let role = (raw ?? "").trim().toLowerCase().replace(/_/g, "-");
-  if (role.startsWith("role-")) {
-    role = role.slice("role-".length);
-  }
-  if (role === "user" || role === "human" || role === "automation") {
-    return "user";
-  }
-  if (role === "assistant" || role === "agent") {
-    return "agent";
-  }
-  return "system";
 };
 
 const parseBlockType = (
@@ -541,11 +519,10 @@ export const extractStreamBlockUpdate = (
 
   const eventId = pickString(streamBlock, ["eventId"]);
   const messageId = pickString(streamBlock, ["messageId"]);
-  const taskId = pickString(streamBlock, ["taskId"]);
   const artifactId = pickString(streamBlock, ["artifactId"]);
   const blockId = pickString(streamBlock, ["blockId"]);
   const laneId = pickString(streamBlock, ["laneId"]);
-  if (!eventId || !messageId || !taskId || !artifactId || !blockId || !laneId) {
+  if (!eventId || !messageId || !artifactId || !blockId || !laneId) {
     return null;
   }
   const delta = pickRawString(streamBlock, ["delta"]) ?? "";
@@ -575,7 +552,6 @@ export const extractStreamBlockUpdate = (
         ? streamBlock.messageIdSource
         : "artifact_fallback",
     seq: typeof streamBlock.seq === "number" ? streamBlock.seq : null,
-    taskId,
     artifactId,
     blockId,
     laneId,
@@ -583,14 +559,8 @@ export const extractStreamBlockUpdate = (
     op,
     baseSeq:
       typeof streamBlock.baseSeq === "number" ? streamBlock.baseSeq : null,
-    source: pickString(streamBlock, ["source"]),
     messageId,
-    role: normalizeRole(pickString(streamBlock, ["role"])),
     delta: interruptPayload.content,
-    append:
-      typeof streamBlock.append === "boolean"
-        ? streamBlock.append
-        : op === "append",
     done:
       typeof streamBlock.done === "boolean"
         ? streamBlock.done

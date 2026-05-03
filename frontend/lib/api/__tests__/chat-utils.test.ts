@@ -57,7 +57,6 @@ describe("runtime status contract", () => {
           interrupt: null,
           seq: null,
           completionPhase: null,
-          messageId: null,
         }),
       ),
     ).toEqual({
@@ -66,7 +65,6 @@ describe("runtime status contract", () => {
       interrupt: null,
       seq: null,
       completionPhase: null,
-      messageId: null,
     });
   });
 
@@ -79,7 +77,6 @@ describe("runtime status contract", () => {
           interrupt: null,
           seq: 7,
           completionPhase: null,
-          messageId: "msg-status-1",
         }),
       ),
     ).toEqual({
@@ -88,7 +85,6 @@ describe("runtime status contract", () => {
       interrupt: null,
       seq: 7,
       completionPhase: null,
-      messageId: "msg-status-1",
     });
   });
 

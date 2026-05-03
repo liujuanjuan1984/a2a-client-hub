@@ -1,5 +1,4 @@
 import {
-  DEFAULT_RUNTIME_STATUS_CONTRACT,
   applyLoadedBlockDetail,
   applyStreamBlockUpdate,
   buildInterruptEventBlockUpdate,
@@ -7,11 +6,11 @@ import {
   extractRuntimeStatusEvent,
   extractStreamBlockUpdate,
   finalizeMessageBlocks,
-  normalizeRuntimeState,
   projectPrimaryTextContent,
   type MessageBlock,
   type StreamBlockUpdate,
 } from "@/lib/api/chat-utils";
+import { buildStatusUpdatePayload } from "@/test-utils/streamContractFixtures";
 
 const interruptLifecycleMessageCases =
   require("../../../docs/contracts/interrupt-lifecycle-message-cases.json") as {
@@ -20,46 +19,6 @@ const interruptLifecycleMessageCases =
     event: Record<string, unknown>;
     content: string;
   }[];
-
-const buildStatusUpdatePayload = (input: {
-  state: string;
-  seq?: number;
-  messageId?: string;
-  completionPhase?: string;
-  interrupt?: Record<string, unknown>;
-}) => {
-  const canonicalInterrupt = buildCanonicalInterrupt(input.interrupt);
-  return {
-    statusUpdate: {
-      status: { state: input.state },
-      metadata: {
-        shared: {
-          ...(input.interrupt ? { interrupt: input.interrupt } : {}),
-          stream: {
-            ...(input.seq !== undefined ? { seq: input.seq } : {}),
-            ...(input.messageId ? { messageId: input.messageId } : {}),
-            ...(input.completionPhase
-              ? { completionPhase: input.completionPhase }
-              : {}),
-          },
-        },
-      },
-    },
-    version: "v1",
-    runtimeStatus: {
-      state: normalizeRuntimeState(input.state),
-      isFinal: DEFAULT_RUNTIME_STATUS_CONTRACT.terminalStates
-        .map((item) => normalizeRuntimeState(item))
-        .includes(normalizeRuntimeState(input.state)),
-      ...(canonicalInterrupt ? { interrupt: canonicalInterrupt } : {}),
-      ...(input.seq !== undefined ? { seq: input.seq } : {}),
-      ...(input.completionPhase?.trim().toLowerCase() === "persisted"
-        ? { completionPhase: "persisted" }
-        : {}),
-      ...(input.messageId ? { messageId: input.messageId } : {}),
-    },
-  };
-};
 
 const buildToolCallViewFromDelta = (delta: string | undefined) => {
   if (!delta) {
@@ -92,162 +51,6 @@ const buildToolCallViewFromDelta = (delta: string | undefined) => {
   } catch {
     return null;
   }
-};
-
-const pickDisplayMessage = (
-  details: Record<string, unknown> | null | undefined,
-): string | null =>
-  (typeof details?.displayMessage === "string" && details.displayMessage) ||
-  (typeof details?.display_message === "string" && details.display_message) ||
-  (typeof details?.description === "string" && details.description) ||
-  (typeof (details?.request as { description?: unknown } | undefined)
-    ?.description === "string" &&
-    (details?.request as { description: string }).description) ||
-  null;
-
-const buildCanonicalInterrupt = (
-  interrupt?: Record<string, unknown>,
-): Record<string, unknown> | null => {
-  if (!interrupt) {
-    return null;
-  }
-  const requestId =
-    typeof interrupt.requestId === "string" ? interrupt.requestId : null;
-  const type = typeof interrupt.type === "string" ? interrupt.type : null;
-  if (!requestId || !type) {
-    return null;
-  }
-  const phase =
-    typeof interrupt.phase === "string"
-      ? interrupt.phase.toLowerCase()
-      : "asked";
-  if (phase === "resolved") {
-    return {
-      requestId,
-      type,
-      phase: "resolved",
-      resolution:
-        typeof interrupt.resolution === "string"
-          ? interrupt.resolution
-          : "replied",
-      source: "stream",
-    };
-  }
-  const details =
-    interrupt.details && typeof interrupt.details === "object"
-      ? (interrupt.details as Record<string, unknown>)
-      : null;
-  if (type === "permission") {
-    return {
-      requestId,
-      type,
-      phase: "asked",
-      source: "stream",
-      details: {
-        permission:
-          typeof details?.permission === "string" ? details.permission : null,
-        patterns: Array.isArray(details?.patterns) ? details.patterns : [],
-        displayMessage: pickDisplayMessage(details),
-      },
-    };
-  }
-  if (type === "permissions") {
-    return {
-      requestId,
-      type,
-      phase: "asked",
-      source: "stream",
-      details: {
-        permissions:
-          details?.permissions && typeof details.permissions === "object"
-            ? details.permissions
-            : null,
-        displayMessage: pickDisplayMessage(details),
-      },
-    };
-  }
-  if (type === "elicitation") {
-    return {
-      requestId,
-      type,
-      phase: "asked",
-      source: "stream",
-      details: {
-        displayMessage: pickDisplayMessage(details),
-        serverName:
-          typeof details?.serverName === "string" ? details.serverName : null,
-        mode: typeof details?.mode === "string" ? details.mode : null,
-        requestedSchema: details?.requestedSchema ?? null,
-        url: typeof details?.url === "string" ? details.url : null,
-        elicitationId:
-          typeof details?.elicitationId === "string"
-            ? details.elicitationId
-            : null,
-        meta:
-          details?.meta && typeof details.meta === "object"
-            ? details.meta
-            : null,
-      },
-    };
-  }
-  const rawQuestions =
-    Array.isArray(details?.questions) && details?.questions
-      ? details.questions
-      : [];
-  return {
-    requestId,
-    type: "question",
-    phase: "asked",
-    source: "stream",
-    details: {
-      displayMessage: pickDisplayMessage(details),
-      questions: rawQuestions.map((question) => {
-        const record =
-          question && typeof question === "object"
-            ? (question as Record<string, unknown>)
-            : {};
-        const options = Array.isArray(record.options) ? record.options : [];
-        return {
-          header:
-            typeof record.header === "string"
-              ? record.header
-              : typeof record.title === "string"
-                ? record.title
-                : null,
-          question:
-            typeof record.question === "string"
-              ? record.question
-              : typeof record.prompt === "string"
-                ? record.prompt
-                : typeof record.message === "string"
-                  ? record.message
-                  : "",
-          description:
-            typeof record.description === "string" ? record.description : null,
-          options: options.map((option) => {
-            const optionRecord =
-              option && typeof option === "object"
-                ? (option as Record<string, unknown>)
-                : {};
-            return {
-              label:
-                typeof optionRecord.label === "string"
-                  ? optionRecord.label
-                  : "",
-              value:
-                typeof optionRecord.value === "string"
-                  ? optionRecord.value
-                  : null,
-              description:
-                typeof optionRecord.description === "string"
-                  ? optionRecord.description
-                  : null,
-            };
-          }),
-        };
-      }),
-    },
-  };
 };
 
 const withHubStreamBlock = (
@@ -343,19 +146,14 @@ const buildBlockUpdatePayload = (input: {
     eventIdSource: "upstream",
     messageIdSource: "upstream",
     ...(input.seq !== undefined ? { seq: input.seq } : {}),
-    taskId: input.taskId ?? "task-1",
     artifactId: input.artifactId,
     blockId: input.blockId ?? `${messageId}:${laneId}`,
     laneId,
     blockType: input.blockType,
     op: input.op ?? (input.append === false ? "replace" : "append"),
     ...(input.baseSeq !== undefined ? { baseSeq: input.baseSeq } : {}),
-    ...(input.source ? { source: input.source } : { source: "stream" }),
     messageId,
-    role: "agent",
     delta: input.delta ?? "",
-    append:
-      input.append ?? !(input.op === "replace" || input.op === "finalize"),
     done: input.lastChunk ?? input.op === "finalize",
     toolCall:
       input.blockType === "tool_call"
@@ -915,19 +713,15 @@ describe("block-based stream parser and reducer", () => {
       eventIdSource: "upstream",
       messageIdSource: "upstream",
       seq: 3,
-      taskId: "task-tools",
       artifactId: "task-tools:stream:tool-late-success",
       blockId: "block-tool-late-success",
       laneId: "tool_call",
       blockType: "tool_call",
       op: "replace",
       baseSeq: 3,
-      source: "tool_part_update",
       messageId: "msg-tool-late-success",
-      role: "agent",
       delta:
         '{"call_id":"call-late-success","tool":"bash","status":"success","output":"done"}',
-      append: false,
       done: true,
       toolCall: {
         name: "bash",
@@ -1158,18 +952,14 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: 9,
-          taskId: "task-9",
           artifactId: "task-9:stream",
           blockId: "msg-9:primary_text",
           laneId: "primary_text",
           blockType: "text",
           op: "append",
           baseSeq: null,
-          source: null,
           messageId: "msg-9",
-          role: "agent",
           delta: "hello",
-          append: true,
           done: false,
         },
       ),
@@ -1195,18 +985,14 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: null,
-          taskId: "task-9",
           artifactId: "task-9:stream",
           blockId: "msg-9:reasoning",
           laneId: "reasoning",
           blockType: "reasoning",
           op: "append",
           baseSeq: null,
-          source: null,
           messageId: "msg-9",
-          role: "agent",
           delta: "thinking",
-          append: true,
           done: false,
         },
       ),
@@ -1231,18 +1017,14 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: 10,
-          taskId: "task-10",
           artifactId: "task-10:stream",
           blockId: "msg-shared:tool_call",
           laneId: "tool_call",
           blockType: "tool_call",
           op: "append",
           baseSeq: null,
-          source: "tool_part_update",
           messageId: "msg-shared",
-          role: "agent",
           delta: '{"tool":"bash","status":"running"}',
-          append: true,
           done: false,
           toolCall: {
             name: "bash",
@@ -1259,7 +1041,6 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.messageId).toBe("msg-shared");
     expect(parsed?.eventId).toBe("evt-shared");
     expect(parsed?.seq).toBe(10);
-    expect(parsed?.source).toBe("tool_part_update");
   });
 
   it("parses interrupt_event blocks carried in artifact metadata", () => {
@@ -1279,18 +1060,14 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: 8,
-          taskId: "artifact-interrupt-2",
           artifactId: "artifact-interrupt-2",
           blockId: "msg-interrupt-2:interrupt_event",
           laneId: "interrupt_event",
           blockType: "interrupt_event",
           op: "replace",
           baseSeq: null,
-          source: "interrupt_lifecycle",
           messageId: "msg-interrupt-2",
-          role: "agent",
           delta: "Agent requested additional input: Proceed?",
-          append: false,
           done: false,
         },
       ),
@@ -1300,8 +1077,6 @@ describe("block-based stream parser and reducer", () => {
       blockType: "interrupt_event",
       delta: "Agent requested additional input: Proceed?",
       messageId: "msg-interrupt-2",
-      source: "interrupt_lifecycle",
-      append: false,
       done: false,
     });
   });
@@ -1332,19 +1107,15 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: 11,
-          taskId: "task-10",
           artifactId: "task-10:stream",
           blockId: "msg-data:tool_call",
           laneId: "tool_call",
           blockType: "tool_call",
           op: "append",
           baseSeq: null,
-          source: "tool_part_update",
           messageId: "msg-data",
-          role: "agent",
           delta:
             '{"call_id":"call-1","input":{},"status":"pending","tool":"read"}',
-          append: true,
           done: false,
           toolCall: {
             name: "read",
@@ -1386,18 +1157,14 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: null,
-          taskId: "msg-message-9",
           artifactId: "msg-message-9:text",
           blockId: "msg-message-9:primary_text",
           laneId: "primary_text",
           blockType: "text",
           op: "replace",
           baseSeq: null,
-          source: null,
           messageId: "msg-message-9",
-          role: "agent",
           delta: "hello",
-          append: false,
           done: false,
         },
       ),
@@ -1427,25 +1194,20 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: null,
-          taskId: "task-status-9",
           artifactId: "msg-status-9:text",
           blockId: "msg-status-9:primary_text",
           laneId: "primary_text",
           blockType: "text",
           op: "replace",
           baseSeq: null,
-          source: null,
           messageId: "msg-status-9",
-          role: "agent",
           delta: "hello from status message",
-          append: false,
           done: false,
         },
       ),
     );
     expect(parsed?.blockType).toBe("text");
     expect(parsed?.messageId).toBe("msg-status-9");
-    expect(parsed?.taskId).toBe("task-status-9");
     expect(parsed?.eventId).toBe("evt-status-9");
     expect(parsed?.delta).toBe("hello from status message");
   });
@@ -1466,24 +1228,19 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "fallback_chunk",
           messageIdSource: "upstream",
           seq: null,
-          taskId: "msg-only-1",
           artifactId: "stream-1",
           blockId: "msg-only-1:primary_text",
           laneId: "primary_text",
           blockType: "text",
           op: "append",
           baseSeq: null,
-          source: null,
           messageId: "msg-only-1",
-          role: "agent",
           delta: "hello",
-          append: true,
           done: false,
         },
       ),
     );
     expect(parsed?.messageId).toBe("msg-only-1");
-    expect(parsed?.taskId).toBe("msg-only-1");
   });
 
   it("ignores unsupported blockType values", () => {
@@ -1503,18 +1260,14 @@ describe("block-based stream parser and reducer", () => {
           eventIdSource: "upstream",
           messageIdSource: "upstream",
           seq: 8,
-          taskId: "task-8",
           artifactId: "task-8:stream",
           blockId: "msg-8:custom_phase",
           laneId: "custom_phase",
           blockType: "custom_phase",
           op: "append",
           baseSeq: null,
-          source: null,
           messageId: "msg-8",
-          role: "agent",
           delta: "noop",
-          append: true,
           done: false,
         },
       ),
@@ -1576,18 +1329,14 @@ describe("block-based stream parser and reducer", () => {
         eventIdSource: "upstream",
         messageIdSource: "task_fallback",
         seq: 4,
-        taskId: "task-raw-1",
         artifactId: "task-raw-1:stream:text",
         blockId: "task:task-raw-1:primary_text",
         laneId: "primary_text",
         blockType: "text",
         op: "append",
         baseSeq: null,
-        source: null,
         messageId: "task:task-raw-1",
-        role: "agent",
         delta: "Code",
-        append: true,
         done: false,
       },
     );
@@ -1667,18 +1416,14 @@ describe("block-based stream parser and reducer", () => {
         eventIdSource: "upstream",
         messageIdSource: "upstream",
         seq: null,
-        taskId: "task-1",
         artifactId: "task-1:stream",
         blockId: "msg-camel:primary_text",
         laneId: "primary_text",
         blockType: "text",
         op: "append",
         baseSeq: null,
-        source: null,
         messageId: "msg-camel",
-        role: "agent",
         delta: "hello",
-        append: true,
         done: false,
       },
     );
@@ -1754,7 +1499,6 @@ describe("block-based stream parser and reducer", () => {
       interrupt: null,
       seq: null,
       completionPhase: null,
-      messageId: null,
     });
   });
 
@@ -1774,7 +1518,6 @@ describe("block-based stream parser and reducer", () => {
       interrupt: null,
       seq: 4,
       completionPhase: null,
-      messageId: null,
     });
   });
 
@@ -1806,7 +1549,6 @@ describe("block-based stream parser and reducer", () => {
       },
       seq: null,
       completionPhase: null,
-      messageId: null,
     });
   });
 
@@ -1877,7 +1619,6 @@ describe("block-based stream parser and reducer", () => {
       },
       seq: null,
       completionPhase: null,
-      messageId: null,
     });
   });
 
@@ -1941,7 +1682,6 @@ describe("block-based stream parser and reducer", () => {
       },
       seq: null,
       completionPhase: null,
-      messageId: null,
     });
   });
 
@@ -1958,7 +1698,6 @@ describe("block-based stream parser and reducer", () => {
       interrupt: null,
       seq: null,
       completionPhase: "persisted",
-      messageId: "msg-persisted-1",
     });
   });
 
@@ -1982,7 +1721,6 @@ describe("block-based stream parser and reducer", () => {
       interrupt: null,
       seq: null,
       completionPhase: "persisted",
-      messageId: "msg-persisted-2",
     });
   });
 
