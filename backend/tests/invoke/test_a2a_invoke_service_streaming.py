@@ -61,7 +61,7 @@ def _extract_stream_payloads(frames: list[str]) -> list[dict]:
     return [
         json.loads(line.removeprefix("data: "))
         for line in "".join(frames).splitlines()
-        if line.startswith("data: ") and '"hub"' in line
+        if line.startswith("data: ") and '"version"' in line
     ]
 
 
@@ -805,11 +805,11 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     initial_payload = next(
         payload
         for payload in _extract_stream_payloads(initial_frames)
-        if payload.get("hub", {}).get("streamBlock")
+        if payload.get("streamBlock")
     )
-    assert initial_payload["hub"]["streamBlock"]["seq"] == 1
-    assert initial_payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
-    assert initial_payload["hub"]["streamBlock"]["eventId"] == "evt-cache-1"
+    assert initial_payload["streamBlock"]["seq"] == 1
+    assert initial_payload["streamBlock"]["messageId"] == "msg-local-1"
+    assert initial_payload["streamBlock"]["eventId"] == "evt-cache-1"
 
     replay = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents([]),
@@ -830,11 +830,11 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     replay_payload = next(
         payload
         for payload in _extract_stream_payloads(replay_frames)
-        if payload.get("hub", {}).get("streamBlock")
+        if payload.get("streamBlock")
     )
-    assert replay_payload["hub"]["streamBlock"]["seq"] == 1
-    assert replay_payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
-    assert replay_payload["hub"]["streamBlock"]["eventId"] == "evt-cache-1"
+    assert replay_payload["streamBlock"]["seq"] == 1
+    assert replay_payload["streamBlock"]["messageId"] == "msg-local-1"
+    assert replay_payload["streamBlock"]["eventId"] == "evt-cache-1"
 
     await global_stream_cache.mark_completed(cache_key)
 
@@ -877,9 +877,9 @@ async def test_sse_rebuilds_hub_stream_block_after_on_event_text_mutation():
 
     payloads = _extract_stream_payloads(frames)
     artifact_payload = next(
-        payload for payload in payloads if payload["hub"].get("streamBlock")
+        payload for payload in payloads if payload.get("streamBlock")
     )
-    assert artifact_payload["hub"]["streamBlock"]["delta"] == "rewritten"
+    assert artifact_payload["streamBlock"]["delta"] == "rewritten"
     assert completed == ["rewritten"]
 
 
@@ -965,14 +965,12 @@ async def test_sse_preserves_upstream_seq_in_hub_stream_blocks():
         frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
     payloads = _extract_stream_payloads(frames)
-    artifact_payloads = [
-        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
-    ]
-    assert [payload["hub"]["streamBlock"]["seq"] for payload in artifact_payloads] == [
+    artifact_payloads = [payload for payload in payloads if payload.get("streamBlock")]
+    assert [payload["streamBlock"]["seq"] for payload in artifact_payloads] == [
         9,
         12,
     ]
-    assert payloads[-1]["hub"]["runtimeStatus"]["seq"] == 3
+    assert payloads[-1]["runtimeStatus"]["seq"] == 3
 
 
 @pytest.mark.asyncio
@@ -1001,15 +999,13 @@ async def test_sse_preserves_canonical_message_payload_for_upstream_message_even
 
     payloads = _extract_stream_payloads(frames)
     message_payload = next(
-        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
+        payload for payload in payloads if payload.get("streamBlock")
     )
-    assert message_payload["hub"]["streamBlock"]["seq"] == 1
-    assert message_payload["hub"]["streamBlock"]["messageId"] == "msg-upstream-sse-1"
-    assert (
-        message_payload["hub"]["streamBlock"]["eventId"] == "seq:msg-upstream-sse-1:1"
-    )
-    assert message_payload["hub"]["streamBlock"]["blockType"] == "text"
-    assert message_payload["hub"]["streamBlock"]["op"] == "replace"
+    assert message_payload["streamBlock"]["seq"] == 1
+    assert message_payload["streamBlock"]["messageId"] == "msg-upstream-sse-1"
+    assert message_payload["streamBlock"]["eventId"] == "seq:msg-upstream-sse-1:1"
+    assert message_payload["streamBlock"]["blockType"] == "text"
+    assert message_payload["streamBlock"]["op"] == "replace"
 
 
 @pytest.mark.asyncio
@@ -1108,7 +1104,7 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     )
 
     payloads = [json.loads(item) for item in websocket.sent]
-    assert "runtimeStatus" in payloads[0]["hub"]
+    assert "runtimeStatus" in payloads[0]
     assert payloads[-1]["event"] == "stream_end"
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
@@ -1142,16 +1138,16 @@ async def test_ws_preserves_canonical_message_payload_for_upstream_message_event
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"hub"' in item
+        if item.startswith("{") and '"version"' in item
     ]
     message_payload = next(
-        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
+        payload for payload in payloads if payload.get("streamBlock")
     )
-    assert message_payload["hub"]["streamBlock"]["seq"] == 1
-    assert message_payload["hub"]["streamBlock"]["messageId"] == "msg-upstream-ws-1"
-    assert message_payload["hub"]["streamBlock"]["eventId"] == "seq:msg-upstream-ws-1:1"
-    assert message_payload["hub"]["streamBlock"]["blockType"] == "text"
-    assert message_payload["hub"]["streamBlock"]["op"] == "replace"
+    assert message_payload["streamBlock"]["seq"] == 1
+    assert message_payload["streamBlock"]["messageId"] == "msg-upstream-ws-1"
+    assert message_payload["streamBlock"]["eventId"] == "seq:msg-upstream-ws-1:1"
+    assert message_payload["streamBlock"]["blockType"] == "text"
+    assert message_payload["streamBlock"]["op"] == "replace"
 
 
 @pytest.mark.asyncio
@@ -1199,8 +1195,7 @@ async def test_ws_emits_persisted_completion_ack_before_stream_end():
     persisted_index = next(
         index
         for index, item in enumerate(payloads)
-        if item.get("hub", {}).get("runtimeStatus", {}).get("completionPhase")
-        == "persisted"
+        if item.get("runtimeStatus", {}).get("completionPhase") == "persisted"
     )
     stream_end_index = next(
         index
@@ -1250,10 +1245,10 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"hub"' in item
+        if item.startswith("{") and '"version"' in item
     ]
     assert payloads
-    stream_block = payloads[0]["hub"]["streamBlock"]
+    stream_block = payloads[0]["streamBlock"]
     assert stream_block["seq"] == 1
     assert stream_block["messageId"] == "msg-local-ws-1"
     assert stream_block["eventId"] == "seq:msg-local-ws-1:1"
@@ -1292,10 +1287,10 @@ async def test_ws_rebuilds_hub_stream_block_after_on_event_text_mutation():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"hub"' in item
+        if item.startswith("{") and '"version"' in item
     ]
     assert payloads
-    assert payloads[0]["hub"]["streamBlock"]["delta"] == "rewritten"
+    assert payloads[0]["streamBlock"]["delta"] == "rewritten"
 
 
 @pytest.mark.asyncio
@@ -1357,16 +1352,14 @@ async def test_ws_preserves_upstream_seq_in_hub_stream_blocks():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"hub"' in item
+        if item.startswith("{") and '"version"' in item
     ]
-    artifact_payloads = [
-        payload for payload in payloads if payload.get("hub", {}).get("streamBlock")
-    ]
-    assert [payload["hub"]["streamBlock"]["seq"] for payload in artifact_payloads] == [
+    artifact_payloads = [payload for payload in payloads if payload.get("streamBlock")]
+    assert [payload["streamBlock"]["seq"] for payload in artifact_payloads] == [
         9,
         12,
     ]
-    assert payloads[-1]["hub"]["runtimeStatus"]["seq"] == 3
+    assert payloads[-1]["runtimeStatus"]["seq"] == 3
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,7 @@ import type {
   StreamMissingParam,
 } from "./chatRuntimeStatus";
 import { asRecord, pickRawString, pickString } from "./chatUtilsShared";
-import { extractHubStreamEnvelope } from "./hubStreamEnvelope";
+import { extractStreamEnvelope } from "./streamEnvelope";
 
 export type ChatRole = "user" | "agent" | "system";
 
@@ -525,8 +525,8 @@ const adaptStreamBlockUpdateForReducer = (
 export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
 ): StreamBlockUpdate | null => {
-  const hub = extractHubStreamEnvelope(data);
-  const streamBlock = hub?.streamBlock;
+  const streamEnvelope = extractStreamEnvelope(data);
+  const streamBlock = streamEnvelope?.streamBlock;
   if (!streamBlock) {
     return null;
   }

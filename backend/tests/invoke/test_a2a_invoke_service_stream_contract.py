@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.features.invoke.hub_stream_contract import project_hub_frontend_payload
+from app.features.invoke.hub_stream_contract import project_frontend_stream_payload
 from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.stream_payloads import resolve_stream_content_envelope
 from tests.invoke.a2a_invoke_service_support import (
@@ -522,12 +522,12 @@ def test_ensure_outbound_stream_contract_attaches_hub_message_contract_only():
     assert payload["message"]["parts"] == [{"text": "render me"}]
     assert payload["message"]["role"] == "ROLE_AGENT"
     assert payload["message"]["messageId"] == "msg-root-2"
-    assert payload["hub"]["version"] == "v1"
-    assert payload["hub"]["streamBlock"]["seq"] == 4
-    assert payload["hub"]["streamBlock"]["eventId"] == "seq:msg-root-2:4"
-    assert payload["hub"]["streamBlock"]["messageId"] == "msg-root-2"
-    assert payload["hub"]["streamBlock"]["blockType"] == "text"
-    assert payload["hub"]["streamBlock"]["op"] == "replace"
+    assert payload["version"] == "v1"
+    assert payload["streamBlock"]["seq"] == 4
+    assert payload["streamBlock"]["eventId"] == "seq:msg-root-2:4"
+    assert payload["streamBlock"]["messageId"] == "msg-root-2"
+    assert payload["streamBlock"]["blockType"] == "text"
+    assert payload["streamBlock"]["op"] == "replace"
 
 
 def test_ensure_outbound_stream_contract_attaches_hub_status_contract_only():
@@ -553,14 +553,14 @@ def test_ensure_outbound_stream_contract_attaches_hub_status_contract_only():
     assert payload["statusUpdate"]["status"]["message"]["parts"] == [
         {"text": "render status message"}
     ]
-    assert payload["hub"]["version"] == "v1"
-    assert payload["hub"]["streamBlock"]["seq"] == 5
-    assert payload["hub"]["streamBlock"]["eventId"] == "seq:msg-status-2:5"
-    assert payload["hub"]["streamBlock"]["messageId"] == "msg-status-2"
-    assert payload["hub"]["runtimeStatus"]["state"] == "working"
-    assert payload["hub"]["runtimeStatus"]["isFinal"] is False
-    assert payload["hub"]["runtimeStatus"]["seq"] == 5
-    assert payload["hub"]["runtimeStatus"]["messageId"] == "msg-status-2"
+    assert payload["version"] == "v1"
+    assert payload["streamBlock"]["seq"] == 5
+    assert payload["streamBlock"]["eventId"] == "seq:msg-status-2:5"
+    assert payload["streamBlock"]["messageId"] == "msg-status-2"
+    assert payload["runtimeStatus"]["state"] == "working"
+    assert payload["runtimeStatus"]["isFinal"] is False
+    assert payload["runtimeStatus"]["seq"] == 5
+    assert payload["runtimeStatus"]["messageId"] == "msg-status-2"
 
 
 def test_ensure_outbound_stream_contract_exposes_fallback_message_identity_in_hub():
@@ -580,11 +580,11 @@ def test_ensure_outbound_stream_contract_exposes_fallback_message_identity_in_hu
         event_sequence=6,
     )
 
-    assert payload["hub"]["streamBlock"]["messageId"] == "task:task-fallback-1"
-    assert payload["hub"]["streamBlock"]["messageIdSource"] == "task_fallback"
-    assert payload["hub"]["streamBlock"]["eventIdSource"] == "fallback_seq"
-    assert payload["hub"]["streamBlock"]["seq"] == 6
-    assert payload["hub"]["streamBlock"]["eventId"] == "seq:task:task-fallback-1:6"
+    assert payload["streamBlock"]["messageId"] == "task:task-fallback-1"
+    assert payload["streamBlock"]["messageIdSource"] == "task_fallback"
+    assert payload["streamBlock"]["eventIdSource"] == "fallback_seq"
+    assert payload["streamBlock"]["seq"] == 6
+    assert payload["streamBlock"]["eventId"] == "seq:task:task-fallback-1:6"
 
 
 def test_ensure_outbound_stream_contract_consumes_local_stream_overlay():
@@ -632,77 +632,73 @@ def test_ensure_outbound_stream_contract_consumes_local_stream_overlay():
         "eventId": "evt-upstream-local-1",
         "seq": 9,
     }
-    assert payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
-    assert payload["hub"]["streamBlock"]["messageIdSource"] == "local_persistence"
-    assert payload["hub"]["streamBlock"]["eventId"] == "evt-local-1"
-    assert payload["hub"]["streamBlock"]["eventIdSource"] == "local_persistence"
-    assert payload["hub"]["streamBlock"]["seq"] == 3
-    assert payload["hub"]["streamBlock"]["blockId"] == "block-local-1"
-    assert payload["hub"]["streamBlock"]["baseSeq"] == 2
-    assert payload["hub"]["streamBlock"]["op"] == "replace"
+    assert payload["streamBlock"]["messageId"] == "msg-local-1"
+    assert payload["streamBlock"]["messageIdSource"] == "local_persistence"
+    assert payload["streamBlock"]["eventId"] == "evt-local-1"
+    assert payload["streamBlock"]["eventIdSource"] == "local_persistence"
+    assert payload["streamBlock"]["seq"] == 3
+    assert payload["streamBlock"]["blockId"] == "block-local-1"
+    assert payload["streamBlock"]["baseSeq"] == 2
+    assert payload["streamBlock"]["op"] == "replace"
 
 
-def test_project_hub_frontend_payload_omits_raw_event_and_none_fields():
+def test_project_frontend_stream_payload_omits_raw_event_and_none_fields():
     payload = {
         "artifactUpdate": {
             "artifact": {"artifactId": "task-projected-1:stream:text"},
         },
-        "hub": {
-            "version": "v1",
-            "streamBlock": {
-                "eventId": "evt-projected-1",
-                "seq": 7,
-                "taskId": "task-projected-1",
-                "artifactId": "task-projected-1:stream:text",
-                "blockId": "task-projected-1:primary_text",
-                "laneId": "primary_text",
-                "blockType": "text",
-                "op": "append",
-                "baseSeq": None,
-                "source": None,
-                "messageId": "msg-projected-1",
-                "role": "agent",
-                "delta": "hello",
-                "append": True,
-                "done": False,
-            },
-            "runtimeStatus": {
-                "state": "working",
-                "isFinal": False,
-                "interrupt": None,
-                "seq": 7,
-                "completionPhase": None,
-                "messageId": None,
-            },
+        "version": "v1",
+        "streamBlock": {
+            "eventId": "evt-projected-1",
+            "seq": 7,
+            "taskId": "task-projected-1",
+            "artifactId": "task-projected-1:stream:text",
+            "blockId": "task-projected-1:primary_text",
+            "laneId": "primary_text",
+            "blockType": "text",
+            "op": "append",
+            "baseSeq": None,
+            "source": None,
+            "messageId": "msg-projected-1",
+            "role": "agent",
+            "delta": "hello",
+            "append": True,
+            "done": False,
+        },
+        "runtimeStatus": {
+            "state": "working",
+            "isFinal": False,
+            "interrupt": None,
+            "seq": 7,
+            "completionPhase": None,
+            "messageId": None,
         },
     }
 
-    projected = project_hub_frontend_payload(payload)
+    projected = project_frontend_stream_payload(payload)
 
     assert projected == {
-        "hub": {
-            "version": "v1",
-            "streamBlock": {
-                "eventId": "evt-projected-1",
-                "seq": 7,
-                "taskId": "task-projected-1",
-                "artifactId": "task-projected-1:stream:text",
-                "blockId": "task-projected-1:primary_text",
-                "laneId": "primary_text",
-                "blockType": "text",
-                "op": "append",
-                "messageId": "msg-projected-1",
-                "role": "agent",
-                "delta": "hello",
-                "append": True,
-                "done": False,
-            },
-            "runtimeStatus": {
-                "state": "working",
-                "isFinal": False,
-                "seq": 7,
-            },
-        }
+        "version": "v1",
+        "streamBlock": {
+            "eventId": "evt-projected-1",
+            "seq": 7,
+            "taskId": "task-projected-1",
+            "artifactId": "task-projected-1:stream:text",
+            "blockId": "task-projected-1:primary_text",
+            "laneId": "primary_text",
+            "blockType": "text",
+            "op": "append",
+            "messageId": "msg-projected-1",
+            "role": "agent",
+            "delta": "hello",
+            "append": True,
+            "done": False,
+        },
+        "runtimeStatus": {
+            "state": "working",
+            "isFinal": False,
+            "seq": 7,
+        },
     }
 
 

@@ -31,7 +31,7 @@ from app.utils.json_encoder import json_dumps
 
 
 def _project_frontend_stream_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    projected = hub_stream_contract.project_hub_frontend_payload(payload)
+    projected = hub_stream_contract.project_frontend_stream_payload(payload)
     return projected if projected is not None else payload
 
 

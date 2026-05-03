@@ -141,13 +141,12 @@ def resolve_stream_content_envelope(
     )
 
 
-def _extract_stream_chunk_from_hub_envelope(
+def _extract_stream_chunk_from_stream_envelope(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    hub = _dict_field(payload, "hub")
-    if hub.get("version") != "v1":
+    if payload.get("version") != "v1":
         return None
-    stream_block = _dict_field(hub, "streamBlock")
+    stream_block = _dict_field(payload, "streamBlock")
     if not stream_block:
         return None
 
@@ -572,9 +571,9 @@ def extract_raw_stream_chunk_from_serialized_event(
 def extract_stream_chunk_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    hub_stream_chunk = _extract_stream_chunk_from_hub_envelope(payload)
-    if hub_stream_chunk is not None:
-        return hub_stream_chunk
+    stream_envelope_chunk = _extract_stream_chunk_from_stream_envelope(payload)
+    if stream_envelope_chunk is not None:
+        return stream_envelope_chunk
     return extract_raw_stream_chunk_from_serialized_event(payload)
 
 

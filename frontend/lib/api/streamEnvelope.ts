@@ -1,27 +1,27 @@
 import { asRecord } from "./chatUtilsShared";
 
-export type HubStreamEnvelope = {
+export type StreamEnvelope = {
   version: "v1";
   streamBlock?: Record<string, unknown> | null;
   runtimeStatus?: Record<string, unknown> | null;
   sessionMeta?: Record<string, unknown> | null;
 };
 
-export const extractHubStreamEnvelope = (
+export const extractStreamEnvelope = (
   data: Record<string, unknown>,
-): HubStreamEnvelope | null => {
-  const hub = asRecord(data.hub);
-  if (!hub) {
+): StreamEnvelope | null => {
+  const envelope = asRecord(data);
+  if (!envelope) {
     return null;
   }
-  const version = hub.version;
+  const version = envelope.version;
   if (version !== "v1") {
     return null;
   }
   return {
     version,
-    streamBlock: asRecord(hub.streamBlock),
-    runtimeStatus: asRecord(hub.runtimeStatus),
-    sessionMeta: asRecord(hub.sessionMeta),
+    streamBlock: asRecord(envelope.streamBlock),
+    runtimeStatus: asRecord(envelope.runtimeStatus),
+    sessionMeta: asRecord(envelope.sessionMeta),
   };
 };

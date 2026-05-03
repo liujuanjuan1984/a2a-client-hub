@@ -45,20 +45,18 @@ const buildStatusUpdatePayload = (input: {
         },
       },
     },
-    hub: {
-      version: "v1",
-      runtimeStatus: {
-        state: normalizeRuntimeState(input.state),
-        isFinal: DEFAULT_RUNTIME_STATUS_CONTRACT.terminalStates
-          .map((item) => normalizeRuntimeState(item))
-          .includes(normalizeRuntimeState(input.state)),
-        ...(canonicalInterrupt ? { interrupt: canonicalInterrupt } : {}),
-        ...(input.seq !== undefined ? { seq: input.seq } : {}),
-        ...(input.completionPhase?.trim().toLowerCase() === "persisted"
-          ? { completionPhase: "persisted" }
-          : {}),
-        ...(input.messageId ? { messageId: input.messageId } : {}),
-      },
+    version: "v1",
+    runtimeStatus: {
+      state: normalizeRuntimeState(input.state),
+      isFinal: DEFAULT_RUNTIME_STATUS_CONTRACT.terminalStates
+        .map((item) => normalizeRuntimeState(item))
+        .includes(normalizeRuntimeState(input.state)),
+      ...(canonicalInterrupt ? { interrupt: canonicalInterrupt } : {}),
+      ...(input.seq !== undefined ? { seq: input.seq } : {}),
+      ...(input.completionPhase?.trim().toLowerCase() === "persisted"
+        ? { completionPhase: "persisted" }
+        : {}),
+      ...(input.messageId ? { messageId: input.messageId } : {}),
     },
   };
 };
@@ -257,10 +255,8 @@ const withHubStreamBlock = (
   streamBlock: Record<string, unknown>,
 ) => ({
   ...payload,
-  hub: {
-    version: "v1",
-    streamBlock,
-  },
+  version: "v1",
+  streamBlock,
 });
 
 const buildBlockUpdatePayload = (input: {
@@ -341,32 +337,30 @@ const buildBlockUpdatePayload = (input: {
     input.laneId ??
     (input.blockType === "text" ? "primary_text" : input.blockType);
   const messageId = input.messageId ?? "msg-1";
-  payload.hub = {
-    version: "v1",
-    streamBlock: {
-      eventId: input.eventId ?? "evt-1",
-      eventIdSource: "upstream",
-      messageIdSource: "upstream",
-      ...(input.seq !== undefined ? { seq: input.seq } : {}),
-      taskId: input.taskId ?? "task-1",
-      artifactId: input.artifactId,
-      blockId: input.blockId ?? `${messageId}:${laneId}`,
-      laneId,
-      blockType: input.blockType,
-      op: input.op ?? (input.append === false ? "replace" : "append"),
-      ...(input.baseSeq !== undefined ? { baseSeq: input.baseSeq } : {}),
-      ...(input.source ? { source: input.source } : { source: "stream" }),
-      messageId,
-      role: "agent",
-      delta: input.delta ?? "",
-      append:
-        input.append ?? !(input.op === "replace" || input.op === "finalize"),
-      done: input.lastChunk ?? input.op === "finalize",
-      toolCall:
-        input.blockType === "tool_call"
-          ? buildToolCallViewFromDelta(input.delta)
-          : undefined,
-    },
+  payload.version = "v1";
+  payload.streamBlock = {
+    eventId: input.eventId ?? "evt-1",
+    eventIdSource: "upstream",
+    messageIdSource: "upstream",
+    ...(input.seq !== undefined ? { seq: input.seq } : {}),
+    taskId: input.taskId ?? "task-1",
+    artifactId: input.artifactId,
+    blockId: input.blockId ?? `${messageId}:${laneId}`,
+    laneId,
+    blockType: input.blockType,
+    op: input.op ?? (input.append === false ? "replace" : "append"),
+    ...(input.baseSeq !== undefined ? { baseSeq: input.baseSeq } : {}),
+    ...(input.source ? { source: input.source } : { source: "stream" }),
+    messageId,
+    role: "agent",
+    delta: input.delta ?? "",
+    append:
+      input.append ?? !(input.op === "replace" || input.op === "finalize"),
+    done: input.lastChunk ?? input.op === "finalize",
+    toolCall:
+      input.blockType === "tool_call"
+        ? buildToolCallViewFromDelta(input.delta)
+        : undefined,
   };
   return payload;
 };
@@ -1543,11 +1537,11 @@ describe("block-based stream parser and reducer", () => {
       }
     ).artifact?.metadata?.shared?.stream?.messageId;
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).messageId = "task:task-1";
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).messageIdSource = "task_fallback";
     const parsed = extractStreamBlockUpdate(payload);
@@ -1624,11 +1618,11 @@ describe("block-based stream parser and reducer", () => {
       }
     ).artifact?.metadata?.shared?.stream?.eventId;
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).eventId = "seq:msg-1:7";
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).eventIdSource = "fallback_seq";
     const parsed = extractStreamBlockUpdate(payload);
@@ -1636,18 +1630,18 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventIdSource).toBe("fallback_seq");
   });
 
-  it("accepts local persistence identity sources from hub stream blocks", () => {
+  it("accepts local persistence identity sources from canonical stream blocks", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
       artifactId: "task-1:stream",
     }) as Record<string, unknown>;
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).messageIdSource = "local_persistence";
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).eventIdSource = "local_persistence";
 
@@ -1721,11 +1715,11 @@ describe("block-based stream parser and reducer", () => {
       }
     ).artifact?.metadata?.shared?.stream?.eventId;
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).eventId = "chunk:msg-1:task-1:stream";
     (
-      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+      ((payload as { streamBlock?: Record<string, unknown> }).streamBlock ??
         {}) as Record<string, unknown>
     ).eventIdSource = "fallback_chunk";
     const parsed = extractStreamBlockUpdate(payload);
@@ -1994,13 +1988,10 @@ describe("block-based stream parser and reducer", () => {
 
   it("extracts external session from canonical shared session metadata", () => {
     const meta = extractSessionMeta({
-      hub: {
-        version: "v1",
-        eventKind: "status-update",
-        sessionMeta: {
-          provider: "opencode",
-          externalSessionId: "ses_upstream_1",
-        },
+      version: "v1",
+      sessionMeta: {
+        provider: "opencode",
+        externalSessionId: "ses_upstream_1",
       },
     });
     expect(meta.provider).toBe("opencode");
@@ -2009,14 +2000,11 @@ describe("block-based stream parser and reducer", () => {
 
   it("requires shared interrupt metadata on canonical status-update payloads", () => {
     const payload = {
-      hub: {
-        version: "v1",
-        eventKind: "status-update",
-        runtimeStatus: {
-          state: "input-required",
-          isFinal: true,
-          interrupt: null,
-        },
+      version: "v1",
+      runtimeStatus: {
+        state: "input-required",
+        isFinal: true,
+        interrupt: null,
       },
     };
     expect(extractRuntimeStatusEvent(payload)?.interrupt).toBeNull();

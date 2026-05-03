@@ -8,7 +8,7 @@ import {
   pickString,
   resolveNestedValue,
 } from "./chatUtilsShared";
-import { extractHubStreamEnvelope } from "./hubStreamEnvelope";
+import { extractStreamEnvelope } from "./streamEnvelope";
 
 export type StreamMissingParam = {
   name: string;
@@ -195,7 +195,7 @@ const coerceMissingParams = (value: unknown): StreamMissingParam[] | null => {
 };
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
-  const sessionMeta = extractHubStreamEnvelope(data)?.sessionMeta ?? null;
+  const sessionMeta = extractStreamEnvelope(data)?.sessionMeta ?? null;
   const provider = pickString(sessionMeta, ["provider"]) ?? undefined;
   const externalSessionId =
     pickString(sessionMeta, ["externalSessionId"]) ?? undefined;
@@ -453,7 +453,7 @@ export const extractRuntimeStatusEvent = (
   data: Record<string, unknown>,
   contract?: RuntimeStatusContract | null,
 ): RuntimeStatusEvent | null => {
-  const runtimeStatus = extractHubStreamEnvelope(data)?.runtimeStatus;
+  const runtimeStatus = extractStreamEnvelope(data)?.runtimeStatus;
   if (!runtimeStatus) {
     return null;
   }
