@@ -8,8 +8,11 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    MODEL_SELECTION_URI,
     OPENCODE_MODEL_SELECTION_URI,
+    OPENCODE_MODEL_SELECTION_URN,
     OPENCODE_WIRE_CONTRACT_URI,
+    OPENCODE_WIRE_CONTRACT_URN,
     WIRE_CONTRACT_URI,
 )
 from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
@@ -110,7 +113,7 @@ def test_resolve_wire_contract_accepts_https_alias() -> None:
                 "extensions": {
                     "jsonrpc_methods": [],
                     "conditionally_available_methods": {},
-                    "extension_uris": [],
+                    "extension_uris": [OPENCODE_MODEL_SELECTION_URN],
                 },
                 "all_jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
                 "service_behaviors": {},
@@ -132,6 +135,46 @@ def test_resolve_wire_contract_accepts_https_alias() -> None:
 
     assert resolved.uri == OPENCODE_WIRE_CONTRACT_URI
     assert resolved.conditionally_available_methods == {}
+
+
+def test_resolve_wire_contract_accepts_opencode_urn_alias() -> None:
+    card = _build_card(
+        extension_payload={
+            "uri": OPENCODE_WIRE_CONTRACT_URN,
+            "required": False,
+            "params": {
+                "protocol_version": "0.3.0",
+                "preferred_transport": "HTTP+JSON",
+                "additional_transports": ["JSON-RPC"],
+                "core": {
+                    "jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
+                    "http_endpoints": ["GET /v1/tasks"],
+                },
+                "extensions": {
+                    "jsonrpc_methods": [],
+                    "conditionally_available_methods": {},
+                    "extension_uris": [OPENCODE_MODEL_SELECTION_URN],
+                },
+                "all_jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
+                "service_behaviors": {},
+                "unsupported_method_error": {
+                    "code": -32601,
+                    "type": "METHOD_NOT_SUPPORTED",
+                    "data_fields": [
+                        "type",
+                        "method",
+                        "supported_methods",
+                        "protocol_version",
+                    ],
+                },
+            },
+        }
+    )
+
+    resolved = resolve_wire_contract(card)
+
+    assert resolved.uri == OPENCODE_WIRE_CONTRACT_URN
+    assert resolved.extension_uris == (MODEL_SELECTION_URI,)
 
 
 def test_resolve_wire_contract_rejects_invalid_conditional_map() -> None:

@@ -8,6 +8,7 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_STREAM_HINTS_URI,
+    OPENCODE_STREAM_HINTS_URN,
     STREAM_HINTS_URI,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
@@ -54,6 +55,18 @@ def test_resolve_stream_hints_accepts_opencode_https_uri() -> None:
     resolved = resolve_stream_hints(parse_agent_card(payload))
 
     assert resolved.uri == OPENCODE_STREAM_HINTS_URI
+    assert resolved.stream_field == "metadata.shared.stream"
+
+
+def test_resolve_stream_hints_accepts_opencode_urn_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {"uri": OPENCODE_STREAM_HINTS_URN, "params": {}}
+    ]
+
+    resolved = resolve_stream_hints(parse_agent_card(payload))
+
+    assert resolved.uri == OPENCODE_STREAM_HINTS_URN
     assert resolved.stream_field == "metadata.shared.stream"
 
 

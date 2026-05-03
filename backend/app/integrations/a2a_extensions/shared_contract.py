@@ -18,13 +18,20 @@ def _spec_uri(fragment: str) -> str:
 
 
 SHARED_SESSION_BINDING_URI = "urn:a2a:session-binding/v1"
+OPENCODE_SHARED_SESSION_BINDING_URN = (
+    "urn:opencode-a2a:extension:shared:session-binding:v1"
+)
 OPENCODE_SHARED_SESSION_BINDING_URI = _spec_uri("shared-session-binding-v1")
 SUPPORTED_SESSION_BINDING_URIS = (
     SHARED_SESSION_BINDING_URI,
+    OPENCODE_SHARED_SESSION_BINDING_URN,
     OPENCODE_SHARED_SESSION_BINDING_URI,
 )
 
 SHARED_SESSION_QUERY_URI = "urn:opencode-a2a:session-query/v1"
+OPENCODE_SHARED_SESSION_MANAGEMENT_URN = (
+    "urn:opencode-a2a:extension:private:session-management:v1"
+)
 OPENCODE_SHARED_SESSION_MANAGEMENT_URI = _spec_uri("opencode-session-management-v1")
 # Deprecated upstream alias kept for older peers that still publish the
 # earlier public taxonomy.
@@ -32,6 +39,7 @@ OPENCODE_SHARED_SESSION_QUERY_URI = _spec_uri("opencode-session-query-v1")
 CODEX_SHARED_SESSION_QUERY_URI = "urn:codex-a2a:codex-session-query/v1"
 SUPPORTED_SESSION_QUERY_URIS = (
     SHARED_SESSION_QUERY_URI,
+    OPENCODE_SHARED_SESSION_MANAGEMENT_URN,
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     OPENCODE_SHARED_SESSION_QUERY_URI,
     CODEX_SHARED_SESSION_QUERY_URI,
@@ -45,52 +53,74 @@ SUPPORTED_INVOKE_METADATA_URIS = (
 )
 
 MODEL_SELECTION_URI = "urn:a2a:model-selection/v1"
+OPENCODE_MODEL_SELECTION_URN = "urn:opencode-a2a:extension:shared:model-selection:v1"
 OPENCODE_MODEL_SELECTION_URI = _spec_uri("shared-model-selection-v1")
 SUPPORTED_MODEL_SELECTION_URIS = (
     MODEL_SELECTION_URI,
+    OPENCODE_MODEL_SELECTION_URN,
     OPENCODE_MODEL_SELECTION_URI,
 )
 
 COMPATIBILITY_PROFILE_URI = "urn:a2a:compatibility-profile/v1"
+OPENCODE_COMPATIBILITY_PROFILE_URN = (
+    "urn:opencode-a2a:extension:private:compatibility-profile:v1"
+)
 OPENCODE_COMPATIBILITY_PROFILE_URI = _spec_uri("a2a-compatibility-profile-v1")
 SUPPORTED_COMPATIBILITY_PROFILE_URIS = (
     COMPATIBILITY_PROFILE_URI,
+    OPENCODE_COMPATIBILITY_PROFILE_URN,
     OPENCODE_COMPATIBILITY_PROFILE_URI,
 )
 
 WIRE_CONTRACT_URI = "urn:a2a:wire-contract/v1"
+OPENCODE_WIRE_CONTRACT_URN = "urn:opencode-a2a:extension:private:wire-contract:v1"
 OPENCODE_WIRE_CONTRACT_URI = _spec_uri("a2a-wire-contract-v1")
 SUPPORTED_WIRE_CONTRACT_URIS = (
     WIRE_CONTRACT_URI,
+    OPENCODE_WIRE_CONTRACT_URN,
     OPENCODE_WIRE_CONTRACT_URI,
 )
 
 PROVIDER_DISCOVERY_URI = "urn:opencode-a2a:provider-discovery/v1"
+OPENCODE_PROVIDER_DISCOVERY_URN = (
+    "urn:opencode-a2a:extension:private:provider-discovery:v1"
+)
 OPENCODE_PROVIDER_DISCOVERY_URI = _spec_uri("opencode-provider-discovery-v1")
 SUPPORTED_PROVIDER_DISCOVERY_URIS = (
     PROVIDER_DISCOVERY_URI,
+    OPENCODE_PROVIDER_DISCOVERY_URN,
     OPENCODE_PROVIDER_DISCOVERY_URI,
 )
 
 INTERRUPT_RECOVERY_URI = "urn:opencode-a2a:interrupt-recovery/v1"
+OPENCODE_INTERRUPT_RECOVERY_URN = (
+    "urn:opencode-a2a:extension:private:interrupt-recovery:v1"
+)
 OPENCODE_INTERRUPT_RECOVERY_URI = _spec_uri("opencode-interrupt-recovery-v1")
 CODEX_INTERRUPT_RECOVERY_URI = "urn:codex-a2a:codex-interrupt-recovery/v1"
 SUPPORTED_INTERRUPT_RECOVERY_URIS = (
     INTERRUPT_RECOVERY_URI,
+    OPENCODE_INTERRUPT_RECOVERY_URN,
     OPENCODE_INTERRUPT_RECOVERY_URI,
     CODEX_INTERRUPT_RECOVERY_URI,
 )
 
 SHARED_INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
+OPENCODE_INTERRUPT_CALLBACK_URN = (
+    "urn:opencode-a2a:extension:shared:interactive-interrupt:v1"
+)
 OPENCODE_INTERRUPT_CALLBACK_URI = _spec_uri("shared-interactive-interrupt-v1")
 SUPPORTED_INTERRUPT_CALLBACK_URIS = (
     SHARED_INTERRUPT_CALLBACK_URI,
+    OPENCODE_INTERRUPT_CALLBACK_URN,
     OPENCODE_INTERRUPT_CALLBACK_URI,
 )
 STREAM_HINTS_URI = "urn:a2a:stream-hints/v1"
+OPENCODE_STREAM_HINTS_URN = "urn:opencode-a2a:extension:shared:stream-hints:v1"
 OPENCODE_STREAM_HINTS_URI = _spec_uri("shared-stream-hints-v1")
 SUPPORTED_STREAM_HINTS_URIS = (
     STREAM_HINTS_URI,
+    OPENCODE_STREAM_HINTS_URN,
     OPENCODE_STREAM_HINTS_URI,
 )
 

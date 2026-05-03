@@ -13,6 +13,7 @@ from app.integrations.a2a_extensions.provider_discovery_service import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_PROVIDER_DISCOVERY_URI,
+    OPENCODE_PROVIDER_DISCOVERY_URN,
     PROVIDER_DISCOVERY_URI,
 )
 from app.integrations.a2a_extensions.types import (
@@ -106,6 +107,30 @@ def test_resolve_accepts_opencode_https_provider_discovery_uri() -> None:
     resolved = resolve_provider_discovery_extension(parse_agent_card(payload))
 
     assert resolved.uri == OPENCODE_PROVIDER_DISCOVERY_URI
+    assert resolved.methods["list_providers"] == "opencode.providers.list"
+
+
+def test_resolve_accepts_opencode_urn_provider_discovery_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_PROVIDER_DISCOVERY_URN,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list_providers": "opencode.providers.list",
+                    "list_models": "opencode.models.list",
+                }
+            },
+        }
+    ]
+    payload["supportedInterfaces"] = [
+        {"url": "https://api.example.com/jsonrpc", "protocolBinding": "JSONRPC"}
+    ]
+
+    resolved = resolve_provider_discovery_extension(parse_agent_card(payload))
+
+    assert resolved.uri == OPENCODE_PROVIDER_DISCOVERY_URN
     assert resolved.methods["list_providers"] == "opencode.providers.list"
 
 

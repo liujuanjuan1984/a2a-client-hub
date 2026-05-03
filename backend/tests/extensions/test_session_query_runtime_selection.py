@@ -18,6 +18,7 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_SHARED_SESSION_QUERY_URI,
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
+    OPENCODE_SHARED_SESSION_MANAGEMENT_URN,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     STREAM_HINTS_URI,
@@ -108,6 +109,18 @@ def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> Non
     assert capability.control_methods["shell"].declared is False
     assert capability.control_methods["shell"].availability == "conditional"
     assert capability.control_methods["shell"].config_key == "A2A_ENABLE_SESSION_SHELL"
+
+
+def test_resolve_runtime_session_query_accepts_opencode_urn_session_management() -> (
+    None
+):
+    capability = resolve_runtime_session_query(
+        _build_card(uri=OPENCODE_SHARED_SESSION_MANAGEMENT_URN)
+    )
+
+    assert capability.negotiation_mode == "declared_contract"
+    assert capability.compatibility_hints_applied is False
+    assert capability.ext.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URN
 
 
 def test_resolve_runtime_session_query_rejects_legacy_uri() -> None:

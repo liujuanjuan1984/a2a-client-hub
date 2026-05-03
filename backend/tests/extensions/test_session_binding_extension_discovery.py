@@ -9,6 +9,7 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.shared_contract import (
     OPENCODE_SHARED_SESSION_BINDING_URI,
+    OPENCODE_SHARED_SESSION_BINDING_URN,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
 )
@@ -106,6 +107,24 @@ def test_resolve_accepts_opencode_https_session_binding_uri() -> None:
     resolved = resolve_session_binding(parse_agent_card(payload))
 
     assert resolved.uri == OPENCODE_SHARED_SESSION_BINDING_URI
+
+
+def test_resolve_accepts_opencode_urn_session_binding_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_SHARED_SESSION_BINDING_URN,
+            "required": False,
+            "params": {
+                "metadata_field": SHARED_SESSION_ID_FIELD,
+                "behavior": "prefer_metadata_binding_else_create_session",
+            },
+        }
+    ]
+
+    resolved = resolve_session_binding(parse_agent_card(payload))
+
+    assert resolved.uri == OPENCODE_SHARED_SESSION_BINDING_URN
 
 
 def test_resolve_rejects_legacy_session_binding_uri() -> None:

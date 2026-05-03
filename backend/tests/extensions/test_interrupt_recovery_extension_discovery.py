@@ -12,6 +12,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     CODEX_INTERRUPT_RECOVERY_URI,
     INTERRUPT_RECOVERY_URI,
     OPENCODE_INTERRUPT_RECOVERY_URI,
+    OPENCODE_INTERRUPT_RECOVERY_URN,
 )
 from tests.support.a2a import parse_agent_card
 
@@ -114,6 +115,27 @@ def test_resolve_accepts_opencode_https_interrupt_recovery_uri() -> None:
     resolved = resolve_interrupt_recovery(parse_agent_card(payload))
 
     assert resolved.uri == OPENCODE_INTERRUPT_RECOVERY_URI
+    assert resolved.methods["list_permissions"] == "opencode.permissions.list"
+
+
+def test_resolve_accepts_opencode_urn_interrupt_recovery_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_INTERRUPT_RECOVERY_URN,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list_permissions": "opencode.permissions.list",
+                    "list_questions": "opencode.questions.list",
+                },
+            },
+        }
+    ]
+
+    resolved = resolve_interrupt_recovery(parse_agent_card(payload))
+
+    assert resolved.uri == OPENCODE_INTERRUPT_RECOVERY_URN
     assert resolved.methods["list_permissions"] == "opencode.permissions.list"
 
 
