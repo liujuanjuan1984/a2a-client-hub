@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from app.integrations.a2a_extensions.shared_contract import (
+    COMPATIBILITY_PROFILE_URI,
+    SHARED_SESSION_QUERY_URI,
+)
 from tests.agents.shared import hub_a2a_extensions_routes_support as support
 from tests.agents.shared.hub_a2a_extensions_routes_support import (
     Any,
@@ -303,7 +307,7 @@ async def test_hub_card_validate_accepts_limit_and_optional_cursor_session_query
     fake_gateway = _FakeGateway()
     fake_gateway.card_payload["capabilities"]["extensions"] = [
         build_session_query_extension_payload(
-            uri="urn:opencode-a2a:session-query/v1",
+            uri=SHARED_SESSION_QUERY_URI,
             methods={
                 "list_sessions": "opencode.sessions.list",
                 "get_session_messages": "opencode.sessions.messages.list",
@@ -368,7 +372,7 @@ async def test_hub_card_validate_exposes_request_execution_options_capabilities(
     fake_gateway = _FakeGateway()
     fake_gateway.card_payload["capabilities"]["extensions"] = [
         build_session_query_extension_payload(
-            uri="urn:opencode-a2a:session-query/v1",
+            uri=SHARED_SESSION_QUERY_URI,
             methods={
                 "list_sessions": "opencode.sessions.list",
                 "get_session_messages": "opencode.sessions.messages.list",
@@ -413,7 +417,7 @@ async def test_hub_card_validate_exposes_request_execution_options_capabilities(
         "metadataField": "metadata.codex.execution",
         "fields": ["model", "effort"],
         "persistsForThread": True,
-        "sourceExtensions": ["urn:opencode-a2a:session-query/v1"],
+        "sourceExtensions": [SHARED_SESSION_QUERY_URI],
         "notes": ["Execution overrides are provider-private."],
     }
 
@@ -435,10 +439,10 @@ async def test_hub_card_validate_reports_compatibility_profile_diagnostics(
     fake_gateway = _FakeGateway()
     fake_gateway.card_payload["capabilities"]["extensions"] = [
         {
-            "uri": "urn:a2a:compatibility-profile/v1",
+            "uri": COMPATIBILITY_PROFILE_URI,
             "params": {
                 "extension_retention": {
-                    "urn:opencode-a2a:session-query/v1": {
+                    SHARED_SESSION_QUERY_URI: {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -449,7 +453,7 @@ async def test_hub_card_validate_reports_compatibility_profile_diagnostics(
                         "surface": "extension",
                         "availability": "disabled",
                         "retention": "deployment-conditional",
-                        "extension_uri": "urn:opencode-a2a:session-query/v1",
+                        "extension_uri": SHARED_SESSION_QUERY_URI,
                         "toggle": "A2A_ENABLE_SESSION_SHELL",
                     }
                 },

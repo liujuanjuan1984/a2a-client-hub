@@ -3,6 +3,10 @@ import pytest
 from app.core.config import settings
 from app.features.agents.common.card_validation import fetch_and_validate_agent_card
 from app.features.invoke.service_streaming import A2AInvokeStreamingRuntime
+from app.integrations.a2a_extensions.shared_contract import (
+    COMPATIBILITY_PROFILE_URI,
+    SHARED_SESSION_QUERY_URI,
+)
 from tests.support.a2a import (
     build_agent_card_payload,
     build_session_query_extension_payload,
@@ -87,14 +91,14 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
             return _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri="urn:opencode-a2a:session-query/v1",
+                        uri=SHARED_SESSION_QUERY_URI,
                         pagination={
                             "mode": "page_size",
                             "default_size": 20,
                         },
                     ),
                     {
-                        "uri": "urn:a2a:compatibility-profile/v1",
+                        "uri": COMPATIBILITY_PROFILE_URI,
                         "params": {
                             "extension_retention": {},
                             "method_retention": {},
@@ -137,7 +141,7 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
             return _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri="urn:opencode-a2a:session-query/v1",
+                        uri=SHARED_SESSION_QUERY_URI,
                         methods={
                             "list_sessions": "opencode.sessions.list",
                             "get_session_messages": ("opencode.sessions.messages.list"),
@@ -217,7 +221,7 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
                         result_envelope={},
                     ),
                     {
-                        "uri": "urn:a2a:compatibility-profile/v1",
+                        "uri": COMPATIBILITY_PROFILE_URI,
                         "params": {
                             "extension_retention": {},
                             "method_retention": {},
@@ -260,7 +264,7 @@ async def test_fetch_and_validate_agent_card_exposes_extension_capabilities_summ
             payload = _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri="urn:opencode-a2a:session-query/v1",
+                        uri=SHARED_SESSION_QUERY_URI,
                         methods={
                             "list_sessions": "opencode.sessions.list",
                             "get_session_messages": "opencode.sessions.messages.list",
@@ -301,7 +305,7 @@ async def test_fetch_and_validate_agent_card_exposes_extension_capabilities_summ
     assert resp.extension_capabilities.request_execution_options.status == "supported"
     assert resp.extension_capabilities.request_execution_options.consumed_by_hub is True
     assert resp.extension_capabilities.request_execution_options.source_extensions == [
-        "urn:opencode-a2a:session-query/v1"
+        SHARED_SESSION_QUERY_URI
     ]
 
 
@@ -324,10 +328,10 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
                 "capabilities": {
                     "extensions": [
                         {
-                            "uri": "urn:a2a:compatibility-profile/v1",
+                            "uri": COMPATIBILITY_PROFILE_URI,
                             "params": {
                                 "extension_retention": {
-                                    "urn:opencode-a2a:session-query/v1": {
+                                    SHARED_SESSION_QUERY_URI: {
                                         "surface": "jsonrpc-extension",
                                         "availability": "always",
                                         "retention": "stable",
