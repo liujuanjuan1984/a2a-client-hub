@@ -14,6 +14,7 @@ import httpx
 from a2a.client import (
     A2ACardResolver,
     ClientCallInterceptor,
+    ClientFactory,
 )
 from a2a.client.client import ClientCallContext
 from a2a.client.interceptors import AfterArgs, BeforeArgs
@@ -101,10 +102,6 @@ def _coerce_text_payload_mapping(payload: Any) -> dict[str, Any] | None:
     if normalized is not None:
         return normalized
     return None
-
-
-def _is_legacy_protocol_version(value: str | None) -> bool:
-    return isinstance(value, str) and value.strip().startswith("0.3")
 
 
 class StaticHeaderInterceptor(ClientCallInterceptor):
@@ -626,16 +623,6 @@ class A2AClient:
                 return value.value
             return str(value).strip()
 
-        def _select_preferred_url(
-            candidates: list[tuple[str, bool]],
-        ) -> str | None:
-            for candidate_url, is_legacy in candidates:
-                if not is_legacy:
-                    return candidate_url
-            if candidates:
-                return candidates[0][0]
-            return None
-
         client_set: list[TransportProtocol | str] = list(
             self._supported_transports or [TransportProtocol.JSONRPC]
         )
@@ -650,42 +637,38 @@ class A2AClient:
         if not supported_labels:
             supported_labels = [TransportProtocol.JSONRPC.value]
 
-        server_candidates: dict[str, list[tuple[str, bool]]] = {}
-        ordered_server_transports: list[str] = []
-        for iface in getattr(card, "supported_interfaces", None) or []:
-            transport = normalize_transport_label(
-                getattr(iface, "protocol_binding", None)
+        supported_interfaces = list(getattr(card, "supported_interfaces", None) or [])
+
+        def _resolve_selected_url(protocol_binding: str) -> str | None:
+            selected_interface = ClientFactory._find_best_interface(
+                supported_interfaces,
+                protocol_bindings=[protocol_binding],
             )
-            interface_url = (getattr(iface, "url", "") or "").strip()
-            if transport and interface_url:
-                if transport not in server_candidates:
-                    ordered_server_transports.append(transport)
-                    server_candidates[transport] = []
-                server_candidates[transport].append(
-                    (
-                        interface_url,
-                        _is_legacy_protocol_version(
-                            getattr(iface, "protocol_version", None)
-                        ),
-                    )
-                )
+            selected_url = (getattr(selected_interface, "url", "") or "").strip()
+            return selected_url or None
 
         if self._use_client_preference:
             for transport in client_set:
                 label = _as_display_label(transport)
-                candidate_url = _select_preferred_url(server_candidates.get(label, []))
+                if not label:
+                    continue
+                candidate_url = _resolve_selected_url(label)
                 if candidate_url is not None:
                     return transport, candidate_url, supported_labels
             return None, None, supported_labels
 
-        for candidate_transport in ordered_server_transports:
+        for iface in supported_interfaces:
+            candidate_transport = normalize_transport_label(
+                getattr(iface, "protocol_binding", None)
+            )
+            if not candidate_transport:
+                continue
             for transport in client_set:
                 if candidate_transport == _as_display_label(transport):
-                    candidate_url = _select_preferred_url(
-                        server_candidates.get(candidate_transport, [])
-                    )
+                    candidate_url = _resolve_selected_url(candidate_transport)
                     if candidate_url is not None:
                         return transport, candidate_url, supported_labels
+                    break
         return None, None, supported_labels
 
     async def close(self) -> None:

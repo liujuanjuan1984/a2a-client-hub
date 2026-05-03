@@ -108,6 +108,39 @@ async def test_fetch_and_validate_agent_card_accepts_legacy_core_protocol_versio
 
 
 @pytest.mark.asyncio
+async def test_fetch_and_validate_agent_card_accepts_legacy_top_level_connection_shape() -> (
+    None
+):
+    class _LegacyRawCard:
+        def model_dump(self, **kwargs):
+            return {
+                "name": "legacy",
+                "description": "legacy",
+                "version": "0.3.0",
+                "url": "https://example.com/jsonrpc",
+                "protocolVersion": "0.3.0",
+                "capabilities": {"streaming": True},
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
+                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+            }
+
+    class _LegacyRawGateway:
+        async def fetch_agent_card_detail(self, **kwargs):
+            return _LegacyRawCard()
+
+    resp = await fetch_and_validate_agent_card(
+        gateway=_LegacyRawGateway(), resolved=object()
+    )
+
+    assert resp.success is True
+    assert resp.message == "Agent card validated"
+    assert resp.validation_warnings is None
+    assert resp.card is not None
+    assert resp.card["supportedInterfaces"][0]["protocolVersion"] == "0.3.0"
+
+
+@pytest.mark.asyncio
 async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contract() -> (
     None
 ):

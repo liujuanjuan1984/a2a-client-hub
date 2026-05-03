@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import asdict, is_dataclass
 from typing import Any, cast
 
+from a2a.client.card_resolver import (
+    _handle_connection_fields_compatibility,
+    _handle_extended_card_compatibility,
+    _handle_security_compatibility,
+)
 from a2a.types import AgentCard
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.message import Message as ProtoMessage
@@ -20,10 +26,15 @@ def parse_agent_card(
 ) -> AgentCard:
     """Parse a JSON-like AgentCard payload into the protobuf message."""
 
+    payload = deepcopy(dict(data))
+    _handle_extended_card_compatibility(payload)
+    _handle_connection_fields_compatibility(payload)
+    _handle_security_compatibility(payload)
+
     return cast(
         AgentCard,
         ParseDict(
-            dict(data),
+            payload,
             AgentCard(),
             ignore_unknown_fields=ignore_unknown_fields,
         ),

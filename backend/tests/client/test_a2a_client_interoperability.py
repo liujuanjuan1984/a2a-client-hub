@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call
 
 import pytest
+from a2a.client import ClientFactory
 from a2a.client.card_resolver import parse_agent_card as parse_sdk_agent_card
 from a2a.utils.constants import TransportProtocol
 
@@ -20,6 +21,12 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AOutboundNotAllowedError,
     A2AUnsupportedOperationError,
+)
+from app.integrations.a2a_client.protobuf import (
+    parse_agent_card as parse_local_agent_card,
+)
+from app.integrations.a2a_client.protobuf import (
+    to_protojson_object,
 )
 from app.utils.outbound_url import OutboundURLNotAllowedError
 
@@ -352,6 +359,65 @@ def test_resolve_negotiated_transport_target_prefers_nonlegacy_interface_within_
 
     assert selected_transport == TransportProtocol.JSONRPC
     assert selected_url == "http://example-agent.internal:24020/jsonrpc-v1"
+
+
+def test_resolve_negotiated_transport_target_aligns_with_sdk_version_priority() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    card = _build_card(
+        supported_interfaces=[
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-0-9",
+                protocol_version="0.9.0",
+            ),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-1-1",
+                protocol_version="1.1.0",
+            ),
+        ]
+    )
+
+    expected = ClientFactory._find_best_interface(
+        list(card.supported_interfaces),
+        protocol_bindings=[TransportProtocol.JSONRPC],
+    )
+    selected_transport, selected_url, _ = (
+        a2a_client._resolve_negotiated_transport_target(card)
+    )
+
+    assert expected is not None
+    assert selected_transport == TransportProtocol.JSONRPC
+    assert selected_url == expected.url
+
+
+def test_local_parse_agent_card_applies_legacy_connection_field_compatibility() -> None:
+    card = parse_local_agent_card(
+        {
+            "name": "Legacy Agent",
+            "description": "legacy",
+            "version": "0.3.0",
+            "url": "https://example.com/jsonrpc",
+            "protocolVersion": "0.3.0",
+            "capabilities": {"streaming": True},
+            "defaultInputModes": ["text/plain"],
+            "defaultOutputModes": ["text/plain"],
+            "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+        },
+        ignore_unknown_fields=False,
+    )
+
+    payload = to_protojson_object(card)
+
+    assert payload is not None
+    assert payload["supportedInterfaces"] == [
+        {
+            "url": "https://example.com/jsonrpc",
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "0.3.0",
+            "tenant": "",
+        }
+    ]
 
 
 @pytest.mark.asyncio
