@@ -30,7 +30,6 @@ def _normalize_stream_chunk(
         "content": parsed.get("content"),
         "baseSeq": parsed.get("base_seq"),
         "isFinished": parsed.get("is_finished"),
-        "source": parsed.get("source"),
     }
 
 
