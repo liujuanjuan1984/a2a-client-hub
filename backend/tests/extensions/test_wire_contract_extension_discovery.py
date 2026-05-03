@@ -8,6 +8,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_WIRE_CONTRACT_URI,
     MODEL_SELECTION_URI,
     OPENCODE_MODEL_SELECTION_URI,
     OPENCODE_MODEL_SELECTION_URN,
@@ -90,14 +91,14 @@ def test_resolve_wire_contract_supports_declared_contract() -> None:
     assert resolved.uri == WIRE_CONTRACT_URI
     assert resolved.preferred_transport == "HTTP+JSON"
     assert resolved.additional_transports == ("JSON-RPC",)
-    assert resolved.extension_uris == ("urn:a2a:model-selection/v1",)
+    assert resolved.extension_uris == (MODEL_SELECTION_URI,)
     assert resolved.conditionally_available_methods[
         "opencode.sessions.shell"
     ].toggle == ("A2A_ENABLE_SESSION_SHELL")
     assert resolved.unsupported_method_error.code == -32601
 
 
-def test_resolve_wire_contract_accepts_https_alias() -> None:
+def test_resolve_wire_contract_accepts_current_opencode_uri() -> None:
     card = _build_card(
         extension_payload={
             "uri": OPENCODE_WIRE_CONTRACT_URI,
@@ -175,6 +176,41 @@ def test_resolve_wire_contract_accepts_opencode_urn_alias() -> None:
 
     assert resolved.uri == OPENCODE_WIRE_CONTRACT_URN
     assert resolved.extension_uris == (MODEL_SELECTION_URI,)
+
+
+def test_resolve_wire_contract_accepts_current_codex_uri() -> None:
+    card = _build_card(
+        extension_payload={
+            "uri": CODEX_WIRE_CONTRACT_URI,
+            "required": False,
+            "params": {
+                "protocol_version": "0.3.0",
+                "preferred_transport": "HTTP+JSON",
+                "additional_transports": ["JSON-RPC"],
+                "core": {
+                    "jsonrpc_methods": ["tasks/get"],
+                    "http_endpoints": ["POST /v1/message:send"],
+                },
+                "extensions": {
+                    "jsonrpc_methods": ["codex.sessions.list"],
+                    "conditionally_available_methods": {},
+                    "extension_uris": ["urn:codex-a2a:codex-session-query/v1"],
+                },
+                "all_jsonrpc_methods": ["tasks/get", "codex.sessions.list"],
+                "service_behaviors": {},
+                "unsupported_method_error": {
+                    "code": -32601,
+                    "type": "METHOD_NOT_SUPPORTED",
+                    "data_fields": ["type", "method"],
+                },
+            },
+        }
+    )
+
+    resolved = resolve_wire_contract(card)
+
+    assert resolved.uri == CODEX_WIRE_CONTRACT_URI
+    assert resolved.extension_uris == ("urn:codex-a2a:codex-session-query/v1",)
 
 
 def test_resolve_wire_contract_rejects_invalid_conditional_map() -> None:
