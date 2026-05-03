@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call
 
 import pytest
+from a2a.client.card_resolver import parse_agent_card as parse_sdk_agent_card
 from a2a.utils.constants import TransportProtocol
 
 from app.integrations.a2a_client import client as client_module
@@ -241,6 +242,58 @@ async def test_get_agent_card_honors_client_preference_transport_order(
     assert validate_calls == [
         "http://example-agent.internal:24020",
         "http://example-agent.internal:24020/jsonrpc",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_agent_card_accepts_legacy_agent_card_shape_via_sdk_compatibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    card = parse_sdk_agent_card(
+        {
+            "name": "Legacy Agent",
+            "description": "legacy",
+            "version": "0.3.0",
+            "url": "https://example.com/jsonrpc",
+            "protocolVersion": "0.3.0",
+            "capabilities": {"streaming": True},
+            "defaultInputModes": ["text/plain"],
+            "defaultOutputModes": ["text/plain"],
+            "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+        }
+    )
+    validate_calls: list[str] = []
+
+    def fake_validate_outbound_http_url(
+        url: str,
+        *,
+        allowed_hosts,
+        purpose: str = "outbound HTTP request",
+    ) -> str:
+        validate_calls.append(url)
+        return url
+
+    monkeypatch.setattr(
+        client_module,
+        "validate_outbound_http_url",
+        fake_validate_outbound_http_url,
+    )
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        lambda: ["example-agent.internal:24020", "example.com"],
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_http_client = AsyncMock(return_value=Mock())
+    a2a_client._build_card_resolver = Mock(return_value=_FakeResolver(card))
+
+    fetched = await a2a_client.get_agent_card()
+
+    assert fetched is card
+    assert validate_calls == [
+        "http://example-agent.internal:24020",
+        "https://example.com/jsonrpc",
     ]
 
 
