@@ -144,10 +144,11 @@ def stream_sse(
                     and event_sequence <= resume_from_sequence
                 ):
                     continue
-                seq_counter = max(seq_counter, event_sequence)
+                await runtime._call_callback(on_event, serialized)
                 runtime._ensure_outbound_stream_contract(
                     serialized, event_sequence=event_sequence
                 )
+                seq_counter = max(seq_counter, event_sequence)
                 stream_block, non_contract_reason = (
                     stream_payloads.analyze_stream_chunk_contract(serialized)
                 )
@@ -158,11 +159,6 @@ def stream_sse(
                     log_warning=log_warning,
                     log_info=log_info,
                     log_extra=log_extra,
-                )
-
-                await runtime._call_callback(on_event, serialized)
-                runtime._ensure_outbound_stream_contract(
-                    serialized, event_sequence=event_sequence
                 )
                 if cache_key:
                     await global_stream_cache.append_event(
@@ -372,10 +368,11 @@ async def stream_ws(
                 and event_sequence <= resume_from_sequence
             ):
                 continue
-            seq_counter = max(seq_counter, event_sequence)
+            await runtime._call_callback(on_event, serialized)
             runtime._ensure_outbound_stream_contract(
                 serialized, event_sequence=event_sequence
             )
+            seq_counter = max(seq_counter, event_sequence)
             stream_block, non_contract_reason = (
                 stream_payloads.analyze_stream_chunk_contract(serialized)
             )
@@ -386,11 +383,6 @@ async def stream_ws(
                 log_warning=log_warning,
                 log_info=log_info,
                 log_extra=log_extra,
-            )
-
-            await runtime._call_callback(on_event, serialized)
-            runtime._ensure_outbound_stream_contract(
-                serialized, event_sequence=event_sequence
             )
             if cache_key:
                 await global_stream_cache.append_event(

@@ -856,6 +856,53 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
 
 
 @pytest.mark.asyncio
+async def test_sse_rebuilds_hub_stream_block_after_on_event_text_mutation():
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    async def _rewrite_text(payload: dict[str, object]) -> None:
+        if "artifactUpdate" not in payload:
+            return
+        payload["artifactUpdate"]["artifact"]["parts"][0]["text"] = "rewritten"
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-rewrite-sse:stream:text",
+                    text="hello",
+                    block_type="text",
+                )
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+        on_event=_rewrite_text,
+    )
+    frames: list[str] = []
+    async for chunk in response.body_iterator:
+        frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payloads = _extract_stream_payloads(frames)
+    artifact_payload = next(
+        payload for payload in payloads if "artifactUpdate" in payload
+    )
+    assert artifact_payload["artifactUpdate"]["artifact"]["parts"] == [
+        {"text": "rewritten"}
+    ]
+    assert artifact_payload["hub"]["streamBlock"]["delta"] == "rewritten"
+    assert completed == ["rewritten"]
+
+
+@pytest.mark.asyncio
 async def test_iter_gateway_stream_passes_requested_extensions_to_gateway():
     captured: dict[str, object] = {}
 
@@ -1245,6 +1292,46 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
     assert payloads[0]["hub"]["streamBlock"]["seq"] == 1
     assert payloads[0]["hub"]["streamBlock"]["messageId"] == "msg-local-ws-1"
     assert payloads[0]["hub"]["streamBlock"]["eventId"] == "seq:msg-local-ws-1:1"
+
+
+@pytest.mark.asyncio
+async def test_ws_rebuilds_hub_stream_block_after_on_event_text_mutation():
+    websocket = _DummyWebSocket()
+
+    async def _rewrite_text(payload: dict[str, object]) -> None:
+        if "artifactUpdate" not in payload:
+            return
+        payload["artifactUpdate"]["artifact"]["parts"][0]["text"] = "rewritten"
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-rewrite-ws:stream:text",
+                    text="hello",
+                    block_type="text",
+                )
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_event=_rewrite_text,
+    )
+
+    payloads = [
+        json.loads(item)
+        for item in websocket.sent
+        if item.startswith("{") and '"artifactUpdate"' in item
+    ]
+    assert payloads
+    assert payloads[0]["artifactUpdate"]["artifact"]["parts"] == [{"text": "rewritten"}]
+    assert payloads[0]["hub"]["streamBlock"]["delta"] == "rewritten"
 
 
 @pytest.mark.asyncio
@@ -1662,6 +1749,48 @@ async def test_consume_stream_accepts_single_blocking_message_payload() -> None:
     assert result.finish_reason == StreamFinishReason.SUCCESS
     assert result.final_text == "blocking-result"
     assert result.terminal_event_seen is False
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_uses_post_on_event_text_mutation_for_final_result():
+    async def _rewrite_text(payload: dict[str, object]) -> None:
+        if "message" not in payload:
+            return
+        payload["message"]["parts"][0]["text"] = "rewritten"
+
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "message": {
+                        "messageId": "msg-blocking-rewrite-1",
+                        "taskId": "task-blocking-rewrite-1",
+                        "role": "ROLE_AGENT",
+                        "parts": [{"type": "text", "text": "blocking-result"}],
+                        "metadata": {
+                            "shared": {
+                                "stream": {
+                                    "eventId": "evt-blocking-rewrite-1",
+                                    "blockType": "text",
+                                }
+                            }
+                        },
+                    }
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_event=_rewrite_text,
+    )
+
+    assert result.success is True
+    assert result.final_text == "rewritten"
 
 
 @pytest.mark.asyncio

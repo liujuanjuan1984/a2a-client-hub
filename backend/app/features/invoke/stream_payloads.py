@@ -487,13 +487,9 @@ def extract_block_base_seq(
     )
 
 
-def extract_stream_chunk_from_serialized_event(
+def extract_raw_stream_chunk_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    hub_stream_chunk = _extract_stream_chunk_from_hub_envelope(payload)
-    if hub_stream_chunk is not None:
-        return hub_stream_chunk
-
     envelope = resolve_stream_content_envelope(payload)
     normalized_kind = envelope.event_kind
     if normalized_kind not in ("artifact-update", "message", "status-update"):
@@ -571,6 +567,15 @@ def extract_stream_chunk_from_serialized_event(
         if tool_call is not None:
             stream_chunk["tool_call"] = tool_call
     return stream_chunk
+
+
+def extract_stream_chunk_from_serialized_event(
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    hub_stream_chunk = _extract_stream_chunk_from_hub_envelope(payload)
+    if hub_stream_chunk is not None:
+        return hub_stream_chunk
+    return extract_raw_stream_chunk_from_serialized_event(payload)
 
 
 def analyze_stream_chunk_contract(

@@ -19,7 +19,7 @@ from app.features.invoke.stream_field_aliases import (
 )
 from app.features.invoke.stream_payloads import (
     extract_interrupt_lifecycle_from_serialized_event,
-    extract_stream_chunk_from_serialized_event,
+    extract_raw_stream_chunk_from_serialized_event,
     resolve_stream_content_envelope,
 )
 from app.integrations.a2a_runtime_status_contract import (
@@ -227,7 +227,7 @@ def _build_stream_block(
     upstream_shared_stream: Mapping[str, Any] | None = None,
     local_event_sequence: int,
 ) -> dict[str, Any] | None:
-    stream_chunk = extract_stream_chunk_from_serialized_event(payload)
+    stream_chunk = extract_raw_stream_chunk_from_serialized_event(payload)
     if not stream_chunk:
         return None
 
