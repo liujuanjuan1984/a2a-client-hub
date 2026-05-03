@@ -183,9 +183,6 @@ async def consume_stream(
                 event, validate_message=validate_message
             )
             event_sequence += 1
-            runtime._ensure_outbound_stream_contract(
-                serialized, event_sequence=event_sequence
-            )
             validation_errors = extract_stream_content_validation_errors(
                 serialized,
                 validate_message=validate_message,
@@ -212,6 +209,11 @@ async def consume_stream(
                         extra=warning_payload,
                     )
                 continue
+            last_event_at = time.monotonic()
+            await runtime._call_callback(on_event, serialized)
+            runtime._ensure_outbound_stream_contract(
+                serialized, event_sequence=event_sequence
+            )
             stream_block, non_contract_reason = (
                 stream_payloads.analyze_stream_chunk_contract(serialized)
             )
@@ -222,12 +224,6 @@ async def consume_stream(
                 log_warning=log_warning,
                 log_info=log_info,
                 log_extra=log_extra,
-            )
-
-            last_event_at = time.monotonic()
-            await runtime._call_callback(on_event, serialized)
-            runtime._ensure_outbound_stream_contract(
-                serialized, event_sequence=event_sequence
             )
             stream_text_accumulator.consume(serialized, stream_block=stream_block)
             if runtime._is_terminal_status_event(serialized):

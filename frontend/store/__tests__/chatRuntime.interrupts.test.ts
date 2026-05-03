@@ -17,6 +17,25 @@ import type {
   RuntimeStatusContract,
 } from "./chatRuntime.test.support";
 
+const normalizeRuntimeStateToken = (state: string) => {
+  const normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  return normalized.startsWith("task-state-")
+    ? normalized.slice("task-state-".length)
+    : normalized;
+};
+
+const buildCanonicalInterrupt = (interrupt?: Record<string, unknown>) => {
+  if (!interrupt) {
+    return null;
+  }
+  const phase = typeof interrupt.phase === "string" ? interrupt.phase : "asked";
+  return {
+    ...interrupt,
+    phase,
+    source: "stream",
+  };
+};
+
 const buildStatusUpdate = ({
   state,
   seq,
@@ -41,6 +60,21 @@ const buildStatusUpdate = ({
           ...(completionPhase ? { completionPhase } : {}),
         },
       },
+    },
+  },
+  hub: {
+    version: "v1",
+    eventKind: "status-update",
+    runtimeStatus: {
+      state: normalizeRuntimeStateToken(state),
+      isFinal:
+        state === "TASK_STATE_COMPLETED" ||
+        state === "TASK_STATE_FAILED" ||
+        state === "TASK_STATE_INPUT_REQUIRED",
+      interrupt: buildCanonicalInterrupt(interrupt),
+      seq: seq ?? null,
+      completionPhase: completionPhase ?? null,
+      messageId: messageId ?? null,
     },
   },
 });
@@ -74,6 +108,29 @@ const buildArtifactUpdate = ({
           },
         },
       },
+    },
+  },
+  hub: {
+    version: "v1",
+    eventKind: "artifact-update",
+    streamBlock: {
+      eventId,
+      eventIdSource: "upstream",
+      messageIdSource: "upstream",
+      seq,
+      taskId: agentMessageId,
+      artifactId: `${agentMessageId}:stream:${seq}`,
+      blockId: `${agentMessageId}:primary_text`,
+      laneId: "primary_text",
+      blockType: "text",
+      op: "append",
+      baseSeq: null,
+      source,
+      messageId: agentMessageId,
+      role: "agent",
+      delta: text,
+      append: true,
+      done: false,
     },
   },
 });

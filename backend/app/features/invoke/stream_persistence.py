@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from app.db.models.agent_message import AgentMessage
+from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.service_types import StreamOutcome
 from app.features.invoke.session_binding import resolve_invoke_session_control_intent
 from app.features.invoke.stream_payloads import (
@@ -41,6 +42,34 @@ class InvokePersistenceState(Protocol):
     persisted_block_count: int
     chunk_buffer: list[dict[str, Any]]
     current_block_type: str | None
+
+
+class EnsureHeadersFn(Protocol):
+    async def __call__(
+        self,
+        *,
+        state: InvokePersistenceState,
+        request: "InvokePersistenceRequest",
+    ) -> None: ...
+
+
+class FlushStreamBufferFn(Protocol):
+    async def __call__(
+        self,
+        *,
+        state: InvokePersistenceState,
+        user_id: UUID,
+    ) -> None: ...
+
+
+class PersistFinalBlockFn(Protocol):
+    async def __call__(
+        self,
+        *,
+        state: InvokePersistenceState,
+        outcome: StreamOutcome,
+        user_id: UUID,
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -168,35 +197,6 @@ def resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
     return "error"
 
 
-def rewrite_stream_event_contract(
-    event_payload: dict[str, Any],
-    *,
-    local_message_id: str,
-    event_id: str,
-    seq: int | None,
-    stream_block: dict[str, Any] | None = None,
-) -> None:
-    shared_stream = _ensure_shared_stream_metadata(event_payload)
-    if shared_stream is None:
-        return
-    shared_stream["messageId"] = local_message_id
-    if event_id:
-        shared_stream["eventId"] = event_id
-    if isinstance(seq, int) and seq > 0:
-        shared_stream["seq"] = seq
-    if isinstance(stream_block, dict):
-        field_map = {
-            "block_id": "blockId",
-            "lane_id": "laneId",
-            "op": "op",
-            "base_seq": "baseSeq",
-        }
-        for source_name, target_name in field_map.items():
-            value = stream_block.get(source_name)
-            if value is not None:
-                shared_stream[target_name] = value
-
-
 def resolve_stream_event_id(
     *,
     stream_block: dict[str, Any],
@@ -282,18 +282,46 @@ async def persist_stream_block_update(
     session_factory: Any,
     commit_fn: Any,
     session_hub: Any,
-    ensure_headers_fn: Any = ensure_local_message_headers,
-    flush_buffer_fn: Any = None,
+    ensure_headers_fn: EnsureHeadersFn | None = None,
+    flush_buffer_fn: FlushStreamBufferFn | None = None,
 ) -> None:
     stream_block = extract_stream_chunk_from_serialized_event(event_payload)
     if stream_block is None:
         return
+    if ensure_headers_fn is None:
+
+        async def ensure_headers_fn(
+            *,
+            state: InvokePersistenceState,
+            request: InvokePersistenceRequest,
+        ) -> None:
+            await ensure_local_message_headers(
+                state=state,
+                request=request,
+                session_factory=session_factory,
+                commit_fn=commit_fn,
+                session_hub=session_hub,
+            )
+
+    if flush_buffer_fn is None:
+
+        async def flush_buffer_fn(
+            *,
+            state: InvokePersistenceState,
+            user_id: UUID,
+        ) -> None:
+            await flush_stream_buffer(
+                state=state,
+                user_id=user_id,
+                session_factory=session_factory,
+                commit_fn=commit_fn,
+                session_hub=session_hub,
+            )
+
     await ensure_headers_fn(
         state=state,
         request=request,
     )
-    if flush_buffer_fn is None:
-        flush_buffer_fn = flush_stream_buffer
     agent_message_id = resolve_agent_message_id(state)
     if agent_message_id is None:
         return
@@ -305,7 +333,7 @@ async def persist_stream_block_update(
         local_message_id=local_message_id,
         seq=persist_seq,
     )
-    rewrite_stream_event_contract(
+    attach_local_stream_context(
         event_payload,
         local_message_id=local_message_id,
         event_id=resolved_event_id,
@@ -320,9 +348,6 @@ async def persist_stream_block_update(
         await flush_buffer_fn(
             state=state,
             user_id=request.user_id,
-            session_factory=session_factory,
-            commit_fn=commit_fn,
-            session_hub=session_hub,
         )
 
     state.current_block_type = block_type
@@ -350,40 +375,7 @@ async def persist_stream_block_update(
         await flush_buffer_fn(
             state=state,
             user_id=request.user_id,
-            session_factory=session_factory,
-            commit_fn=commit_fn,
-            session_hub=session_hub,
         )
-
-
-def _ensure_shared_stream_metadata(
-    event_payload: dict[str, Any],
-) -> dict[str, Any] | None:
-    event_body = None
-    for field_name in ("artifactUpdate", "message", "statusUpdate", "task"):
-        candidate = event_payload.get(field_name)
-        if isinstance(candidate, dict):
-            event_body = candidate
-            break
-    if event_body is None:
-        return None
-
-    metadata = event_body.get("metadata")
-    if not isinstance(metadata, dict):
-        metadata = {}
-        event_body["metadata"] = metadata
-
-    shared = metadata.get("shared")
-    if not isinstance(shared, dict):
-        shared = {}
-        metadata["shared"] = shared
-
-    shared_stream = shared.get("stream")
-    if not isinstance(shared_stream, dict):
-        shared_stream = {}
-        shared["stream"] = shared_stream
-
-    return shared_stream
 
 
 async def persist_interrupt_lifecycle_event(
@@ -395,29 +387,54 @@ async def persist_interrupt_lifecycle_event(
     session_factory: Any,
     commit_fn: Any,
     session_hub: Any,
-    ensure_headers_fn: Any = ensure_local_message_headers,
-    flush_buffer_fn: Any = None,
+    ensure_headers_fn: EnsureHeadersFn | None = None,
+    flush_buffer_fn: FlushStreamBufferFn | None = None,
 ) -> None:
     if state.local_session_id is None:
         return
     interrupt_event = extract_interrupt_lifecycle_from_serialized_event(event_payload)
     if interrupt_event is None:
         return
+    if ensure_headers_fn is None:
+
+        async def ensure_headers_fn(
+            *,
+            state: InvokePersistenceState,
+            request: InvokePersistenceRequest,
+        ) -> None:
+            await ensure_local_message_headers(
+                state=state,
+                request=request,
+                session_factory=session_factory,
+                commit_fn=commit_fn,
+                session_hub=session_hub,
+            )
+
+    if flush_buffer_fn is None:
+
+        async def flush_buffer_fn(
+            *,
+            state: InvokePersistenceState,
+            user_id: UUID,
+        ) -> None:
+            await flush_stream_buffer(
+                state=state,
+                user_id=user_id,
+                session_factory=session_factory,
+                commit_fn=commit_fn,
+                session_hub=session_hub,
+            )
+
     await ensure_headers_fn(
         state=state,
         request=request,
     )
-    if flush_buffer_fn is None:
-        flush_buffer_fn = flush_stream_buffer
     agent_message_id = resolve_agent_message_id(state)
     if agent_message_id is None:
         return
     await flush_buffer_fn(
         state=state,
         user_id=request.user_id,
-        session_factory=session_factory,
-        commit_fn=commit_fn,
-        session_hub=session_hub,
     )
     persist_seq = state.next_event_seq if state.next_event_seq > 0 else 1
     interrupt_event_id = (
@@ -506,24 +523,51 @@ async def persist_local_outcome(
     session_factory: Any,
     commit_fn: Any,
     session_hub: Any,
-    ensure_headers_fn: Any = ensure_local_message_headers,
-    persist_final_block_fn: Any = None,
+    ensure_headers_fn: EnsureHeadersFn | None = None,
+    persist_final_block_fn: PersistFinalBlockFn | None = None,
 ) -> None:
     if state.local_session_id is None or state.local_source is None:
         return
+    if ensure_headers_fn is None:
+
+        async def ensure_headers_fn(
+            *,
+            state: InvokePersistenceState,
+            request: InvokePersistenceRequest,
+        ) -> None:
+            await ensure_local_message_headers(
+                state=state,
+                request=request,
+                session_factory=session_factory,
+                commit_fn=commit_fn,
+                session_hub=session_hub,
+            )
+
+    if persist_final_block_fn is None:
+
+        async def persist_final_block_fn(
+            *,
+            state: InvokePersistenceState,
+            outcome: StreamOutcome,
+            user_id: UUID,
+        ) -> None:
+            await persist_synthetic_final_block_if_needed(
+                state=state,
+                outcome=outcome,
+                user_id=user_id,
+                session_factory=session_factory,
+                commit_fn=commit_fn,
+                session_hub=session_hub,
+            )
+
     await ensure_headers_fn(
         state=state,
         request=request,
     )
-    if persist_final_block_fn is None:
-        persist_final_block_fn = persist_synthetic_final_block_if_needed
     await persist_final_block_fn(
         state=state,
         outcome=outcome,
         user_id=request.user_id,
-        session_factory=session_factory,
-        commit_fn=commit_fn,
-        session_hub=session_hub,
     )
     persisted_content = outcome.final_text or str(outcome.error_message or "")
     metadata_payload = build_stream_metadata_from_outcome(

@@ -618,16 +618,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       data,
       runtimeStatusContract,
     );
-    const kind = typeof data.kind === "string" ? data.kind : "";
-    const isLegacyContentEvent =
-      typeof data.content === "string" && data.content.trim().length > 0;
-    if (
-      chunk ||
-      runtimeStatusEvent ||
-      kind === "artifact-update" ||
-      kind === "status-update" ||
-      isLegacyContentEvent
-    ) {
+    const meta = extractSessionMeta(data);
+    const hasSessionMetaEvent =
+      meta.provider !== undefined ||
+      meta.externalSessionId !== undefined ||
+      meta.streamThreadId !== undefined ||
+      meta.streamTurnId !== undefined ||
+      meta.transport !== undefined ||
+      meta.inputModes !== undefined ||
+      meta.outputModes !== undefined;
+    if (chunk || runtimeStatusEvent || hasSessionMetaEvent) {
       hasObservedStreamEvent = true;
     }
     advanceResumeCursor(runtimeStatusEvent?.seq);
@@ -644,7 +644,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       );
     }
 
-    const meta = extractSessionMeta(data);
     const runtimeStatus = runtimeStatusEvent?.state ?? null;
     const hasRuntimeStatusEvent = runtimeStatusEvent !== null;
     if (

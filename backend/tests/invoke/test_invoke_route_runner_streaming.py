@@ -449,18 +449,10 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
     async def fake_commit_safely(_db):
         return None
 
-    async def fake_ensure_local_message_headers(**_kwargs):
-        return None
-
     monkeypatch.setattr(
         invoke_route_runner,
         "AsyncSessionLocal",
         lambda: _DummySessionContext(),
-    )
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "_ensure_local_message_headers",
-        fake_ensure_local_message_headers,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -478,7 +470,10 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         stream_usage={},
         user_message_id=str(uuid4()),
         agent_message_id=agent_message_id,
-        message_refs=None,
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": agent_message_id,
+        },
         next_event_seq=1,
         persisted_block_count=0,
     )
@@ -500,10 +495,13 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         request=_build_persistence_request(transport="ws"),
     )
 
-    shared_stream = event_payload["artifactUpdate"]["metadata"]["shared"]["stream"]
-    assert shared_stream["messageId"] == agent_message_id
-    assert isinstance(shared_stream.get("eventId"), str)
-    assert shared_stream["seq"] == 1
+    assert event_payload["artifactUpdate"]["artifact"]["metadata"]["shared"][
+        "stream"
+    ] == {"blockType": "text"}
+    local_stream_context = event_payload["__hub_local_stream"]
+    assert local_stream_context["message_id"] == agent_message_id
+    assert isinstance(local_stream_context.get("event_id"), str)
+    assert local_stream_context["seq"] == 1
     updates = captured["updates"]
     assert isinstance(updates, list)
     assert len(updates) == 1
@@ -535,18 +533,10 @@ async def test_persist_stream_block_update_inferrs_canonical_artifact_text_witho
     async def fake_commit_safely(_db):
         return None
 
-    async def fake_ensure_local_message_headers(**_kwargs):
-        return None
-
     monkeypatch.setattr(
         invoke_route_runner,
         "AsyncSessionLocal",
         lambda: _DummySessionContext(),
-    )
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "_ensure_local_message_headers",
-        fake_ensure_local_message_headers,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -564,7 +554,10 @@ async def test_persist_stream_block_update_inferrs_canonical_artifact_text_witho
         stream_usage={},
         user_message_id=str(uuid4()),
         agent_message_id=agent_message_id,
-        message_refs=None,
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": agent_message_id,
+        },
         next_event_seq=1,
         persisted_block_count=0,
     )
@@ -595,10 +588,14 @@ async def test_persist_stream_block_update_inferrs_canonical_artifact_text_witho
         request=_build_persistence_request(transport="ws"),
     )
 
-    shared_stream = event_payload["artifactUpdate"]["metadata"]["shared"]["stream"]
-    assert shared_stream["messageId"] == agent_message_id
-    assert shared_stream["eventId"] == "stream:4"
-    assert shared_stream["seq"] == 1
+    assert event_payload["artifactUpdate"]["metadata"]["shared"]["stream"] == {
+        "eventId": "stream:4",
+        "seq": 4,
+    }
+    local_stream_context = event_payload["__hub_local_stream"]
+    assert local_stream_context["message_id"] == agent_message_id
+    assert local_stream_context["event_id"] == "stream:4"
+    assert local_stream_context["seq"] == 1
     updates = captured["updates"]
     assert isinstance(updates, list)
     assert len(updates) == 1
@@ -693,10 +690,19 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     assert state.next_event_seq == 4
     assert state.persisted_block_count == 1
     assert state.chunk_buffer == []
-    shared_stream = event_payload["artifactUpdate"]["metadata"]["shared"]["stream"]
-    assert shared_stream["messageId"] == str(state.message_refs["agent_message_id"])
-    assert shared_stream["eventId"] == "evt-opt"
-    assert shared_stream["seq"] == 3
+    assert event_payload["artifactUpdate"]["artifact"]["metadata"]["shared"][
+        "stream"
+    ] == {
+        "blockType": "text",
+        "messageId": "msg-opt",
+        "eventId": "evt-opt",
+    }
+    local_stream_context = event_payload["__hub_local_stream"]
+    assert local_stream_context["message_id"] == str(
+        state.message_refs["agent_message_id"]
+    )
+    assert local_stream_context["event_id"] == "evt-opt"
+    assert local_stream_context["seq"] == 3
 
 
 @pytest.mark.asyncio
@@ -774,12 +780,15 @@ async def test_persist_stream_block_update_preserves_canonical_message_events(
     assert "message" in event_payload
     assert event_payload["message"]["parts"] == [{"text": "root text"}]
     assert event_payload["message"]["metadata"]["shared"]["stream"] == {
-        "messageId": refs["agent_message_id"],
-        "eventId": f"{refs['agent_message_id']}:5",
-        "seq": 5,
         "blockType": "text",
-        "blockId": "msg-upstream-root:primary_text",
-        "laneId": "primary_text",
+        "op": "replace",
+    }
+    assert event_payload["__hub_local_stream"] == {
+        "message_id": refs["agent_message_id"],
+        "event_id": f"{refs['agent_message_id']}:5",
+        "seq": 5,
+        "block_id": "msg-upstream-root:primary_text",
+        "lane_id": "primary_text",
         "op": "replace",
     }
 
@@ -971,12 +980,17 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
     assert len(updates) == 1
     assert updates[0]["event_id"] == expected_event_id
     assert updates[0]["seq"] == 4
-    assert event_payload["artifactUpdate"]["metadata"]["shared"]["stream"] == {
-        "messageId": refs["agent_message_id"],
-        "eventId": expected_event_id,
+    assert event_payload["artifactUpdate"]["artifact"]["metadata"]["shared"][
+        "stream"
+    ] == {
+        "blockType": "text",
+    }
+    assert event_payload["__hub_local_stream"] == {
+        "message_id": refs["agent_message_id"],
+        "event_id": expected_event_id,
         "seq": 4,
-        "blockId": "stream:primary_text",
-        "laneId": "primary_text",
+        "block_id": "stream:primary_text",
+        "lane_id": "primary_text",
         "op": "append",
     }
     assert state.next_event_seq == 5

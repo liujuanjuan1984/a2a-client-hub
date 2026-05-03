@@ -119,7 +119,7 @@ Message id contract:
 - Structured command results may be persisted as `data` blocks and should render as first-class canonical history blocks rather than overlay text fallbacks.
 - `blocks:query` detail items include `messageId` and must match the target message before cache patching.
 - `tool_call` blocks may include a normalized `toolCall` view from backend (`name`, `status`, `callId`, `arguments`, `result`, `error`); frontend should render that stable field instead of parsing provider-private raw payloads.
-- Upstream A2A stream wrappers are consumed via canonical `messageId` / `eventId` / `seq` metadata only; the hub then emits stable local `message_id` / `event_id` / `seq` identities for frontend state and duplicate suppression.
+- Frontend stream rendering reads only the backend `hub` envelope (`hub.version`, `hub.streamBlock`, `hub.runtimeStatus`, `hub.sessionMeta`); upstream A2A `artifactUpdate` / `statusUpdate` payloads remain available for diagnostics but are no longer parsed on the client.
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
 - Message status semantics are preserved from history payloads (`streaming`, `done`, `error`, `interrupted`).
 - The Hub Assistant is injected into the normal agent catalog and reuses the existing permission interrupt card: read-only runs can return a `permission` interrupt, and the same UI resolves it through the dedicated hub-assistant reply endpoint.

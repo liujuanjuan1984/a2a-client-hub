@@ -3,17 +3,12 @@ import {
   coerceStringArray,
   pickFirstArray,
   pickInt,
-  pickInteger,
   pickNestedRawString,
   pickRawString,
   pickString,
   resolveNestedValue,
 } from "./chatUtilsShared";
-
-import {
-  getPreferredInterruptMetadata,
-  getPreferredSessionMetadata,
-} from "@/lib/sharedMetadata";
+import { extractHubStreamEnvelope } from "./hubStreamEnvelope";
 
 export type StreamMissingParam = {
   name: string;
@@ -83,18 +78,6 @@ export const DEFAULT_RUNTIME_STATUS_CONTRACT: RuntimeStatusContract = {
   },
   passthroughUnknown: true,
 };
-
-const resolveStatusUpdateBody = (
-  data: Record<string, unknown>,
-): Record<string, unknown> | null => asRecord(data.statusUpdate);
-
-const resolveCanonicalStreamBody = (
-  data: Record<string, unknown>,
-): Record<string, unknown> | null =>
-  asRecord(data.artifactUpdate) ??
-  asRecord(data.message) ??
-  asRecord(data.statusUpdate) ??
-  asRecord(data.task);
 
 type InterruptQuestionOption = {
   label: string;
@@ -212,35 +195,16 @@ const coerceMissingParams = (value: unknown): StreamMissingParam[] | null => {
 };
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
-  const body = resolveCanonicalStreamBody(data) ?? data;
-  const session = getPreferredSessionMetadata(body);
-  const properties = asRecord(body.properties);
-  const metadata = asRecord(body.metadata);
-  const shared = asRecord(metadata?.shared);
-  const sharedStream = asRecord(shared?.stream);
-  const externalSessionId = pickString(session, ["id"]) ?? undefined;
-  const rawProvider = pickString(session, ["provider"]);
-  const provider = rawProvider?.trim().toLowerCase() ?? undefined;
+  const sessionMeta = extractHubStreamEnvelope(data)?.sessionMeta ?? null;
+  const provider = pickString(sessionMeta, ["provider"]) ?? undefined;
+  const externalSessionId =
+    pickString(sessionMeta, ["externalSessionId"]) ?? undefined;
   const streamThreadId =
-    pickString(properties, ["threadId"]) ??
-    pickString(sharedStream, ["threadId"]) ??
-    pickString(body, ["threadId"]) ??
-    undefined;
-  const streamTurnId =
-    pickString(properties, ["turnId"]) ??
-    pickString(sharedStream, ["turnId"]) ??
-    pickString(body, ["turnId"]) ??
-    undefined;
-  const transport =
-    typeof body.transport === "string"
-      ? body.transport
-      : typeof data.transport === "string"
-        ? data.transport
-        : undefined;
-  const inputModes =
-    coerceStringArray(body.inputModes) ?? coerceStringArray(data.inputModes);
-  const outputModes =
-    coerceStringArray(body.outputModes) ?? coerceStringArray(data.outputModes);
+    pickString(sessionMeta, ["streamThreadId"]) ?? undefined;
+  const streamTurnId = pickString(sessionMeta, ["streamTurnId"]) ?? undefined;
+  const transport = pickString(sessionMeta, ["transport"]) ?? undefined;
+  const inputModes = coerceStringArray(sessionMeta?.inputModes);
+  const outputModes = coerceStringArray(sessionMeta?.outputModes);
 
   return {
     provider,
@@ -380,11 +344,8 @@ export const isInputRequiredRuntimeState = (
 };
 
 const extractRuntimeInterrupt = (
-  data: Record<string, unknown>,
-  runtimeState: string,
-  contract?: RuntimeStatusContract | null,
+  interrupt: Record<string, unknown> | null,
 ): RuntimeInterrupt | null => {
-  const interrupt = getPreferredInterruptMetadata(data);
   if (!interrupt) {
     return null;
   }
@@ -400,9 +361,7 @@ const extractRuntimeInterrupt = (
     return null;
   }
 
-  const phase =
-    pickString(interrupt, ["phase"])?.toLowerCase() ??
-    (isInputRequiredRuntimeState(runtimeState, contract) ? "asked" : null);
+  const phase = pickString(interrupt, ["phase"])?.toLowerCase();
   if (phase === "resolved") {
     const resolution = pickString(interrupt, ["resolution"])?.toLowerCase();
     if (
@@ -494,60 +453,31 @@ export const extractRuntimeStatusEvent = (
   data: Record<string, unknown>,
   contract?: RuntimeStatusContract | null,
 ): RuntimeStatusEvent | null => {
-  const statusUpdate = resolveStatusUpdateBody(data);
-  if (!statusUpdate) {
+  const runtimeStatus = extractHubStreamEnvelope(data)?.runtimeStatus;
+  if (!runtimeStatus) {
     return null;
   }
-  const status = statusUpdate.status as { state?: unknown } | undefined;
-  if (status && typeof status.state === "string" && status.state.trim()) {
-    const metadata =
-      statusUpdate.metadata &&
-      typeof statusUpdate.metadata === "object" &&
-      !Array.isArray(statusUpdate.metadata)
-        ? (statusUpdate.metadata as Record<string, unknown>)
-        : null;
-    const shared =
-      metadata?.shared &&
-      typeof metadata.shared === "object" &&
-      !Array.isArray(metadata.shared)
-        ? (metadata.shared as Record<string, unknown>)
-        : null;
-    const sharedStream =
-      shared?.stream &&
-      typeof shared.stream === "object" &&
-      !Array.isArray(shared.stream)
-        ? (shared.stream as Record<string, unknown>)
-        : null;
-    const rawCompletionPhase =
-      typeof sharedStream?.completionPhase === "string"
-        ? sharedStream.completionPhase
-        : null;
-    const completionPhase =
-      rawCompletionPhase?.trim().toLowerCase() === "persisted"
-        ? "persisted"
-        : null;
-    const messageId =
-      typeof sharedStream?.messageId === "string" &&
-      sharedStream.messageId.trim().length > 0
-        ? sharedStream.messageId.trim()
-        : null;
-    const resolvedContract = resolveRuntimeStatusContract(contract);
-    const state = normalizeRuntimeState(status.state, resolvedContract);
-    const isFinal = resolvedContract.terminalStates
-      .map((item) => normalizeRuntimeState(item, resolvedContract))
-      .includes(state);
-    return {
-      state,
-      isFinal,
-      interrupt: extractRuntimeInterrupt(statusUpdate, state, resolvedContract),
-      seq:
-        pickInteger(sharedStream, ["seq", "sequence"]) ??
-        pickInteger(metadata, ["seq"]),
-      completionPhase,
-      messageId,
-    };
+  const rawState = pickString(runtimeStatus, ["state"]);
+  if (!rawState) {
+    return null;
   }
-  return null;
+  const resolvedContract = resolveRuntimeStatusContract(contract);
+  const state = normalizeRuntimeState(rawState, resolvedContract);
+  return {
+    state,
+    isFinal:
+      runtimeStatus.isFinal === true ||
+      resolvedContract.terminalStates
+        .map((item) => normalizeRuntimeState(item, resolvedContract))
+        .includes(state),
+    interrupt: extractRuntimeInterrupt(asRecord(runtimeStatus.interrupt)),
+    seq: typeof runtimeStatus.seq === "number" ? runtimeStatus.seq : null,
+    completionPhase:
+      pickString(runtimeStatus, ["completionPhase"]) === "persisted"
+        ? "persisted"
+        : null,
+    messageId: pickString(runtimeStatus, ["messageId"]),
+  };
 };
 
 export const extractStreamErrorDetails = (

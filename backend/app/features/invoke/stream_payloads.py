@@ -22,6 +22,16 @@ from app.features.invoke.shared_metadata import (
     extract_preferred_interrupt_metadata,
     merge_shared_metadata_sections,
 )
+from app.features.invoke.stream_field_aliases import (
+    BASE_SEQ_KEYS,
+    BLOCK_ID_KEYS,
+    BLOCK_TYPE_KEYS,
+    EVENT_ID_KEYS,
+    LANE_ID_KEYS,
+    MESSAGE_ID_KEYS,
+    SEQ_KEYS,
+    TASK_ID_KEYS,
+)
 from app.features.invoke.tool_call_view import build_tool_call_view
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.integrations.a2a_runtime_status_contract import (
@@ -35,6 +45,8 @@ _STREAM_RESPONSE_FIELD_TO_KIND = (
     ("message", "message"),
     ("task", "task"),
 )
+_HUB_STREAM_BLOCK_TYPES = frozenset({"text", "reasoning", "tool_call"})
+_HUB_STREAM_OPERATIONS = frozenset({"append", "replace", "finalize"})
 
 
 @dataclass(frozen=True)
@@ -129,6 +141,57 @@ def resolve_stream_content_envelope(
     )
 
 
+def _extract_stream_chunk_from_hub_envelope(
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    hub = _dict_field(payload, "hub")
+    if hub.get("version") != "v1":
+        return None
+    stream_block = _dict_field(hub, "streamBlock")
+    if not stream_block:
+        return None
+
+    block_type = _pick_non_empty_str(stream_block, ("blockType",))
+    operation = _pick_non_empty_str(stream_block, ("op",))
+    delta = stream_block.get("delta")
+    if (
+        block_type not in _HUB_STREAM_BLOCK_TYPES
+        or operation not in _HUB_STREAM_OPERATIONS
+        or not isinstance(delta, str)
+    ):
+        return None
+    if not delta and operation != "finalize":
+        return None
+
+    stream_chunk: dict[str, Any] = {
+        "event_id": _pick_non_empty_str(stream_block, ("eventId",)),
+        "seq": pick_first_int((stream_block,), ("seq",)),
+        "message_id": _pick_non_empty_str(stream_block, ("messageId",)),
+        "artifact_id": _pick_non_empty_str(stream_block, ("artifactId",)),
+        "block_id": _pick_non_empty_str(stream_block, ("blockId",)),
+        "lane_id": _pick_non_empty_str(stream_block, ("laneId",)),
+        "block_type": block_type,
+        "op": operation,
+        "content": delta,
+        "base_seq": pick_first_int((stream_block,), ("baseSeq",)),
+        "append": (
+            bool(stream_block.get("append"))
+            if isinstance(stream_block.get("append"), bool)
+            else operation == "append"
+        ),
+        "is_finished": (
+            bool(stream_block.get("done"))
+            if isinstance(stream_block.get("done"), bool)
+            else operation == "finalize"
+        ),
+        "source": _pick_non_empty_str(stream_block, ("source",)),
+    }
+    tool_call = _dict_field(stream_block, "toolCall")
+    if tool_call:
+        stream_chunk["tool_call"] = tool_call
+    return stream_chunk
+
+
 def extract_stream_text_from_parts(parts: Any) -> str:
     if not isinstance(parts, list):
         return ""
@@ -210,18 +273,17 @@ def extract_artifact_type(
     event_metadata = _event_metadata(payload)
     shared_stream = extract_shared_stream_metadata(payload, artifact)
 
-    raw = shared_stream.get("blockType")
-    if not isinstance(raw, str) or not raw.strip():
-        raw = metadata.get("blockType")
-    if not isinstance(raw, str) or not raw.strip():
-        raw = event_metadata.get("blockType")
+    raw = pick_first_non_empty_str(
+        (shared_stream, metadata, event_metadata),
+        BLOCK_TYPE_KEYS,
+    )
 
-    if not isinstance(raw, str) or not raw.strip():
+    if raw is None:
         if kind in {"artifact-update", "message", "status-update"}:
             return _infer_canonical_block_type(artifact.get("parts"))
         return None
 
-    normalized = raw.strip().lower()
+    normalized = raw.lower()
     if normalized in {"text", "reasoning", "tool_call"}:
         return normalized
     return None
@@ -258,7 +320,7 @@ def extract_artifact_id(
         event_metadata,
         shared_stream,
     ):
-        artifact_id = _pick_non_empty_str(candidate, ("artifactId",))
+        artifact_id = _pick_non_empty_str(candidate, ("artifactId", "artifact_id"))
         if artifact_id is not None:
             return artifact_id
     return None
@@ -291,7 +353,7 @@ def extract_message_id(
             shared_stream,
             body,
         ),
-        ("messageId",),
+        MESSAGE_ID_KEYS,
     )
     if message_id is not None:
         return message_id
@@ -306,7 +368,7 @@ def extract_message_id(
             event_metadata,
             shared_stream,
         ),
-        ("taskId",),
+        TASK_ID_KEYS,
     ) or _infer_task_id_from_artifact_id(
         artifact_id
         if artifact_id is not None
@@ -371,7 +433,7 @@ def extract_block_id(
             event_metadata,
             artifact,
         ),
-        ("blockId",),
+        BLOCK_ID_KEYS,
     )
     if block_id is not None:
         return block_id
@@ -399,7 +461,7 @@ def extract_lane_id(
             event_metadata,
             artifact,
         ),
-        ("laneId",),
+        LANE_ID_KEYS,
     )
     if lane_id is not None:
         return lane_id
@@ -421,11 +483,11 @@ def extract_block_base_seq(
             event_metadata,
             artifact,
         ),
-        ("baseSeq",),
+        BASE_SEQ_KEYS,
     )
 
 
-def extract_stream_chunk_from_serialized_event(
+def extract_raw_stream_chunk_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
     envelope = resolve_stream_content_envelope(payload)
@@ -456,7 +518,7 @@ def extract_stream_chunk_from_serialized_event(
             shared_stream,
             body,
         ),
-        ("eventId",),
+        EVENT_ID_KEYS,
     )
     delta = extract_stream_content_from_parts(
         artifact.get("parts"), block_type=block_type
@@ -475,7 +537,7 @@ def extract_stream_chunk_from_serialized_event(
             event_metadata,
             shared_stream,
         ),
-        ("seq",),
+        SEQ_KEYS,
     )
     source = extract_artifact_source(payload, artifact)
     artifact_id = extract_artifact_id(payload, artifact)
@@ -505,6 +567,15 @@ def extract_stream_chunk_from_serialized_event(
         if tool_call is not None:
             stream_chunk["tool_call"] = tool_call
     return stream_chunk
+
+
+def extract_stream_chunk_from_serialized_event(
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    hub_stream_chunk = _extract_stream_chunk_from_hub_envelope(payload)
+    if hub_stream_chunk is not None:
+        return hub_stream_chunk
+    return extract_raw_stream_chunk_from_serialized_event(payload)
 
 
 def analyze_stream_chunk_contract(

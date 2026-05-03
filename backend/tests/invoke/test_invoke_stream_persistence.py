@@ -9,6 +9,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.conversation_upstream_task import ConversationUpstreamTask
+from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.service_types import StreamFinishReason, StreamOutcome
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
@@ -18,7 +19,6 @@ from app.features.invoke.stream_persistence import (
     persist_local_outcome,
     persist_stream_block_update,
     resolve_invoke_idempotency_key,
-    rewrite_stream_event_contract,
 )
 from app.features.sessions.service import session_hub_service
 from app.utils.idempotency_key import IDEMPOTENCY_KEY_MAX_LENGTH
@@ -92,14 +92,14 @@ def test_build_stream_metadata_from_outcome_keeps_identity_and_usage() -> None:
     }
 
 
-def test_rewrite_stream_event_contract_copies_canonical_block_fields() -> None:
+def test_attach_local_stream_context_stores_internal_overlay() -> None:
     payload = {
         "artifactUpdate": {
             "artifact": {"metadata": {}, "parts": [{"text": "draft"}]},
         }
     }
 
-    rewrite_stream_event_contract(
+    attach_local_stream_context(
         payload,
         local_message_id="msg-local-1",
         event_id="evt-local-1",
@@ -112,14 +112,17 @@ def test_rewrite_stream_event_contract_copies_canonical_block_fields() -> None:
         },
     )
 
-    assert payload["artifactUpdate"]["metadata"]["shared"]["stream"] == {
-        "messageId": "msg-local-1",
-        "eventId": "evt-local-1",
+    assert payload["artifactUpdate"] == {
+        "artifact": {"metadata": {}, "parts": [{"text": "draft"}]},
+    }
+    assert payload["__hub_local_stream"] == {
+        "message_id": "msg-local-1",
+        "event_id": "evt-local-1",
         "seq": 7,
-        "blockId": "block-text-main",
-        "laneId": "primary_text",
+        "block_id": "block-text-main",
+        "lane_id": "primary_text",
         "op": "replace",
-        "baseSeq": 6,
+        "base_seq": 6,
     }
 
 
@@ -538,6 +541,105 @@ async def test_persist_stream_block_update_accepts_status_message_content(
     )
     assert [block.block_type for block in persisted_blocks] == ["text"]
     assert persisted_blocks[0].content == "hello from status message"
+
+
+@pytest.mark.asyncio
+async def test_persist_stream_block_update_accepts_snake_case_stream_hints(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Snake Case Stream Hints",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    state = _FakeState(
+        local_session_id=thread.id,
+        local_source="manual",
+        context_id="ctx-stream-snake",
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        next_event_seq=1,
+    )
+
+    def _session_factory() -> _SessionContext:
+        return _SessionContext(async_db_session)
+
+    async def _commit(_db) -> None:
+        await async_db_session.flush()
+
+    async def _ensure_headers_adapter(**kwargs) -> None:
+        await ensure_local_message_headers(
+            **kwargs,
+            session_factory=_session_factory,
+            commit_fn=_commit,
+            session_hub=session_hub_service,
+        )
+
+    event_payload = {
+        "artifactUpdate": {
+            "artifact": {
+                "parts": [{"text": "thinking"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "reasoning",
+                            "message_id": "msg-stream-snake-1",
+                            "event_id": "evt-stream-snake-1",
+                            "sequence": 1,
+                            "op": "append",
+                            "source": "reasoning_part_update",
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    await persist_stream_block_update(
+        state=state,
+        event_payload=event_payload,
+        request=_build_request(user_id=user.id),
+        session_factory=_session_factory,
+        commit_fn=_commit,
+        session_hub=session_hub_service,
+        ensure_headers_fn=_ensure_headers_adapter,
+    )
+
+    await flush_stream_buffer(
+        state=state,
+        user_id=user.id,
+        session_factory=_session_factory,
+        commit_fn=_commit,
+        session_hub=session_hub_service,
+    )
+
+    agent_message = await async_db_session.scalar(
+        select(AgentMessage).where(
+            AgentMessage.conversation_id == thread.id,
+            AgentMessage.sender == "agent",
+        )
+    )
+    assert agent_message is not None
+
+    persisted_blocks = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_message.id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    )
+    assert [block.block_type for block in persisted_blocks] == ["reasoning"]
+    assert persisted_blocks[0].content == "thinking"
 
 
 @pytest.mark.asyncio

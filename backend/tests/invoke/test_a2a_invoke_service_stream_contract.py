@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.stream_payloads import resolve_stream_content_envelope
 from tests.invoke.a2a_invoke_service_support import (
     _DumpableEvent,
@@ -56,6 +57,30 @@ def test_extract_stream_identity_hints_from_serialized_event():
         "upstream_message_id": "msg-1",
         "upstream_event_id": "evt-1",
         "upstream_event_seq": 9,
+    }
+
+
+def test_extract_stream_identity_hints_accepts_snake_case_stream_fields():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "artifactUpdate": {
+                "artifact": {"parts": [{"text": "noop"}]},
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "message_id": "msg-snake-1",
+                            "event_id": "evt-snake-1",
+                            "sequence": 13,
+                        }
+                    }
+                },
+            }
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-snake-1",
+        "upstream_event_id": "evt-snake-1",
+        "upstream_event_seq": 13,
     }
 
 
@@ -249,7 +274,7 @@ def test_extract_stream_identity_hints_reads_shared_stream_metadata():
     assert hints["upstream_event_seq"] == 12
 
 
-def test_extract_stream_identity_hints_ignores_legacy_sequence_alias():
+def test_extract_stream_identity_hints_accepts_sequence_alias():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
             "artifactUpdate": {
@@ -269,7 +294,7 @@ def test_extract_stream_identity_hints_ignores_legacy_sequence_alias():
 
     assert hints["upstream_message_id"] == "msg-legacy-sequence"
     assert hints["upstream_event_id"] == "evt-legacy-sequence"
-    assert "upstream_event_seq" not in hints
+    assert hints["upstream_event_seq"] == 12
 
 
 def test_extract_stream_chunk_reads_canonical_event_and_message_ids():
@@ -478,7 +503,7 @@ def test_extract_stream_chunk_inferrs_artifact_text_payloads_without_explicit_bl
     assert chunk["is_finished"] is False
 
 
-def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
+def test_ensure_outbound_stream_contract_attaches_hub_message_contract_only():
     payload = {
         "message": {
             "messageId": "msg-root-2",
@@ -492,17 +517,20 @@ def test_ensure_outbound_stream_contract_adds_nested_shared_stream_metadata():
         event_sequence=4,
     )
 
-    shared_stream = payload["message"]["metadata"]["shared"]["stream"]
-    assert shared_stream["seq"] == 4
-    assert shared_stream["eventId"] == "msg-root-2:4"
-    assert shared_stream["blockType"] == "text"
-    assert shared_stream["op"] == "replace"
+    assert "metadata" not in payload["message"]
     assert payload["message"]["parts"] == [{"text": "render me"}]
     assert payload["message"]["role"] == "ROLE_AGENT"
     assert payload["message"]["messageId"] == "msg-root-2"
+    assert payload["hub"]["version"] == "v1"
+    assert payload["hub"]["eventKind"] == "message"
+    assert payload["hub"]["streamBlock"]["seq"] == 4
+    assert payload["hub"]["streamBlock"]["eventId"] == "seq:msg-root-2:4"
+    assert payload["hub"]["streamBlock"]["messageId"] == "msg-root-2"
+    assert payload["hub"]["streamBlock"]["blockType"] == "text"
+    assert payload["hub"]["streamBlock"]["op"] == "replace"
 
 
-def test_ensure_outbound_stream_contract_adds_shared_stream_metadata_for_status_message():
+def test_ensure_outbound_stream_contract_attaches_hub_status_contract_only():
     payload = {
         "statusUpdate": {
             "status": {
@@ -521,15 +549,98 @@ def test_ensure_outbound_stream_contract_adds_shared_stream_metadata_for_status_
         event_sequence=5,
     )
 
-    shared_stream = payload["statusUpdate"]["metadata"]["shared"]["stream"]
-    assert shared_stream["seq"] == 5
-    assert shared_stream["messageId"] == "msg-status-2"
-    assert shared_stream["eventId"] == "msg-status-2:5"
-    assert shared_stream["blockType"] == "text"
-    assert shared_stream["op"] == "replace"
+    assert "metadata" not in payload["statusUpdate"]
     assert payload["statusUpdate"]["status"]["message"]["parts"] == [
         {"text": "render status message"}
     ]
+    assert payload["hub"]["version"] == "v1"
+    assert payload["hub"]["eventKind"] == "status-update"
+    assert payload["hub"]["streamBlock"]["seq"] == 5
+    assert payload["hub"]["streamBlock"]["eventId"] == "seq:msg-status-2:5"
+    assert payload["hub"]["streamBlock"]["messageId"] == "msg-status-2"
+    assert payload["hub"]["runtimeStatus"]["state"] == "working"
+    assert payload["hub"]["runtimeStatus"]["isFinal"] is False
+    assert payload["hub"]["runtimeStatus"]["seq"] == 5
+    assert payload["hub"]["runtimeStatus"]["messageId"] == "msg-status-2"
+
+
+def test_ensure_outbound_stream_contract_exposes_fallback_message_identity_in_hub():
+    payload = {
+        "artifactUpdate": {
+            "taskId": "task-fallback-1",
+            "append": True,
+            "artifact": {
+                "artifactId": "task-fallback-1:stream:text",
+                "parts": [{"text": "hello"}],
+            },
+        }
+    }
+
+    a2a_invoke_service._ensure_outbound_stream_contract(
+        payload,
+        event_sequence=6,
+    )
+
+    assert payload["hub"]["streamBlock"]["messageId"] == "task:task-fallback-1"
+    assert payload["hub"]["streamBlock"]["messageIdSource"] == "task_fallback"
+    assert payload["hub"]["streamBlock"]["eventIdSource"] == "fallback_seq"
+    assert payload["hub"]["streamBlock"]["seq"] == 6
+    assert payload["hub"]["streamBlock"]["eventId"] == "seq:task:task-fallback-1:6"
+
+
+def test_ensure_outbound_stream_contract_consumes_local_stream_overlay():
+    payload = {
+        "artifactUpdate": {
+            "append": True,
+            "artifact": {
+                "artifactId": "task-local-1:stream:text",
+                "parts": [{"text": "hello"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "blockType": "text",
+                            "messageId": "msg-upstream-local-1",
+                            "eventId": "evt-upstream-local-1",
+                            "seq": 9,
+                        }
+                    }
+                },
+            },
+        }
+    }
+    attach_local_stream_context(
+        payload,
+        local_message_id="msg-local-1",
+        event_id="evt-local-1",
+        seq=3,
+        stream_block={
+            "block_id": "block-local-1",
+            "lane_id": "primary_text",
+            "op": "replace",
+            "base_seq": 2,
+        },
+    )
+
+    a2a_invoke_service._ensure_outbound_stream_contract(
+        payload,
+        event_sequence=11,
+    )
+
+    assert "__hub_local_stream" not in payload
+    assert payload["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"] == {
+        "blockType": "text",
+        "messageId": "msg-upstream-local-1",
+        "eventId": "evt-upstream-local-1",
+        "seq": 9,
+    }
+    assert payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
+    assert payload["hub"]["streamBlock"]["messageIdSource"] == "local_persistence"
+    assert payload["hub"]["streamBlock"]["eventId"] == "evt-local-1"
+    assert payload["hub"]["streamBlock"]["eventIdSource"] == "local_persistence"
+    assert payload["hub"]["streamBlock"]["seq"] == 3
+    assert payload["hub"]["streamBlock"]["blockId"] == "block-local-1"
+    assert payload["hub"]["streamBlock"]["baseSeq"] == 2
+    assert payload["hub"]["streamBlock"]["op"] == "replace"
 
 
 def test_serialize_stream_event_keeps_canonical_message_payload_before_validation(

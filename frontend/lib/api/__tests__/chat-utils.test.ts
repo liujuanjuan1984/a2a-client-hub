@@ -6,6 +6,22 @@ import {
   normalizeRuntimeState,
 } from "@/lib/api/chat-utils";
 
+const withHubRuntimeStatus = (runtimeStatus: Record<string, unknown>) => ({
+  hub: {
+    version: "v1",
+    eventKind: "status-update",
+    runtimeStatus,
+  },
+});
+
+const withHubSessionMeta = (sessionMeta: Record<string, unknown>) => ({
+  hub: {
+    version: "v1",
+    eventKind: "artifact-update",
+    sessionMeta,
+  },
+});
+
 describe("runtime status contract", () => {
   it("normalizes declared runtime status aliases", () => {
     expect(normalizeRuntimeState("input_required")).toBe("input-required");
@@ -40,11 +56,16 @@ describe("runtime status contract", () => {
 
   it("canonicalizes runtime status events", () => {
     expect(
-      extractRuntimeStatusEvent({
-        statusUpdate: {
-          status: { state: "TASK_STATE_INPUT_REQUIRED" },
-        },
-      }),
+      extractRuntimeStatusEvent(
+        withHubRuntimeStatus({
+          state: "input-required",
+          isFinal: true,
+          interrupt: null,
+          seq: null,
+          completionPhase: null,
+          messageId: null,
+        }),
+      ),
     ).toEqual({
       state: "input-required",
       isFinal: true,
@@ -55,20 +76,36 @@ describe("runtime status contract", () => {
     });
   });
 
-  it("extracts shared stream turn identity from lifecycle event properties", () => {
+  it("reads canonical runtime status fields from the hub envelope", () => {
     expect(
-      extractSessionMeta({
-        artifactUpdate: {
-          metadata: {
-            shared: {
-              stream: {
-                threadId: "thread-1",
-                turnId: "turn-2",
-              },
-            },
-          },
-        },
-      }),
+      extractRuntimeStatusEvent(
+        withHubRuntimeStatus({
+          state: "input-required",
+          isFinal: true,
+          interrupt: null,
+          seq: 7,
+          completionPhase: null,
+          messageId: "msg-status-1",
+        }),
+      ),
+    ).toEqual({
+      state: "input-required",
+      isFinal: true,
+      interrupt: null,
+      seq: 7,
+      completionPhase: null,
+      messageId: "msg-status-1",
+    });
+  });
+
+  it("extracts session metadata from the hub envelope", () => {
+    expect(
+      extractSessionMeta(
+        withHubSessionMeta({
+          streamThreadId: "thread-1",
+          streamTurnId: "turn-2",
+        }),
+      ),
     ).toEqual({
       provider: undefined,
       externalSessionId: undefined,

@@ -14,14 +14,12 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from app.features.invoke import (
+    hub_stream_contract,
     service_streaming_consume,
     service_streaming_transport,
     stream_payloads,
 )
-from app.features.invoke.payload_helpers import (
-    pick_first_non_empty_str,
-    pick_non_empty_str,
-)
+from app.features.invoke.hub_stream_local_context import consume_local_stream_context
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamErrorPayload,
@@ -445,84 +443,15 @@ class A2AInvokeStreamingRuntime:
         body = content_envelope.event_body
         if not body:
             return
+        upstream_shared_stream = dict(content_envelope.shared_stream)
+        local_stream_context = consume_local_stream_context(payload)
 
-        metadata = body.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-            body["metadata"] = metadata
-
-        shared = metadata.get("shared")
-        if not isinstance(shared, dict):
-            shared = {}
-            metadata["shared"] = shared
-
-        shared_stream = shared.get("stream")
-        if not isinstance(shared_stream, dict):
-            shared_stream = {}
-            shared["stream"] = shared_stream
-
-        shared_stream["seq"] = event_sequence
-
-        artifact = content_envelope.artifact
-        artifact_metadata = content_envelope.artifact_metadata
-        artifact_shared_stream = content_envelope.shared_stream
-        message_id = pick_first_non_empty_str(
-            (
-                body,
-                artifact_shared_stream,
-                artifact,
-                artifact_metadata,
-                metadata,
-                shared_stream,
-            ),
-            ("messageId",),
+        hub_stream_contract.attach_hub_stream_contract(
+            payload,
+            upstream_shared_stream=upstream_shared_stream,
+            local_stream_context=local_stream_context,
+            local_event_sequence=event_sequence,
         )
-
-        event_id = pick_first_non_empty_str(
-            (
-                body,
-                artifact_shared_stream,
-                artifact,
-                artifact_metadata,
-                metadata,
-            ),
-            ("eventId",),
-        )
-
-        fallback_event_id = (
-            f"{message_id}:{event_sequence}"
-            if message_id
-            else f"stream:{event_sequence}"
-        )
-        if event_id == f"stream:{event_sequence}" and message_id is not None:
-            event_id = None
-        shared_event_id = pick_non_empty_str(shared_stream, ("eventId",))
-        if event_id is None and shared_event_id not in (
-            None,
-            "",
-            fallback_event_id,
-            f"stream:{event_sequence}",
-        ):
-            event_id = shared_event_id
-
-        if message_id is not None:
-            shared_stream["messageId"] = message_id
-        shared_stream["eventId"] = event_id or fallback_event_id
-        if kind in {"message", "status-update"}:
-            if (
-                not isinstance(shared_stream.get("blockType"), str)
-                or not str(shared_stream.get("blockType")).strip()
-            ):
-                parts = artifact.get("parts")
-                if stream_payloads.extract_stream_data_from_parts(parts):
-                    shared_stream["blockType"] = "tool_call"
-                elif stream_payloads.extract_stream_text_from_parts(parts):
-                    shared_stream["blockType"] = "text"
-            if (
-                not isinstance(shared_stream.get("op"), str)
-                or not str(shared_stream.get("op")).strip()
-            ):
-                shared_stream["op"] = "replace"
 
     @classmethod
     def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:
