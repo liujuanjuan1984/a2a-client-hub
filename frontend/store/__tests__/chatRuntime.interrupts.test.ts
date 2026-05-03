@@ -62,20 +62,19 @@ const buildStatusUpdate = ({
       },
     },
   },
-  hub: {
-    version: "v1",
-    eventKind: "status-update",
-    runtimeStatus: {
-      state: normalizeRuntimeStateToken(state),
-      isFinal:
-        state === "TASK_STATE_COMPLETED" ||
-        state === "TASK_STATE_FAILED" ||
-        state === "TASK_STATE_INPUT_REQUIRED",
-      interrupt: buildCanonicalInterrupt(interrupt),
-      seq: seq ?? null,
-      completionPhase: completionPhase ?? null,
-      messageId: messageId ?? null,
-    },
+  version: "v1",
+  runtimeStatus: {
+    state: normalizeRuntimeStateToken(state),
+    isFinal:
+      state === "TASK_STATE_COMPLETED" ||
+      state === "TASK_STATE_FAILED" ||
+      state === "TASK_STATE_INPUT_REQUIRED",
+    ...(buildCanonicalInterrupt(interrupt)
+      ? { interrupt: buildCanonicalInterrupt(interrupt) }
+      : {}),
+    ...(seq !== undefined ? { seq } : {}),
+    ...(completionPhase ? { completionPhase } : {}),
+    ...(messageId ? { messageId } : {}),
   },
 });
 
@@ -110,28 +109,24 @@ const buildArtifactUpdate = ({
       },
     },
   },
-  hub: {
-    version: "v1",
-    eventKind: "artifact-update",
-    streamBlock: {
-      eventId,
-      eventIdSource: "upstream",
-      messageIdSource: "upstream",
-      seq,
-      taskId: agentMessageId,
-      artifactId: `${agentMessageId}:stream:${seq}`,
-      blockId: `${agentMessageId}:primary_text`,
-      laneId: "primary_text",
-      blockType: "text",
-      op: "append",
-      baseSeq: null,
-      source,
-      messageId: agentMessageId,
-      role: "agent",
-      delta: text,
-      append: true,
-      done: false,
-    },
+  version: "v1",
+  streamBlock: {
+    eventId,
+    eventIdSource: "upstream",
+    messageIdSource: "upstream",
+    seq,
+    taskId: agentMessageId,
+    artifactId: `${agentMessageId}:stream:${seq}`,
+    blockId: `${agentMessageId}:primary_text`,
+    laneId: "primary_text",
+    blockType: "text",
+    op: "append",
+    source,
+    messageId: agentMessageId,
+    role: "agent",
+    delta: text,
+    append: true,
+    done: false,
   },
 });
 

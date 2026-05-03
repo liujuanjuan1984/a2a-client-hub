@@ -1,4 +1,4 @@
-"""Stable backend-to-frontend stream contract for Hub clients."""
+"""Stable backend-to-frontend stream contract for client consumers."""
 
 from __future__ import annotations
 
@@ -30,6 +30,19 @@ from app.utils.payload_extract import extract_provider_and_external_session_id
 
 _HUB_STREAM_VERSION = "v1"
 _VALID_EVENT_KINDS = frozenset({"artifact-update", "message", "status-update", "task"})
+
+
+def _compact_payload(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        compacted: dict[str, Any] = {}
+        for key, nested_value in value.items():
+            if nested_value is None:
+                continue
+            compacted[str(key)] = _compact_payload(nested_value)
+        return compacted
+    if isinstance(value, list):
+        return [_compact_payload(item) for item in value]
+    return value
 
 
 def _coerce_string_list(value: Any) -> list[str] | None:
@@ -448,10 +461,7 @@ def attach_hub_stream_contract(
     if kind not in _VALID_EVENT_KINDS:
         return
 
-    hub_payload: dict[str, Any] = {
-        "version": _HUB_STREAM_VERSION,
-        "eventKind": kind,
-    }
+    contract_payload: dict[str, Any] = {"version": _HUB_STREAM_VERSION}
     stream_block = _build_stream_block(
         payload,
         upstream_shared_stream=upstream_shared_stream,
@@ -459,14 +469,29 @@ def attach_hub_stream_contract(
         local_event_sequence=local_event_sequence,
     )
     if stream_block is not None:
-        hub_payload["streamBlock"] = stream_block
+        contract_payload["streamBlock"] = stream_block
     runtime_status = _build_runtime_status(
         payload,
         local_event_sequence=local_event_sequence,
     )
     if runtime_status is not None:
-        hub_payload["runtimeStatus"] = runtime_status
+        contract_payload["runtimeStatus"] = runtime_status
     session_meta = _build_session_meta(payload)
     if session_meta is not None:
-        hub_payload["sessionMeta"] = session_meta
-    payload["hub"] = hub_payload
+        contract_payload["sessionMeta"] = session_meta
+    payload.update(_compact_payload(contract_payload))
+
+
+def project_frontend_stream_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if payload.get("version") != _HUB_STREAM_VERSION:
+        return None
+
+    projected_payload: dict[str, Any] = {"version": _HUB_STREAM_VERSION}
+    for field_name in ("streamBlock", "runtimeStatus", "sessionMeta"):
+        field_value = _dict_field(payload, field_name)
+        if field_value:
+            projected_payload[field_name] = _compact_payload(field_value)
+
+    if len(projected_payload) == 1:
+        return None
+    return projected_payload

@@ -44,20 +44,15 @@ const buildStatusUpdate = ({
       },
     },
   },
-  hub: {
-    version: "v1",
-    eventKind: "status-update",
-    runtimeStatus: {
-      state: normalizeRuntimeStateToken(state),
-      isFinal:
-        state === "TASK_STATE_COMPLETED" ||
-        state === "TASK_STATE_FAILED" ||
-        state === "TASK_STATE_INPUT_REQUIRED",
-      interrupt: null,
-      seq: null,
-      completionPhase: completionPhase ?? null,
-      messageId: messageId ?? null,
-    },
+  version: "v1",
+  runtimeStatus: {
+    state: normalizeRuntimeStateToken(state),
+    isFinal:
+      state === "TASK_STATE_COMPLETED" ||
+      state === "TASK_STATE_FAILED" ||
+      state === "TASK_STATE_INPUT_REQUIRED",
+    ...(completionPhase ? { completionPhase } : {}),
+    ...(messageId ? { messageId } : {}),
   },
 });
 
@@ -92,28 +87,24 @@ const buildArtifactUpdate = ({
       },
     },
   },
-  hub: {
-    version: "v1",
-    eventKind: "artifact-update",
-    streamBlock: {
-      eventId,
-      eventIdSource: "upstream",
-      messageIdSource: "upstream",
-      seq,
-      taskId: agentMessageId,
-      artifactId: `${agentMessageId}:stream:1`,
-      blockId: `${agentMessageId}:primary_text`,
-      laneId: "primary_text",
-      blockType: "text",
-      op: "append",
-      baseSeq: null,
-      source,
-      messageId: agentMessageId,
-      role: "agent",
-      delta: text,
-      append: true,
-      done: false,
-    },
+  version: "v1",
+  streamBlock: {
+    eventId,
+    eventIdSource: "upstream",
+    messageIdSource: "upstream",
+    seq,
+    taskId: agentMessageId,
+    artifactId: `${agentMessageId}:stream:1`,
+    blockId: `${agentMessageId}:primary_text`,
+    laneId: "primary_text",
+    blockType: "text",
+    op: "append",
+    source,
+    messageId: agentMessageId,
+    role: "agent",
+    delta: text,
+    append: true,
+    done: false,
   },
 });
 
@@ -150,28 +141,23 @@ const buildRawCompatArtifactUpdate = ({
       },
     },
   },
-  hub: {
-    version: "v1",
-    eventKind: "artifact-update",
-    streamBlock: {
-      eventId,
-      eventIdSource: "upstream",
-      messageIdSource: "task_fallback",
-      seq,
-      taskId,
-      artifactId: `${taskId}:stream:text`,
-      blockId: `task:${taskId}:primary_text`,
-      laneId: "primary_text",
-      blockType: "text",
-      op: append ? "append" : "replace",
-      baseSeq: null,
-      source: null,
-      messageId: `task:${taskId}`,
-      role: "agent",
-      delta: text,
-      append,
-      done: lastChunk,
-    },
+  version: "v1",
+  streamBlock: {
+    eventId,
+    eventIdSource: "upstream",
+    messageIdSource: "task_fallback",
+    seq,
+    taskId,
+    artifactId: `${taskId}:stream:text`,
+    blockId: `task:${taskId}:primary_text`,
+    laneId: "primary_text",
+    blockType: "text",
+    op: append ? "append" : "replace",
+    messageId: `task:${taskId}`,
+    role: "agent",
+    delta: text,
+    append,
+    done: lastChunk,
   },
 });
 
@@ -735,11 +721,11 @@ describe("executeChatRuntime empty-content recovery", () => {
     });
   });
 
-  it("ignores empty hub envelopes and falls back to JSON when no stream event was observed", async () => {
-    const conversationId = "conv-empty-hub-envelope-1";
-    const agentId = "agent-empty-hub-envelope-1";
-    const userMessageId = "user-empty-hub-envelope-1";
-    const agentMessageId = "agent-empty-hub-envelope-1";
+  it("ignores empty stream envelopes and falls back to JSON when no stream event was observed", async () => {
+    const conversationId = "conv-empty-stream-envelope-1";
+    const agentId = "agent-empty-stream-envelope-1";
+    const userMessageId = "user-empty-stream-envelope-1";
+    const agentMessageId = "agent-empty-stream-envelope-1";
 
     addConversationMessage(conversationId, {
       id: userMessageId,
@@ -791,12 +777,7 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
-        params.callbacks.onData({
-          hub: {
-            version: "v1",
-            eventKind: "artifact-update",
-          },
-        });
+        params.callbacks.onData({ version: "v1" });
         return false;
       },
     );
@@ -1023,28 +1004,24 @@ describe("executeChatRuntime empty-content recovery", () => {
               },
             },
           },
-          hub: {
-            version: "v1",
-            eventKind: "artifact-update",
-            streamBlock: {
-              eventId: `${agentMessageId}:1`,
-              eventIdSource: "upstream",
-              messageIdSource: "upstream",
-              seq: 1,
-              taskId: "task-compat-1",
-              artifactId: "stream-compat-1",
-              blockId: `${agentMessageId}:primary_text`,
-              laneId: "primary_text",
-              blockType: "text",
-              op: "append",
-              baseSeq: null,
-              source: "assistant_text",
-              messageId: agentMessageId,
-              role: "agent",
-              delta: "Hello from stream",
-              append: true,
-              done: false,
-            },
+          version: "v1",
+          streamBlock: {
+            eventId: `${agentMessageId}:1`,
+            eventIdSource: "upstream",
+            messageIdSource: "upstream",
+            seq: 1,
+            taskId: "task-compat-1",
+            artifactId: "stream-compat-1",
+            blockId: `${agentMessageId}:primary_text`,
+            laneId: "primary_text",
+            blockType: "text",
+            op: "append",
+            source: "assistant_text",
+            messageId: agentMessageId,
+            role: "agent",
+            delta: "Hello from stream",
+            append: true,
+            done: false,
           },
         });
         await new Promise((resolve) => setTimeout(resolve, 30));
@@ -1177,40 +1154,36 @@ describe("executeChatRuntime empty-content recovery", () => {
               },
             },
           },
-          hub: {
-            version: "v1",
-            eventKind: "artifact-update",
-            streamBlock: {
-              eventId: `${agentMessageId}:1`,
-              eventIdSource: "upstream",
-              messageIdSource: "upstream",
-              seq: 1,
-              taskId: agentMessageId,
-              artifactId: `${agentMessageId}:stream`,
-              blockId: `${agentMessageId}:tool_call`,
-              laneId: "tool_call",
-              blockType: "tool_call",
-              op: "replace",
-              baseSeq: null,
-              source: "tool_part_update",
-              messageId: agentMessageId,
-              role: "agent",
-              delta: JSON.stringify({
-                call_id: "call-1",
-                tool: "bash",
-                status: "running",
-                input: { command: "pwd" },
-              }),
-              append: false,
-              done: false,
-              toolCall: {
-                name: "bash",
-                status: "running",
-                callId: "call-1",
-                arguments: { command: "pwd" },
-                result: null,
-                error: null,
-              },
+          version: "v1",
+          streamBlock: {
+            eventId: `${agentMessageId}:1`,
+            eventIdSource: "upstream",
+            messageIdSource: "upstream",
+            seq: 1,
+            taskId: agentMessageId,
+            artifactId: `${agentMessageId}:stream`,
+            blockId: `${agentMessageId}:tool_call`,
+            laneId: "tool_call",
+            blockType: "tool_call",
+            op: "replace",
+            source: "tool_part_update",
+            messageId: agentMessageId,
+            role: "agent",
+            delta: JSON.stringify({
+              call_id: "call-1",
+              tool: "bash",
+              status: "running",
+              input: { command: "pwd" },
+            }),
+            append: false,
+            done: false,
+            toolCall: {
+              name: "bash",
+              status: "running",
+              callId: "call-1",
+              arguments: { command: "pwd" },
+              result: null,
+              error: null,
             },
           },
         });
@@ -1329,28 +1302,24 @@ describe("executeChatRuntime empty-content recovery", () => {
               },
             },
           },
-          hub: {
-            version: "v1",
-            eventKind: "artifact-update",
-            streamBlock: {
-              eventId: `${agentMessageId}:1`,
-              eventIdSource: "upstream",
-              messageIdSource: "upstream",
-              seq: 1,
-              taskId: agentMessageId,
-              artifactId: `${agentMessageId}:stream`,
-              blockId: `${agentMessageId}:reasoning`,
-              laneId: "reasoning",
-              blockType: "reasoning",
-              op: "replace",
-              baseSeq: null,
-              source: "reasoning_part_update",
-              messageId: agentMessageId,
-              role: "agent",
-              delta: "Reasoning in progress",
-              append: false,
-              done: false,
-            },
+          version: "v1",
+          streamBlock: {
+            eventId: `${agentMessageId}:1`,
+            eventIdSource: "upstream",
+            messageIdSource: "upstream",
+            seq: 1,
+            taskId: agentMessageId,
+            artifactId: `${agentMessageId}:stream`,
+            blockId: `${agentMessageId}:reasoning`,
+            laneId: "reasoning",
+            blockType: "reasoning",
+            op: "replace",
+            source: "reasoning_part_update",
+            messageId: agentMessageId,
+            role: "agent",
+            delta: "Reasoning in progress",
+            append: false,
+            done: false,
           },
         });
 

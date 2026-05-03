@@ -13,31 +13,28 @@ const normalizeParsedUpdate = (
 ) => {
   const parsed = extractStreamBlockUpdate({
     ...payload,
-    hub: {
-      version: "v1",
-      eventKind: "artifact-update",
-      streamBlock: {
-        eventId: expected.eventId,
-        eventIdSource: "upstream",
-        messageIdSource: "upstream",
-        seq: expected.seq,
-        taskId:
-          typeof expected.artifactId === "string"
-            ? expected.artifactId.split(":")[0]
-            : "task-1",
-        artifactId: expected.artifactId,
-        blockId: expected.blockId,
-        laneId: expected.laneId,
-        blockType: expected.blockType,
-        op: expected.op,
-        baseSeq: expected.baseSeq,
-        source: expected.source,
-        messageId: expected.messageId,
-        role: "agent",
-        delta: expected.content,
-        append: expected.op === "append",
-        done: expected.isFinished,
-      },
+    version: "v1",
+    streamBlock: {
+      eventId: expected.eventId,
+      eventIdSource: "upstream",
+      messageIdSource: "upstream",
+      seq: expected.seq,
+      taskId:
+        typeof expected.artifactId === "string"
+          ? expected.artifactId.split(":")[0]
+          : "task-1",
+      artifactId: expected.artifactId,
+      blockId: expected.blockId,
+      laneId: expected.laneId,
+      blockType: expected.blockType,
+      op: expected.op,
+      baseSeq: expected.baseSeq,
+      source: expected.source,
+      messageId: expected.messageId,
+      role: "agent",
+      delta: expected.content,
+      append: expected.op === "append",
+      done: expected.isFinished,
     },
   });
   expect(parsed).not.toBeNull();

@@ -7,19 +7,13 @@ import {
 } from "@/lib/api/chat-utils";
 
 const withHubRuntimeStatus = (runtimeStatus: Record<string, unknown>) => ({
-  hub: {
-    version: "v1",
-    eventKind: "status-update",
-    runtimeStatus,
-  },
+  version: "v1",
+  runtimeStatus,
 });
 
 const withHubSessionMeta = (sessionMeta: Record<string, unknown>) => ({
-  hub: {
-    version: "v1",
-    eventKind: "artifact-update",
-    sessionMeta,
-  },
+  version: "v1",
+  sessionMeta,
 });
 
 describe("runtime status contract", () => {
@@ -76,7 +70,7 @@ describe("runtime status contract", () => {
     });
   });
 
-  it("reads canonical runtime status fields from the hub envelope", () => {
+  it("reads canonical runtime status fields from the stream envelope", () => {
     expect(
       extractRuntimeStatusEvent(
         withHubRuntimeStatus({
@@ -98,7 +92,7 @@ describe("runtime status contract", () => {
     });
   });
 
-  it("extracts session metadata from the hub envelope", () => {
+  it("extracts session metadata from the stream envelope", () => {
     expect(
       extractSessionMeta(
         withHubSessionMeta({
