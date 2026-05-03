@@ -9,7 +9,7 @@ from app.integrations.a2a_extensions.interrupt_callback import (
     resolve_interrupt_callback,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    OPENCODE_INTERRUPT_CALLBACK_URN,
+    OPENCODE_INTERRUPT_CALLBACK_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
 )
 from tests.support.a2a import parse_agent_card
@@ -156,11 +156,11 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     assert resolved.provider_key == "opencode"
 
 
-def test_resolve_accepts_opencode_urn_interrupt_uri() -> None:
+def test_resolve_accepts_current_opencode_interrupt_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_INTERRUPT_CALLBACK_URN,
+            "uri": OPENCODE_INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "methods": {
@@ -172,7 +172,7 @@ def test_resolve_accepts_opencode_urn_interrupt_uri() -> None:
 
     card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
-    assert resolved.uri == OPENCODE_INTERRUPT_CALLBACK_URN
+    assert resolved.uri == OPENCODE_INTERRUPT_CALLBACK_URI
 
 
 def test_resolve_rejects_legacy_interrupt_uri() -> None:

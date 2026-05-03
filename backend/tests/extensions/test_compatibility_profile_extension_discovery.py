@@ -14,8 +14,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     CODEX_COMPATIBILITY_PROFILE_URI,
     COMPATIBILITY_PROFILE_URI,
     OPENCODE_COMPATIBILITY_PROFILE_URI,
-    OPENCODE_COMPATIBILITY_PROFILE_URN,
-    OPENCODE_SHARED_SESSION_MANAGEMENT_URN,
+    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     OPENCODE_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
 )
@@ -200,14 +199,14 @@ def test_resolve_compatibility_profile_accepts_current_opencode_uri() -> None:
     )
 
 
-def test_resolve_compatibility_profile_accepts_opencode_urn_alias() -> None:
+def test_resolve_compatibility_profile_accepts_current_opencode_uri_alias() -> None:
     card = _build_card(
         extension_payload={
-            "uri": OPENCODE_COMPATIBILITY_PROFILE_URN,
+            "uri": OPENCODE_COMPATIBILITY_PROFILE_URI,
             "required": False,
             "params": {
                 "extension_retention": {
-                    OPENCODE_SHARED_SESSION_MANAGEMENT_URN: {
+                    OPENCODE_SHARED_SESSION_MANAGEMENT_URI: {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -225,7 +224,7 @@ def test_resolve_compatibility_profile_accepts_opencode_urn_alias() -> None:
 
     resolved = resolve_compatibility_profile(card)
 
-    assert resolved.uri == OPENCODE_COMPATIBILITY_PROFILE_URN
+    assert resolved.uri == OPENCODE_COMPATIBILITY_PROFILE_URI
     assert SHARED_SESSION_QUERY_URI in resolved.extension_retention
 
 

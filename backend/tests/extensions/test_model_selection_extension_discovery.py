@@ -10,7 +10,6 @@ from app.integrations.a2a_extensions.model_selection import resolve_model_select
 from app.integrations.a2a_extensions.shared_contract import (
     MODEL_SELECTION_URI,
     OPENCODE_MODEL_SELECTION_URI,
-    OPENCODE_MODEL_SELECTION_URN,
     SHARED_MODEL_FIELD,
 )
 from tests.support.a2a import parse_agent_card
@@ -112,11 +111,11 @@ def test_resolve_accepts_opencode_https_model_selection_uri() -> None:
     assert resolved.provider_key == "opencode"
 
 
-def test_resolve_accepts_opencode_urn_model_selection_uri() -> None:
+def test_resolve_accepts_current_opencode_model_selection_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_MODEL_SELECTION_URN,
+            "uri": OPENCODE_MODEL_SELECTION_URI,
             "required": False,
             "params": {
                 "metadata_field": SHARED_MODEL_FIELD,
@@ -128,7 +127,7 @@ def test_resolve_accepts_opencode_urn_model_selection_uri() -> None:
 
     resolved = resolve_model_selection(parse_agent_card(payload))
 
-    assert resolved.uri == OPENCODE_MODEL_SELECTION_URN
+    assert resolved.uri == OPENCODE_MODEL_SELECTION_URI
     assert resolved.provider_key == "opencode"
 
 
