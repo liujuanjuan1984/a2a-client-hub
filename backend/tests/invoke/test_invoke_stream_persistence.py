@@ -12,13 +12,13 @@ from app.db.models.conversation_upstream_task import ConversationUpstreamTask
 from app.features.invoke.service_types import StreamFinishReason, StreamOutcome
 from app.features.invoke.stream_persistence import (
     InvokePersistenceRequest,
+    attach_local_stream_contract_context,
     build_stream_metadata_from_outcome,
     ensure_local_message_headers,
     flush_stream_buffer,
     persist_local_outcome,
     persist_stream_block_update,
     resolve_invoke_idempotency_key,
-    rewrite_stream_event_contract,
 )
 from app.features.sessions.service import session_hub_service
 from app.utils.idempotency_key import IDEMPOTENCY_KEY_MAX_LENGTH
@@ -92,14 +92,14 @@ def test_build_stream_metadata_from_outcome_keeps_identity_and_usage() -> None:
     }
 
 
-def test_rewrite_stream_event_contract_copies_canonical_block_fields() -> None:
+def test_attach_local_stream_contract_context_stores_internal_overlay() -> None:
     payload = {
         "artifactUpdate": {
             "artifact": {"metadata": {}, "parts": [{"text": "draft"}]},
         }
     }
 
-    rewrite_stream_event_contract(
+    attach_local_stream_contract_context(
         payload,
         local_message_id="msg-local-1",
         event_id="evt-local-1",
@@ -112,14 +112,17 @@ def test_rewrite_stream_event_contract_copies_canonical_block_fields() -> None:
         },
     )
 
-    assert payload["artifactUpdate"]["metadata"]["shared"]["stream"] == {
-        "messageId": "msg-local-1",
-        "eventId": "evt-local-1",
+    assert payload["artifactUpdate"] == {
+        "artifact": {"metadata": {}, "parts": [{"text": "draft"}]},
+    }
+    assert payload["__hub_local_stream"] == {
+        "message_id": "msg-local-1",
+        "event_id": "evt-local-1",
         "seq": 7,
-        "blockId": "block-text-main",
-        "laneId": "primary_text",
+        "block_id": "block-text-main",
+        "lane_id": "primary_text",
         "op": "replace",
-        "baseSeq": 6,
+        "base_seq": 6,
     }
 
 

@@ -72,8 +72,16 @@ export type ChatMessage = {
 
 export type StreamBlockUpdate = {
   eventId: string;
-  eventIdSource: "upstream" | "fallback_seq" | "fallback_chunk";
-  messageIdSource: "upstream" | "task_fallback" | "artifact_fallback";
+  eventIdSource:
+    | "upstream"
+    | "fallback_seq"
+    | "fallback_chunk"
+    | "local_persistence";
+  messageIdSource:
+    | "upstream"
+    | "task_fallback"
+    | "artifact_fallback"
+    | "local_persistence";
   seq: number | null;
   taskId: string;
   artifactId: string;
@@ -555,13 +563,15 @@ export const extractStreamBlockUpdate = (
     eventIdSource:
       streamBlock.eventIdSource === "upstream" ||
       streamBlock.eventIdSource === "fallback_seq" ||
-      streamBlock.eventIdSource === "fallback_chunk"
+      streamBlock.eventIdSource === "fallback_chunk" ||
+      streamBlock.eventIdSource === "local_persistence"
         ? streamBlock.eventIdSource
         : "fallback_chunk",
     messageIdSource:
       streamBlock.messageIdSource === "upstream" ||
       streamBlock.messageIdSource === "task_fallback" ||
-      streamBlock.messageIdSource === "artifact_fallback"
+      streamBlock.messageIdSource === "artifact_fallback" ||
+      streamBlock.messageIdSource === "local_persistence"
         ? streamBlock.messageIdSource
         : "artifact_fallback",
     seq: typeof streamBlock.seq === "number" ? streamBlock.seq : null,

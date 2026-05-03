@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from app.db.models.agent_message import AgentMessage
+from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.service_types import StreamOutcome
 from app.features.invoke.session_binding import resolve_invoke_session_control_intent
 from app.features.invoke.stream_payloads import (
@@ -168,7 +169,7 @@ def resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
     return "error"
 
 
-def rewrite_stream_event_contract(
+def attach_local_stream_contract_context(
     event_payload: dict[str, Any],
     *,
     local_message_id: str,
@@ -176,25 +177,13 @@ def rewrite_stream_event_contract(
     seq: int | None,
     stream_block: dict[str, Any] | None = None,
 ) -> None:
-    shared_stream = _ensure_shared_stream_metadata(event_payload)
-    if shared_stream is None:
-        return
-    shared_stream["messageId"] = local_message_id
-    if event_id:
-        shared_stream["eventId"] = event_id
-    if isinstance(seq, int) and seq > 0:
-        shared_stream["seq"] = seq
-    if isinstance(stream_block, dict):
-        field_map = {
-            "block_id": "blockId",
-            "lane_id": "laneId",
-            "op": "op",
-            "base_seq": "baseSeq",
-        }
-        for source_name, target_name in field_map.items():
-            value = stream_block.get(source_name)
-            if value is not None:
-                shared_stream[target_name] = value
+    attach_local_stream_context(
+        event_payload,
+        local_message_id=local_message_id,
+        event_id=event_id,
+        seq=seq,
+        stream_block=stream_block,
+    )
 
 
 def resolve_stream_event_id(
@@ -305,7 +294,7 @@ async def persist_stream_block_update(
         local_message_id=local_message_id,
         seq=persist_seq,
     )
-    rewrite_stream_event_contract(
+    attach_local_stream_contract_context(
         event_payload,
         local_message_id=local_message_id,
         event_id=resolved_event_id,
@@ -354,36 +343,6 @@ async def persist_stream_block_update(
             commit_fn=commit_fn,
             session_hub=session_hub,
         )
-
-
-def _ensure_shared_stream_metadata(
-    event_payload: dict[str, Any],
-) -> dict[str, Any] | None:
-    event_body = None
-    for field_name in ("artifactUpdate", "message", "statusUpdate", "task"):
-        candidate = event_payload.get(field_name)
-        if isinstance(candidate, dict):
-            event_body = candidate
-            break
-    if event_body is None:
-        return None
-
-    metadata = event_body.get("metadata")
-    if not isinstance(metadata, dict):
-        metadata = {}
-        event_body["metadata"] = metadata
-
-    shared = metadata.get("shared")
-    if not isinstance(shared, dict):
-        shared = {}
-        metadata["shared"] = shared
-
-    shared_stream = shared.get("stream")
-    if not isinstance(shared_stream, dict):
-        shared_stream = {}
-        shared["stream"] = shared_stream
-
-    return shared_stream
 
 
 async def persist_interrupt_lifecycle_event(

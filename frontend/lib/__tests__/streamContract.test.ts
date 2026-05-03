@@ -1646,6 +1646,27 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventIdSource).toBe("fallback_seq");
   });
 
+  it("accepts local persistence identity sources from hub stream blocks", () => {
+    const payload = buildBlockUpdatePayload({
+      blockType: "text",
+      delta: "hello",
+      artifactId: "task-1:stream",
+    }) as Record<string, unknown>;
+    (
+      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+        {}) as Record<string, unknown>
+    ).messageIdSource = "local_persistence";
+    (
+      ((payload.hub as { streamBlock?: Record<string, unknown> }).streamBlock ??
+        {}) as Record<string, unknown>
+    ).eventIdSource = "local_persistence";
+
+    const parsed = extractStreamBlockUpdate(payload);
+
+    expect(parsed?.messageIdSource).toBe("local_persistence");
+    expect(parsed?.eventIdSource).toBe("local_persistence");
+  });
+
   it("accepts chunks using camelCase message/event fields", () => {
     const payload = withHubStreamBlock(
       {

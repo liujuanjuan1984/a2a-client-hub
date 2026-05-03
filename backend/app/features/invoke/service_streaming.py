@@ -19,6 +19,7 @@ from app.features.invoke import (
     service_streaming_transport,
     stream_payloads,
 )
+from app.features.invoke.hub_stream_local_context import consume_local_stream_context
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
     StreamErrorPayload,
@@ -443,10 +444,12 @@ class A2AInvokeStreamingRuntime:
         if not body:
             return
         upstream_shared_stream = dict(content_envelope.shared_stream)
+        local_stream_context = consume_local_stream_context(payload)
 
         hub_stream_contract.attach_hub_stream_contract(
             payload,
             upstream_shared_stream=upstream_shared_stream,
+            local_stream_context=local_stream_context,
             local_event_sequence=event_sequence,
         )
 

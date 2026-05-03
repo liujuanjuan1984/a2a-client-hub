@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.features.invoke.hub_stream_local_context import attach_local_stream_context
 from app.features.invoke.stream_payloads import resolve_stream_content_envelope
 from tests.invoke.a2a_invoke_service_support import (
     _DumpableEvent,
@@ -585,6 +586,61 @@ def test_ensure_outbound_stream_contract_exposes_fallback_message_identity_in_hu
     assert payload["hub"]["streamBlock"]["eventIdSource"] == "fallback_seq"
     assert payload["hub"]["streamBlock"]["seq"] == 6
     assert payload["hub"]["streamBlock"]["eventId"] == "seq:task:task-fallback-1:6"
+
+
+def test_ensure_outbound_stream_contract_consumes_local_stream_overlay():
+    payload = {
+        "artifactUpdate": {
+            "append": True,
+            "artifact": {
+                "artifactId": "task-local-1:stream:text",
+                "parts": [{"text": "hello"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "blockType": "text",
+                            "messageId": "msg-upstream-local-1",
+                            "eventId": "evt-upstream-local-1",
+                            "seq": 9,
+                        }
+                    }
+                },
+            },
+        }
+    }
+    attach_local_stream_context(
+        payload,
+        local_message_id="msg-local-1",
+        event_id="evt-local-1",
+        seq=3,
+        stream_block={
+            "block_id": "block-local-1",
+            "lane_id": "primary_text",
+            "op": "replace",
+            "base_seq": 2,
+        },
+    )
+
+    a2a_invoke_service._ensure_outbound_stream_contract(
+        payload,
+        event_sequence=11,
+    )
+
+    assert "__hub_local_stream" not in payload
+    assert payload["artifactUpdate"]["artifact"]["metadata"]["shared"]["stream"] == {
+        "blockType": "text",
+        "messageId": "msg-upstream-local-1",
+        "eventId": "evt-upstream-local-1",
+        "seq": 9,
+    }
+    assert payload["hub"]["streamBlock"]["messageId"] == "msg-local-1"
+    assert payload["hub"]["streamBlock"]["messageIdSource"] == "local_persistence"
+    assert payload["hub"]["streamBlock"]["eventId"] == "evt-local-1"
+    assert payload["hub"]["streamBlock"]["eventIdSource"] == "local_persistence"
+    assert payload["hub"]["streamBlock"]["seq"] == 3
+    assert payload["hub"]["streamBlock"]["blockId"] == "block-local-1"
+    assert payload["hub"]["streamBlock"]["baseSeq"] == 2
+    assert payload["hub"]["streamBlock"]["op"] == "replace"
 
 
 def test_serialize_stream_event_keeps_canonical_message_payload_before_validation(

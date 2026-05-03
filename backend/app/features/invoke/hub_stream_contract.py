@@ -225,6 +225,7 @@ def _build_stream_block(
     payload: dict[str, Any],
     *,
     upstream_shared_stream: Mapping[str, Any] | None = None,
+    local_stream_context: Mapping[str, Any] | None = None,
     local_event_sequence: int,
 ) -> dict[str, Any] | None:
     stream_chunk = extract_raw_stream_chunk_from_serialized_event(payload)
@@ -237,6 +238,9 @@ def _build_stream_block(
     artifact_metadata = envelope.artifact_metadata
     event_metadata = envelope.event_metadata
     shared_stream = envelope.shared_stream
+    local_context_candidates = (
+        (local_stream_context,) if isinstance(local_stream_context, Mapping) else ()
+    )
     source_shared_stream = (
         dict(upstream_shared_stream)
         if isinstance(upstream_shared_stream, Mapping)
@@ -255,6 +259,9 @@ def _build_stream_block(
 
     seq = stream_chunk.get("seq")
     resolved_seq = seq if isinstance(seq, int) else local_event_sequence
+    local_seq = pick_first_int(local_context_candidates, ("seq",))
+    if isinstance(local_seq, int):
+        resolved_seq = local_seq
 
     artifact_id = stream_chunk.get("artifact_id")
     resolved_artifact_id = artifact_id if isinstance(artifact_id, str) else None
@@ -263,6 +270,9 @@ def _build_stream_block(
         TASK_ID_KEYS,
     ) or _infer_task_id_from_artifact_id(resolved_artifact_id)
 
+    local_message_id = pick_first_non_empty_str(
+        local_context_candidates, ("message_id",)
+    )
     upstream_message_id = pick_first_non_empty_str(
         (
             source_shared_stream,
@@ -274,12 +284,18 @@ def _build_stream_block(
         MESSAGE_ID_KEYS,
     )
     message_id_source = (
-        "upstream"
-        if upstream_message_id is not None
-        else "task_fallback" if task_id_hint else "artifact_fallback"
+        "local_persistence"
+        if local_message_id is not None
+        else (
+            "upstream"
+            if upstream_message_id is not None
+            else "task_fallback" if task_id_hint else "artifact_fallback"
+        )
     )
-    resolved_message_id = upstream_message_id or (
-        f"task:{task_id_hint}" if task_id_hint else None
+    resolved_message_id = (
+        local_message_id
+        or upstream_message_id
+        or (f"task:{task_id_hint}" if task_id_hint else None)
     )
     if resolved_artifact_id is None:
         resolved_artifact_id = f"{resolved_message_id or 'stream'}:{block_type}"
@@ -292,6 +308,7 @@ def _build_stream_block(
     )
     message_id = resolved_message_id or f"artifact:{resolved_artifact_id}"
 
+    local_event_id = pick_first_non_empty_str(local_context_candidates, ("event_id",))
     upstream_event_id = pick_first_non_empty_str(
         (
             source_shared_stream,
@@ -302,21 +319,41 @@ def _build_stream_block(
         ),
         EVENT_ID_KEYS,
     )
-    event_id = upstream_event_id or _build_fallback_event_id(
-        message_id=message_id,
-        artifact_id=resolved_artifact_id,
-        seq=resolved_seq,
+    event_id = (
+        local_event_id
+        or upstream_event_id
+        or _build_fallback_event_id(
+            message_id=message_id,
+            artifact_id=resolved_artifact_id,
+            seq=resolved_seq,
+        )
     )
     event_id_source = (
-        "upstream"
-        if upstream_event_id
-        else "fallback_seq" if resolved_seq is not None else "fallback_chunk"
+        "local_persistence"
+        if local_event_id
+        else (
+            "upstream"
+            if upstream_event_id
+            else "fallback_seq" if resolved_seq is not None else "fallback_chunk"
+        )
     )
 
     lane_id = stream_chunk.get("lane_id")
     block_id = stream_chunk.get("block_id")
     source = stream_chunk.get("source")
     base_seq = stream_chunk.get("base_seq")
+    local_block_id = pick_first_non_empty_str(local_context_candidates, ("block_id",))
+    local_lane_id = pick_first_non_empty_str(local_context_candidates, ("lane_id",))
+    local_operation = pick_first_non_empty_str(local_context_candidates, ("op",))
+    local_base_seq = pick_first_int(local_context_candidates, ("base_seq",))
+    if local_block_id is not None:
+        block_id = local_block_id
+    if local_lane_id is not None:
+        lane_id = local_lane_id
+    if local_operation is not None:
+        operation = local_operation
+    if isinstance(local_base_seq, int):
+        base_seq = local_base_seq
 
     payload_result: dict[str, Any] = {
         "eventId": event_id,
@@ -403,6 +440,7 @@ def attach_hub_stream_contract(
     payload: dict[str, Any],
     *,
     upstream_shared_stream: Mapping[str, Any] | None = None,
+    local_stream_context: Mapping[str, Any] | None = None,
     local_event_sequence: int,
 ) -> None:
     envelope = resolve_stream_content_envelope(payload)
@@ -417,6 +455,7 @@ def attach_hub_stream_contract(
     stream_block = _build_stream_block(
         payload,
         upstream_shared_stream=upstream_shared_stream,
+        local_stream_context=local_stream_context,
         local_event_sequence=local_event_sequence,
     )
     if stream_block is not None:
