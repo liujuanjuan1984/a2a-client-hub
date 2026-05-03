@@ -134,11 +134,6 @@ def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
                             "Each supported interface must declare a non-empty "
                             "'protocolVersion' when provided."
                         )
-                    elif _is_unsupported_protocol_version(protocol_version):
-                        result.errors.append(
-                            "A2A protocolVersion '0.3' is not supported; "
-                            "upgrade the peer to A2A 1.0."
-                        )
 
     capabilities = _pick_first(card_data, "capabilities")
     if capabilities is not None and not isinstance(capabilities, dict):
@@ -294,10 +289,6 @@ def _pick_first(data: dict[str, Any], *field_names: str) -> Any:
 
 def _is_canonical_task_state(value: Any) -> bool:
     return isinstance(value, str) and value.startswith(_CANONICAL_TASK_STATE_PREFIX)
-
-
-def _is_unsupported_protocol_version(value: Any) -> bool:
-    return isinstance(value, str) and value.strip().startswith("0.3")
 
 
 def _find_noncanonical_protojson_alias_paths(

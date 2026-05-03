@@ -103,7 +103,7 @@ def _coerce_text_payload_mapping(payload: Any) -> dict[str, Any] | None:
     return None
 
 
-def _is_unsupported_protocol_version(value: str | None) -> bool:
+def _is_legacy_protocol_version(value: str | None) -> bool:
     return isinstance(value, str) and value.strip().startswith("0.3")
 
 
@@ -545,19 +545,10 @@ class A2AClient:
                 log_label="A2A agent card",
             )
 
-            (
-                selected_transport,
-                selected_url,
-                supported_labels,
-                saw_unsupported_protocol_interface,
-            ) = self._resolve_negotiated_transport_target(card)
+            selected_transport, selected_url, supported_labels = (
+                self._resolve_negotiated_transport_target(card)
+            )
             if not selected_transport or not selected_url:
-                if saw_unsupported_protocol_interface:
-                    raise A2AUnsupportedBindingError(
-                        f"A2A agent '{redact_url_for_logging(self.agent_url)}' only "
-                        "advertises unsupported A2A protocolVersion 0.3 interfaces. "
-                        "Upgrade the peer to A2A 1.0."
-                    )
                 supported = ", ".join(supported_labels)
                 raise A2AAgentUnavailableError(
                     f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
@@ -627,13 +618,23 @@ class A2AClient:
 
     def _resolve_negotiated_transport_target(
         self, card: AgentCard
-    ) -> tuple[TransportProtocol | str | None, str | None, list[str], bool]:
+    ) -> tuple[TransportProtocol | str | None, str | None, list[str]]:
         def _as_display_label(value: TransportProtocol | str | None) -> str:
             if value is None:
                 return ""
             if isinstance(value, TransportProtocol):
                 return value.value
             return str(value).strip()
+
+        def _select_preferred_url(
+            candidates: list[tuple[str, bool]],
+        ) -> str | None:
+            for candidate_url, is_legacy in candidates:
+                if not is_legacy:
+                    return candidate_url
+            if candidates:
+                return candidates[0][0]
+            return None
 
         client_set: list[TransportProtocol | str] = list(
             self._supported_transports or [TransportProtocol.JSONRPC]
@@ -649,33 +650,43 @@ class A2AClient:
         if not supported_labels:
             supported_labels = [TransportProtocol.JSONRPC.value]
 
-        server_set: list[tuple[str, str]] = []
-        skipped_unsupported_protocol_interface = False
+        server_candidates: dict[str, list[tuple[str, bool]]] = {}
+        ordered_server_transports: list[str] = []
         for iface in getattr(card, "supported_interfaces", None) or []:
             transport = normalize_transport_label(
                 getattr(iface, "protocol_binding", None)
             )
             interface_url = (getattr(iface, "url", "") or "").strip()
-            protocol_version = getattr(iface, "protocol_version", None)
-            if _is_unsupported_protocol_version(protocol_version):
-                skipped_unsupported_protocol_interface = True
-                continue
             if transport and interface_url:
-                server_set.append((transport, interface_url))
+                if transport not in server_candidates:
+                    ordered_server_transports.append(transport)
+                    server_candidates[transport] = []
+                server_candidates[transport].append(
+                    (
+                        interface_url,
+                        _is_legacy_protocol_version(
+                            getattr(iface, "protocol_version", None)
+                        ),
+                    )
+                )
 
         if self._use_client_preference:
             for transport in client_set:
                 label = _as_display_label(transport)
-                for candidate_transport, candidate_url in server_set:
-                    if candidate_transport == label:
-                        return transport, candidate_url, supported_labels, False
-            return None, None, supported_labels, skipped_unsupported_protocol_interface
+                candidate_url = _select_preferred_url(server_candidates.get(label, []))
+                if candidate_url is not None:
+                    return transport, candidate_url, supported_labels
+            return None, None, supported_labels
 
-        for candidate_transport, candidate_url in server_set:
+        for candidate_transport in ordered_server_transports:
             for transport in client_set:
                 if candidate_transport == _as_display_label(transport):
-                    return transport, candidate_url, supported_labels, False
-        return None, None, supported_labels, skipped_unsupported_protocol_interface
+                    candidate_url = _select_preferred_url(
+                        server_candidates.get(candidate_transport, [])
+                    )
+                    if candidate_url is not None:
+                        return transport, candidate_url, supported_labels
+        return None, None, supported_labels
 
     async def close(self) -> None:
         """Dispose cached transport wrappers."""

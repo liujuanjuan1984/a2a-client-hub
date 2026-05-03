@@ -266,12 +266,39 @@ def test_supported_transports_is_copied_on_init() -> None:
         ]
     )
 
-    selected_transport, selected_url, _, _ = (
+    selected_transport, selected_url, _ = (
         a2a_client._resolve_negotiated_transport_target(card)
     )
 
     assert selected_transport == "JSONRPC"
     assert selected_url == "http://example-agent.internal:24020/jsonrpc"
+
+
+def test_resolve_negotiated_transport_target_prefers_nonlegacy_interface_within_transport() -> (
+    None
+):
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    card = _build_card(
+        supported_interfaces=[
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-legacy",
+                protocol_version="0.3.0",
+            ),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-v1",
+                protocol_version="1.0",
+            ),
+        ]
+    )
+
+    selected_transport, selected_url, _ = (
+        a2a_client._resolve_negotiated_transport_target(card)
+    )
+
+    assert selected_transport == TransportProtocol.JSONRPC
+    assert selected_url == "http://example-agent.internal:24020/jsonrpc-v1"
 
 
 @pytest.mark.asyncio

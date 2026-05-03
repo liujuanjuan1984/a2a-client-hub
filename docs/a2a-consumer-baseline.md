@@ -27,10 +27,10 @@ Hub should consume peer capabilities in this order:
 
 ### 1. Core Interoperability
 
-The following checks determine whether a peer is basically usable as an A2A v1.0 peer:
+The following checks determine whether a peer is basically usable as a Hub-consumable A2A peer:
 
 - `supportedInterfaces` exists and contains at least one usable interface
-- `protocolVersion` is compatible with A2A v1.0 expectations
+- `protocolVersion` is compatible with the Hub consumer baseline, including `a2a-sdk` legacy `0.3` transport compatibility when available
 - authentication requirements are understood
 - transport reachability is acceptable for the selected binding
 

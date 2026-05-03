@@ -83,6 +83,31 @@ async def test_fetch_and_validate_agent_card_exposes_warning_only_success(monkey
 
 
 @pytest.mark.asyncio
+async def test_fetch_and_validate_agent_card_accepts_legacy_core_protocol_version() -> (
+    None
+):
+    class _LegacyCardGateway:
+        async def fetch_agent_card_detail(self, **kwargs):
+            payload = build_agent_card_payload()
+            payload["supportedInterfaces"] = [
+                {
+                    "url": "https://example.com/jsonrpc-legacy",
+                    "protocolBinding": "JSONRPC",
+                    "protocolVersion": "0.3.0",
+                }
+            ]
+            return parse_agent_card(payload)
+
+    resp = await fetch_and_validate_agent_card(
+        gateway=_LegacyCardGateway(), resolved=object()
+    )
+
+    assert resp.success is True
+    assert resp.message == "Agent card validated"
+    assert resp.validation_warnings is None
+
+
+@pytest.mark.asyncio
 async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contract() -> (
     None
 ):

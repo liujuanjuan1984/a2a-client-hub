@@ -27,7 +27,6 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
     A2APeerProtocolError,
-    A2AUnsupportedBindingError,
     A2AUpstreamTimeoutError,
 )
 from app.integrations.a2a_client.http_clients import (
@@ -257,8 +256,15 @@ async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
 
 
 @pytest.mark.asyncio
-async def test_get_agent_card_rejects_unsupported_protocol_interfaces() -> None:
+async def test_get_agent_card_accepts_legacy_protocol_interfaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        Mock(return_value=["example.com"]),
+    )
     a2a_client._fetch_card = AsyncMock(
         return_value=parse_agent_card(
             {
@@ -279,12 +285,9 @@ async def test_get_agent_card_rejects_unsupported_protocol_interfaces() -> None:
             }
         )
     )
+    card = await a2a_client.get_agent_card()
 
-    with pytest.raises(
-        A2AUnsupportedBindingError,
-        match="unsupported A2A protocolVersion 0.3 interfaces",
-    ):
-        await a2a_client.get_agent_card()
+    assert card.name == "Legacy Agent"
 
 
 @pytest.mark.asyncio

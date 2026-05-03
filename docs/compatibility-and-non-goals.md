@@ -59,6 +59,7 @@ Typical examples:
 
 - invoke-only peers
 - stream-capable peers without session-query extensions
+- legacy `0.3` peers that remain usable through the current `a2a-sdk` consumer compatibility transport
 - peers that are standard enough for transport-level interoperability but do not provide the continuity workflows expected by the Hub UI
 
 For these peers, the Hub may still support onboarding, invocation, and basic streaming while feature depth is reduced.

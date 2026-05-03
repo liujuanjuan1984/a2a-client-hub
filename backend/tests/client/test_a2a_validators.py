@@ -135,7 +135,9 @@ class TestValidateAgentCard:
             "'protocolBinding' (JSONRPC, HTTP+JSON, GRPC)." in result.errors
         )
 
-    def test_rejects_unsupported_protocol_version(self, valid_card_data):
+    def test_accepts_legacy_protocol_version_for_sdk_compatibility(
+        self, valid_card_data
+    ):
         card_data = valid_card_data.copy()
         card_data["supportedInterfaces"] = [
             {
@@ -145,10 +147,7 @@ class TestValidateAgentCard:
             }
         ]
         result = validators.validate_agent_card(card_data)
-        assert (
-            "A2A protocolVersion '0.3' is not supported; "
-            "upgrade the peer to A2A 1.0." in result.errors
-        )
+        assert result.errors == []
 
 
 class TestValidateMessage:
