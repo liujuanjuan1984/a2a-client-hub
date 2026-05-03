@@ -110,6 +110,18 @@ def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> Non
     assert capability.control_methods["shell"].config_key == "A2A_ENABLE_SESSION_SHELL"
 
 
+def test_resolve_runtime_session_query_accepts_current_opencode_session_management() -> (
+    None
+):
+    capability = resolve_runtime_session_query(
+        _build_card(uri=OPENCODE_SHARED_SESSION_MANAGEMENT_URI)
+    )
+
+    assert capability.negotiation_mode == "declared_contract"
+    assert capability.compatibility_hints_applied is False
+    assert capability.ext.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
+
+
 def test_resolve_runtime_session_query_rejects_legacy_uri() -> None:
     with pytest.raises(A2AExtensionNotSupportedError, match="not supported by Hub"):
         resolve_runtime_session_query(

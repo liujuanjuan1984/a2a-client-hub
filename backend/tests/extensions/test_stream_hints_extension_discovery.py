@@ -57,6 +57,18 @@ def test_resolve_stream_hints_accepts_opencode_https_uri() -> None:
     assert resolved.stream_field == "metadata.shared.stream"
 
 
+def test_resolve_stream_hints_accepts_current_opencode_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {"uri": OPENCODE_STREAM_HINTS_URI, "params": {}}
+    ]
+
+    resolved = resolve_stream_hints(parse_agent_card(payload))
+
+    assert resolved.uri == OPENCODE_STREAM_HINTS_URI
+    assert resolved.stream_field == "metadata.shared.stream"
+
+
 def test_resolve_stream_hints_rejects_non_canonical_field_override() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [

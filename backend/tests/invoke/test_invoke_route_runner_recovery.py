@@ -1320,6 +1320,98 @@ def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream
     ]
 
 
+def test_log_stream_hints_invoke_request_reports_requested_extensions() -> None:
+    infos: list[tuple[str, dict[str, object]]] = []
+
+    route_runner_streaming.log_stream_hints_invoke_request(
+        logger=SimpleNamespace(
+            info=lambda message, *, extra: infos.append((message, extra))
+        ),
+        log_extra={"agent_id": "agent-1"},
+        requested_extensions=("urn:a2a:stream-hints/v1", "urn:a2a:model-selection/v1"),
+    )
+
+    assert infos == [
+        (
+            "A2A stream hints invoke request",
+            {
+                "agent_id": "agent-1",
+                "requested_extensions": [
+                    "urn:a2a:stream-hints/v1",
+                    "urn:a2a:model-selection/v1",
+                ],
+                "stream_hints_requested": True,
+            },
+        )
+    ]
+
+
+def test_observe_stream_contract_event_once_logs_first_contract_summary() -> None:
+    infos: list[tuple[str, dict[str, object]]] = []
+    state = invoke_route_runner._InvokeState(
+        local_session_id=None,
+        local_source=None,
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        stream_hints_meta={
+            "stream_hints_declared": True,
+            "stream_hints_mode": "declared_contract",
+            "stream_hints_requested": True,
+        },
+    )
+    event_payload = {
+        "artifactUpdate": {
+            "artifact": {
+                "parts": [{"text": "hello"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "sequence": 2,
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    route_runner_streaming.observe_stream_contract_event_once(
+        state=state,
+        event_payload=event_payload,
+        logger=SimpleNamespace(
+            info=lambda message, *, extra: infos.append((message, extra))
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+    route_runner_streaming.observe_stream_contract_event_once(
+        state=state,
+        event_payload=event_payload,
+        logger=SimpleNamespace(
+            info=lambda message, *, extra: infos.append((message, extra))
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+
+    assert infos == [
+        (
+            "A2A stream contract observation",
+            {
+                "agent_id": "agent-1",
+                "stream_event_kind": "artifact_update",
+                "stream_hints_requested": True,
+                "stream_hints_declared": True,
+                "stream_hints_mode": "declared_contract",
+                "stream_contract_observation": "shared_stream_present",
+                "shared_stream_present": True,
+                "stream_block_type_present": True,
+                "stream_sequence_present": True,
+            },
+        )
+    ]
+
+
 @pytest.mark.asyncio
 async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_without_recovery(
     monkeypatch: pytest.MonkeyPatch,

@@ -50,6 +50,10 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
+from app.integrations.a2a_extensions.shared_contract import (
+    SUPPORTED_STREAM_HINTS_URIS,
+    is_supported_extension_uri,
+)
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.utils.payload_extract import extract_provider_and_external_session_id
 
@@ -99,6 +103,46 @@ def log_stream_hints_warning(
     if extra:
         merged_extra.update(extra)
     log_warning(message, extra=merged_extra)
+
+
+def log_stream_hints_info(
+    *,
+    logger: Any,
+    message: str,
+    log_extra: dict[str, Any],
+    extra: dict[str, Any] | None = None,
+) -> None:
+    log_info = getattr(logger, "info", None)
+    if not callable(log_info):
+        return
+    merged_extra = dict(log_extra)
+    if extra:
+        merged_extra.update(extra)
+    log_info(message, extra=merged_extra)
+
+
+def has_requested_stream_hints(requested_extensions: tuple[str, ...]) -> bool:
+    return any(
+        is_supported_extension_uri(value, SUPPORTED_STREAM_HINTS_URIS)
+        for value in requested_extensions
+    )
+
+
+def log_stream_hints_invoke_request(
+    *,
+    logger: Any,
+    log_extra: dict[str, Any],
+    requested_extensions: tuple[str, ...],
+) -> None:
+    log_stream_hints_info(
+        logger=logger,
+        message="A2A stream hints invoke request",
+        log_extra=log_extra,
+        extra={
+            "requested_extensions": list(requested_extensions),
+            "stream_hints_requested": has_requested_stream_hints(requested_extensions),
+        },
+    )
 
 
 def stream_hints_warning_cache_key(
@@ -205,21 +249,137 @@ def build_stream_hints_session_started_callback(
     logger: Any,
     log_extra: dict[str, Any],
     stream_log_extra: dict[str, Any],
+    requested_extensions: tuple[str, ...],
 ) -> Callable[[Any], Any]:
     async def on_session_started(invoke_session: Any) -> None:
         snapshot = getattr(invoke_session, "snapshot", None)
         card = getattr(snapshot, "agent_card", None)
         if card is None:
             return
+        stream_hints_requested = has_requested_stream_hints(requested_extensions)
+        state.stream_hints_meta["stream_hints_requested"] = stream_hints_requested
+        state.stream_hints_meta["requested_extensions"] = list(requested_extensions)
         state.stream_hints_meta = build_stream_hints_runtime_meta_from_card(
             runtime=runtime,
             card=card,
             logger=logger,
             log_extra=log_extra,
         )
+        state.stream_hints_meta["stream_hints_requested"] = stream_hints_requested
+        state.stream_hints_meta["requested_extensions"] = list(requested_extensions)
         stream_log_extra.update(state.stream_hints_meta)
+        log_stream_hints_info(
+            logger=logger,
+            message="A2A stream hints session started",
+            log_extra=log_extra,
+            extra={
+                "requested_extensions": list(requested_extensions),
+                "stream_hints_requested": stream_hints_requested,
+                "stream_hints_declared": state.stream_hints_meta.get(
+                    "stream_hints_declared"
+                ),
+                "stream_hints_mode": state.stream_hints_meta.get("stream_hints_mode"),
+                "stream_hints_uri": state.stream_hints_meta.get("stream_hints_uri"),
+            },
+        )
 
     return on_session_started
+
+
+def _event_kind(payload: dict[str, Any]) -> str:
+    for key, kind in (
+        ("artifactUpdate", "artifact_update"),
+        ("statusUpdate", "status_update"),
+        ("message", "message"),
+        ("task", "task"),
+        ("result", "result"),
+    ):
+        if isinstance(payload.get(key), dict):
+            return kind
+    return "other"
+
+
+def _extract_shared_stream_section(payload: dict[str, Any]) -> dict[str, Any]:
+    candidates = [payload]
+    artifact_update = _dict_field(payload, "artifactUpdate")
+    if artifact_update:
+        candidates.append(artifact_update)
+        artifact = _dict_field(artifact_update, "artifact")
+        if artifact:
+            candidates.append(artifact)
+    status_update = _dict_field(payload, "statusUpdate")
+    if status_update:
+        candidates.append(status_update)
+    task = _dict_field(payload, "task")
+    if task:
+        candidates.append(task)
+    result = _dict_field(payload, "result")
+    if result:
+        candidates.append(result)
+    for candidate in candidates:
+        shared_stream = extract_shared_metadata_section(candidate, section="stream")
+        if isinstance(shared_stream, dict) and shared_stream:
+            return shared_stream
+    return {}
+
+
+def observe_stream_contract_event_once(
+    *,
+    state: InvokeState,
+    event_payload: dict[str, Any],
+    logger: Any,
+    log_extra: dict[str, Any],
+) -> None:
+    if state.stream_contract_logged:
+        return
+    state.stream_contract_logged = True
+    stream_hints_requested = bool(
+        state.stream_hints_meta.get("stream_hints_requested", False)
+    )
+    stream_chunk = extract_stream_chunk_from_serialized_event(event_payload)
+    shared_stream = _extract_shared_stream_section(event_payload)
+    shared_stream_present = has_shared_section(
+        event_payload,
+        section="stream",
+        include_artifact=True,
+        include_status=True,
+        include_task=True,
+        include_result=True,
+    )
+    block_type_present = isinstance(
+        shared_stream.get("block_type") or shared_stream.get("blockType"),
+        str,
+    )
+    sequence_present = (
+        shared_stream.get("sequence") is not None
+        or shared_stream.get("seq") is not None
+    )
+    if stream_chunk is not None:
+        sequence_present = sequence_present or stream_chunk.get("seq") is not None
+    observation = (
+        "shared_stream_present" if shared_stream_present else "shared_stream_missing"
+    )
+    if not stream_hints_requested:
+        observation = "not_requested"
+    elif state.stream_hints_meta.get("stream_hints_mode") != "declared_contract":
+        observation = str(state.stream_hints_meta.get("stream_hints_mode") or "unknown")
+    log_stream_hints_info(
+        logger=logger,
+        message="A2A stream contract observation",
+        log_extra=log_extra,
+        extra={
+            "stream_event_kind": _event_kind(event_payload),
+            "stream_hints_requested": stream_hints_requested,
+            "stream_hints_declared": state.stream_hints_meta.get(
+                "stream_hints_declared"
+            ),
+            "stream_hints_mode": state.stream_hints_meta.get("stream_hints_mode"),
+            "stream_contract_observation": observation,
+            "shared_stream_present": shared_stream_present,
+            "stream_block_type_present": block_type_present,
+            "stream_sequence_present": sequence_present,
+        },
+    )
 
 
 def has_shared_section(
@@ -497,6 +657,12 @@ def build_consume_stream_callbacks(
     resolved_log_extra = log_extra if log_extra is not None else {}
 
     async def on_event(event_payload: dict[str, Any]) -> None:
+        observe_stream_contract_event_once(
+            state=state,
+            event_payload=event_payload,
+            logger=logger,
+            log_extra=resolved_log_extra,
+        )
         diagnose_stream_hints_contract_gap_fn(
             state=state,
             event_payload=event_payload,

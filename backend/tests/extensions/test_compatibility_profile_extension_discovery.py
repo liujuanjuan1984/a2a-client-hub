@@ -11,8 +11,10 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_COMPATIBILITY_PROFILE_URI,
     COMPATIBILITY_PROFILE_URI,
     OPENCODE_COMPATIBILITY_PROFILE_URI,
+    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     OPENCODE_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
 )
@@ -157,9 +159,7 @@ def test_resolve_compatibility_profile_requires_declared_extension() -> None:
         resolve_compatibility_profile(card)
 
 
-def test_resolve_compatibility_profile_accepts_https_alias_and_normalizes_known_uris() -> (
-    None
-):
+def test_resolve_compatibility_profile_accepts_current_opencode_uri() -> None:
     card = _build_card(
         extension_payload={
             "uri": OPENCODE_COMPATIBILITY_PROFILE_URI,
@@ -197,3 +197,60 @@ def test_resolve_compatibility_profile_accepts_https_alias_and_normalizes_known_
         resolved.method_retention["opencode.sessions.shell"].extension_uri
         == SHARED_SESSION_QUERY_URI
     )
+
+
+def test_resolve_compatibility_profile_accepts_current_opencode_uri_alias() -> None:
+    card = _build_card(
+        extension_payload={
+            "uri": OPENCODE_COMPATIBILITY_PROFILE_URI,
+            "required": False,
+            "params": {
+                "extension_retention": {
+                    OPENCODE_SHARED_SESSION_MANAGEMENT_URI: {
+                        "surface": "jsonrpc-extension",
+                        "availability": "always",
+                        "retention": "stable",
+                    }
+                },
+                "method_retention": {},
+                "service_behaviors": {
+                    "classification": "stable-service-semantics",
+                    "methods": {"tasks/cancel": {"retention": "stable"}},
+                },
+                "consumer_guidance": ["Prefer repository-governed extension URIs."],
+            },
+        }
+    )
+
+    resolved = resolve_compatibility_profile(card)
+
+    assert resolved.uri == OPENCODE_COMPATIBILITY_PROFILE_URI
+    assert SHARED_SESSION_QUERY_URI in resolved.extension_retention
+
+
+def test_resolve_compatibility_profile_accepts_current_codex_uri() -> None:
+    card = _build_card(
+        extension_payload={
+            "uri": CODEX_COMPATIBILITY_PROFILE_URI,
+            "required": False,
+            "params": {
+                "extension_retention": {
+                    "urn:codex-a2a:codex-session-query/v1": {
+                        "surface": "jsonrpc-extension",
+                        "availability": "always",
+                        "retention": "stable",
+                    }
+                },
+                "method_retention": {},
+                "service_behaviors": {
+                    "classification": "stable-service-semantics",
+                },
+                "consumer_guidance": ["Prefer declared Codex extension URIs."],
+            },
+        }
+    )
+
+    resolved = resolve_compatibility_profile(card)
+
+    assert resolved.uri == CODEX_COMPATIBILITY_PROFILE_URI
+    assert "urn:codex-a2a:codex-session-query/v1" in resolved.extension_retention

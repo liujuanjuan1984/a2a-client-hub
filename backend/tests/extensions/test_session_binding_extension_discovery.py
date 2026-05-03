@@ -108,6 +108,24 @@ def test_resolve_accepts_opencode_https_session_binding_uri() -> None:
     assert resolved.uri == OPENCODE_SHARED_SESSION_BINDING_URI
 
 
+def test_resolve_accepts_current_opencode_session_binding_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_SHARED_SESSION_BINDING_URI,
+            "required": False,
+            "params": {
+                "metadata_field": SHARED_SESSION_ID_FIELD,
+                "behavior": "prefer_metadata_binding_else_create_session",
+            },
+        }
+    ]
+
+    resolved = resolve_session_binding(parse_agent_card(payload))
+
+    assert resolved.uri == OPENCODE_SHARED_SESSION_BINDING_URI
+
+
 def test_resolve_rejects_legacy_session_binding_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [

@@ -111,6 +111,26 @@ def test_resolve_accepts_opencode_https_model_selection_uri() -> None:
     assert resolved.provider_key == "opencode"
 
 
+def test_resolve_accepts_current_opencode_model_selection_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_MODEL_SELECTION_URI,
+            "required": False,
+            "params": {
+                "metadata_field": SHARED_MODEL_FIELD,
+                "behavior": "prefer_metadata_model_else_upstream_default",
+                "applies_to_methods": ["message/send"],
+            },
+        }
+    ]
+
+    resolved = resolve_model_selection(parse_agent_card(payload))
+
+    assert resolved.uri == OPENCODE_MODEL_SELECTION_URI
+    assert resolved.provider_key == "opencode"
+
+
 def test_resolve_rejects_non_canonical_metadata_field() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [

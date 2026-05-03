@@ -47,6 +47,7 @@ class InvokeState:
     current_block_type: str | None = None
     stream_hints_meta: dict[str, Any] = field(default_factory=dict)
     stream_hints_warned: set[str] = field(default_factory=set)
+    stream_contract_logged: bool = False
 
 
 def normalize_optional_message_id(value: str | None) -> str | None:

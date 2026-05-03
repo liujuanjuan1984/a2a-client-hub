@@ -476,15 +476,6 @@ async def run_http_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = (
-        route_runner_streaming.build_stream_hints_session_started_callback(
-            runtime=runtime,
-            state=state,
-            logger=logger,
-            log_extra=log_extra,
-            stream_log_extra=stream_log_extra,
-        )
-    )
     await _preempt_previous_invoke_if_requested(
         state=state,
         payload=payload,
@@ -509,6 +500,21 @@ async def run_http_invoke(
         runtime=runtime,
         metadata=upstream_metadata,
         require_stream_hints=True,
+    )
+    route_runner_streaming.log_stream_hints_invoke_request(
+        logger=logger,
+        log_extra=log_extra,
+        requested_extensions=requested_extensions,
+    )
+    on_session_started = (
+        route_runner_streaming.build_stream_hints_session_started_callback(
+            runtime=runtime,
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            stream_log_extra=stream_log_extra,
+            requested_extensions=requested_extensions,
+        )
     )
 
     if stream:
@@ -634,15 +640,6 @@ async def run_background_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = (
-        route_runner_streaming.build_stream_hints_session_started_callback(
-            runtime=runtime,
-            state=state,
-            logger=logger,
-            log_extra=log_extra,
-            stream_log_extra=stream_log_extra,
-        )
-    )
     await _preempt_previous_invoke_if_requested(
         state=state,
         payload=payload,
@@ -669,6 +666,21 @@ async def run_background_invoke(
         runtime=runtime,
         metadata=upstream_metadata,
         require_stream_hints=True,
+    )
+    route_runner_streaming.log_stream_hints_invoke_request(
+        logger=logger,
+        log_extra=log_extra,
+        requested_extensions=requested_extensions,
+    )
+    on_session_started = (
+        route_runner_streaming.build_stream_hints_session_started_callback(
+            runtime=runtime,
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            stream_log_extra=stream_log_extra,
+            requested_extensions=requested_extensions,
+        )
     )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
@@ -775,15 +787,6 @@ async def run_ws_invoke(
         payload=payload,
     )
     stream_log_extra = dict(log_extra)
-    on_session_started = (
-        route_runner_streaming.build_stream_hints_session_started_callback(
-            runtime=runtime,
-            state=state,
-            logger=logger,
-            log_extra=log_extra,
-            stream_log_extra=stream_log_extra,
-        )
-    )
     await _preempt_previous_invoke_if_requested(
         state=state,
         payload=payload,
@@ -808,6 +811,21 @@ async def run_ws_invoke(
         runtime=runtime,
         metadata=upstream_metadata,
         require_stream_hints=True,
+    )
+    route_runner_streaming.log_stream_hints_invoke_request(
+        logger=logger,
+        log_extra=log_extra,
+        requested_extensions=requested_extensions,
+    )
+    on_session_started = (
+        route_runner_streaming.build_stream_hints_session_started_callback(
+            runtime=runtime,
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            stream_log_extra=stream_log_extra,
+            requested_extensions=requested_extensions,
+        )
     )
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
