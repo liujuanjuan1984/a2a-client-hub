@@ -5,6 +5,7 @@ variable management.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -12,12 +13,9 @@ from urllib.parse import urlparse
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
-from dotenv import load_dotenv
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine.url import make_url
-
-load_dotenv(override=False)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -44,6 +42,15 @@ SUPPORTED_JWT_ALGORITHMS = frozenset(
         "ES512",
     }
 )
+
+
+def _resolve_settings_env_file() -> str | None:
+    """Resolve the dotenv file used by application settings."""
+
+    disable_env_file = os.getenv("A2A_SETTINGS_DISABLE_ENV_FILE", "").strip().lower()
+    if disable_env_file in {"1", "true", "yes", "on"}:
+        return None
+    return ".env"
 
 
 class Settings(BaseSettings):
@@ -905,7 +912,7 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_resolve_settings_env_file(),
         case_sensitive=False,
         extra="ignore",  # Ignore extra fields from environment
     )
