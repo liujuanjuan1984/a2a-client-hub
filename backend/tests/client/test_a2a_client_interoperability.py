@@ -373,6 +373,60 @@ def test_build_card_resolver_rebases_standard_http_extended_card_path_from_well_
     assert resolver.agent_card_path == "v1/card"
 
 
+def test_resolve_negotiated_transport_target_prefers_exact_v1_interface_within_transport() -> (
+    None
+):
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    card = _build_card(
+        supported_interfaces=[
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-v1-1",
+                protocol_version="1.1.0",
+            ),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-v1-0",
+                protocol_version="1.0",
+            ),
+        ]
+    )
+
+    selected_transport, selected_url, _, _ = (
+        a2a_client._resolve_negotiated_transport_target(card)
+    )
+
+    assert selected_transport == TransportProtocol.JSONRPC
+    assert selected_url == "http://example-agent.internal:24020/jsonrpc-v1-0"
+
+
+def test_resolve_negotiated_transport_target_prefers_versioned_interface_over_unversioned_one() -> (
+    None
+):
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    card = _build_card(
+        supported_interfaces=[
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-unversioned",
+                protocol_version=None,
+            ),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-v1-2",
+                protocol_version="1.2.0",
+            ),
+        ]
+    )
+
+    selected_transport, selected_url, _, _ = (
+        a2a_client._resolve_negotiated_transport_target(card)
+    )
+
+    assert selected_transport == TransportProtocol.JSONRPC
+    assert selected_url == "http://example-agent.internal:24020/jsonrpc-v1-2"
+
+
 @pytest.mark.asyncio
 async def test_get_authenticated_extended_agent_card_prefers_sdk_route() -> None:
     public_card = _build_card(

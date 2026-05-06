@@ -27,10 +27,11 @@ Hub should consume peer capabilities in this order:
 
 ### 1. Core Interoperability
 
-The following checks determine whether a peer is basically usable as an A2A v1.0 peer:
+The following checks determine whether a peer is basically usable as a
+Hub-consumable A2A peer:
 
 - `supportedInterfaces` exists and contains at least one usable interface
-- `protocolVersion` is compatible with A2A v1.0 expectations
+- `protocolVersion` is compatible with the Hub consumer baseline
 - authentication requirements are understood
 - transport reachability is acceptable for the selected binding
 
@@ -71,7 +72,8 @@ Hub should treat provider-private contracts as:
 - capability-specific diagnostics
 - runtime negotiation inputs when they are declared and intentionally consumed
 
-Hub should not treat missing provider-private details as proof that the peer is not a usable A2A v1.0 peer.
+Hub should not treat missing provider-private details as proof that the peer is not
+a usable Hub-consumable A2A peer.
 
 ## Minimal Adapter Boundary
 
@@ -95,7 +97,7 @@ Not allowed:
 
 `card:validate` should answer:
 
-- Is this peer basically interoperable as an A2A v1.0 peer?
+- Is this peer basically interoperable under the Hub consumer baseline?
 - Which extensions are declared?
 - Which declared extensions are consumable by Hub?
 - Which contracts are invalid, unsupported, or enhancement-only?
