@@ -11,8 +11,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal, async_engine
 from app.db.transaction import run_with_new_session
-from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.metrics import a2a_metrics
+from app.integrations.a2a_client.service import get_a2a_service
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.runtime.ops_metrics import ops_metrics
 from app.runtime.ops_metrics_refresh import refresh_db_pool_checked_out

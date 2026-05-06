@@ -9,6 +9,7 @@ from typing import Any, Callable
 from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 
+from app.core.config import settings
 from app.features.invoke import hub_stream_contract, stream_payloads
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
@@ -21,6 +22,7 @@ from app.features.invoke.service_types import (
     StreamTextCallbackFn,
     ValidateMessageFn,
 )
+from app.features.invoke.stream_cache.memory_cache import global_stream_cache
 from app.features.invoke.stream_diagnostics import (
     build_stream_content_log_sample,
     build_validation_errors_log_sample,
@@ -58,8 +60,6 @@ def stream_sse(
     resume_from_sequence: int | None = None,
     cache_key: str | None = None,
 ) -> StreamingResponse:
-    from app.features.invoke.stream_cache.memory_cache import global_stream_cache
-
     async def event_generator() -> Any:
         stream_text_accumulator = accumulator_factory()
         stream_failed = False
@@ -68,7 +68,6 @@ def stream_sse(
         last_event_at = started_at
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
-        from app.core.config import settings
 
         interval = float(settings.a2a_stream_heartbeat_interval)
         heartbeat_interval_seconds = interval if interval > 0 else 0.0
@@ -274,15 +273,12 @@ async def stream_ws(
     resume_from_sequence: int | None = None,
     cache_key: str | None = None,
 ) -> None:
-    from app.features.invoke.stream_cache.memory_cache import global_stream_cache
-
     stream_text_accumulator = accumulator_factory()
     client_disconnected = False
     started_at = time.monotonic()
     last_event_at = started_at
     terminal_event_seen = False
     final_outcome: StreamOutcome | None = None
-    from app.core.config import settings
 
     interval = float(settings.a2a_stream_heartbeat_interval)
     heartbeat_interval_seconds = interval if interval > 0 else 0.0

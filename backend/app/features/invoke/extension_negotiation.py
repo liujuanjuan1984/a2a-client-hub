@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.features.invoke.invoke_metadata import extract_invoke_metadata_bindings
-from app.integrations.a2a_extensions.service import get_a2a_extensions_service
+from app.integrations.a2a_extensions import service as extensions_service_module
 from app.utils.payload_extract import extract_provider_and_external_session_id
 
 logger = logging.getLogger(__name__)
@@ -39,14 +39,16 @@ async def resolve_core_invoke_requested_extensions(
     runtime: Any,
     metadata: Mapping[str, Any] | None,
     require_stream_hints: bool,
-    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
+    extensions_service_getter: Callable[[], Any] | None = None,
 ) -> tuple[str, ...]:
     """Resolve request-scoped extension URIs for core invoke/stream operations."""
 
+    service_getter = (
+        extensions_service_getter
+        or extensions_service_module.get_a2a_extensions_service
+    )
     try:
-        snapshot = await extensions_service_getter().resolve_capability_snapshot(
-            runtime=runtime
-        )
+        snapshot = await service_getter().resolve_capability_snapshot(runtime=runtime)
     except Exception:
         logger.warning(
             "Failed to resolve capability snapshot for core invoke negotiation; "

@@ -23,6 +23,7 @@ from app.features.invoke.service_types import (
     StreamFinishReason,
     StreamOutcome,
 )
+from app.features.invoke.session_binding import merge_invoke_binding_state
 from app.features.invoke.shared_metadata import extract_shared_metadata_section
 from app.features.invoke.stream_payloads import (
     extract_interrupt_lifecycle_from_serialized_event,
@@ -73,7 +74,6 @@ def collect_stream_hints(
         event_context_id,
         event_metadata,
     ) = extract_binding_hints_from_serialized_event(event_payload)
-    from app.features.invoke.session_binding import merge_invoke_binding_state
 
     state.context_id, state.metadata = merge_invoke_binding_state(
         current_context_id=state.context_id,

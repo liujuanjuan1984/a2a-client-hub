@@ -24,10 +24,10 @@ from app.integrations.a2a_client.protobuf import (
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
 )
+from app.integrations.a2a_extensions import service as extensions_service_module
 from app.integrations.a2a_extensions.compatibility_profile_diagnostics import (
     diagnose_compatibility_profile,
 )
-from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.integrations.a2a_extensions.session_query_diagnostics import (
     diagnose_session_query,
 )
@@ -42,7 +42,7 @@ async def fetch_and_validate_agent_card(
     *,
     gateway: A2AGateway,
     resolved: ResolvedAgent,
-    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
+    extensions_service_getter: Callable[[], Any] | None = None,
 ) -> A2AAgentCardValidationResponse:
     """Fetch the agent card and validate it.
 
@@ -50,6 +50,11 @@ async def fetch_and_validate_agent_card(
         A2AAgentUnavailableError, A2AClientResetRequiredError: when the upstream
             is unreachable or requires a reset. Callers should map these to 502.
     """
+
+    service_getter = (
+        extensions_service_getter
+        or extensions_service_module.get_a2a_extensions_service
+    )
 
     try:
         card = await gateway.fetch_agent_card_detail(
@@ -121,7 +126,7 @@ async def fetch_and_validate_agent_card(
     extension_capabilities = None
     if diagnostics_card is not None:
         try:
-            snapshot = extensions_service_getter().build_capability_snapshot_from_card(
+            snapshot = service_getter().build_capability_snapshot_from_card(
                 card=diagnostics_card
             )
             extension_capabilities = (

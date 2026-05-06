@@ -134,6 +134,18 @@ class _FakeExtensionsService:
             )
         return self.invoke_metadata_ext
 
+    async def resolve_capability_snapshot(self, *, runtime):
+        return SimpleNamespace(
+            session_binding=SimpleNamespace(ext=None),
+            invoke_metadata=SimpleNamespace(ext=self.invoke_metadata_ext),
+            model_selection=SimpleNamespace(ext=None),
+            request_execution_options=SimpleNamespace(
+                metadata_field=None,
+                source_extensions=(),
+            ),
+            stream_hints=SimpleNamespace(ext=None),
+        )
+
 
 @pytest.mark.asyncio
 async def test_personal_agent_http_invoke_works_with_dependency_injected_db(
@@ -358,7 +370,6 @@ async def test_personal_agent_http_invoke_injects_session_bound_invoke_metadata(
             )
         ),
     )
-
     async with create_test_client(
         personal_router.router,
         async_session_maker=async_session_maker,
@@ -434,7 +445,6 @@ async def test_personal_agent_http_invoke_returns_preflight_binding_error_when_d
             )
         ),
     )
-
     async with create_test_client(
         personal_router.router,
         async_session_maker=async_session_maker,

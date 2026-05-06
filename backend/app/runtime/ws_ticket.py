@@ -11,12 +11,13 @@ from typing import Any, cast
 from uuid import UUID
 
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.db.locking import (
     set_postgres_local_timeouts,
     to_retryable_db_lock_error,
@@ -25,9 +26,11 @@ from app.db.locking import (
 from app.db.models.ws_ticket import WsTicket
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, run_with_new_session
+from app.runtime.scheduler import get_scheduler
 from app.utils.timezone_util import utc_now
 
 _WS_TICKET_CLEANUP_BATCH_SIZE = 500
+logger = get_logger(__name__)
 
 
 class WsTicketError(RuntimeError):
@@ -221,8 +224,6 @@ class WsTicketService:
         2. Used tickets older than the retention window
         3. Tickets with NULL scope_type (legacy/invalid)
         """
-        from sqlalchemy import delete, or_
-
         await self._apply_default_write_timeouts(db)
         now = utc_now()
         retention_days = max(settings.ws_ticket_retention_days, 0)
@@ -268,9 +269,6 @@ async def cleanup_ws_tickets_job() -> None:
             break
 
     if total_deleted > 0:
-        from app.core.logging import get_logger
-
-        logger = get_logger(__name__)
         logger.info(
             "Cleaned up %d WS ticket(s) across %d batch(es).",
             total_deleted,
@@ -280,7 +278,6 @@ async def cleanup_ws_tickets_job() -> None:
 
 def ensure_ws_ticket_cleanup_job() -> None:
     """Register the WS ticket cleanup job with the shared scheduler."""
-    from app.runtime.scheduler import get_scheduler
 
     scheduler = get_scheduler()
     job_id = "ws-ticket-cleanup-daily"
@@ -294,9 +291,6 @@ def ensure_ws_ticket_cleanup_job() -> None:
         replace_existing=True,
         coalesce=True,
     )
-    from app.core.logging import get_logger
-
-    logger = get_logger(__name__)
     logger.info("Registered daily WS ticket cleanup job.")
 
 
