@@ -14,7 +14,7 @@ from app.features.invoke.shared_metadata import (
     apply_invoke_session_binding_metadata,
     strip_session_binding_metadata,
 )
-from app.integrations.a2a_extensions import get_a2a_extensions_service
+from app.integrations.a2a_extensions import service as extensions_service_module
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
@@ -100,9 +100,13 @@ async def validate_provider_aware_continue_session(
     continue_payload: dict[str, Any],
     logger: Any,
     log_extra: dict[str, Any],
-    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
+    extensions_service_getter: Callable[[], Any] | None = None,
     log_warning_fn: Callable[..., None] = log_session_binding_warning,
 ) -> Literal["validated", "skipped", "failed"]:
+    service_getter = (
+        extensions_service_getter
+        or extensions_service_module.get_a2a_extensions_service
+    )
     provider, external_session_id = extract_rebound_continue_binding_fields(
         continue_payload=continue_payload
     )
@@ -110,7 +114,7 @@ async def validate_provider_aware_continue_session(
         return "skipped"
 
     try:
-        result = await extensions_service_getter().continue_session(
+        result = await service_getter().continue_session(
             runtime=runtime,
             session_id=external_session_id,
         )
@@ -230,11 +234,15 @@ async def resolve_session_binding_outbound_mode(
     runtime: Any,
     logger: Any,
     log_extra: dict[str, Any],
-    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
+    extensions_service_getter: Callable[[], Any] | None = None,
     log_warning_fn: Callable[..., None] = log_session_binding_warning,
 ) -> bool:
+    service_getter = (
+        extensions_service_getter
+        or extensions_service_module.get_a2a_extensions_service
+    )
     try:
-        await extensions_service_getter().resolve_session_binding(runtime=runtime)
+        await service_getter().resolve_session_binding(runtime=runtime)
     except A2AExtensionNotSupportedError:
         return False
     except A2AExtensionUpstreamError as exc:
@@ -292,12 +300,16 @@ async def finalize_outbound_invoke_payload(
     runtime: Any,
     logger: Any,
     log_extra: dict[str, Any],
-    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
+    extensions_service_getter: Callable[[], Any] | None = None,
     log_warning_fn: Callable[..., None] = log_session_binding_warning,
 ) -> A2AAgentInvokeRequest:
+    service_getter = (
+        extensions_service_getter
+        or extensions_service_module.get_a2a_extensions_service
+    )
     invoke_metadata_ext = None
     try:
-        invoke_metadata_ext = await extensions_service_getter().resolve_invoke_metadata(
+        invoke_metadata_ext = await service_getter().resolve_invoke_metadata(
             runtime=runtime
         )
     except A2AExtensionNotSupportedError:

@@ -12,11 +12,11 @@ from app.features.agents.personal.runtime import A2ARuntime
 from app.features.invoke.shared_metadata import (
     merge_preferred_session_binding_metadata,
 )
-from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
+from app.integrations.a2a_client.service import get_a2a_service
 from app.integrations.a2a_error_contract import (
     A2AUpstreamErrorDetails,
     build_upstream_error_details,

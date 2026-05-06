@@ -176,6 +176,14 @@ def request_hub_assistant_task_run(*, delay_seconds: int = 1) -> None:
     )
 
 
+def configure_hub_assistant_task_job() -> None:
+    """Wire task dispatch hooks to their runtime scheduler adapters."""
+
+    delegated_conversation_service.hub_assistant_delegated_conversation_service.set_task_run_requester(
+        request_hub_assistant_task_run
+    )
+
+
 def ensure_hub_assistant_task_job() -> None:
     scheduler = get_scheduler()
     if scheduler.get_job(_HUB_ASSISTANT_TASK_JOB_ID):

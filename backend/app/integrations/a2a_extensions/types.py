@@ -118,13 +118,15 @@ class ResolvedInterruptRecoveryExtension:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedSessionBindingExtension:
+    """Resolved shared session-binding contract plus adapter-local metadata hints."""
+
     uri: str
     required: bool
     provider_key: str
     metadata_field: str
     behavior: str
     supported_metadata: tuple[str, ...]
-    provider_private_fields: tuple[str, ...]
+    adapter_metadata_fields: tuple[str, ...]
     shared_workspace_across_consumers: bool | None
     tenant_isolation: str | None
 
@@ -143,10 +145,12 @@ class ResolvedInvokeMetadataExtension:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedProviderDiscoveryExtension:
+    """Resolved provider-discovery contract plus adapter-local metadata routing."""
+
     uri: str
     required: bool
     provider_key: str
-    provider_private_namespace: str
+    metadata_namespace: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]
@@ -154,6 +158,8 @@ class ResolvedProviderDiscoveryExtension:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedModelSelectionExtension:
+    """Resolved model-selection contract plus adapter-local metadata hints."""
+
     uri: str
     required: bool
     provider_key: str
@@ -161,7 +167,7 @@ class ResolvedModelSelectionExtension:
     behavior: str
     applies_to_methods: tuple[str, ...]
     supported_metadata: tuple[str, ...]
-    provider_private_fields: tuple[str, ...]
+    adapter_metadata_fields: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

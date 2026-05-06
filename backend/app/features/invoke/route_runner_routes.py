@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, cast
 from uuid import UUID
 
-from fastapi import HTTPException, WebSocket, status
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -151,8 +151,6 @@ async def run_ws_invoke_route(
             return
 
     except Exception as exc:
-        from fastapi import WebSocketDisconnect
-
         if isinstance(exc, WebSocketDisconnect):
             logger.info("WebSocket disconnected", extra={"user_id": str(user_id)})
         else:

@@ -13,6 +13,7 @@ from a2a.types import StreamResponse as A2AStreamResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from app.core.config import settings
 from app.features.invoke import (
     hub_stream_contract,
     service_streaming_consume,
@@ -407,8 +408,6 @@ class A2AInvokeStreamingRuntime:
     def serialize_stream_event(
         event: StreamEvent, *, validate_message: ValidateMessageFn
     ) -> dict[str, Any]:
-        from app.core.config import settings
-
         if isinstance(event, A2AStreamResponse):
             payload = to_protojson_object(event) or {}
         else:

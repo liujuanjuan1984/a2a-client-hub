@@ -55,7 +55,7 @@ from app.features.sessions.schemas import (
 from app.features.sessions.service import session_hub_service
 from app.features.working_directory import merge_working_directory_metadata
 from app.integrations.a2a_client.service import get_a2a_service
-from app.integrations.a2a_extensions import get_a2a_extensions_service
+from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.utils.session_identity import normalize_non_empty_text
 
 router = StrictAPIRouter(prefix="/me/conversations", tags=["me-conversations"])

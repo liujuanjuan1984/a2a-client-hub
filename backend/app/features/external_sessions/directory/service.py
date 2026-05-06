@@ -29,9 +29,11 @@ from app.features.external_sessions.directory.adapters import (
     ExternalSessionDirectoryAdapter,
 )
 from app.integrations.a2a_client.types import ResolvedAgent
-from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
-from app.integrations.a2a_extensions.service import ExtensionCallResult
+from app.integrations.a2a_extensions.service import (
+    ExtensionCallResult,
+    get_a2a_extensions_service,
+)
 
 logger = get_logger(__name__)
 

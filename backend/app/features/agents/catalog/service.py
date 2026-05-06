@@ -33,11 +33,11 @@ from app.features.health_reason_codes import AgentHealthReasonCode
 from app.features.hub_assistant.service import (
     hub_assistant_service,
 )
-from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
+from app.integrations.a2a_client.service import get_a2a_service
 from app.utils.timezone_util import utc_now
 
 

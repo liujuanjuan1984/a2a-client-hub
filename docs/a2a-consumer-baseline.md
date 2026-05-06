@@ -91,6 +91,61 @@ Not allowed:
 - rebuilding extension capability declaration into a Hub-owned static schema regime
 - keeping heavy compatibility abstractions that exist only to preserve one upstream's private design
 
+## Current Repository Abstraction Inventory
+
+The repository still contains a small number of consumer-side abstractions. They should not all be treated the same during follow-up cleanup.
+
+### 1. Upstream Protocol Facts
+
+These values remain upstream-owned facts even when they contain provider or family-specific wording:
+
+- upstream JSON-RPC method literals such as `codex.discovery.*`, `codex.threads.*`, `codex.turns.*`, `codex.review.*`, and `codex.exec.*`
+- declared metadata fields such as `metadata.codex.execution`
+- supported extension URI families that the Hub intentionally recognizes
+
+Decision rule:
+
+- keep these literals intact
+- document why they are preserved
+- avoid renaming them into Hub-private wording
+
+### 2. Stable Public Hub Contracts
+
+Some names are no longer merely implementation details because they are already part of the backend/frontend contract exposed by the Hub:
+
+- `upstreamMethodFamilies`
+- `providerDiscovery`
+- `sessionControl`
+- `interruptRecoveryDetails`
+
+Decision rule:
+
+- keep these names stable unless a dedicated contract migration is planned
+- do not rename them as part of internal cleanup-only work
+
+### 3. Repo-Local Adapter Abstractions
+
+These are the main candidates for continued cleanup because they exist to keep the adapter layer operable, not because the upstream protocol requires them:
+
+- adapter-scoped metadata routing hints such as backend-only metadata namespaces
+- adapter-local metadata field inventories used by session binding and model selection resolvers
+- narrow compatibility helpers that translate declared contracts into Hub runtime inputs without changing protocol meaning
+
+Decision rule:
+
+- prefer neutral adapter wording over provider-private wording
+- keep them backend-local whenever possible
+- remove them when the upstream contract no longer needs explicit adapter routing
+
+## ACP Reference Boundary
+
+ACP is intentionally not part of the current implementation baseline.
+
+Current rule:
+
+- ACP may be tracked as a later comparison input for protocol-boundary review
+- ACP should not drive naming or contract changes in the current A2A consumer cleanup until a dedicated evaluation is opened
+
 ## `card:validate` Responsibility
 
 `card:validate` should answer:

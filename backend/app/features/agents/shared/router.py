@@ -42,12 +42,12 @@ from app.features.invoke.route_runner import (
     run_issue_ws_ticket_route,
     run_ws_invoke_route,
 )
-from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
+from app.integrations.a2a_client.service import get_a2a_service
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse

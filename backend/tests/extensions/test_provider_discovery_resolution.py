@@ -76,7 +76,7 @@ def test_resolve_extracts_provider_discovery_methods_and_interface() -> None:
 
     assert resolved.uri == PROVIDER_DISCOVERY_URI
     assert resolved.provider_key == "opencode"
-    assert resolved.provider_private_namespace == "opencode"
+    assert resolved.metadata_namespace == "opencode"
     assert resolved.methods["list_providers"] == "opencode.providers.list"
     assert resolved.methods["list_models"] == "opencode.models.list"
     assert resolved.business_code_map[-32002] == "upstream_unreachable"
@@ -148,7 +148,7 @@ async def test_list_model_providers_extracts_provider_private_metadata() -> None
         uri=PROVIDER_DISCOVERY_URI,
         required=False,
         provider_key="opencode",
-        provider_private_namespace="opencode",
+        metadata_namespace="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://api.example.com/jsonrpc", fallback_used=False
         ),
@@ -185,7 +185,7 @@ async def test_list_models_omits_provider_private_metadata_when_unavailable() ->
         uri=PROVIDER_DISCOVERY_URI,
         required=False,
         provider_key="opencode",
-        provider_private_namespace="opencode",
+        metadata_namespace="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://api.example.com/jsonrpc", fallback_used=False
         ),

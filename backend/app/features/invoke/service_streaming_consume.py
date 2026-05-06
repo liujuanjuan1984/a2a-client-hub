@@ -6,6 +6,7 @@ import asyncio
 import time
 from typing import Any, Callable
 
+from app.core.config import settings
 from app.features.invoke import stream_payloads
 from app.features.invoke.service_types import (
     StreamErrorMetadataCallbackFn,
@@ -56,7 +57,6 @@ async def consume_stream(
     non_contract_drop_reasons: set[str] = set()
     started_at = time.monotonic()
     last_event_at = started_at
-    from app.core.config import settings
 
     interval = float(settings.a2a_stream_heartbeat_interval)
     heartbeat_interval_seconds = interval if interval > 0 else 0.0

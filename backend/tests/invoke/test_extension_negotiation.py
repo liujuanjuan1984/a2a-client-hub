@@ -50,7 +50,7 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
                 metadata_field=SHARED_SESSION_ID_FIELD,
                 behavior="request_scoped_session_routing",
                 supported_metadata=("shared.session.provider", "shared.session.id"),
-                provider_private_fields=(),
+                adapter_metadata_fields=(),
                 shared_workspace_across_consumers=True,
                 tenant_isolation="provider_managed",
             )
@@ -86,7 +86,7 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
                     "shared.model.providerID",
                     "shared.model.modelID",
                 ),
-                provider_private_fields=(),
+                adapter_metadata_fields=(),
             ),
         ),
         request_execution_options=RequestExecutionOptionsCapabilitySnapshot(
