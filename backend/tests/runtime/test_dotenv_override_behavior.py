@@ -1,9 +1,19 @@
-from pathlib import Path
+import pytest
+
+from app.core.config import _resolve_settings_env_file
 
 
-def test_config_does_not_override_existing_environment_variables() -> None:
-    config_path = Path(__file__).resolve().parents[2] / "app" / "core" / "config.py"
-    content = config_path.read_text()
+def test_settings_env_file_enabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BACKEND_ENV_FILE", raising=False)
 
-    assert "load_dotenv(override=False)" in content
-    assert "load_dotenv(override=True)" not in content
+    assert _resolve_settings_env_file() == ".env"
+
+
+def test_settings_env_file_can_be_disabled_for_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BACKEND_ENV_FILE", "")
+
+    assert _resolve_settings_env_file() is None

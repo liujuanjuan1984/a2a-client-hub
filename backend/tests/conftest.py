@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import importlib
 import os
 import sys
@@ -10,8 +9,6 @@ from typing import AsyncGenerator, Generator
 import pytest
 import pytest_asyncio
 from a2a.types import AgentCard
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -29,48 +26,9 @@ REPO_ROOT = os.path.dirname(PROJECT_ROOT)
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from tests.support.env_bootstrap import apply_test_environment
 
-TEST_SCHEMA_NAME = os.getenv("TEST_SCHEMA_NAME", "test_a2a_client_hub_schema")
-os.environ["SCHEMA_NAME"] = TEST_SCHEMA_NAME
-
-# Default DATABASE_URL for local test runs.
-#
-# We intentionally keep this as an opt-out default (setdefault) so CI/dev
-# environments can provide their own DATABASE_URL. Using the current OS user
-# as the default database name matches common local Postgres setups.
-if "DATABASE_URL" not in os.environ:
-    default_db_name = os.getenv("TEST_DATABASE_NAME") or os.getenv("USER") or "postgres"
-    os.environ["DATABASE_URL"] = f"postgresql:///{default_db_name}"
-
-# Ensure encryption keys are available for tests that store encrypted credentials.
-default_test_secret_key = base64.urlsafe_b64encode(b"0" * 32).decode("utf-8")
-os.environ.setdefault("USER_LLM_TOKEN_ENCRYPTION_KEY", default_test_secret_key)
-os.environ.setdefault("HUB_A2A_TOKEN_ENCRYPTION_KEY", default_test_secret_key)
-os.environ.setdefault("WS_TICKET_SECRET_KEY", default_test_secret_key)
-
-# Ensure JWT RS256 configuration is available for tests.
-if "JWT_PRIVATE_KEY_PEM" not in os.environ or "JWT_PUBLIC_KEY_PEM" not in os.environ:
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    private_pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode("utf-8")
-    public_pem = (
-        private_key.public_key()
-        .public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-        .decode("utf-8")
-    )
-    os.environ.setdefault("JWT_ALGORITHM", "RS256")
-    os.environ["JWT_PRIVATE_KEY_PEM"] = private_pem
-    os.environ["JWT_PUBLIC_KEY_PEM"] = public_pem
-    os.environ.setdefault("JWT_ISSUER", "common-compass-test")
-    os.environ.setdefault("JWT_ACCESS_TOKEN_TTL_SECONDS", "1800")
-    os.environ.setdefault("JWT_REFRESH_TOKEN_TTL_SECONDS", "1209600")
-    os.environ.setdefault("AUTH_REFRESH_COOKIE_SECURE", "false")
+apply_test_environment()
 
 
 def pytest_configure(config: pytest.Config) -> None:
