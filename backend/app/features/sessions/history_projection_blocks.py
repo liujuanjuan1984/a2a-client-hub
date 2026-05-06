@@ -21,7 +21,7 @@ MIN_REASONING_OVERLAP_WORD_LENGTH = 5
 
 
 def _default_lane_id(block_type: str) -> str:
-    return session_common.PRIMARY_TEXT_LANE_ID if block_type == "text" else block_type
+    return "primary_text" if block_type == "text" else block_type
 
 
 def normalize_message_block_specs(

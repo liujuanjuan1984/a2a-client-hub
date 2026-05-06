@@ -83,7 +83,6 @@ INFLIGHT_CANCEL_TERMINAL_ERROR_CODES = {
     "task_not_cancelable",
     "invalid_task_id",
 }
-PRIMARY_TEXT_LANE_ID = "primary_text"
 
 
 def parse_conversation_id(value: str) -> UUID:
@@ -217,7 +216,7 @@ def normalize_block_type(raw_type: str | None) -> str:
 
 
 def is_primary_text_lane(lane_id: str | None) -> bool:
-    return normalize_non_empty_text(lane_id) == PRIMARY_TEXT_LANE_ID
+    return normalize_non_empty_text(lane_id) == "primary_text"
 
 
 def normalize_interrupt_lifecycle_event(
