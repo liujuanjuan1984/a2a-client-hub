@@ -14,12 +14,12 @@ from app.features.invoke.shared_metadata import (
     apply_invoke_session_binding_metadata,
     strip_session_binding_metadata,
 )
-from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
+from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,

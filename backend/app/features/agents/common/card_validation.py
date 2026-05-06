@@ -24,10 +24,10 @@ from app.integrations.a2a_client.protobuf import (
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
 )
-from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.compatibility_profile_diagnostics import (
     diagnose_compatibility_profile,
 )
+from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.integrations.a2a_extensions.session_query_diagnostics import (
     diagnose_session_query,
 )

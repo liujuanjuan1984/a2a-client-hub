@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.features.invoke.invoke_metadata import extract_invoke_metadata_bindings
-from app.integrations.a2a_extensions import get_a2a_extensions_service
+from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.utils.payload_extract import extract_provider_and_external_session_id
 
 logger = logging.getLogger(__name__)

@@ -40,7 +40,7 @@ from app.features.schedules.service import (
     ensure_a2a_schedule_execution_cleanup_job,
 )
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
-from app.integrations.a2a_extensions import (
+from app.integrations.a2a_extensions.service import (
     get_a2a_extensions_service,
     shutdown_a2a_extensions_service,
 )

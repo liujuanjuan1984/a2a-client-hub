@@ -20,7 +20,7 @@ from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.transaction import load_for_external_call
 from app.features.extension_capabilities import common_router_support
-from app.integrations.a2a_extensions import get_a2a_extensions_service
+from app.integrations.a2a_extensions.service import get_a2a_extensions_service
 from app.schemas.a2a_extension import (
     A2AExtensionCapabilitiesResponse,
     A2AExtensionElicitationReplyRequest,
