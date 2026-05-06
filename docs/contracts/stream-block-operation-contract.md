@@ -26,6 +26,10 @@ Each block update must be normalized to the following logical shape:
 - `isFinished`: Compatibility flag. Canonical semantics are driven by `op`.
 - `source`: Diagnostic-only source hint.
 
+Upstream `source` hints remain advisory diagnostics only. Repo-local persistence may
+still stamp internal markers such as `finalize_snapshot`, but canonical reducers
+and projections must not require peers to emit snapshot-specific `source` values.
+
 ## State Machine Rules
 
 - `append`: Extend the existing block identified by `blockId`.

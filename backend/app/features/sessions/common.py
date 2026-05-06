@@ -83,7 +83,6 @@ INFLIGHT_CANCEL_TERMINAL_ERROR_CODES = {
     "task_not_cancelable",
     "invalid_task_id",
 }
-PRIMARY_TEXT_SNAPSHOT_SOURCES = frozenset({"final_snapshot", "finalize_snapshot"})
 
 
 def parse_conversation_id(value: str) -> UUID:
@@ -214,6 +213,10 @@ def normalize_block_type(raw_type: str | None) -> str:
     }:
         return normalized
     return normalized
+
+
+def is_primary_text_lane(lane_id: str | None) -> bool:
+    return normalize_non_empty_text(lane_id) == "primary_text"
 
 
 def normalize_interrupt_lifecycle_event(
@@ -680,10 +683,6 @@ def write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, int]) -
         "last_block_seq": int(max(cursor.get("last_block_seq", 0), 0)),
         "active_block_seq": int(max(cursor.get("active_block_seq", 0), 0)),
     }
-
-
-def is_primary_text_snapshot_source(source: str | None) -> bool:
-    return normalize_non_empty_text(source) in PRIMARY_TEXT_SNAPSHOT_SOURCES
 
 
 def render_block_item(

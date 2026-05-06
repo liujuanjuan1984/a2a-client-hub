@@ -130,13 +130,10 @@ def _normalize_block_operation(
     operation: str | None,
     *,
     append: bool,
-    source: str | None,
 ) -> str:
     normalized = normalize_non_empty_text(operation)
     if normalized in BLOCK_OPERATION_TYPES:
         return normalized
-    if session_common.is_primary_text_snapshot_source(source):
-        return "replace"
     return "append" if append else "replace"
 
 
@@ -259,7 +256,6 @@ class SessionHistoryBlockProjectionService:
         normalized_operation = _normalize_block_operation(
             operation,
             append=append,
-            source=normalized_source,
         )
         normalized_base_seq = (
             int(base_seq) if isinstance(base_seq, int) and base_seq > 0 else None
@@ -294,13 +290,14 @@ class SessionHistoryBlockProjectionService:
                 message_id=agent_message_id,
                 block_type="text",
             )
+        targets_primary_text_snapshot_slot = (
+            normalized_type == "text"
+            and session_common.is_primary_text_lane(normalized_lane_id)
+            and normalized_operation in {"replace", "finalize"}
+        )
         normalized_block_id = normalize_non_empty_text(block_id)
         if not normalized_block_id:
-            if (
-                normalized_type == "text"
-                and session_common.is_primary_text_snapshot_source(normalized_source)
-                and latest_text_block is not None
-            ):
+            if targets_primary_text_snapshot_slot and latest_text_block is not None:
                 normalized_block_id = str(latest_text_block.block_id)
             elif (
                 active_block is not None
@@ -319,11 +316,7 @@ class SessionHistoryBlockProjectionService:
         )
 
         normalized_content = str(content or "")
-        if (
-            normalized_operation == "replace"
-            and normalized_type == "text"
-            and session_common.is_primary_text_snapshot_source(normalized_source)
-        ):
+        if normalized_operation == "replace" and targets_primary_text_snapshot_slot:
             latest_reasoning_block = (
                 await block_store.find_last_block_for_message_and_type(
                     db,

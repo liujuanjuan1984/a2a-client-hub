@@ -329,7 +329,7 @@ async def test_interleaved_reasoning_final_snapshot_rewrites_primary_text_slot(
         append=False,
         is_finished=True,
         event_id="evt-3",
-        source="final_snapshot",
+        source=None,
     )
     await async_db_session.flush()
 
