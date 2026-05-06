@@ -439,7 +439,7 @@ def _provider_discovery_extension_fixture() -> ResolvedProviderDiscoveryExtensio
         uri=PROVIDER_DISCOVERY_URI,
         required=False,
         provider_key="opencode",
-        provider_private_namespace="opencode",
+        metadata_namespace="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),

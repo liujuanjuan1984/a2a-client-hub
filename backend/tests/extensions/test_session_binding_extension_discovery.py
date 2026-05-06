@@ -68,7 +68,7 @@ def test_resolve_extracts_canonical_session_binding_contract() -> None:
         "shared.session.id",
         "opencode.directory",
     )
-    assert resolved.provider_private_fields == ("opencode.directory",)
+    assert resolved.adapter_metadata_fields == ("opencode.directory",)
     assert resolved.shared_workspace_across_consumers is True
     assert resolved.tenant_isolation == "none"
 

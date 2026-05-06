@@ -82,7 +82,7 @@ def resolve_model_selection(card: AgentCard) -> ResolvedModelSelectionExtension:
             field="params.supported_metadata",
             allow_missing=True,
         ),
-        provider_private_fields=normalize_string_list(
+        adapter_metadata_fields=normalize_string_list(
             params.get("provider_private_metadata"),
             field="params.provider_private_metadata",
             allow_missing=True,

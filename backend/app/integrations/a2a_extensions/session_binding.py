@@ -63,7 +63,7 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
         field="params.supported_metadata",
         allow_missing=True,
     )
-    provider_private_metadata = normalize_string_list(
+    adapter_metadata_fields = normalize_string_list(
         params.get("provider_private_metadata"),
         field="params.provider_private_metadata",
         allow_missing=True,
@@ -87,7 +87,7 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
         metadata_field=metadata_field,
         behavior=behavior,
         supported_metadata=supported_metadata,
-        provider_private_fields=provider_private_metadata,
+        adapter_metadata_fields=adapter_metadata_fields,
         shared_workspace_across_consumers=shared_workspace,
         tenant_isolation=tenant_isolation,
     )

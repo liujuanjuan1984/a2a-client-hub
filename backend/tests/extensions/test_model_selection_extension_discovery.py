@@ -69,7 +69,7 @@ def test_resolve_extracts_canonical_model_selection_contract() -> None:
         "shared.model.providerID",
         "shared.model.modelID",
     )
-    assert resolved.provider_private_fields == ()
+    assert resolved.adapter_metadata_fields == ()
 
 
 def test_resolve_defaults_provider_to_opencode() -> None:

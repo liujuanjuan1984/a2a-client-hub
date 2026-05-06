@@ -9,16 +9,16 @@ from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
 
 
-def _extract_provider_private_metadata(
+def _extract_namespaced_extension_metadata(
     session_metadata: Optional[Dict[str, Any]],
-    provider_private_namespace: str,
+    metadata_namespace: str,
 ) -> Optional[Dict[str, Any]]:
     if not session_metadata:
         return None
-    section = session_metadata.get(provider_private_namespace)
+    section = session_metadata.get(metadata_namespace)
     if not isinstance(section, dict):
         return None
-    return {provider_private_namespace: dict(section)}
+    return {metadata_namespace: dict(section)}
 
 
 class ProviderDiscoveryService:
@@ -109,12 +109,12 @@ class ProviderDiscoveryService:
         adapted_session_metadata = adapt_working_directory_metadata_for_upstream(
             session_metadata,
             working_directory,
-            metadata_namespace=ext.provider_private_namespace,
+            metadata_namespace=ext.metadata_namespace,
         )
         normalized_metadata = self._support.normalize_extension_metadata(
-            _extract_provider_private_metadata(
+            _extract_namespaced_extension_metadata(
                 adapted_session_metadata,
-                ext.provider_private_namespace,
+                ext.metadata_namespace,
             )
         )
         if normalized_metadata is not None:
@@ -144,12 +144,12 @@ class ProviderDiscoveryService:
         adapted_session_metadata = adapt_working_directory_metadata_for_upstream(
             session_metadata,
             working_directory,
-            metadata_namespace=ext.provider_private_namespace,
+            metadata_namespace=ext.metadata_namespace,
         )
         normalized_metadata = self._support.normalize_extension_metadata(
-            _extract_provider_private_metadata(
+            _extract_namespaced_extension_metadata(
                 adapted_session_metadata,
-                ext.provider_private_namespace,
+                ext.metadata_namespace,
             )
         )
         if normalized_metadata is not None:
