@@ -18,6 +18,7 @@ from app.features.invoke.shared_metadata import (
 from app.features.sessions import block_store
 from app.features.sessions import common as session_common
 from app.features.sessions import message_store
+from app.features.sessions.common import parse_conversation_id
 from app.features.sessions.history_projection_blocks import (
     apply_message_block_specs,
     normalize_message_block_specs,
@@ -46,8 +47,6 @@ class SessionHistoryMessageService:
         agent_source: session_common.SessionAgentSource,
         conversation_id: str | None,
     ) -> tuple[ConversationThread | None, session_common.SessionSource | None]:
-        from app.features.sessions.common import parse_conversation_id
-
         if not conversation_id:
             return None, None
         try:

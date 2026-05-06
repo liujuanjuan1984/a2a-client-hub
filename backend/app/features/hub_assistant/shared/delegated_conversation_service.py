@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
@@ -50,6 +51,10 @@ class HubAssistantDelegatedConversationService:
 
     def __init__(self) -> None:
         self._session_support = SessionHubSupport()
+        self._task_run_requester: Callable[[], None] = lambda: None
+
+    def set_task_run_requester(self, requester: Callable[[], None]) -> None:
+        self._task_run_requester = requester
 
     async def send_messages_to_sessions(
         self,
@@ -93,11 +98,7 @@ class HubAssistantDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            from app.features.hub_assistant.shared.task_job import (
-                request_hub_assistant_task_run,
-            )
-
-            request_hub_assistant_task_run()
+            self._task_run_requester()
         return self._serialize_batch_payload(items=items)
 
     async def start_sessions_for_agents(
@@ -144,11 +145,7 @@ class HubAssistantDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            from app.features.hub_assistant.shared.task_job import (
-                request_hub_assistant_task_run,
-            )
-
-            request_hub_assistant_task_run()
+            self._task_run_requester()
         return self._serialize_batch_payload(items=items)
 
     async def _send_one_session_message(

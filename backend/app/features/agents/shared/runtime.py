@@ -14,6 +14,10 @@ from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.hub_a2a_user_credential import HubA2AUserCredential
 from app.features.agents.common.runtime_auth import build_resolved_runtime_agent
+from app.features.agents.shared.service import (
+    SharedAgentNotFoundError,
+    shared_agent_service,
+)
 from app.integrations.a2a_client.types import ResolvedAgent
 
 
@@ -58,11 +62,6 @@ class SharedAgentRuntimeBuilder:
         user_id: UUID,
         agent_id: UUID,
     ) -> SharedAgentRuntime:
-        from app.features.agents.shared.service import (
-            SharedAgentNotFoundError,
-            shared_agent_service,
-        )
-
         try:
             agent = await shared_agent_service.ensure_visible_for_user(
                 db, user_id=user_id, agent_id=agent_id

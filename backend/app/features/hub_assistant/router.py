@@ -30,6 +30,9 @@ from app.features.hub_assistant.service import (
     HubAssistantUnavailableError,
     hub_assistant_service,
 )
+from app.features.hub_assistant.shared.task_job import (
+    request_hub_assistant_task_run,
+)
 
 router = StrictAPIRouter(
     prefix="/me/hub-assistant",
@@ -271,9 +274,5 @@ async def reply_hub_assistant_permission_interrupt(
 
     await commit_safely(db)
     if result.continuation is not None:
-        from app.features.hub_assistant.shared.task_job import (
-            request_hub_assistant_task_run,
-        )
-
         request_hub_assistant_task_run()
     return _to_run_response(result)
