@@ -73,8 +73,7 @@ The backend also mounts an authenticated FastMCP surface for hub-assistant. This
 - Transport: HTTP SSE
 - Auth: delegated bearer token in `Authorization: Bearer <token>`
 - Read-only MCP tools: `hub_assistant.agents.list`, `hub_assistant.agents.get`, `hub_assistant.jobs.list`, `hub_assistant.jobs.get`, `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
-- Write-enabled MCP tools add:
-  `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
+- Write-enabled MCP tools add: `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
 
 Once the API server is running, an MCP client can connect to:
 
@@ -97,12 +96,10 @@ The backend also exposes a first-wave Hub Assistant surface that uses `swival` a
 - Recover pending interrupts: `POST /api/v1/me/hub-assistant/interrupts:recover`
 - Default run mode: read-only
 - Hub Assistant runs are conversation-backed and must include `conversationId`
-- To explicitly enable write tools for one run, send:
-  `{"conversationId": "...", "message": "...", "allow_write_tools": true}`
+- To explicitly enable write tools for one run, send: `{"conversationId": "...", "message": "...", "allow_write_tools": true}`
 - Current Hub Assistant tool set:
   - default read-only: `hub_assistant.agents.list`, `hub_assistant.agents.get`, `hub_assistant.jobs.list`, `hub_assistant.jobs.get`, `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
-  - write-enabled only:
-    `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
+  - write-enabled only: `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
 
 Required environment variables:
 
@@ -138,14 +135,11 @@ Notes:
 - `HUB_ASSISTANT_SWIVAL_IMPORT_PATHS` remains available as a last-resort development escape hatch, but it is less stable than installing an exact wheel into the backend environment or resolving from an explicitly managed tool executable.
 - For Gemini, prefer `HUB_ASSISTANT_SWIVAL_PROVIDER=google` instead of `generic`.
 - Let `swival` resolve the API key from `GEMINI_API_KEY` or `OPENAI_API_KEY`.
-- `HUB_ASSISTANT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
-  overriding the default Google OpenAI-compatible endpoint.
-- `HUB_ASSISTANT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
-  Hub Assistant no longer derives its MCP target from request headers.
+- `HUB_ASSISTANT_SWIVAL_BASE_URL` is optional for Gemini and only needed when overriding the default Google OpenAI-compatible endpoint.
+- `HUB_ASSISTANT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The Hub Assistant no longer derives its MCP target from request headers.
 - `HUB_ASSISTANT_SWIVAL_RUNTIME_ROOT` controls where the Hub Assistant runtime keeps swival's per-user working state. Each authenticated user gets a dedicated subdirectory under this root, and the runtime no longer uses the shared backend repository directory as its `base_dir`.
 - The Hub Assistant profile now reports `configured=true` only when the required runtime settings are present and `swival` is actually importable from the backend process.
-- Hub Assistant write tools are disabled by default and only become available
-  for runs that explicitly set `allow_write_tools=true`.
+- Hub Assistant write tools are disabled by default and only become available for runs that explicitly set `allow_write_tools=true`.
 - Hub Assistant runs now bind their `conversationId` to the normal sessions domain: the thread, user/agent messages, and permission interrupt lifecycle events are persisted under `/me/conversations`, rather than existing only in process memory.
 - When the Hub Assistant returns a permission interrupt, `reply=once` enables write tools only for the resumed turn, while `reply=always` enables auto-approved write tools for the current Hub Assistant conversation until the server-side swival session expires.
 - The swival runtime object itself is still process-local and TTL-managed; this PR persists the durable session history and interrupt lifecycle, not full cross-process swival runtime restoration.
