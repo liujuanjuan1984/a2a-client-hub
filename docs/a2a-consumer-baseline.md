@@ -27,8 +27,7 @@ Hub should consume peer capabilities in this order:
 
 ### 1. Core Interoperability
 
-The following checks determine whether a peer is basically usable as a
-Hub-consumable A2A peer:
+The following checks determine whether a peer is basically usable as a Hub-consumable A2A peer:
 
 - `supportedInterfaces` exists and contains at least one usable interface
 - `protocolVersion` is compatible with the Hub consumer baseline
@@ -72,8 +71,7 @@ Hub should treat provider-private contracts as:
 - capability-specific diagnostics
 - runtime negotiation inputs when they are declared and intentionally consumed
 
-Hub should not treat missing provider-private details as proof that the peer is not
-a usable Hub-consumable A2A peer.
+Hub should not treat missing provider-private details as proof that the peer is not a usable Hub-consumable A2A peer.
 
 ## Minimal Adapter Boundary
 
