@@ -513,10 +513,10 @@ class SessionHistoryMessageService:
                     cast(str | None, existing_agent_blocks[0].block_type)
                 )
                 == "text"
-                and normalize_non_empty_text(
-                    cast(str | None, existing_agent_blocks[0].source)
+                and session_common.is_primary_text_lane(
+                    cast(str | None, existing_agent_blocks[0].lane_id)
                 )
-                in {"final_snapshot", "finalize_snapshot"}
+                and bool(existing_agent_blocks[0].is_finished)
             )
             if can_upsert_snapshot:
                 await self._support.upsert_single_text_block(

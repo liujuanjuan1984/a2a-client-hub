@@ -272,7 +272,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
                     "shared": {
                         "stream": {
                             "blockType": "text",
-                            "source": "final_snapshot",
                             "messageId": "msg-stream-1",
                             "eventId": "evt-text-2",
                             "seq": 4,
@@ -742,7 +741,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_when_upstream_reuses_art
                         "shared": {
                             "stream": {
                                 "blockType": "text",
-                                "source": "final_snapshot",
                                 "messageId": "msg-stream-shared",
                                 "eventId": "evt-shared-3",
                                 "seq": 3,

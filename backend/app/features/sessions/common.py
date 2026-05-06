@@ -83,6 +83,7 @@ INFLIGHT_CANCEL_TERMINAL_ERROR_CODES = {
     "task_not_cancelable",
     "invalid_task_id",
 }
+PRIMARY_TEXT_LANE_ID = "primary_text"
 PRIMARY_TEXT_SNAPSHOT_SOURCES = frozenset({"final_snapshot", "finalize_snapshot"})
 
 
@@ -214,6 +215,10 @@ def normalize_block_type(raw_type: str | None) -> str:
     }:
         return normalized
     return normalized
+
+
+def is_primary_text_lane(lane_id: str | None) -> bool:
+    return normalize_non_empty_text(lane_id) == PRIMARY_TEXT_LANE_ID
 
 
 def normalize_interrupt_lifecycle_event(
