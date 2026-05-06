@@ -6,7 +6,7 @@ import os
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-TEST_SETTINGS_DISABLE_ENV_FILE = "A2A_SETTINGS_DISABLE_ENV_FILE"
+TEST_BACKEND_ENV_FILE = "BACKEND_ENV_FILE"
 
 _AMBIENT_SETTING_PREFIXES = (
     "A2A_",
@@ -20,8 +20,8 @@ _AMBIENT_SETTING_PREFIXES = (
 
 _AMBIENT_SETTING_NAMES = {
     "APP_ENV",
+    TEST_BACKEND_ENV_FILE,
     "DATABASE_URL",
-    TEST_SETTINGS_DISABLE_ENV_FILE,
     "FIRST_USER_SUPERUSER",
     "HUB_A2A_TOKEN_ENCRYPTION_KEY",
     "INVITATION_CODE_LENGTH",
@@ -77,7 +77,7 @@ def apply_test_environment() -> None:
 
     _clear_ambient_application_settings()
 
-    os.environ[TEST_SETTINGS_DISABLE_ENV_FILE] = "true"
+    os.environ[TEST_BACKEND_ENV_FILE] = ""
     os.environ["APP_ENV"] = "development"
     os.environ["SCHEMA_NAME"] = os.getenv(
         "TEST_SCHEMA_NAME", "test_a2a_client_hub_schema"

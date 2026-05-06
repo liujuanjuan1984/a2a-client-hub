@@ -5,7 +5,7 @@ import os
 import pytest
 
 from tests.support.env_bootstrap import (
-    TEST_SETTINGS_DISABLE_ENV_FILE,
+    TEST_BACKEND_ENV_FILE,
     apply_test_environment,
 )
 
@@ -22,7 +22,7 @@ def test_apply_test_environment_replaces_ambient_application_settings(
 
     apply_test_environment()
 
-    assert os.environ[TEST_SETTINGS_DISABLE_ENV_FILE] == "true"
+    assert os.environ[TEST_BACKEND_ENV_FILE] == ""
     assert os.environ["APP_ENV"] == "development"
     assert os.environ["DATABASE_URL"] == "postgresql://localhost/test_db"
     assert os.environ["SCHEMA_NAME"] == "isolated_schema"

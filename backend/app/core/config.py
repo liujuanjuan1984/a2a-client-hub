@@ -47,10 +47,14 @@ SUPPORTED_JWT_ALGORITHMS = frozenset(
 def _resolve_settings_env_file() -> str | None:
     """Resolve the dotenv file used by application settings."""
 
-    disable_env_file = os.getenv("A2A_SETTINGS_DISABLE_ENV_FILE", "").strip().lower()
-    if disable_env_file in {"1", "true", "yes", "on"}:
+    env_file = os.getenv("BACKEND_ENV_FILE")
+    if env_file is None:
+        return ".env"
+
+    normalized = env_file.strip()
+    if not normalized:
         return None
-    return ".env"
+    return normalized
 
 
 class Settings(BaseSettings):
