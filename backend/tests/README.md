@@ -29,6 +29,7 @@ Backend tests are organized by either business feature or shared concern.
 ## Environment Bootstrap
 
 - Backend tests install a controlled application environment before importing `app.core.config`.
+- The bootstrap sets `BACKEND_ENV_FILE` to an empty value so tests do not load the repo-local `backend/.env`.
 - Use `TEST_DATABASE_URL` or `TEST_DATABASE_NAME` to choose the PostgreSQL database for tests.
 - Use `TEST_SCHEMA_NAME` to override the default schema name.
 - Ambient application settings such as `DATABASE_URL`, `BACKEND_*`, `JWT_*`, and other runtime env vars are cleared during test bootstrap to keep runs reproducible.
