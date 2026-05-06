@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, cast
@@ -105,6 +105,55 @@ def _coerce_text_payload_mapping(payload: Any) -> dict[str, Any] | None:
 
 def _is_unsupported_protocol_version(value: str | None) -> bool:
     return isinstance(value, str) and value.strip().startswith("0.3")
+
+
+def _protocol_version_priority(value: str | None) -> tuple[int, tuple[int, ...]]:
+    if not isinstance(value, str):
+        return (0, ())
+
+    stripped = value.strip()
+    if not stripped:
+        return (0, ())
+
+    try:
+        parsed = tuple(int(part) for part in stripped.split("."))
+    except ValueError:
+        return (0, ())
+
+    if parsed and parsed[0] == 1 and all(part == 0 for part in parsed[1:]):
+        return (3, parsed)
+    if parsed and parsed[0] >= 1:
+        return (2, parsed)
+    return (1, parsed)
+
+
+def _select_preferred_interface(
+    supported_interfaces: Sequence[Any],
+    protocol_binding: str,
+) -> tuple[str, str] | None:
+    best_candidate: tuple[tuple[int, tuple[int, ...], int], str] | None = None
+
+    for index, iface in enumerate(supported_interfaces):
+        transport = normalize_transport_label(getattr(iface, "protocol_binding", None))
+        if transport != protocol_binding:
+            continue
+
+        interface_url = (getattr(iface, "url", "") or "").strip()
+        if not interface_url:
+            continue
+
+        protocol_version = getattr(iface, "protocol_version", None)
+        if _is_unsupported_protocol_version(protocol_version):
+            continue
+
+        priority = (*_protocol_version_priority(protocol_version), -index)
+        if best_candidate is None or priority > best_candidate[0]:
+            best_candidate = (priority, interface_url)
+
+    if best_candidate is None:
+        return None
+
+    return protocol_binding, best_candidate[1]
 
 
 class StaticHeaderInterceptor(ClientCallInterceptor):
@@ -649,19 +698,28 @@ class A2AClient:
         if not supported_labels:
             supported_labels = [TransportProtocol.JSONRPC.value]
 
-        server_set: list[tuple[str, str]] = []
         skipped_unsupported_protocol_interface = False
-        for iface in getattr(card, "supported_interfaces", None) or []:
+        supported_interfaces = list(getattr(card, "supported_interfaces", None) or [])
+
+        server_set: list[tuple[str, str]] = []
+        seen_transports: set[str] = set()
+        for iface in supported_interfaces:
             transport = normalize_transport_label(
                 getattr(iface, "protocol_binding", None)
             )
-            interface_url = (getattr(iface, "url", "") or "").strip()
             protocol_version = getattr(iface, "protocol_version", None)
             if _is_unsupported_protocol_version(protocol_version):
                 skipped_unsupported_protocol_interface = True
+            if not transport or transport in seen_transports:
                 continue
-            if transport and interface_url:
-                server_set.append((transport, interface_url))
+            selected_interface = _select_preferred_interface(
+                supported_interfaces,
+                transport,
+            )
+            if selected_interface is None:
+                continue
+            seen_transports.add(transport)
+            server_set.append(selected_interface)
 
         if self._use_client_preference:
             for transport in client_set:

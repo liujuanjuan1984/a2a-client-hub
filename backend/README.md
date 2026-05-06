@@ -65,20 +65,15 @@ Default API prefix: `/api/v1`.
 
 ## Run the MCP Surface
 
-The backend also mounts an authenticated FastMCP surface for hub-assistant.
-This is intended for agent runtimes such as `swival`, not for direct browser use.
+The backend also mounts an authenticated FastMCP surface for hub-assistant. This is intended for agent runtimes such as `swival`, not for direct browser use.
 
 - Mounted paths:
   - `/mcp` for the default read-only tool surface
   - `/mcp-write` for the explicitly write-enabled tool surface
 - Transport: HTTP SSE
 - Auth: delegated bearer token in `Authorization: Bearer <token>`
-- Read-only MCP tools:
-  `hub_assistant.agents.list`, `hub_assistant.agents.get`,
-  `hub_assistant.jobs.list`, `hub_assistant.jobs.get`,
-  `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
-- Write-enabled MCP tools add:
-  `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
+- Read-only MCP tools: `hub_assistant.agents.list`, `hub_assistant.agents.get`, `hub_assistant.jobs.list`, `hub_assistant.jobs.get`, `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
+- Write-enabled MCP tools add: `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
 
 Once the API server is running, an MCP client can connect to:
 
@@ -94,24 +89,17 @@ http://localhost:8000/mcp-write/
 
 ## Run the Swival-Backed Built-In Agent
 
-The backend also exposes a first-wave Hub Assistant surface
-that uses `swival` as the runtime and the authenticated MCP surface as its tool
-backend.
+The backend also exposes a first-wave Hub Assistant surface that uses `swival` as the runtime and the authenticated MCP surface as its tool backend.
 
 - Profile: `GET /api/v1/me/hub-assistant`
 - Run once: `POST /api/v1/me/hub-assistant:run`
 - Recover pending interrupts: `POST /api/v1/me/hub-assistant/interrupts:recover`
 - Default run mode: read-only
 - Hub Assistant runs are conversation-backed and must include `conversationId`
-- To explicitly enable write tools for one run, send:
-  `{"conversationId": "...", "message": "...", "allow_write_tools": true}`
+- To explicitly enable write tools for one run, send: `{"conversationId": "...", "message": "...", "allow_write_tools": true}`
 - Current Hub Assistant tool set:
-  - default read-only:
-    `hub_assistant.agents.list`, `hub_assistant.agents.get`,
-    `hub_assistant.jobs.list`, `hub_assistant.jobs.get`,
-    `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
-  - write-enabled only:
-    `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
+  - default read-only: `hub_assistant.agents.list`, `hub_assistant.agents.get`, `hub_assistant.jobs.list`, `hub_assistant.jobs.get`, `hub_assistant.sessions.list`, `hub_assistant.sessions.get`
+  - write-enabled only: `hub_assistant.agents.update_config`, `hub_assistant.jobs.pause`
 
 Required environment variables:
 
@@ -142,49 +130,21 @@ export HUB_ASSISTANT_SWIVAL_MCP_BASE_URL=http://127.0.0.1:8000
 
 Notes:
 
-- Preferred production deployment: install the exact `swival` build that you
-  intend to run into the backend Python environment so `uv run python -c "import swival"`
-  succeeds directly.
-- If you currently ship a locally patched `swival` through `uv tool install`,
-  set `HUB_ASSISTANT_SWIVAL_TOOL_EXECUTABLE` to that tool binary (prefer an
-  absolute path). The backend will resolve the tool-managed virtualenv's
-  `site-packages` and import `swival` from there as a compatibility fallback.
-- `HUB_ASSISTANT_SWIVAL_IMPORT_PATHS` remains available as a last-resort
-  development escape hatch, but it is less stable than installing an exact
-  wheel into the backend environment or resolving from an explicitly managed
-  tool executable.
+- Preferred production deployment: install the exact `swival` build that you intend to run into the backend Python environment so `uv run python -c "import swival"` succeeds directly.
+- If you currently ship a locally patched `swival` through `uv tool install`, set `HUB_ASSISTANT_SWIVAL_TOOL_EXECUTABLE` to that tool binary (prefer an absolute path). The backend will resolve the tool-managed virtualenv's `site-packages` and import `swival` from there as a compatibility fallback.
+- `HUB_ASSISTANT_SWIVAL_IMPORT_PATHS` remains available as a last-resort development escape hatch, but it is less stable than installing an exact wheel into the backend environment or resolving from an explicitly managed tool executable.
 - For Gemini, prefer `HUB_ASSISTANT_SWIVAL_PROVIDER=google` instead of `generic`.
 - Let `swival` resolve the API key from `GEMINI_API_KEY` or `OPENAI_API_KEY`.
-- `HUB_ASSISTANT_SWIVAL_BASE_URL` is optional for Gemini and only needed when
-  overriding the default Google OpenAI-compatible endpoint.
-- `HUB_ASSISTANT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The
-  Hub Assistant no longer derives its MCP target from request headers.
-- `HUB_ASSISTANT_SWIVAL_RUNTIME_ROOT` controls where the Hub Assistant runtime keeps
-  swival's per-user working state. Each authenticated user gets a dedicated
-  subdirectory under this root, and the runtime no longer uses the shared
-  backend repository directory as its `base_dir`.
-- The Hub Assistant profile now reports `configured=true` only when the required
-  runtime settings are present and `swival` is actually importable from the
-  backend process.
-- Hub Assistant write tools are disabled by default and only become available
-  for runs that explicitly set `allow_write_tools=true`.
-- Hub Assistant runs now bind their `conversationId` to the normal sessions domain:
-  the thread, user/agent messages, and permission interrupt lifecycle events are
-  persisted under `/me/conversations`, rather than existing only in process
-  memory.
-- When the Hub Assistant returns a permission interrupt, `reply=once` enables
-  write tools only for the resumed turn, while `reply=always` enables
-  auto-approved write tools for the current Hub Assistant conversation until the
-  server-side swival session expires.
-- The swival runtime object itself is still process-local and TTL-managed; this
-  PR persists the durable session history and interrupt lifecycle, not full
-  cross-process swival runtime restoration.
-- If the in-memory swival runtime expires, the backend now best-effort
-  rehydrates the next Hub Assistant session from persisted user/agent turns in the
-  same durable conversation before resuming.
-- The Hub Assistant runtime applies a compatibility shim for older `swival` MCP
-  adapters that still emit private `_mcp_*` tool metadata rejected by Gemini's
-  OpenAI-compatible endpoint.
+- `HUB_ASSISTANT_SWIVAL_BASE_URL` is optional for Gemini and only needed when overriding the default Google OpenAI-compatible endpoint.
+- `HUB_ASSISTANT_SWIVAL_MCP_BASE_URL` must be a trusted internal address. The Hub Assistant no longer derives its MCP target from request headers.
+- `HUB_ASSISTANT_SWIVAL_RUNTIME_ROOT` controls where the Hub Assistant runtime keeps swival's per-user working state. Each authenticated user gets a dedicated subdirectory under this root, and the runtime no longer uses the shared backend repository directory as its `base_dir`.
+- The Hub Assistant profile now reports `configured=true` only when the required runtime settings are present and `swival` is actually importable from the backend process.
+- Hub Assistant write tools are disabled by default and only become available for runs that explicitly set `allow_write_tools=true`.
+- Hub Assistant runs now bind their `conversationId` to the normal sessions domain: the thread, user/agent messages, and permission interrupt lifecycle events are persisted under `/me/conversations`, rather than existing only in process memory.
+- When the Hub Assistant returns a permission interrupt, `reply=once` enables write tools only for the resumed turn, while `reply=always` enables auto-approved write tools for the current Hub Assistant conversation until the server-side swival session expires.
+- The swival runtime object itself is still process-local and TTL-managed; this PR persists the durable session history and interrupt lifecycle, not full cross-process swival runtime restoration.
+- If the in-memory swival runtime expires, the backend now best-effort rehydrates the next Hub Assistant session from persisted user/agent turns in the same durable conversation before resuming.
+- The Hub Assistant runtime applies a compatibility shim for older `swival` MCP adapters that still emit private `_mcp_*` tool metadata rejected by Gemini's OpenAI-compatible endpoint.
 
 ## Backend Structure
 
@@ -293,9 +253,7 @@ Endpoints:
 Credentials:
 
 - Configure `HUB_A2A_TOKEN_ENCRYPTION_KEY` (falls back to `USER_LLM_TOKEN_ENCRYPTION_KEY`).
-- Personal-agent and hub-agent create/update payloads also accept
-  `invoke_metadata_defaults`, which stores agent-level fallback values for
-  declared invoke-metadata contracts.
+- Personal-agent and hub-agent create/update payloads also accept `invoke_metadata_defaults`, which stores agent-level fallback values for declared invoke-metadata contracts.
 
 ## Shared Session Query / Interrupt Callback Compatibility
 
@@ -380,11 +338,8 @@ Validation:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:revert`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:unrevert`
   - The Hub still does not expose `opencode.sessions.shell`; upstream treats it as a deployment-conditional, boundary-sensitive surface and Hub keeps it diagnostics-only.
-- When an upstream declares invoke-metadata fields, Hub now applies values in
-  this order before outbound invoke: direct request metadata, then
-  session-scoped bindings, then agent-level `invoke_metadata_defaults`.
-- `invokeMetadata` capability diagnostics now expose `status` and `error` so
-  invalid upstream contracts can be distinguished from unsupported runtimes.
+- When an upstream declares invoke-metadata fields, Hub now applies values in this order before outbound invoke: direct request metadata, then session-scoped bindings, then agent-level `invoke_metadata_defaults`.
+- `invokeMetadata` capability diagnostics now expose `status` and `error` so invalid upstream contracts can be distinguished from unsupported runtimes.
 - Reply interrupt callbacks:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts:recover`
     - body: `{ "sessionId": "ses-123" }`
@@ -476,9 +431,7 @@ The backend now exposes a unified conversation read model for manual, scheduled,
   - `contextId` (A2A context id)
   - `<metadata_key>` (strict upstream session-binding key from `urn:opencode-a2a:opencode-session-binding/v1`, e.g. `opencode_session_id`)
 
-Hub-facing request contracts accept `workingDirectory` directly. The backend
-keeps provider-private working-directory metadata as an outbound adapter detail
-when upstream extensions still require it.
+Hub-facing request contracts accept `workingDirectory` directly. The backend keeps provider-private working-directory metadata as an outbound adapter detail when upstream extensions still require it.
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example `550e8400-e29b-41d4-a716-446655440000`.
 
