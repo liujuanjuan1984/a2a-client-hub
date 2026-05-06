@@ -51,10 +51,18 @@ class HubAssistantDelegatedConversationService:
 
     def __init__(self) -> None:
         self._session_support = SessionHubSupport()
-        self._task_run_requester: Callable[[], None] = lambda: None
+        self._task_run_requester: Callable[[], None] | None = None
 
     def set_task_run_requester(self, requester: Callable[[], None]) -> None:
         self._task_run_requester = requester
+
+    def clear_task_run_requester(self) -> None:
+        self._task_run_requester = None
+
+    def _request_task_run_if_configured(self) -> None:
+        if self._task_run_requester is None:
+            return
+        self._task_run_requester()
 
     async def send_messages_to_sessions(
         self,
@@ -98,7 +106,7 @@ class HubAssistantDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            self._task_run_requester()
+            self._request_task_run_if_configured()
         return self._serialize_batch_payload(items=items)
 
     async def start_sessions_for_agents(
@@ -145,7 +153,7 @@ class HubAssistantDelegatedConversationService:
                 conversation_ids=accepted_conversation_ids,
             )
         if dispatched:
-            self._task_run_requester()
+            self._request_task_run_if_configured()
         return self._serialize_batch_payload(items=items)
 
     async def _send_one_session_message(

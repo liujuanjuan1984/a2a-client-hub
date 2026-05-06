@@ -33,6 +33,7 @@ from app.features.hub_assistant.shared.hub_assistant_mcp import (
     build_hub_assistant_mcp_http_app,
 )
 from app.features.hub_assistant.shared.task_job import (
+    configure_hub_assistant_task_job,
     ensure_hub_assistant_task_job,
 )
 from app.features.schedules.job import ensure_a2a_schedule_job
@@ -104,6 +105,7 @@ async def _shutdown_runtime_components() -> None:
 async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         init_global_http_client()
+        configure_hub_assistant_task_job()
         start_scheduler()
         ensure_a2a_schedule_job()
         ensure_auth_cleanup_job()
