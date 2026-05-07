@@ -323,8 +323,4 @@ class ShortcutService:
         await commit_safely(db)
 
 
-a2_shortcut_service = ShortcutService()
-
-
-# Alias kept for compatibility.
-shortcuts_service = a2_shortcut_service
+shortcuts_service = ShortcutService()
