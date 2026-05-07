@@ -15,6 +15,7 @@ Use this index to find the right document instead of repeating the same guidance
 
 - Architecture overview and API examples: [`architecture-and-api.md`](architecture-and-api.md)
 - A2A consumer baseline and negotiation model: [`a2a-consumer-baseline.md`](a2a-consumer-baseline.md)
+- Artifact-first interoperability review for issue `#888`: [`artifact-first-interop-review.md`](artifact-first-interop-review.md)
 - Compatibility notes and non-goals: [`compatibility-and-non-goals.md`](compatibility-and-non-goals.md)
 - Authentication and session model: [`authentication.md`](authentication.md)
 - Release automation and version synchronization: [`release-workflow.md`](release-workflow.md)
