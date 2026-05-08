@@ -7,10 +7,8 @@ from typing import Any, Iterable, Mapping
 from app.integrations.a2a_extensions.shared_contract import (
     CANONICAL_EXTERNAL_SESSION_ID_KEY,
     CANONICAL_PROVIDER_KEY,
-    SHARED_INTERRUPT_KEY,
     SHARED_METADATA_KEY,
     SHARED_SESSION_KEY,
-    SHARED_USAGE_KEY,
 )
 
 
@@ -46,24 +44,6 @@ def merge_shared_metadata_sections(
         if shared_section:
             resolved.update(shared_section)
     return resolved
-
-
-def extract_preferred_interrupt_metadata(
-    payload_or_metadata: Mapping[str, Any],
-) -> dict[str, Any]:
-    return extract_shared_metadata_section(
-        payload_or_metadata,
-        section=SHARED_INTERRUPT_KEY,
-    )
-
-
-def extract_preferred_usage_metadata(
-    payload_or_metadata: Mapping[str, Any],
-) -> dict[str, Any]:
-    return extract_shared_metadata_section(
-        payload_or_metadata,
-        section=SHARED_USAGE_KEY,
-    )
 
 
 def merge_preferred_session_binding_metadata(

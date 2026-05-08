@@ -12,7 +12,7 @@ from app.features.invoke.payload_helpers import (
 )
 from app.features.invoke.payload_helpers import pick_int as _pick_int
 from app.features.invoke.shared_metadata import (
-    extract_preferred_usage_metadata,
+    extract_shared_metadata_section,
     merge_preferred_session_binding_metadata,
 )
 from app.features.invoke.stream_field_aliases import (
@@ -24,6 +24,7 @@ from app.features.invoke.stream_field_aliases import (
 from app.integrations.a2a_client.protobuf import (
     to_protojson_object,
 )
+from app.integrations.a2a_extensions.shared_contract import SHARED_USAGE_KEY
 from app.utils.payload_extract import (
     extract_context_id,
     extract_provider_and_external_session_id,
@@ -77,7 +78,7 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
         return {}
 
     direct_usage = _dict_field(payload, "usage")
-    metadata_usage = extract_preferred_usage_metadata(payload)
+    metadata_usage = extract_shared_metadata_section(payload, section=SHARED_USAGE_KEY)
 
     usage_payload: dict[str, Any] = {}
     if direct_usage:
