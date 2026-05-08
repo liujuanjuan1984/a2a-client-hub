@@ -3,9 +3,9 @@ from __future__ import annotations
 from tests.extensions.a2a_extensions_service_support import (
     COMPATIBILITY_PROFILE_URI,
     INTERRUPT_RECOVERY_URI,
-    OPENCODE_WIRE_CONTRACT_URI,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_QUERY_URI,
+    WIRE_CONTRACT_URI,
     A2AExtensionsService,
     CompatibilityRetentionEntry,
     DeclaredMethodCapabilitySnapshot,
@@ -543,7 +543,7 @@ def test_build_upstream_discovery_snapshot_uses_wire_contract_fallback_hints() -
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=OPENCODE_WIRE_CONTRACT_URI,
+                    uri=WIRE_CONTRACT_URI,
                     params={
                         "all_jsonrpc_methods": [
                             "codex.discovery.skills.list",

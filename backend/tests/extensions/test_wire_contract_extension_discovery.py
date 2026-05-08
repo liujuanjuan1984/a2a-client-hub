@@ -10,8 +10,6 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_WIRE_CONTRACT_URI,
     MODEL_SELECTION_URI,
-    OPENCODE_MODEL_SELECTION_URI,
-    OPENCODE_WIRE_CONTRACT_URI,
     WIRE_CONTRACT_URI,
 )
 from app.integrations.a2a_extensions.wire_contract import resolve_wire_contract
@@ -60,7 +58,7 @@ def test_resolve_wire_contract_supports_declared_contract() -> None:
                             "toggle": "A2A_ENABLE_SESSION_SHELL",
                         }
                     },
-                    "extension_uris": [OPENCODE_MODEL_SELECTION_URI],
+                    "extension_uris": [MODEL_SELECTION_URI],
                 },
                 "all_jsonrpc_methods": [
                     "agent/getAuthenticatedExtendedCard",
@@ -99,7 +97,7 @@ def test_resolve_wire_contract_supports_declared_contract() -> None:
 def test_resolve_wire_contract_accepts_current_opencode_uri() -> None:
     card = _build_card(
         extension_payload={
-            "uri": OPENCODE_WIRE_CONTRACT_URI,
+            "uri": WIRE_CONTRACT_URI,
             "required": False,
             "params": {
                 "protocol_version": "0.3.0",
@@ -112,7 +110,7 @@ def test_resolve_wire_contract_accepts_current_opencode_uri() -> None:
                 "extensions": {
                     "jsonrpc_methods": [],
                     "conditionally_available_methods": {},
-                    "extension_uris": [OPENCODE_MODEL_SELECTION_URI],
+                    "extension_uris": [MODEL_SELECTION_URI],
                 },
                 "all_jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
                 "service_behaviors": {},
@@ -132,14 +130,14 @@ def test_resolve_wire_contract_accepts_current_opencode_uri() -> None:
 
     resolved = resolve_wire_contract(card)
 
-    assert resolved.uri == OPENCODE_WIRE_CONTRACT_URI
+    assert resolved.uri == WIRE_CONTRACT_URI
     assert resolved.conditionally_available_methods == {}
 
 
 def test_resolve_wire_contract_accepts_current_opencode_wire_contract_uri() -> None:
     card = _build_card(
         extension_payload={
-            "uri": OPENCODE_WIRE_CONTRACT_URI,
+            "uri": WIRE_CONTRACT_URI,
             "required": False,
             "params": {
                 "protocol_version": "0.3.0",
@@ -152,7 +150,7 @@ def test_resolve_wire_contract_accepts_current_opencode_wire_contract_uri() -> N
                 "extensions": {
                     "jsonrpc_methods": [],
                     "conditionally_available_methods": {},
-                    "extension_uris": [OPENCODE_MODEL_SELECTION_URI],
+                    "extension_uris": [MODEL_SELECTION_URI],
                 },
                 "all_jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
                 "service_behaviors": {},
@@ -172,7 +170,7 @@ def test_resolve_wire_contract_accepts_current_opencode_wire_contract_uri() -> N
 
     resolved = resolve_wire_contract(card)
 
-    assert resolved.uri == OPENCODE_WIRE_CONTRACT_URI
+    assert resolved.uri == WIRE_CONTRACT_URI
     assert resolved.extension_uris == (MODEL_SELECTION_URI,)
 
 

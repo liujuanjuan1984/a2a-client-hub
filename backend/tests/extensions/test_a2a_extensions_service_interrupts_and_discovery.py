@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from tests.extensions.a2a_extensions_service_support import (
     INTERRUPT_RECOVERY_URI,
-    OPENCODE_WIRE_CONTRACT_URI,
     PROVIDER_DISCOVERY_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_SESSION_QUERY_URI,
+    WIRE_CONTRACT_URI,
     A2AExtensionsService,
     DeclaredMethodCapabilitySnapshot,
     DeclaredMethodCollectionCapabilitySnapshot,
@@ -610,7 +610,7 @@ async def test_list_model_providers_returns_method_not_supported_when_wire_contr
     assert result.source == "wire_contract"
     assert result.meta == {
         "extension_uri": PROVIDER_DISCOVERY_URI,
-        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "providers.list",
     }
@@ -780,8 +780,8 @@ async def test_read_upstream_plugin_returns_method_not_supported_when_wire_contr
     assert result.success is False
     assert result.error_code == "method_not_supported"
     assert result.meta == {
-        "extension_uri": OPENCODE_WIRE_CONTRACT_URI,
-        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "extension_uri": WIRE_CONTRACT_URI,
+        "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "codex.discovery.plugins.read",
     }

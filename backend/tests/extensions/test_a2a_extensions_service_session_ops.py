@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from tests.extensions.a2a_extensions_service_support import (
-    OPENCODE_WIRE_CONTRACT_URI,
     SHARED_SESSION_QUERY_URI,
+    WIRE_CONTRACT_URI,
     A2AExtensionsService,
     Any,
     DeclaredMethodCapabilitySnapshot,
@@ -198,7 +198,7 @@ async def test_prompt_session_async_returns_method_disabled_when_wire_contract_m
     }
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "conditionally_available",
         "method_name": "shared.sessions.prompt_async",
     }
@@ -635,7 +635,7 @@ async def test_command_session_returns_method_not_supported_when_wire_contract_d
     }
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "shared.sessions.command",
     }
@@ -957,7 +957,7 @@ async def test_get_session_returns_method_not_supported_when_wire_contract_disal
     assert result.source == "wire_contract"
     assert result.meta == {
         "extension_uri": SHARED_SESSION_QUERY_URI,
-        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "shared.sessions.get",
     }

@@ -37,7 +37,6 @@ from app.integrations.a2a_extensions.shared_contract import (
     COMPATIBILITY_PROFILE_URI,
     INTERRUPT_RECOVERY_URI,
     INVOKE_METADATA_URI,
-    OPENCODE_WIRE_CONTRACT_URI,
     PROVIDER_DISCOVERY_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_INVOKE_FIELD,
@@ -45,6 +44,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_ID_FIELD,
     SHARED_SESSION_QUERY_URI,
     STREAM_HINTS_URI,
+    WIRE_CONTRACT_URI,
 )
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
@@ -475,7 +475,7 @@ def _wire_contract_extension_fixture(
     conditional_methods: dict[str, ResolvedConditionalMethodAvailability] | None = None,
 ) -> ResolvedWireContractExtension:
     return ResolvedWireContractExtension(
-        uri=OPENCODE_WIRE_CONTRACT_URI,
+        uri=WIRE_CONTRACT_URI,
         required=False,
         protocol_version="0.3.0",
         preferred_transport="HTTP+JSON",
@@ -582,7 +582,7 @@ __all__ = [
     "INTERRUPT_RECOVERY_URI",
     "INVOKE_METADATA_URI",
     "JsonRpcInterface",
-    "OPENCODE_WIRE_CONTRACT_URI",
+    "WIRE_CONTRACT_URI",
     "PROVIDER_DISCOVERY_URI",
     "ResolvedCompatibilityProfileExtension",
     "ResolvedConditionalMethodAvailability",

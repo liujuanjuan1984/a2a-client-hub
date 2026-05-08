@@ -16,11 +16,10 @@ SUPPORTED_SESSION_BINDING_URIS = (
     CODEX_SHARED_SESSION_BINDING_URI,
 )
 
-SHARED_SESSION_QUERY_URI = "urn:opencode-a2a:extension:session-management:v1"
 OPENCODE_SHARED_SESSION_MANAGEMENT_URI = (
     "urn:opencode-a2a:extension:session-management:v1"
 )
-OPENCODE_SHARED_SESSION_QUERY_URI = OPENCODE_SHARED_SESSION_MANAGEMENT_URI
+SHARED_SESSION_QUERY_URI = OPENCODE_SHARED_SESSION_MANAGEMENT_URI
 CODEX_SHARED_SESSION_QUERY_URI = "urn:codex-a2a:extension:session-query:v1"
 SUPPORTED_SESSION_QUERY_URIS = (
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
@@ -28,17 +27,12 @@ SUPPORTED_SESSION_QUERY_URIS = (
 )
 
 INVOKE_METADATA_URI = "urn:a2a:invoke-metadata/v1"
-OPENCODE_INVOKE_METADATA_URI = INVOKE_METADATA_URI
 SUPPORTED_INVOKE_METADATA_URIS = (INVOKE_METADATA_URI,)
 
 MODEL_SELECTION_URI = "urn:opencode-a2a:extension:model-selection:v1"
-OPENCODE_MODEL_SELECTION_URI = "urn:opencode-a2a:extension:model-selection:v1"
 SUPPORTED_MODEL_SELECTION_URIS = (MODEL_SELECTION_URI,)
 
 COMPATIBILITY_PROFILE_URI = "urn:opencode-a2a:extension:compatibility-profile:v1"
-OPENCODE_COMPATIBILITY_PROFILE_URI = (
-    "urn:opencode-a2a:extension:compatibility-profile:v1"
-)
 CODEX_COMPATIBILITY_PROFILE_URI = "urn:codex-a2a:extension:compatibility-profile:v1"
 SUPPORTED_COMPATIBILITY_PROFILE_URIS = (
     COMPATIBILITY_PROFILE_URI,
@@ -46,7 +40,6 @@ SUPPORTED_COMPATIBILITY_PROFILE_URIS = (
 )
 
 WIRE_CONTRACT_URI = "urn:opencode-a2a:extension:wire-contract:v1"
-OPENCODE_WIRE_CONTRACT_URI = "urn:opencode-a2a:extension:wire-contract:v1"
 CODEX_WIRE_CONTRACT_URI = "urn:codex-a2a:extension:wire-contract:v1"
 SUPPORTED_WIRE_CONTRACT_URIS = (
     WIRE_CONTRACT_URI,
@@ -54,11 +47,9 @@ SUPPORTED_WIRE_CONTRACT_URIS = (
 )
 
 PROVIDER_DISCOVERY_URI = "urn:opencode-a2a:extension:provider-discovery:v1"
-OPENCODE_PROVIDER_DISCOVERY_URI = "urn:opencode-a2a:extension:provider-discovery:v1"
 SUPPORTED_PROVIDER_DISCOVERY_URIS = (PROVIDER_DISCOVERY_URI,)
 
 INTERRUPT_RECOVERY_URI = "urn:opencode-a2a:extension:interrupt-recovery:v1"
-OPENCODE_INTERRUPT_RECOVERY_URI = "urn:opencode-a2a:extension:interrupt-recovery:v1"
 CODEX_INTERRUPT_RECOVERY_URI = "urn:codex-a2a:extension:interrupt-recovery:v1"
 SUPPORTED_INTERRUPT_RECOVERY_URIS = (
     INTERRUPT_RECOVERY_URI,
