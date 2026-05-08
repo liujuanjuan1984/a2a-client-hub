@@ -1433,7 +1433,22 @@ class A2AClient:
                 return "\n".join(collected)
             return None
 
+        def is_completed_task_payload(payload_map: Mapping[str, Any]) -> bool:
+            status = _coerce_text_payload_mapping(payload_map.get("status"))
+            if status is None:
+                return False
+            state = status.get("state")
+            if not isinstance(state, str):
+                return False
+            normalized = state.strip().lower().replace("-", "_")
+            return normalized in {"completed", "task_state_completed"}
+
         def extract_from_mapping(payload_map: Mapping[str, Any]) -> Optional[str]:
+            if is_completed_task_payload(payload_map):
+                artifacts_text = extract_from_iterable(payload_map.get("artifacts"))
+                if artifacts_text:
+                    return artifacts_text
+
             for key in _TEXT_PAYLOAD_KEYS:
                 if key not in payload_map:
                     continue
