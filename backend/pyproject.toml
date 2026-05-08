@@ -47,7 +47,7 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "asyncpg>=0.29.0",
     # Data validation and serialization
-    "pydantic[email]>=2.13.3",
+    "pydantic[email]>=2.13.4",
     "pydantic-settings>=2.1.0",
     # HTTP client and utilities
     "httpx>=0.25.0",
@@ -57,10 +57,10 @@ dependencies = [
     # JSON handling
     # JWT handling
     "PyJWT>=2.12.0",
-    "authlib>=1.6.11",
+    "authlib>=1.7.2",
     "pyasn1>=0.6.3",
     "argon2-cffi==25.1.0",
-    "cryptography>=47.0.0",
+    "cryptography>=48.0.0",
     "fastmcp>=3.2.4,<4",
     "Pygments>=2.20.0",
 ]
@@ -69,7 +69,7 @@ dependencies = [
 dev = [
     "black>=26.3.1",
     "isort==8.0.1",
-    "mypy>=1.20.1",
+    "mypy>=2.0.0",
     "pip-audit>=2.9.0",
     "pre-commit>=3.0.0",
     "pytest>=8.3.0",
