@@ -49,7 +49,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 identity_scope="current_authenticated_caller",
                 implementation_scope=None,
                 empty_result_when_identity_unavailable=True,
-                uri="urn:opencode-a2a:interrupt-recovery/v1",
+                uri="urn:opencode-a2a:extension:private:interrupt-recovery:v1",
             ),
         ),
         invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
@@ -62,7 +62,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             persists_for_thread=True,
             source_extensions=(
                 "urn:a2a:session-binding/v1",
-                "urn:opencode-a2a:session-query/v1",
+                "urn:opencode-a2a:extension:private:session-management:v1",
             ),
             notes=("Execution overrides are provider-private.",),
             error=None,
@@ -105,8 +105,8 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                     "codex.exec.terminate",
                 ),
                 extension_uris=(
-                    "urn:opencode-a2a:provider-discovery/v1",
-                    "urn:opencode-a2a:session-query/v1",
+                    "urn:opencode-a2a:extension:private:provider-discovery:v1",
+                    "urn:opencode-a2a:extension:private:session-management:v1",
                 ),
                 conditionally_available_methods={
                     "opencode.sessions.shell": SimpleNamespace(
@@ -130,9 +130,9 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             status="supported",
             error=None,
             ext=SimpleNamespace(
-                uri="urn:a2a:compatibility-profile/v1",
+                uri="urn:opencode-a2a:extension:private:compatibility-profile:v1",
                 extension_retention={
-                    "urn:opencode-a2a:session-query/v1": SimpleNamespace(
+                    "urn:opencode-a2a:extension:private:session-management:v1": SimpleNamespace(
                         surface="jsonrpc-extension",
                         availability="always",
                         retention="stable",
@@ -142,7 +142,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                         identity_scope=None,
                         upstream_stability=None,
                     ),
-                    "urn:opencode-a2a:interrupt-recovery/v1": SimpleNamespace(
+                    "urn:opencode-a2a:extension:private:interrupt-recovery:v1": SimpleNamespace(
                         surface="jsonrpc-extension",
                         availability="always",
                         retention="stable",
@@ -158,7 +158,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                         surface="extension",
                         availability="disabled",
                         retention="deployment-conditional",
-                        extension_uri="urn:opencode-a2a:session-query/v1",
+                        extension_uri="urn:opencode-a2a:extension:private:session-management:v1",
                         toggle="A2A_ENABLE_SESSION_SHELL",
                         implementation_scope=None,
                         identity_scope=None,
@@ -410,7 +410,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             "persistsForThread": True,
             "sourceExtensions": [
                 "urn:a2a:session-binding/v1",
-                "urn:opencode-a2a:session-query/v1",
+                "urn:opencode-a2a:extension:private:session-management:v1",
             ],
             "notes": ["Execution overrides are provider-private."],
             "error": None,
@@ -450,8 +450,8 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 "codex.exec.terminate",
             ],
             "extensionUris": [
-                "urn:opencode-a2a:provider-discovery/v1",
-                "urn:opencode-a2a:session-query/v1",
+                "urn:opencode-a2a:extension:private:provider-discovery:v1",
+                "urn:opencode-a2a:extension:private:session-management:v1",
             ],
             "conditionalMethods": {
                 "opencode.sessions.shell": {
@@ -474,7 +474,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         "compatibilityProfile": {
             "declared": True,
             "status": "supported",
-            "uri": "urn:a2a:compatibility-profile/v1",
+            "uri": "urn:opencode-a2a:extension:private:compatibility-profile:v1",
             "advisoryOnly": True,
             "usedFor": ["diagnostics", "retention_hints"],
             "extensionRetentionCount": 2,

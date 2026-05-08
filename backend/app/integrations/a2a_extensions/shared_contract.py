@@ -11,9 +11,11 @@ SHARED_SESSION_BINDING_URI = "urn:a2a:session-binding/v1"
 OPENCODE_SHARED_SESSION_BINDING_URI = (
     "urn:opencode-a2a:extension:shared:session-binding:v1"
 )
+CODEX_SHARED_SESSION_BINDING_URI = "urn:codex-a2a:extension:shared:session-binding:v1"
 SUPPORTED_SESSION_BINDING_URIS = (
     SHARED_SESSION_BINDING_URI,
     OPENCODE_SHARED_SESSION_BINDING_URI,
+    CODEX_SHARED_SESSION_BINDING_URI,
 )
 
 SHARED_SESSION_QUERY_URI = "urn:opencode-a2a:extension:private:session-management:v1"
@@ -21,7 +23,7 @@ OPENCODE_SHARED_SESSION_MANAGEMENT_URI = (
     "urn:opencode-a2a:extension:private:session-management:v1"
 )
 OPENCODE_SHARED_SESSION_QUERY_URI = OPENCODE_SHARED_SESSION_MANAGEMENT_URI
-CODEX_SHARED_SESSION_QUERY_URI = "urn:codex-a2a:codex-session-query/v1"
+CODEX_SHARED_SESSION_QUERY_URI = "urn:codex-a2a:extension:private:session-query:v1"
 SUPPORTED_SESSION_QUERY_URIS = (
     OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
     CODEX_SHARED_SESSION_QUERY_URI,
@@ -41,7 +43,9 @@ COMPATIBILITY_PROFILE_URI = (
 OPENCODE_COMPATIBILITY_PROFILE_URI = (
     "urn:opencode-a2a:extension:private:compatibility-profile:v1"
 )
-CODEX_COMPATIBILITY_PROFILE_URI = "urn:codex-a2a:compatibility-profile/v1"
+CODEX_COMPATIBILITY_PROFILE_URI = (
+    "urn:codex-a2a:extension:private:compatibility-profile:v1"
+)
 SUPPORTED_COMPATIBILITY_PROFILE_URIS = (
     COMPATIBILITY_PROFILE_URI,
     CODEX_COMPATIBILITY_PROFILE_URI,
@@ -49,7 +53,7 @@ SUPPORTED_COMPATIBILITY_PROFILE_URIS = (
 
 WIRE_CONTRACT_URI = "urn:opencode-a2a:extension:private:wire-contract:v1"
 OPENCODE_WIRE_CONTRACT_URI = "urn:opencode-a2a:extension:private:wire-contract:v1"
-CODEX_WIRE_CONTRACT_URI = "urn:codex-a2a:wire-contract/v1"
+CODEX_WIRE_CONTRACT_URI = "urn:codex-a2a:extension:private:wire-contract:v1"
 SUPPORTED_WIRE_CONTRACT_URIS = (
     WIRE_CONTRACT_URI,
     CODEX_WIRE_CONTRACT_URI,
@@ -65,7 +69,7 @@ INTERRUPT_RECOVERY_URI = "urn:opencode-a2a:extension:private:interrupt-recovery:
 OPENCODE_INTERRUPT_RECOVERY_URI = (
     "urn:opencode-a2a:extension:private:interrupt-recovery:v1"
 )
-CODEX_INTERRUPT_RECOVERY_URI = "urn:codex-a2a:codex-interrupt-recovery/v1"
+CODEX_INTERRUPT_RECOVERY_URI = "urn:codex-a2a:extension:private:interrupt-recovery:v1"
 SUPPORTED_INTERRUPT_RECOVERY_URIS = (
     INTERRUPT_RECOVERY_URI,
     CODEX_INTERRUPT_RECOVERY_URI,
@@ -75,16 +79,26 @@ SHARED_INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
 OPENCODE_INTERRUPT_CALLBACK_URI = (
     "urn:opencode-a2a:extension:shared:interactive-interrupt:v1"
 )
+CODEX_INTERRUPT_CALLBACK_URI = "urn:codex-a2a:extension:shared:interactive-interrupt:v1"
 SUPPORTED_INTERRUPT_CALLBACK_URIS = (
     SHARED_INTERRUPT_CALLBACK_URI,
     OPENCODE_INTERRUPT_CALLBACK_URI,
+    CODEX_INTERRUPT_CALLBACK_URI,
 )
 STREAM_HINTS_URI = "urn:a2a:stream-hints/v1"
 OPENCODE_STREAM_HINTS_URI = "urn:opencode-a2a:extension:shared:stream-hints:v1"
+CODEX_STREAM_HINTS_URI = "urn:codex-a2a:extension:shared:stream-hints:v1"
 SUPPORTED_STREAM_HINTS_URIS = (
     STREAM_HINTS_URI,
     OPENCODE_STREAM_HINTS_URI,
+    CODEX_STREAM_HINTS_URI,
 )
+
+CODEX_DISCOVERY_URI = "urn:codex-a2a:extension:private:discovery:v1"
+CODEX_THREAD_LIFECYCLE_URI = "urn:codex-a2a:extension:private:thread-lifecycle:v1"
+CODEX_TURN_CONTROL_URI = "urn:codex-a2a:extension:private:turn-control:v1"
+CODEX_REVIEW_CONTROL_URI = "urn:codex-a2a:extension:private:review-control:v1"
+CODEX_EXEC_CONTROL_URI = "urn:codex-a2a:extension:private:exec-control:v1"
 
 _PREFERRED_EXTENSION_URI_BY_ALIAS = {
     uri: uri
@@ -99,6 +113,11 @@ _PREFERRED_EXTENSION_URI_BY_ALIAS = {
         *SUPPORTED_INTERRUPT_RECOVERY_URIS,
         *SUPPORTED_INTERRUPT_CALLBACK_URIS,
         *SUPPORTED_STREAM_HINTS_URIS,
+        CODEX_DISCOVERY_URI,
+        CODEX_THREAD_LIFECYCLE_URI,
+        CODEX_TURN_CONTROL_URI,
+        CODEX_REVIEW_CONTROL_URI,
+        CODEX_EXEC_CONTROL_URI,
     )
 }
 
@@ -121,6 +140,15 @@ def normalize_known_extension_uri(value: str | None) -> str | None:
     if not normalized:
         return normalized
     return _PREFERRED_EXTENSION_URI_BY_ALIAS.get(normalized, normalized)
+
+
+def infer_provider_key_from_extension_uri(value: str | None) -> str:
+    """Infer the provider namespace from a supported extension URI."""
+
+    normalized = normalize_known_extension_uri(value)
+    if isinstance(normalized, str) and normalized.startswith("urn:codex-a2a:"):
+        return "codex"
+    return "opencode"
 
 
 SHARED_METADATA_KEY = "shared"

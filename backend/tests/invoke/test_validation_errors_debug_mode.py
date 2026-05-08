@@ -191,7 +191,7 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
             return _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri="urn:codex-a2a:codex-session-query/v1",
+                        uri="urn:codex-a2a:extension:private:session-query:v1",
                         provider="codex",
                         methods={
                             "list_sessions": "codex.sessions.list",

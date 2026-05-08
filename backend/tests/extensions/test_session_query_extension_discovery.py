@@ -269,7 +269,6 @@ def test_resolve_accepts_codex_session_query_contract() -> None:
             "uri": CODEX_SHARED_SESSION_QUERY_URI,
             "required": False,
             "params": {
-                "provider": "codex",
                 "methods": {
                     "list_sessions": "codex.sessions.list",
                     "get_session_messages": "codex.sessions.messages.list",

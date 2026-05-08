@@ -8,6 +8,7 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_SHARED_SESSION_BINDING_URI,
     OPENCODE_SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
@@ -88,6 +89,28 @@ def test_resolve_defaults_provider_to_opencode() -> None:
 
     resolved = resolve_session_binding(parse_agent_card(payload))
     assert resolved.provider_key == "opencode"
+
+
+def test_resolve_inferrs_codex_provider_from_current_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_SHARED_SESSION_BINDING_URI,
+            "required": False,
+            "params": {
+                "metadata_field": SHARED_SESSION_ID_FIELD,
+                "behavior": "prefer_metadata_binding_else_create_session",
+                "supported_metadata": ["shared.session.id"],
+                "provider_private_metadata": ["codex.directory", "codex.execution"],
+            },
+        }
+    ]
+
+    resolved = resolve_session_binding(parse_agent_card(payload))
+
+    assert resolved.uri == CODEX_SHARED_SESSION_BINDING_URI
+    assert resolved.provider_key == "codex"
+    assert resolved.adapter_metadata_fields == ("codex.directory", "codex.execution")
 
 
 def test_resolve_accepts_opencode_https_session_binding_uri() -> None:

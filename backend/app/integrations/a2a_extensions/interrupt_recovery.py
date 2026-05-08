@@ -10,9 +10,9 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_INTERRUPT_RECOVERY_URI,
     INTERRUPT_RECOVERY_URI,
     SUPPORTED_INTERRUPT_RECOVERY_URIS,
+    infer_provider_key_from_extension_uri,
     is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import (
@@ -44,9 +44,7 @@ def resolve_interrupt_recovery(
     params = contract_utils.as_dict(getattr(ext, "params", None))
     raw_provider = params.get("provider")
     if raw_provider is None:
-        provider = (
-            "codex" if resolved_uri == CODEX_INTERRUPT_RECOVERY_URI else "opencode"
-        )
+        provider = infer_provider_key_from_extension_uri(resolved_uri)
     else:
         provider = contract_utils.require_str(
             raw_provider, field="params.provider"
@@ -79,7 +77,9 @@ def resolve_interrupt_recovery(
         else None
     )
 
-    raw_identity_scope = recovery_scope.get("identity_scope")
+    raw_identity_scope = recovery_scope.get(
+        "identity_scope", params.get("identity_scope")
+    )
     identity_scope = (
         contract_utils.require_str(
             raw_identity_scope, field="recovery_scope.identity_scope"

@@ -170,6 +170,7 @@ def test_resolve_accepts_codex_interrupt_recovery_single_list_method() -> None:
                 "methods": {
                     "list": "codex.interrupts.list",
                 },
+                "identity_scope": "authenticated_caller",
             },
         }
     ]
@@ -182,3 +183,4 @@ def test_resolve_accepts_codex_interrupt_recovery_single_list_method() -> None:
     assert resolved.methods["list"] == "codex.interrupts.list"
     assert resolved.methods["list_permissions"] is None
     assert resolved.methods["list_questions"] is None
+    assert resolved.identity_scope == "authenticated_caller"

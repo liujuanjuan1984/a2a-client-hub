@@ -15,6 +15,8 @@ from app.integrations.a2a_extensions.capability_snapshot import (
     StreamHintsCapabilitySnapshot,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_SHARED_SESSION_BINDING_URI,
+    CODEX_STREAM_HINTS_URI,
     INVOKE_METADATA_URI,
     MODEL_SELECTION_URI,
     SHARED_MODEL_FIELD,
@@ -26,6 +28,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedInvokeMetadataField,
     ResolvedModelSelectionExtension,
     ResolvedSessionBindingExtension,
+    ResolvedStreamHintsExtension,
 )
 from tests.extensions.a2a_extensions_service_support import (
     _binding_snapshot,
@@ -132,6 +135,59 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
         "urn:opencode-a2a:extension:shared:model-selection:v1",
         "urn:opencode-a2a:extension:private:session-management:v1",
         "urn:a2a:stream-hints/v1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_core_invoke_requested_extensions_uses_codex_current_uris():
+    snapshot = _capability_snapshot(
+        session_query=_session_query_snapshot(_resolved_extension()),
+        session_binding=_binding_snapshot(
+            ext=ResolvedSessionBindingExtension(
+                uri=CODEX_SHARED_SESSION_BINDING_URI,
+                required=False,
+                provider_key="codex",
+                metadata_field=SHARED_SESSION_ID_FIELD,
+                behavior="prefer_metadata_binding_else_create_session",
+                supported_metadata=("shared.session.id",),
+                adapter_metadata_fields=("codex.directory", "codex.execution"),
+                shared_workspace_across_consumers=True,
+                tenant_isolation="single_tenant",
+            )
+        ),
+        stream_hints=StreamHintsCapabilitySnapshot(
+            status="supported",
+            ext=ResolvedStreamHintsExtension(
+                uri=CODEX_STREAM_HINTS_URI,
+                required=False,
+                provider_key="codex",
+                stream_field="metadata.shared.stream",
+                usage_field="metadata.shared.usage",
+                interrupt_field="metadata.shared.interrupt",
+                session_field="metadata.shared.session",
+            ),
+        ),
+        wire_contract=_wire_contract_snapshot(),
+    )
+
+    async def _resolve_capability_snapshot(*, runtime):
+        assert runtime is not None
+        return snapshot
+
+    requested = await resolve_core_invoke_requested_extensions(
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(url="https://example.com/a2a")
+        ),
+        metadata={"shared": {"session": {"id": "session-1"}}},
+        require_stream_hints=True,
+        extensions_service_getter=lambda: SimpleNamespace(
+            resolve_capability_snapshot=_resolve_capability_snapshot
+        ),
+    )
+
+    assert requested == (
+        CODEX_SHARED_SESSION_BINDING_URI,
+        CODEX_STREAM_HINTS_URI,
     )
 
 

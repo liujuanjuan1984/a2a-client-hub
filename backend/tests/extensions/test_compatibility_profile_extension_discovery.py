@@ -235,7 +235,7 @@ def test_resolve_compatibility_profile_accepts_current_codex_uri() -> None:
             "required": False,
             "params": {
                 "extension_retention": {
-                    "urn:codex-a2a:codex-session-query/v1": {
+                    "urn:codex-a2a:extension:private:session-query:v1": {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -253,4 +253,7 @@ def test_resolve_compatibility_profile_accepts_current_codex_uri() -> None:
     resolved = resolve_compatibility_profile(card)
 
     assert resolved.uri == CODEX_COMPATIBILITY_PROFILE_URI
-    assert "urn:codex-a2a:codex-session-query/v1" in resolved.extension_retention
+    assert (
+        "urn:codex-a2a:extension:private:session-query:v1"
+        in resolved.extension_retention
+    )

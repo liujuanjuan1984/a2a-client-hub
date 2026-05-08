@@ -17,6 +17,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     SUPPORTED_SESSION_BINDING_URIS,
+    infer_provider_key_from_extension_uri,
 )
 from app.integrations.a2a_extensions.types import ResolvedSessionBindingExtension
 
@@ -39,9 +40,10 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
 
     required = bool(getattr(ext, "required", False))
     params = as_dict(getattr(ext, "params", None))
+    resolved_uri = str(getattr(ext, "uri", SHARED_SESSION_BINDING_URI))
     raw_provider = params.get("provider")
     if raw_provider is None:
-        provider = "opencode"
+        provider = infer_provider_key_from_extension_uri(resolved_uri)
     else:
         provider = require_str(raw_provider, field="params.provider").lower()
 
@@ -81,7 +83,7 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
         )
 
     return ResolvedSessionBindingExtension(
-        uri=str(getattr(ext, "uri", SHARED_SESSION_BINDING_URI)),
+        uri=resolved_uri,
         required=required,
         provider_key=provider,
         metadata_field=metadata_field,
