@@ -80,7 +80,7 @@ def test_resolve_extracts_invoke_metadata_contract() -> None:
     )
 
 
-def test_resolve_accepts_https_alias() -> None:
+def test_resolve_accepts_current_invoke_metadata_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {

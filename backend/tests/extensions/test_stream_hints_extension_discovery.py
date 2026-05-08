@@ -58,18 +58,6 @@ def test_resolve_stream_hints_accepts_current_opencode_uri_without_scope() -> No
     assert resolved.stream_field == "metadata.shared.stream"
 
 
-def test_resolve_stream_hints_accepts_current_opencode_uri() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {"uri": OPENCODE_STREAM_HINTS_URI, "params": {}}
-    ]
-
-    resolved = resolve_stream_hints(parse_agent_card(payload))
-
-    assert resolved.uri == OPENCODE_STREAM_HINTS_URI
-    assert resolved.stream_field == "metadata.shared.stream"
-
-
 def test_resolve_stream_hints_accepts_current_codex_contract_fields() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
@@ -100,6 +88,22 @@ def test_resolve_stream_hints_rejects_non_canonical_field_override() -> None:
         {
             "uri": STREAM_HINTS_URI,
             "params": {"stream_field": "metadata.private.stream"},
+        }
+    ]
+
+    with pytest.raises(A2AExtensionContractError, match="params.stream_field"):
+        resolve_stream_hints(parse_agent_card(payload))
+
+
+def test_resolve_stream_hints_rejects_empty_primary_field_with_alias() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_STREAM_HINTS_URI,
+            "params": {
+                "stream_field": "",
+                "artifact_metadata_field": "metadata.shared.stream",
+            },
         }
     ]
 

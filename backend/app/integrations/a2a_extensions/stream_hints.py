@@ -31,6 +31,19 @@ def _resolve_field(value: object, *, field: str, default: str) -> str:
     return normalized
 
 
+def _resolve_aliasable_field(
+    params: dict[str, object],
+    *,
+    primary: str,
+    alias: str,
+    default: str,
+) -> str:
+    value = params.get(primary)
+    if value is None:
+        value = params.get(alias)
+    return _resolve_field(value, field=f"params.{primary}", default=default)
+
+
 def resolve_stream_hints(card: AgentCard) -> ResolvedStreamHintsExtension:
     capabilities = getattr(card, "capabilities", None)
     extensions = getattr(capabilities, "extensions", None) if capabilities else None
@@ -61,24 +74,28 @@ def resolve_stream_hints(card: AgentCard) -> ResolvedStreamHintsExtension:
         uri=resolved_uri,
         required=required,
         provider_key=provider,
-        stream_field=_resolve_field(
-            params.get("stream_field") or params.get("artifact_metadata_field"),
-            field="params.stream_field",
+        stream_field=_resolve_aliasable_field(
+            params,
+            primary="stream_field",
+            alias="artifact_metadata_field",
             default=SHARED_STREAM_FIELD,
         ),
-        usage_field=_resolve_field(
-            params.get("usage_field") or params.get("usage_metadata_field"),
-            field="params.usage_field",
+        usage_field=_resolve_aliasable_field(
+            params,
+            primary="usage_field",
+            alias="usage_metadata_field",
             default=SHARED_USAGE_FIELD,
         ),
-        interrupt_field=_resolve_field(
-            params.get("interrupt_field") or params.get("interrupt_metadata_field"),
-            field="params.interrupt_field",
+        interrupt_field=_resolve_aliasable_field(
+            params,
+            primary="interrupt_field",
+            alias="interrupt_metadata_field",
             default=SHARED_INTERRUPT_FIELD,
         ),
-        session_field=_resolve_field(
-            params.get("session_field") or params.get("session_metadata_field"),
-            field="params.session_field",
+        session_field=_resolve_aliasable_field(
+            params,
+            primary="session_field",
+            alias="session_metadata_field",
             default=SHARED_SESSION_FIELD,
         ),
     )
