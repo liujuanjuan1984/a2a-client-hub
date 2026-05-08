@@ -132,8 +132,8 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
     assert requested == (
         "urn:a2a:session-binding/v1",
         "urn:a2a:invoke-metadata/v1",
-        "urn:opencode-a2a:extension:shared:model-selection:v1",
-        "urn:opencode-a2a:extension:private:session-management:v1",
+        "urn:opencode-a2a:extension:model-selection:v1",
+        "urn:opencode-a2a:extension:session-management:v1",
         "urn:a2a:stream-hints/v1",
     )
 

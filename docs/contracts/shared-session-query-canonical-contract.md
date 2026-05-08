@@ -8,8 +8,8 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
 
 - Hub-private normalization remains an internal runtime concern and is not exposed as a public contract-family field
 - Supported upstream declaration families currently include:
-  - `opencode`: `urn:opencode-a2a:extension:private:session-management:v1`
-  - `codex`: `urn:codex-a2a:extension:private:session-query:v1`
+  - `opencode`: `urn:opencode-a2a:extension:session-management:v1`
+  - `codex`: `urn:codex-a2a:extension:session-query:v1`
 - This document describes the Hub-private normalized contract only
 - Hub keeps the upstream-declared URI family as a public diagnostic dimension while retaining normalization details internally
 

@@ -192,9 +192,7 @@ def test_resolve_wire_contract_accepts_current_codex_uri() -> None:
                 "extensions": {
                     "jsonrpc_methods": ["codex.sessions.list"],
                     "conditionally_available_methods": {},
-                    "extension_uris": [
-                        "urn:codex-a2a:extension:private:session-query:v1"
-                    ],
+                    "extension_uris": ["urn:codex-a2a:extension:session-query:v1"],
                 },
                 "all_jsonrpc_methods": ["tasks/get", "codex.sessions.list"],
                 "service_behaviors": {},
@@ -210,9 +208,7 @@ def test_resolve_wire_contract_accepts_current_codex_uri() -> None:
     resolved = resolve_wire_contract(card)
 
     assert resolved.uri == CODEX_WIRE_CONTRACT_URI
-    assert resolved.extension_uris == (
-        "urn:codex-a2a:extension:private:session-query:v1",
-    )
+    assert resolved.extension_uris == ("urn:codex-a2a:extension:session-query:v1",)
 
 
 def test_resolve_wire_contract_rejects_invalid_conditional_map() -> None:

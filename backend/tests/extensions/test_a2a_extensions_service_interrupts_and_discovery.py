@@ -1041,7 +1041,7 @@ async def test_recover_interrupts_supports_single_list_method_and_properties_pay
     service = A2AExtensionsService()
     runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
     ext = ResolvedInterruptRecoveryExtension(
-        uri="urn:codex-a2a:extension:private:interrupt-recovery:v1",
+        uri="urn:codex-a2a:extension:interrupt-recovery:v1",
         required=False,
         provider_key="codex",
         jsonrpc=JsonRpcInterface(

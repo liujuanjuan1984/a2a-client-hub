@@ -706,9 +706,7 @@ class _FakeExtensionsService:
                 "default_by_provider": {"openai": "gpt-5"},
                 "connected": ["openai"],
             },
-            meta={
-                "extension_uri": "urn:opencode-a2a:extension:private:provider-discovery:v1"
-            },
+            meta={"extension_uri": "urn:opencode-a2a:extension:provider-discovery:v1"},
         )
 
     async def list_models(
@@ -743,9 +741,7 @@ class _FakeExtensionsService:
                 "default_by_provider": {provider_id or "openai": "gpt-5"},
                 "connected": [provider_id or "openai"],
             },
-            meta={
-                "extension_uri": "urn:opencode-a2a:extension:private:provider-discovery:v1"
-            },
+            meta={"extension_uri": "urn:opencode-a2a:extension:provider-discovery:v1"},
         )
 
     async def list_upstream_skills(self, *, runtime):

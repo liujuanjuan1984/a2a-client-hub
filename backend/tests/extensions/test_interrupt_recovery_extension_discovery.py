@@ -96,27 +96,6 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     assert resolved.provider_key == "opencode"
 
 
-def test_resolve_accepts_opencode_https_interrupt_recovery_uri() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": OPENCODE_INTERRUPT_RECOVERY_URI,
-            "required": False,
-            "params": {
-                "methods": {
-                    "list_permissions": "opencode.permissions.list",
-                    "list_questions": "opencode.questions.list",
-                },
-            },
-        }
-    ]
-
-    resolved = resolve_interrupt_recovery(parse_agent_card(payload))
-
-    assert resolved.uri == OPENCODE_INTERRUPT_RECOVERY_URI
-    assert resolved.methods["list_permissions"] == "opencode.permissions.list"
-
-
 def test_resolve_accepts_current_opencode_interrupt_recovery_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [

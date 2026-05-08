@@ -91,7 +91,7 @@ def test_resolve_defaults_provider_to_opencode() -> None:
     assert resolved.provider_key == "opencode"
 
 
-def test_resolve_inferrs_codex_provider_from_current_uri() -> None:
+def test_resolve_infers_codex_provider_from_current_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -113,7 +113,7 @@ def test_resolve_inferrs_codex_provider_from_current_uri() -> None:
     assert resolved.adapter_metadata_fields == ("codex.directory", "codex.execution")
 
 
-def test_resolve_accepts_opencode_https_session_binding_uri() -> None:
+def test_resolve_accepts_current_opencode_session_binding_uri_without_scope() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {

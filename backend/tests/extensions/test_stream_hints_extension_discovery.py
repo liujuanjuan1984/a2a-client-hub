@@ -46,7 +46,7 @@ def test_resolve_stream_hints_defaults_to_canonical_shared_fields() -> None:
     assert resolved.session_field == "metadata.shared.session"
 
 
-def test_resolve_stream_hints_accepts_opencode_https_uri() -> None:
+def test_resolve_stream_hints_accepts_current_opencode_uri_without_scope() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {"uri": OPENCODE_STREAM_HINTS_URI, "params": {}}

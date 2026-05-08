@@ -157,7 +157,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     assert resolved.provider_key == "opencode"
 
 
-def test_resolve_inferrs_codex_provider_from_current_interrupt_uri() -> None:
+def test_resolve_infers_codex_provider_from_current_interrupt_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {

@@ -284,7 +284,7 @@ async def test_append_session_control_prefers_turn_steer_when_stream_identity_pr
             },
         }
         assert kwargs["requested_extensions"] == [
-            "urn:codex-a2a:extension:private:turn-control:v1"
+            "urn:codex-a2a:extension:turn-control:v1"
         ]
         return SimpleNamespace(ok=True, result={"ok": True, "turn_id": "turn-2"})
 

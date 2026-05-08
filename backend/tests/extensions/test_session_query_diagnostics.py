@@ -51,7 +51,7 @@ def test_diagnose_session_query_returns_unsupported_status_for_legacy_uri() -> N
     assert "URI is not supported by Hub" in str(diagnostic.error)
 
 
-def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> None:
+def test_diagnose_session_query_accepts_current_opencode_uri_as_supported() -> None:
     payload = build_agent_card_payload(
         extensions=[
             build_session_query_extension_payload(
