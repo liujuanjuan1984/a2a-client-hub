@@ -1,4 +1,4 @@
-"""Shared interrupt callback extension resolver and helpers."""
+"""Interrupt callback extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -7,8 +7,9 @@ from a2a.types import AgentCard
 from app.integrations.a2a_extensions import contract_utils
 from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
 from app.integrations.a2a_extensions.shared_contract import (
-    SHARED_INTERRUPT_CALLBACK_URI,
+    INTERRUPT_CALLBACK_URI,
     SUPPORTED_INTERRUPT_CALLBACK_URIS,
+    infer_provider_key_from_extension_uri,
 )
 from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
@@ -29,15 +30,14 @@ def resolve_interrupt_callback(
             ext = candidate
             break
     if ext is None:
-        raise A2AExtensionNotSupportedError(
-            "Shared interrupt callback extension not found"
-        )
+        raise A2AExtensionNotSupportedError("Interrupt callback extension not found")
 
     required = bool(getattr(ext, "required", False))
     params = contract_utils.as_dict(getattr(ext, "params", None))
+    resolved_uri = str(getattr(ext, "uri", INTERRUPT_CALLBACK_URI))
     raw_provider = params.get("provider")
     if raw_provider is None:
-        provider = "opencode"
+        provider = infer_provider_key_from_extension_uri(resolved_uri)
     else:
         provider = contract_utils.require_str(
             raw_provider, field="params.provider"
@@ -68,7 +68,7 @@ def resolve_interrupt_callback(
     code_to_error = contract_utils.build_business_code_map(errors.get("business_codes"))
 
     return ResolvedInterruptCallbackExtension(
-        uri=str(getattr(ext, "uri", SHARED_INTERRUPT_CALLBACK_URI)),
+        uri=resolved_uri,
         required=required,
         provider_key=provider,
         jsonrpc=contract_utils.resolve_jsonrpc_interface(card),

@@ -8,8 +8,9 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.shared_contract import (
-    OPENCODE_SHARED_SESSION_BINDING_URI,
-    SHARED_SESSION_BINDING_URI,
+    CODEX_SESSION_BINDING_URI,
+    OPENCODE_SESSION_BINDING_URI,
+    SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
 )
 from tests.support.a2a import parse_agent_card
@@ -43,7 +44,7 @@ def test_resolve_extracts_canonical_session_binding_contract() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_BINDING_URI,
+            "uri": SESSION_BINDING_URI,
             "required": False,
             "params": {
                 "provider": "OpenCode",
@@ -60,7 +61,7 @@ def test_resolve_extracts_canonical_session_binding_contract() -> None:
     card = parse_agent_card(payload)
     resolved = resolve_session_binding(card)
 
-    assert resolved.uri == SHARED_SESSION_BINDING_URI
+    assert resolved.uri == SESSION_BINDING_URI
     assert resolved.provider_key == "opencode"
     assert resolved.metadata_field == SHARED_SESSION_ID_FIELD
     assert resolved.behavior == "prefer_metadata_binding_else_create_session"
@@ -77,7 +78,7 @@ def test_resolve_defaults_provider_to_opencode() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_BINDING_URI,
+            "uri": SESSION_BINDING_URI,
             "required": False,
             "params": {
                 "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -90,11 +91,33 @@ def test_resolve_defaults_provider_to_opencode() -> None:
     assert resolved.provider_key == "opencode"
 
 
-def test_resolve_accepts_opencode_https_session_binding_uri() -> None:
+def test_resolve_infers_codex_provider_from_current_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SHARED_SESSION_BINDING_URI,
+            "uri": CODEX_SESSION_BINDING_URI,
+            "required": False,
+            "params": {
+                "metadata_field": SHARED_SESSION_ID_FIELD,
+                "behavior": "prefer_metadata_binding_else_create_session",
+                "supported_metadata": ["shared.session.id"],
+                "provider_private_metadata": ["codex.directory", "codex.execution"],
+            },
+        }
+    ]
+
+    resolved = resolve_session_binding(parse_agent_card(payload))
+
+    assert resolved.uri == CODEX_SESSION_BINDING_URI
+    assert resolved.provider_key == "codex"
+    assert resolved.adapter_metadata_fields == ("codex.directory", "codex.execution")
+
+
+def test_resolve_accepts_current_opencode_session_binding_uri_without_scope() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_SESSION_BINDING_URI,
             "required": False,
             "params": {
                 "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -105,14 +128,14 @@ def test_resolve_accepts_opencode_https_session_binding_uri() -> None:
 
     resolved = resolve_session_binding(parse_agent_card(payload))
 
-    assert resolved.uri == OPENCODE_SHARED_SESSION_BINDING_URI
+    assert resolved.uri == OPENCODE_SESSION_BINDING_URI
 
 
 def test_resolve_accepts_current_opencode_session_binding_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SHARED_SESSION_BINDING_URI,
+            "uri": OPENCODE_SESSION_BINDING_URI,
             "required": False,
             "params": {
                 "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -123,7 +146,7 @@ def test_resolve_accepts_current_opencode_session_binding_uri() -> None:
 
     resolved = resolve_session_binding(parse_agent_card(payload))
 
-    assert resolved.uri == OPENCODE_SHARED_SESSION_BINDING_URI
+    assert resolved.uri == OPENCODE_SESSION_BINDING_URI
 
 
 def test_resolve_rejects_legacy_session_binding_uri() -> None:
@@ -147,7 +170,7 @@ def test_resolve_rejects_non_canonical_metadata_field() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_BINDING_URI,
+            "uri": SESSION_BINDING_URI,
             "required": False,
             "params": {
                 "metadata_field": "metadata.externalSessionId",
@@ -164,7 +187,7 @@ def test_resolve_rejects_invalid_supported_metadata_shape() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_BINDING_URI,
+            "uri": SESSION_BINDING_URI,
             "required": False,
             "params": {
                 "metadata_field": SHARED_SESSION_ID_FIELD,

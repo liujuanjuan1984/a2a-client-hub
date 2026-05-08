@@ -118,7 +118,7 @@ class ResolvedInterruptRecoveryExtension:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedSessionBindingExtension:
-    """Resolved shared session-binding contract plus adapter-local metadata hints."""
+    """Resolved session-binding contract plus adapter-local metadata hints."""
 
     uri: str
     required: bool

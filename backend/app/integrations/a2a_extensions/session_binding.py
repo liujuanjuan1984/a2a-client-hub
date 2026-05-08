@@ -1,4 +1,4 @@
-"""Shared session binding extension resolver and helpers."""
+"""Session binding extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -14,9 +14,10 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    SHARED_SESSION_BINDING_URI,
+    SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     SUPPORTED_SESSION_BINDING_URIS,
+    infer_provider_key_from_extension_uri,
 )
 from app.integrations.a2a_extensions.types import ResolvedSessionBindingExtension
 
@@ -33,15 +34,14 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
             ext = candidate
             break
     if ext is None:
-        raise A2AExtensionNotSupportedError(
-            "Shared session binding extension not found"
-        )
+        raise A2AExtensionNotSupportedError("Session binding extension not found")
 
     required = bool(getattr(ext, "required", False))
     params = as_dict(getattr(ext, "params", None))
+    resolved_uri = str(getattr(ext, "uri", SESSION_BINDING_URI))
     raw_provider = params.get("provider")
     if raw_provider is None:
-        provider = "opencode"
+        provider = infer_provider_key_from_extension_uri(resolved_uri)
     else:
         provider = require_str(raw_provider, field="params.provider").lower()
 
@@ -51,7 +51,7 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
     )
     if metadata_field != SHARED_SESSION_ID_FIELD:
         raise A2AExtensionContractError(
-            f"Shared session binding metadata_field must be '{SHARED_SESSION_ID_FIELD}'"
+            f"Session binding metadata_field must be '{SHARED_SESSION_ID_FIELD}'"
         )
 
     behavior = require_str(
@@ -81,7 +81,7 @@ def resolve_session_binding(card: AgentCard) -> ResolvedSessionBindingExtension:
         )
 
     return ResolvedSessionBindingExtension(
-        uri=str(getattr(ext, "uri", SHARED_SESSION_BINDING_URI)),
+        uri=resolved_uri,
         required=required,
         provider_key=provider,
         metadata_field=metadata_field,

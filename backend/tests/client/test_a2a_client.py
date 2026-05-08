@@ -896,6 +896,34 @@ def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
     assert text == "Task completed"
 
 
+def test_extract_text_from_payload_prefers_completed_task_artifacts() -> None:
+    payload = {
+        "status": {
+            "state": "TASK_STATE_COMPLETED",
+            "message": {"parts": [{"text": "Completed."}]},
+        },
+        "artifacts": [{"parts": [{"text": "artifact result text"}]}],
+    }
+
+    text = A2AClient._extract_text_from_payload(payload)
+
+    assert text == "artifact result text"
+
+
+def test_extract_text_from_payload_keeps_failed_task_status_message() -> None:
+    payload = {
+        "status": {
+            "state": "TASK_STATE_FAILED",
+            "message": {"parts": [{"text": "upstream failed"}]},
+        },
+        "artifacts": [{"parts": [{"text": "diagnostic artifact"}]}],
+    }
+
+    text = A2AClient._extract_text_from_payload(payload)
+
+    assert text == "upstream failed"
+
+
 def test_extract_text_from_payload_ignores_history_messages() -> None:
     agent_payload = {
         "history": [

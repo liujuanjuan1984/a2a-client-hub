@@ -1,18 +1,17 @@
 {
   "version": 1,
-  "canonical_identifier": "urn:opencode-a2a:session-query/v1",
-  "extension_uri": "https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1",
+  "canonical_identifier": "urn:opencode-a2a:extension:session-management:v1",
+  "extension_uri": "urn:opencode-a2a:extension:session-management:v1",
   "recognized_uri_aliases": [
-    "https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1",
-    "urn:opencode-a2a:session-query/v1",
-    "urn:shared-a2a:session-query:v1"
+    "urn:opencode-a2a:extension:session-management:v1",
+    "urn:codex-a2a:extension:session-query:v1"
   ],
   "cases": [
     {
       "name": "canonical_page_size_extension",
       "description": "Canonical page_size contract with default top-level envelope mapping.",
       "extension": {
-        "uri": "https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1",
+        "uri": "urn:opencode-a2a:extension:session-management:v1",
         "params": {
           "provider": "opencode",
           "methods": {
@@ -47,7 +46,7 @@
       "name": "canonical_limit_extension",
       "description": "Canonical limit contract with explicit limit-only pagination.",
       "extension": {
-        "uri": "urn:opencode-a2a:session-query/v1",
+        "uri": "urn:opencode-a2a:extension:session-management:v1",
         "params": {
           "provider": "opencode",
           "methods": {
@@ -74,7 +73,7 @@
       "name": "canonical_limit_with_optional_cursor_extension",
       "description": "Canonical limit contract with backward cursor pagination metadata.",
       "extension": {
-        "uri": "https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1",
+        "uri": "urn:opencode-a2a:extension:session-management:v1",
         "params": {
           "provider": "opencode",
           "methods": {
@@ -107,7 +106,7 @@
       "name": "canonical_alias_mapping_extension",
       "description": "Canonical contract using explicit field-path aliases for the result envelope.",
       "extension": {
-        "uri": "urn:opencode-a2a:session-query/v1",
+        "uri": "urn:opencode-a2a:extension:session-management:v1",
         "params": {
           "provider": "opencode",
           "methods": {
@@ -175,7 +174,7 @@
       "name": "invalid_unknown_result_envelope_key",
       "description": "Invalid contract because result_envelope contains an unknown key.",
       "extension": {
-        "uri": "https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1",
+        "uri": "urn:opencode-a2a:extension:session-management:v1",
         "params": {
           "provider": "opencode",
           "methods": {

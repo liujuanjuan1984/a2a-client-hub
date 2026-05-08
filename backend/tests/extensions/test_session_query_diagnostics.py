@@ -4,9 +4,9 @@ from app.integrations.a2a_extensions.session_query_diagnostics import (
     diagnose_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_SHARED_SESSION_QUERY_URI,
-    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
-    SHARED_SESSION_QUERY_URI,
+    CODEX_SESSION_QUERY_URI,
+    OPENCODE_SESSION_MANAGEMENT_URI,
+    SESSION_QUERY_URI,
 )
 from tests.support.a2a import (
     build_agent_card_payload,
@@ -19,7 +19,7 @@ def test_diagnose_session_query_returns_supported_status_for_opencode() -> None:
     payload = build_agent_card_payload(
         extensions=[
             build_session_query_extension_payload(
-                uri=SHARED_SESSION_QUERY_URI,
+                uri=SESSION_QUERY_URI,
                 result_envelope={"raw": True, "items": True, "pagination": True},
             )
         ]
@@ -51,11 +51,11 @@ def test_diagnose_session_query_returns_unsupported_status_for_legacy_uri() -> N
     assert "URI is not supported by Hub" in str(diagnostic.error)
 
 
-def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> None:
+def test_diagnose_session_query_accepts_current_opencode_uri_as_supported() -> None:
     payload = build_agent_card_payload(
         extensions=[
             build_session_query_extension_payload(
-                uri=OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
+                uri=OPENCODE_SESSION_MANAGEMENT_URI,
                 methods={
                     "list_sessions": "opencode.sessions.list",
                     "get_session_messages": "opencode.sessions.messages.list",
@@ -79,7 +79,7 @@ def test_diagnose_session_query_accepts_opencode_https_uri_as_supported() -> Non
     assert diagnostic.declared is True
     assert diagnostic.status == "supported"
     assert diagnostic.declared_contract_variant == "opencode"
-    assert diagnostic.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
+    assert diagnostic.uri == OPENCODE_SESSION_MANAGEMENT_URI
 
 
 def test_diagnose_session_query_returns_invalid_status_for_legacy_limit_fields() -> (
@@ -88,7 +88,7 @@ def test_diagnose_session_query_returns_invalid_status_for_legacy_limit_fields()
     payload = build_agent_card_payload(
         extensions=[
             build_session_query_extension_payload(
-                uri=SHARED_SESSION_QUERY_URI,
+                uri=SESSION_QUERY_URI,
                 pagination={
                     "mode": "limit",
                     "default_size": 20,
@@ -113,7 +113,7 @@ def test_diagnose_session_query_accepts_limit_and_optional_cursor_mode() -> None
     payload = build_agent_card_payload(
         extensions=[
             build_session_query_extension_payload(
-                uri=SHARED_SESSION_QUERY_URI,
+                uri=SESSION_QUERY_URI,
                 methods={
                     "list_sessions": "opencode.sessions.list",
                     "get_session_messages": "opencode.sessions.messages.list",
@@ -153,7 +153,7 @@ def test_diagnose_session_query_returns_supported_status_for_codex() -> None:
     payload = build_agent_card_payload(
         extensions=[
             build_session_query_extension_payload(
-                uri=CODEX_SHARED_SESSION_QUERY_URI,
+                uri=CODEX_SESSION_QUERY_URI,
                 provider="codex",
                 methods={
                     "list_sessions": "codex.sessions.list",
@@ -194,7 +194,7 @@ def test_diagnose_session_query_returns_invalid_for_bad_contract() -> None:
     payload = build_agent_card_payload(
         extensions=[
             build_session_query_extension_payload(
-                uri=SHARED_SESSION_QUERY_URI,
+                uri=SESSION_QUERY_URI,
                 pagination={
                     "mode": "page_size",
                     "default_size": 20,

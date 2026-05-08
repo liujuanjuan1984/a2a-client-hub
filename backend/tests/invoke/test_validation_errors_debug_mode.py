@@ -5,7 +5,7 @@ from app.features.agents.common.card_validation import fetch_and_validate_agent_
 from app.features.invoke.service_streaming import A2AInvokeStreamingRuntime
 from app.integrations.a2a_extensions.shared_contract import (
     COMPATIBILITY_PROFILE_URI,
-    SHARED_SESSION_QUERY_URI,
+    SESSION_QUERY_URI,
 )
 from tests.support.a2a import (
     build_agent_card_payload,
@@ -91,7 +91,7 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
             return _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri=SHARED_SESSION_QUERY_URI,
+                        uri=SESSION_QUERY_URI,
                         pagination={
                             "mode": "page_size",
                             "default_size": 20,
@@ -121,12 +121,12 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
     )
 
     assert resp.success is True
-    assert resp.shared_session_query is not None
-    assert resp.shared_session_query.status == "invalid"
+    assert resp.session_query is not None
+    assert resp.session_query.status == "invalid"
     assert resp.message == "Agent card validated with warnings"
     assert resp.validation_warnings == [
         (
-            "Shared session query contract is invalid: Extension contract "
+            "Session query contract is invalid: Extension contract "
             "missing/invalid 'pagination.max_size' for mode 'page_size'"
         )
     ]
@@ -141,7 +141,7 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
             return _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri=SHARED_SESSION_QUERY_URI,
+                        uri=SESSION_QUERY_URI,
                         methods={
                             "list_sessions": "opencode.sessions.list",
                             "get_session_messages": ("opencode.sessions.messages.list"),
@@ -173,10 +173,10 @@ async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_m
     )
 
     assert resp.success is True
-    assert resp.shared_session_query is not None
-    assert resp.shared_session_query.status == "supported"
-    assert resp.shared_session_query.declared_contract_variant == "opencode"
-    assert resp.shared_session_query.pagination_mode == "limit_and_optional_cursor"
+    assert resp.session_query is not None
+    assert resp.session_query.status == "supported"
+    assert resp.session_query.declared_contract_variant == "opencode"
+    assert resp.session_query.pagination_mode == "limit_and_optional_cursor"
     assert resp.extension_capabilities is not None
     assert resp.extension_capabilities.session_control.command.declared is False
     assert resp.message == "Agent card validated"
@@ -191,7 +191,7 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
             return _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri="urn:codex-a2a:codex-session-query/v1",
+                        uri="urn:codex-a2a:extension:session-query:v1",
                         provider="codex",
                         methods={
                             "list_sessions": "codex.sessions.list",
@@ -246,10 +246,10 @@ async def test_fetch_and_validate_agent_card_accepts_codex_session_query_contrac
     )
 
     assert resp.success is True
-    assert resp.shared_session_query is not None
-    assert resp.shared_session_query.status == "supported"
-    assert resp.shared_session_query.declared_contract_variant == "codex"
-    assert resp.shared_session_query.pagination_mode == "limit"
+    assert resp.session_query is not None
+    assert resp.session_query.status == "supported"
+    assert resp.session_query.declared_contract_variant == "codex"
+    assert resp.session_query.pagination_mode == "limit"
     assert resp.extension_capabilities is not None
     assert resp.extension_capabilities.session_control.prompt_async.declared is True
     assert resp.message == "Agent card validated"
@@ -264,7 +264,7 @@ async def test_fetch_and_validate_agent_card_exposes_extension_capabilities_summ
             payload = _build_extension_card_payload(
                 extensions=[
                     build_session_query_extension_payload(
-                        uri=SHARED_SESSION_QUERY_URI,
+                        uri=SESSION_QUERY_URI,
                         methods={
                             "list_sessions": "opencode.sessions.list",
                             "get_session_messages": "opencode.sessions.messages.list",
@@ -305,7 +305,7 @@ async def test_fetch_and_validate_agent_card_exposes_extension_capabilities_summ
     assert resp.extension_capabilities.request_execution_options.status == "supported"
     assert resp.extension_capabilities.request_execution_options.consumed_by_hub is True
     assert resp.extension_capabilities.request_execution_options.source_extensions == [
-        SHARED_SESSION_QUERY_URI
+        SESSION_QUERY_URI
     ]
 
 
@@ -331,7 +331,7 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
                             "uri": COMPATIBILITY_PROFILE_URI,
                             "params": {
                                 "extension_retention": {
-                                    SHARED_SESSION_QUERY_URI: {
+                                    SESSION_QUERY_URI: {
                                         "surface": "jsonrpc-extension",
                                         "availability": "always",
                                         "retention": "stable",

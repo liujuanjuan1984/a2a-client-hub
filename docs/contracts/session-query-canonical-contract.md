@@ -1,6 +1,6 @@
-# Shared Session Query Hub-Normalized Contract
+# Session Query Hub-Normalized Contract
 
-This document defines the Hub-private normalized contract consumed for shared session query handling.
+This document defines the Hub-private normalized contract consumed for session query handling.
 
 It is intentionally scoped to the runtime contract that `a2a-client-hub` parses and consumes. It does not attempt to document every provider-private metadata field or method-level descriptive annotation that an upstream server may choose to publish.
 
@@ -8,11 +8,8 @@ It is intentionally scoped to the runtime contract that `a2a-client-hub` parses 
 
 - Hub-private normalization remains an internal runtime concern and is not exposed as a public contract-family field
 - Supported upstream declaration families currently include:
-  - `opencode`: `urn:opencode-a2a:session-query/v1`
-  - `opencode` HTTPS alias: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-management-v1`
-  - `opencode` deprecated HTTPS alias still accepted by Hub for older peers: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
-  - `legacy`: `urn:shared-a2a:session-query:v1`
-  - `codex`: `urn:codex-a2a:codex-session-query/v1`
+  - `opencode`: `urn:opencode-a2a:extension:session-management:v1`
+  - `codex`: `urn:codex-a2a:extension:session-query:v1`
 - This document describes the Hub-private normalized contract only
 - Hub keeps the upstream-declared URI family as a public diagnostic dimension while retaining normalization details internally
 
@@ -170,7 +167,7 @@ At onboarding time, Hub emits:
 
 At runtime, Hub does not rely on a long-lived provider family branch. Instead it:
 
-- consumes the declared shared session query contract directly
+- consumes the declared session query contract directly
 - attaches runtime negotiation hints when compatibility adaptations were required
 - treats provider-private compatibility details as advisory diagnostics
 - fast-fails only for unsupported / invalid contracts
@@ -179,6 +176,6 @@ At runtime, Hub does not rely on a long-lived provider family branch. Instead it
 
 Reference payload assets live in:
 
-- `docs/contracts/shared-session-query-reference-payloads.json`
+- `docs/contracts/session-query-reference-payloads.json`
 
 They are intended to be copied into upstream contract tests, interoperability fixtures, or future third-party peer reviews.

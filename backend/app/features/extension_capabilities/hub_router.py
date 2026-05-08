@@ -1,4 +1,4 @@
-"""A2A extension endpoints for shared session/interrupt capabilities."""
+"""A2A extension endpoints for session/interrupt capabilities."""
 
 from __future__ import annotations
 

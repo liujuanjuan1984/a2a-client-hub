@@ -1,4 +1,4 @@
-"""Shared session query extension resolver and helpers."""
+"""Session query extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_SHARED_SESSION_QUERY_URI,
-    SHARED_SESSION_QUERY_URI,
+    CODEX_SESSION_QUERY_URI,
+    SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
+    infer_provider_key_from_extension_uri,
     is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import (
@@ -368,7 +369,7 @@ def _find_session_query_extension(
         uri = getattr(candidate, "uri", None)
         if is_supported_extension_uri(uri, SUPPORTED_SESSION_QUERY_URIS):
             return candidate
-    raise A2AExtensionNotSupportedError("Shared session query extension not found")
+    raise A2AExtensionNotSupportedError("Session query extension not found")
 
 
 def _uses_legacy_limit_fields(pagination: Dict[str, Any]) -> bool:
@@ -391,9 +392,10 @@ def _resolve_extension(
 
     required = bool(getattr(ext, "required", False))
     params: Dict[str, Any] = contract_utils.as_dict(getattr(ext, "params", None))
+    resolved_uri = str(getattr(ext, "uri", SESSION_QUERY_URI))
     raw_provider = params.get("provider")
     if raw_provider is None:
-        provider = "opencode"
+        provider = infer_provider_key_from_extension_uri(resolved_uri)
     else:
         provider = contract_utils.require_str(
             raw_provider, field="params.provider"
@@ -472,14 +474,14 @@ def _resolve_extension(
         "limit" if declared_mode == LIMIT_WITH_OPTIONAL_CURSOR_MODE else declared_mode
     )
     uses_legacy_limit_fields = _uses_legacy_limit_fields(pagination)
-    is_codex_variant = getattr(ext, "uri", None) == CODEX_SHARED_SESSION_QUERY_URI
+    is_codex_variant = resolved_uri == CODEX_SESSION_QUERY_URI
     if variant == "codex" and not is_codex_variant:
         raise A2AExtensionNotSupportedError(
             "Codex session query compatibility variant not found"
         )
     if variant in {"canonical", "generic"} and uses_legacy_limit_fields:
         raise A2AExtensionContractError(
-            "Shared session query legacy pagination fields are no longer supported; "
+            "Session query legacy pagination fields are no longer supported; "
             "use pagination.default_limit/max_limit for mode 'limit'"
         )
     if variant == "canonical" and is_codex_variant:
@@ -537,7 +539,7 @@ def _resolve_extension(
     )
 
     resolved = ResolvedExtension(
-        uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
+        uri=resolved_uri,
         required=required,
         provider_key=provider,
         jsonrpc=contract_utils.resolve_jsonrpc_interface(card),
@@ -581,7 +583,7 @@ def _resolve_extension(
 
 
 def resolve_session_query(card: AgentCard) -> ResolvedExtension:
-    """Resolve the shared session query extension from an Agent Card."""
+    """Resolve the session query extension from an Agent Card."""
 
     return _resolve_extension(
         card,

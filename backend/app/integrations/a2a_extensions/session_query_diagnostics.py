@@ -1,4 +1,4 @@
-"""Shared session query diagnostics for card validation and agent onboarding."""
+"""Session query diagnostics for card validation and agent onboarding."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from app.integrations.a2a_extensions.session_query import (
     resolve_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_SHARED_SESSION_QUERY_URI,
+    CODEX_SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
 )
-from app.schemas.a2a_agent_card import SharedSessionQueryDiagnostic
+from app.schemas.a2a_agent_card import SessionQueryDiagnostic
 
 
 def _declared_contract_variant(*, uses_codex_uri: bool) -> Literal["opencode", "codex"]:
@@ -40,26 +40,26 @@ def _find_declared_extension(card: AgentCard) -> tuple[Any | None, str | None]:
     return hinted if hinted is not None else (None, None)
 
 
-def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
+def diagnose_session_query(card: AgentCard) -> SessionQueryDiagnostic:
     ext, uri = _find_declared_extension(card)
     if ext is None:
-        return SharedSessionQueryDiagnostic(
+        return SessionQueryDiagnostic(
             declared=False,
             status="unsupported",
-            error="Shared session query extension not declared",
+            error="Session query extension not declared",
         )
 
     params = as_dict(getattr(ext, "params", None))
     methods = as_dict(params.get("methods"))
     raw_pagination = as_dict(params.get("pagination"))
     result_envelope = params.get("result_envelope")
-    uses_codex_uri = uri == CODEX_SHARED_SESSION_QUERY_URI
+    uses_codex_uri = uri == CODEX_SESSION_QUERY_URI
     declared_contract_variant = _declared_contract_variant(
         uses_codex_uri=uses_codex_uri,
     )
 
     if uri not in SUPPORTED_SESSION_QUERY_URIS:
-        return SharedSessionQueryDiagnostic(
+        return SessionQueryDiagnostic(
             declared=True,
             status="unsupported",
             uri=uri,
@@ -78,13 +78,13 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
                 if isinstance(item, str) and item.strip()
             ],
             result_envelope_declared=result_envelope is not None,
-            error="Shared session query extension URI is not supported by Hub",
+            error="Session query extension URI is not supported by Hub",
         )
 
     try:
         resolved = resolve_session_query(card)
     except A2AExtensionContractError as exc:
-        return SharedSessionQueryDiagnostic(
+        return SessionQueryDiagnostic(
             declared=True,
             status="invalid",
             uri=uri,
@@ -107,7 +107,7 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
             error=str(exc),
         )
 
-    return SharedSessionQueryDiagnostic(
+    return SessionQueryDiagnostic(
         declared=True,
         status="supported",
         uri=resolved.uri,

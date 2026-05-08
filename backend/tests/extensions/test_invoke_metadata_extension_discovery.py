@@ -9,7 +9,6 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.invoke_metadata import resolve_invoke_metadata
 from app.integrations.a2a_extensions.shared_contract import (
     INVOKE_METADATA_URI,
-    OPENCODE_INVOKE_METADATA_URI,
     SHARED_INVOKE_FIELD,
 )
 from tests.support.a2a import parse_agent_card
@@ -81,11 +80,11 @@ def test_resolve_extracts_invoke_metadata_contract() -> None:
     )
 
 
-def test_resolve_accepts_https_alias() -> None:
+def test_resolve_accepts_current_invoke_metadata_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_INVOKE_METADATA_URI,
+            "uri": INVOKE_METADATA_URI,
             "required": False,
             "params": {
                 "metadata_field": SHARED_INVOKE_FIELD,
@@ -97,7 +96,7 @@ def test_resolve_accepts_https_alias() -> None:
     ]
 
     resolved = resolve_invoke_metadata(parse_agent_card(payload))
-    assert resolved.uri == OPENCODE_INVOKE_METADATA_URI
+    assert resolved.uri == INVOKE_METADATA_URI
 
 
 def test_resolve_rejects_non_canonical_metadata_field() -> None:

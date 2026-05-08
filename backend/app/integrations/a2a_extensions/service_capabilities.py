@@ -30,6 +30,7 @@ from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.session_query_runtime_selection import (
     ResolvedSessionQueryRuntimeCapability,
 )
+from app.integrations.a2a_extensions.shared_contract import CODEX_TURN_CONTROL_URI
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     ResolvedConditionalMethodAvailability,
@@ -49,7 +50,7 @@ UPSTREAM_DISCOVERY_METHODS = {
 UPSTREAM_TURN_METHODS = {
     "steer": "codex.turns.steer",
 }
-UPSTREAM_TURN_CONTROL_EXTENSION_URI = "urn:codex-a2a:codex-turn-control/v1"
+UPSTREAM_TURN_CONTROL_EXTENSION_URI = CODEX_TURN_CONTROL_URI
 UPSTREAM_TURN_CONTROL_BUSINESS_CODE_MAP = {
     -32007: "authorization_forbidden",
     -32012: "turn_not_steerable",
@@ -210,10 +211,10 @@ class A2AExtensionCapabilityService:
             return snapshot.capability
         if snapshot.status == "invalid":
             raise A2AExtensionContractError(
-                snapshot.error or "Shared session query contract is invalid"
+                snapshot.error or "Session query contract is invalid"
             )
         raise A2AExtensionNotSupportedError(
-            snapshot.error or "Shared session query extension not supported by Hub"
+            snapshot.error or "Session query extension not supported by Hub"
         )
 
     @staticmethod
@@ -224,10 +225,10 @@ class A2AExtensionCapabilityService:
             return snapshot.ext, snapshot.jsonrpc_url
         if snapshot.status == "invalid":
             raise A2AExtensionContractError(
-                snapshot.error or "Shared interrupt callback contract is invalid"
+                snapshot.error or "Interrupt callback contract is invalid"
             )
         raise A2AExtensionNotSupportedError(
-            snapshot.error or "Shared interrupt callback extension not found"
+            snapshot.error or "Interrupt callback extension not found"
         )
 
     @staticmethod

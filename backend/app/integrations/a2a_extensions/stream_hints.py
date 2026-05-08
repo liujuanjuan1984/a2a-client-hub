@@ -1,4 +1,4 @@
-"""Shared stream-hints extension resolver and helpers."""
+"""Stream-hints extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_USAGE_FIELD,
     STREAM_HINTS_URI,
     SUPPORTED_STREAM_HINTS_URIS,
+    infer_provider_key_from_extension_uri,
     is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import ResolvedStreamHintsExtension
@@ -49,33 +50,47 @@ def resolve_stream_hints(card: AgentCard) -> ResolvedStreamHintsExtension:
 
     required = bool(getattr(ext, "required", False))
     params = as_dict(getattr(ext, "params", None))
+    resolved_uri = str(getattr(ext, "uri", STREAM_HINTS_URI))
     raw_provider = params.get("provider")
     if raw_provider is None:
-        provider = "opencode"
+        provider = infer_provider_key_from_extension_uri(resolved_uri)
     else:
         provider = require_str(raw_provider, field="params.provider").lower()
 
+    stream_field = params.get("stream_field")
+    if stream_field is None:
+        stream_field = params.get("artifact_metadata_field")
+    usage_field = params.get("usage_field")
+    if usage_field is None:
+        usage_field = params.get("usage_metadata_field")
+    interrupt_field = params.get("interrupt_field")
+    if interrupt_field is None:
+        interrupt_field = params.get("interrupt_metadata_field")
+    session_field = params.get("session_field")
+    if session_field is None:
+        session_field = params.get("session_metadata_field")
+
     return ResolvedStreamHintsExtension(
-        uri=str(getattr(ext, "uri", STREAM_HINTS_URI)),
+        uri=resolved_uri,
         required=required,
         provider_key=provider,
         stream_field=_resolve_field(
-            params.get("stream_field"),
+            stream_field,
             field="params.stream_field",
             default=SHARED_STREAM_FIELD,
         ),
         usage_field=_resolve_field(
-            params.get("usage_field"),
+            usage_field,
             field="params.usage_field",
             default=SHARED_USAGE_FIELD,
         ),
         interrupt_field=_resolve_field(
-            params.get("interrupt_field"),
+            interrupt_field,
             field="params.interrupt_field",
             default=SHARED_INTERRUPT_FIELD,
         ),
         session_field=_resolve_field(
-            params.get("session_field"),
+            session_field,
             field="params.session_field",
             default=SHARED_SESSION_FIELD,
         ),

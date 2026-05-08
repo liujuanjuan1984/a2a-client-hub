@@ -220,7 +220,7 @@ class A2AExtensionElicitationReplyRequest(BaseModel):
 class A2AExtensionPromptAsyncRequest(BaseModel):
     request: Dict[str, Any] = Field(
         ...,
-        description="Shared session control payload forwarded to upstream",
+        description="Session control payload forwarded to upstream",
     )
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -369,7 +369,7 @@ class A2ASessionAppendCapabilitiesResponse(BaseModel):
         ...,
         alias="requiresStreamIdentity",
         description=(
-            "Whether append requires a shared stream identity "
+            "Whether append requires a stable stream identity "
             "(thread_id + turn_id) to be present in session metadata."
         ),
     )
@@ -747,9 +747,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
     session_prompt_async: bool = Field(
         ...,
         alias="sessionPromptAsync",
-        description=(
-            "Whether the agent advertises shared session-query prompt_async support"
-        ),
+        description=("Whether the agent advertises session-query prompt_async support"),
     )
     session_control: A2ASessionControlCapabilitiesResponse = Field(
         ...,
@@ -773,7 +771,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         ...,
         alias="streamHints",
         description=(
-            "Declared shared stream-hints contract consumed by the Hub invoke "
+            "Declared stream-hints contract consumed by the Hub invoke "
             "runtime for stream block and usage metadata diagnostics."
         ),
     )

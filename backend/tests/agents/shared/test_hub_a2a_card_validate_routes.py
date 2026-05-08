@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.integrations.a2a_extensions.shared_contract import (
     COMPATIBILITY_PROFILE_URI,
-    SHARED_SESSION_QUERY_URI,
+    SESSION_QUERY_URI,
 )
 from tests.agents.shared import hub_a2a_extensions_routes_support as support
 from tests.agents.shared.hub_a2a_extensions_routes_support import (
@@ -241,7 +241,7 @@ async def test_hub_card_validate_returns_warning_for_empty_skills(
 
 
 @pytest.mark.asyncio
-async def test_hub_card_validate_reports_shared_session_query_diagnostics(
+async def test_hub_card_validate_reports_session_query_diagnostics(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
@@ -278,15 +278,15 @@ async def test_hub_card_validate_reports_shared_session_query_diagnostics(
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["success"] is True
-    assert payload["shared_session_query"]["declared"] is True
-    assert payload["shared_session_query"]["status"] == "unsupported"
-    assert "normalizedContractFamily" not in payload["shared_session_query"]
+    assert payload["session_query"]["declared"] is True
+    assert payload["session_query"]["status"] == "unsupported"
+    assert "normalizedContractFamily" not in payload["session_query"]
     assert (
-        payload["shared_session_query"]["error"]
-        == "Shared session query extension URI is not supported by Hub"
+        payload["session_query"]["error"]
+        == "Session query extension URI is not supported by Hub"
     )
     assert payload["validation_warnings"] == [
-        "Shared session query extension URI is not supported by Hub"
+        "Session query extension URI is not supported by Hub"
     ]
 
 
@@ -307,7 +307,7 @@ async def test_hub_card_validate_accepts_limit_and_optional_cursor_session_query
     fake_gateway = _FakeGateway()
     fake_gateway.card_payload["capabilities"]["extensions"] = [
         build_session_query_extension_payload(
-            uri=SHARED_SESSION_QUERY_URI,
+            uri=SESSION_QUERY_URI,
             methods={
                 "list_sessions": "opencode.sessions.list",
                 "get_session_messages": "opencode.sessions.messages.list",
@@ -346,13 +346,11 @@ async def test_hub_card_validate_accepts_limit_and_optional_cursor_session_query
         payload["extensionCapabilities"]["sessionControl"]["command"]["declared"]
         is False
     )
-    assert payload["shared_session_query"]["status"] == "supported"
-    assert payload["shared_session_query"]["declaredContractVariant"] == "opencode"
-    assert "normalizedContractFamily" not in payload["shared_session_query"]
-    assert payload["shared_session_query"]["pagination_mode"] == (
-        "limit_and_optional_cursor"
-    )
-    assert payload["shared_session_query"]["pagination_params"] == ["limit", "before"]
+    assert payload["session_query"]["status"] == "supported"
+    assert payload["session_query"]["declaredContractVariant"] == "opencode"
+    assert "normalizedContractFamily" not in payload["session_query"]
+    assert payload["session_query"]["pagination_mode"] == ("limit_and_optional_cursor")
+    assert payload["session_query"]["pagination_params"] == ["limit", "before"]
 
 
 @pytest.mark.asyncio
@@ -372,7 +370,7 @@ async def test_hub_card_validate_exposes_request_execution_options_capabilities(
     fake_gateway = _FakeGateway()
     fake_gateway.card_payload["capabilities"]["extensions"] = [
         build_session_query_extension_payload(
-            uri=SHARED_SESSION_QUERY_URI,
+            uri=SESSION_QUERY_URI,
             methods={
                 "list_sessions": "opencode.sessions.list",
                 "get_session_messages": "opencode.sessions.messages.list",
@@ -417,7 +415,7 @@ async def test_hub_card_validate_exposes_request_execution_options_capabilities(
         "metadataField": "metadata.codex.execution",
         "fields": ["model", "effort"],
         "persistsForThread": True,
-        "sourceExtensions": [SHARED_SESSION_QUERY_URI],
+        "sourceExtensions": [SESSION_QUERY_URI],
         "notes": ["Execution overrides are provider-private."],
     }
 
@@ -442,7 +440,7 @@ async def test_hub_card_validate_reports_compatibility_profile_diagnostics(
             "uri": COMPATIBILITY_PROFILE_URI,
             "params": {
                 "extension_retention": {
-                    SHARED_SESSION_QUERY_URI: {
+                    SESSION_QUERY_URI: {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -453,7 +451,7 @@ async def test_hub_card_validate_reports_compatibility_profile_diagnostics(
                         "surface": "extension",
                         "availability": "disabled",
                         "retention": "deployment-conditional",
-                        "extension_uri": SHARED_SESSION_QUERY_URI,
+                        "extension_uri": SESSION_QUERY_URI,
                         "toggle": "A2A_ENABLE_SESSION_SHELL",
                     }
                 },

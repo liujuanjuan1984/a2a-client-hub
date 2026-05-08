@@ -19,7 +19,7 @@ from app.features.invoke.payload_helpers import (
     pick_non_empty_str as _pick_non_empty_str,
 )
 from app.features.invoke.shared_metadata import (
-    extract_preferred_interrupt_metadata,
+    extract_shared_metadata_section,
     merge_shared_metadata_sections,
 )
 from app.features.invoke.stream_field_aliases import (
@@ -33,7 +33,10 @@ from app.features.invoke.stream_field_aliases import (
     TASK_ID_KEYS,
 )
 from app.features.invoke.tool_call_view import build_tool_call_view
-from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
+from app.integrations.a2a_extensions.shared_contract import (
+    SHARED_INTERRUPT_KEY,
+    SHARED_STREAM_KEY,
+)
 from app.integrations.a2a_runtime_status_contract import (
     is_interactive_runtime_state,
 )
@@ -618,7 +621,7 @@ def extract_interrupt_lifecycle_from_serialized_event(
 
     status = _dict_field(body, "status")
     raw_state = _pick_non_empty_str(status, ("state",))
-    interrupt = extract_preferred_interrupt_metadata(body)
+    interrupt = extract_shared_metadata_section(body, section=SHARED_INTERRUPT_KEY)
     if not interrupt:
         return None
 

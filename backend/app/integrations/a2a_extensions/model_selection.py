@@ -1,4 +1,4 @@
-"""Shared model-selection extension resolver and helpers."""
+"""Model-selection extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def resolve_model_selection(card: AgentCard) -> ResolvedModelSelectionExtension:
     )
     if metadata_field != SHARED_MODEL_FIELD:
         raise A2AExtensionContractError(
-            f"Shared model selection metadata_field must be '{SHARED_MODEL_FIELD}'"
+            f"Model selection metadata_field must be '{SHARED_MODEL_FIELD}'"
         )
 
     behavior = require_str(

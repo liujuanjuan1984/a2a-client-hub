@@ -16,9 +16,9 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
     resolve_runtime_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_SHARED_SESSION_QUERY_URI,
-    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
-    SHARED_SESSION_BINDING_URI,
+    CODEX_SESSION_QUERY_URI,
+    OPENCODE_SESSION_MANAGEMENT_URI,
+    SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     STREAM_HINTS_URI,
 )
@@ -45,7 +45,7 @@ def _base_card_payload() -> dict:
 
 def _build_card(
     *,
-    uri: str = OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
+    uri: str = OPENCODE_SESSION_MANAGEMENT_URI,
     pagination: dict | None = None,
     with_binding: bool = False,
     with_stream_hints: bool = False,
@@ -81,7 +81,7 @@ def _build_card(
     if with_binding:
         extensions.append(
             {
-                "uri": SHARED_SESSION_BINDING_URI,
+                "uri": SESSION_BINDING_URI,
                 "params": {
                     "provider": "opencode",
                     "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -100,7 +100,7 @@ def test_resolve_runtime_session_query_selects_direct_mode_for_opencode() -> Non
 
     assert capability.negotiation_mode == "declared_contract"
     assert capability.compatibility_hints_applied is False
-    assert capability.ext.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
+    assert capability.ext.uri == OPENCODE_SESSION_MANAGEMENT_URI
     assert capability.control_methods["prompt_async"].declared is True
     assert capability.control_methods["prompt_async"].availability == "always"
     assert capability.control_methods["command"].declared is True
@@ -114,12 +114,12 @@ def test_resolve_runtime_session_query_accepts_current_opencode_session_manageme
     None
 ):
     capability = resolve_runtime_session_query(
-        _build_card(uri=OPENCODE_SHARED_SESSION_MANAGEMENT_URI)
+        _build_card(uri=OPENCODE_SESSION_MANAGEMENT_URI)
     )
 
     assert capability.negotiation_mode == "declared_contract"
     assert capability.compatibility_hints_applied is False
-    assert capability.ext.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
+    assert capability.ext.uri == OPENCODE_SESSION_MANAGEMENT_URI
 
 
 def test_resolve_runtime_session_query_rejects_legacy_uri() -> None:
@@ -132,7 +132,7 @@ def test_resolve_runtime_session_query_rejects_legacy_uri() -> None:
 def test_resolve_runtime_session_query_selects_codex_compatibility() -> None:
     capability = resolve_runtime_session_query(
         _build_card(
-            uri=CODEX_SHARED_SESSION_QUERY_URI,
+            uri=CODEX_SESSION_QUERY_URI,
             pagination={
                 "mode": "limit",
                 "default_limit": 20,
@@ -143,7 +143,7 @@ def test_resolve_runtime_session_query_selects_codex_compatibility() -> None:
 
     assert capability.negotiation_mode == "declared_contract"
     assert capability.compatibility_hints_applied is True
-    assert capability.ext.uri == CODEX_SHARED_SESSION_QUERY_URI
+    assert capability.ext.uri == CODEX_SESSION_QUERY_URI
 
 
 def test_resolve_runtime_session_query_rejects_unsupported_contract() -> None:
@@ -282,7 +282,7 @@ async def test_resolve_capability_snapshot_reports_codex_runtime_hints(
 
     async def _fake_fetch_card(_runtime):
         return _build_card(
-            uri=CODEX_SHARED_SESSION_QUERY_URI,
+            uri=CODEX_SESSION_QUERY_URI,
             pagination={
                 "mode": "limit",
                 "default_limit": 20,

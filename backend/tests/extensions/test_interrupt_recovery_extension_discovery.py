@@ -11,7 +11,6 @@ from app.integrations.a2a_extensions.interrupt_recovery import (
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_INTERRUPT_RECOVERY_URI,
     INTERRUPT_RECOVERY_URI,
-    OPENCODE_INTERRUPT_RECOVERY_URI,
 )
 from tests.support.a2a import parse_agent_card
 
@@ -96,32 +95,11 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     assert resolved.provider_key == "opencode"
 
 
-def test_resolve_accepts_opencode_https_interrupt_recovery_uri() -> None:
-    payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
-        {
-            "uri": OPENCODE_INTERRUPT_RECOVERY_URI,
-            "required": False,
-            "params": {
-                "methods": {
-                    "list_permissions": "opencode.permissions.list",
-                    "list_questions": "opencode.questions.list",
-                },
-            },
-        }
-    ]
-
-    resolved = resolve_interrupt_recovery(parse_agent_card(payload))
-
-    assert resolved.uri == OPENCODE_INTERRUPT_RECOVERY_URI
-    assert resolved.methods["list_permissions"] == "opencode.permissions.list"
-
-
 def test_resolve_accepts_current_opencode_interrupt_recovery_uri() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_INTERRUPT_RECOVERY_URI,
+            "uri": INTERRUPT_RECOVERY_URI,
             "required": False,
             "params": {
                 "methods": {
@@ -134,7 +112,7 @@ def test_resolve_accepts_current_opencode_interrupt_recovery_uri() -> None:
 
     resolved = resolve_interrupt_recovery(parse_agent_card(payload))
 
-    assert resolved.uri == OPENCODE_INTERRUPT_RECOVERY_URI
+    assert resolved.uri == INTERRUPT_RECOVERY_URI
     assert resolved.methods["list_permissions"] == "opencode.permissions.list"
 
 
@@ -170,6 +148,7 @@ def test_resolve_accepts_codex_interrupt_recovery_single_list_method() -> None:
                 "methods": {
                     "list": "codex.interrupts.list",
                 },
+                "identity_scope": "authenticated_caller",
             },
         }
     ]
@@ -182,3 +161,4 @@ def test_resolve_accepts_codex_interrupt_recovery_single_list_method() -> None:
     assert resolved.methods["list"] == "codex.interrupts.list"
     assert resolved.methods["list_permissions"] is None
     assert resolved.methods["list_questions"] is None
+    assert resolved.identity_scope == "authenticated_caller"

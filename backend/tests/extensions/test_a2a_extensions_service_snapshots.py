@@ -3,9 +3,9 @@ from __future__ import annotations
 from tests.extensions.a2a_extensions_service_support import (
     COMPATIBILITY_PROFILE_URI,
     INTERRUPT_RECOVERY_URI,
-    OPENCODE_WIRE_CONTRACT_URI,
-    SHARED_SESSION_BINDING_URI,
-    SHARED_SESSION_QUERY_URI,
+    SESSION_BINDING_URI,
+    SESSION_QUERY_URI,
+    WIRE_CONTRACT_URI,
     A2AExtensionsService,
     CompatibilityRetentionEntry,
     DeclaredMethodCapabilitySnapshot,
@@ -91,7 +91,7 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
                         "required": False,
                         "params": {
                             "extension_retention": {
-                                SHARED_SESSION_QUERY_URI: {
+                                SESSION_QUERY_URI: {
                                     "surface": "jsonrpc-extension",
                                     "availability": "always",
                                     "retention": "stable",
@@ -109,7 +109,7 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
                                     "surface": "extension",
                                     "availability": "always",
                                     "retention": "stable",
-                                    "extension_uri": SHARED_SESSION_QUERY_URI,
+                                    "extension_uri": SESSION_QUERY_URI,
                                 },
                                 "opencode.permissions.list": {
                                     "surface": "extension",
@@ -396,49 +396,49 @@ def test_build_upstream_conditional_snapshots_mark_disabled_methods() -> None:
                     surface="extension",
                     availability="disabled",
                     retention="deployment-conditional",
-                    extension_uri="urn:codex-a2a:codex-turn-control/v1",
+                    extension_uri="urn:codex-a2a:extension:turn-control:v1",
                     toggle="A2A_ENABLE_TURN_CONTROL",
                 ),
                 "codex.review.start": CompatibilityRetentionEntry(
                     surface="extension",
                     availability="disabled",
                     retention="deployment-conditional",
-                    extension_uri="urn:codex-a2a:codex-review/v1",
+                    extension_uri="urn:codex-a2a:extension:review-control:v1",
                     toggle="A2A_ENABLE_REVIEW_CONTROL",
                 ),
                 "codex.review.watch": CompatibilityRetentionEntry(
                     surface="extension",
                     availability="disabled",
                     retention="deployment-conditional",
-                    extension_uri="urn:codex-a2a:codex-review/v1",
+                    extension_uri="urn:codex-a2a:extension:review-control:v1",
                     toggle="A2A_ENABLE_REVIEW_CONTROL",
                 ),
                 "codex.exec.start": CompatibilityRetentionEntry(
                     surface="extension",
                     availability="disabled",
                     retention="deployment-conditional",
-                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    extension_uri="urn:codex-a2a:extension:exec-control:v1",
                     toggle="A2A_ENABLE_EXEC_CONTROL",
                 ),
                 "codex.exec.write": CompatibilityRetentionEntry(
                     surface="extension",
                     availability="disabled",
                     retention="deployment-conditional",
-                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    extension_uri="urn:codex-a2a:extension:exec-control:v1",
                     toggle="A2A_ENABLE_EXEC_CONTROL",
                 ),
                 "codex.exec.resize": CompatibilityRetentionEntry(
                     surface="extension",
                     availability="disabled",
                     retention="deployment-conditional",
-                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    extension_uri="urn:codex-a2a:extension:exec-control:v1",
                     toggle="A2A_ENABLE_EXEC_CONTROL",
                 ),
                 "codex.exec.terminate": CompatibilityRetentionEntry(
                     surface="extension",
                     availability="disabled",
                     retention="deployment-conditional",
-                    extension_uri="urn:codex-a2a:codex-exec/v1",
+                    extension_uri="urn:codex-a2a:extension:exec-control:v1",
                     toggle="A2A_ENABLE_EXEC_CONTROL",
                 ),
             },
@@ -543,7 +543,7 @@ def test_build_upstream_discovery_snapshot_uses_wire_contract_fallback_hints() -
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=OPENCODE_WIRE_CONTRACT_URI,
+                    uri=WIRE_CONTRACT_URI,
                     params={
                         "all_jsonrpc_methods": [
                             "codex.discovery.skills.list",
@@ -592,7 +592,7 @@ def test_build_request_execution_options_snapshot_collects_declared_contracts() 
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_BINDING_URI,
+                    uri=SESSION_BINDING_URI,
                     params={
                         "request_execution_options": {
                             "metadata_field": "metadata.codex.execution",
@@ -603,7 +603,7 @@ def test_build_request_execution_options_snapshot_collects_declared_contracts() 
                     },
                 ),
                 SimpleNamespace(
-                    uri=SHARED_SESSION_QUERY_URI,
+                    uri=SESSION_QUERY_URI,
                     params={
                         "request_execution_options": {
                             "metadata_field": "metadata.codex.execution",
@@ -628,8 +628,8 @@ def test_build_request_execution_options_snapshot_collects_declared_contracts() 
     assert snapshot.fields == ("model", "effort", "summary", "personality")
     assert snapshot.persists_for_thread is True
     assert snapshot.source_extensions == (
-        SHARED_SESSION_BINDING_URI,
-        SHARED_SESSION_QUERY_URI,
+        SESSION_BINDING_URI,
+        SESSION_QUERY_URI,
     )
     assert snapshot.notes == ("Binding notes", "Query notes")
 
@@ -639,7 +639,7 @@ def test_build_request_execution_options_snapshot_reports_invalid_contract() -> 
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_QUERY_URI,
+                    uri=SESSION_QUERY_URI,
                     params={
                         "request_execution_options": {
                             "metadata_field": "metadata.shared.invoke",

@@ -7,6 +7,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_STREAM_HINTS_URI,
     OPENCODE_STREAM_HINTS_URI,
     STREAM_HINTS_URI,
 )
@@ -45,7 +46,7 @@ def test_resolve_stream_hints_defaults_to_canonical_shared_fields() -> None:
     assert resolved.session_field == "metadata.shared.session"
 
 
-def test_resolve_stream_hints_accepts_opencode_https_uri() -> None:
+def test_resolve_stream_hints_accepts_current_opencode_uri_without_scope() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {"uri": OPENCODE_STREAM_HINTS_URI, "params": {}}
@@ -57,16 +58,28 @@ def test_resolve_stream_hints_accepts_opencode_https_uri() -> None:
     assert resolved.stream_field == "metadata.shared.stream"
 
 
-def test_resolve_stream_hints_accepts_current_opencode_uri() -> None:
+def test_resolve_stream_hints_accepts_current_codex_contract_fields() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
-        {"uri": OPENCODE_STREAM_HINTS_URI, "params": {}}
+        {
+            "uri": CODEX_STREAM_HINTS_URI,
+            "params": {
+                "artifact_metadata_field": "metadata.shared.stream",
+                "usage_metadata_field": "metadata.shared.usage",
+                "interrupt_metadata_field": "metadata.shared.interrupt",
+                "session_metadata_field": "metadata.shared.session",
+            },
+        }
     ]
 
     resolved = resolve_stream_hints(parse_agent_card(payload))
 
-    assert resolved.uri == OPENCODE_STREAM_HINTS_URI
+    assert resolved.uri == CODEX_STREAM_HINTS_URI
+    assert resolved.provider_key == "codex"
     assert resolved.stream_field == "metadata.shared.stream"
+    assert resolved.usage_field == "metadata.shared.usage"
+    assert resolved.interrupt_field == "metadata.shared.interrupt"
+    assert resolved.session_field == "metadata.shared.session"
 
 
 def test_resolve_stream_hints_rejects_non_canonical_field_override() -> None:
@@ -75,6 +88,22 @@ def test_resolve_stream_hints_rejects_non_canonical_field_override() -> None:
         {
             "uri": STREAM_HINTS_URI,
             "params": {"stream_field": "metadata.private.stream"},
+        }
+    ]
+
+    with pytest.raises(A2AExtensionContractError, match="params.stream_field"):
+        resolve_stream_hints(parse_agent_card(payload))
+
+
+def test_resolve_stream_hints_rejects_empty_primary_field_with_alias() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_STREAM_HINTS_URI,
+            "params": {
+                "stream_field": "",
+                "artifact_metadata_field": "metadata.shared.stream",
+            },
         }
     ]
 

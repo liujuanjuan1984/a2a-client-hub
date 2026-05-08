@@ -35,16 +35,16 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     COMPATIBILITY_PROFILE_URI,
+    INTERRUPT_CALLBACK_URI,
     INTERRUPT_RECOVERY_URI,
     INVOKE_METADATA_URI,
-    OPENCODE_WIRE_CONTRACT_URI,
     PROVIDER_DISCOVERY_URI,
-    SHARED_INTERRUPT_CALLBACK_URI,
+    SESSION_BINDING_URI,
+    SESSION_QUERY_URI,
     SHARED_INVOKE_FIELD,
-    SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
-    SHARED_SESSION_QUERY_URI,
     STREAM_HINTS_URI,
+    WIRE_CONTRACT_URI,
 )
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
@@ -333,7 +333,7 @@ def _resolved_extension(
     session_list_filters: SessionListFiltersContract | None = None,
 ) -> ResolvedExtension:
     return ResolvedExtension(
-        uri=SHARED_SESSION_QUERY_URI,
+        uri=SESSION_QUERY_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -380,7 +380,7 @@ def _resolved_extension(
 
 def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
     return ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -402,7 +402,7 @@ def _compatibility_profile_extension_fixture() -> ResolvedCompatibilityProfileEx
         uri=COMPATIBILITY_PROFILE_URI,
         required=False,
         extension_retention={
-            SHARED_SESSION_QUERY_URI: CompatibilityRetentionEntry(
+            SESSION_QUERY_URI: CompatibilityRetentionEntry(
                 surface="jsonrpc-extension",
                 availability="always",
                 retention="stable",
@@ -413,13 +413,13 @@ def _compatibility_profile_extension_fixture() -> ResolvedCompatibilityProfileEx
                 surface="extension",
                 availability="always",
                 retention="stable",
-                extension_uri=SHARED_SESSION_QUERY_URI,
+                extension_uri=SESSION_QUERY_URI,
             ),
             "opencode.sessions.shell": CompatibilityRetentionEntry(
                 surface="extension",
                 availability="disabled",
                 retention="deployment-conditional",
-                extension_uri=SHARED_SESSION_QUERY_URI,
+                extension_uri=SESSION_QUERY_URI,
                 toggle="A2A_ENABLE_SESSION_SHELL",
             ),
         },
@@ -475,7 +475,7 @@ def _wire_contract_extension_fixture(
     conditional_methods: dict[str, ResolvedConditionalMethodAvailability] | None = None,
 ) -> ResolvedWireContractExtension:
     return ResolvedWireContractExtension(
-        uri=OPENCODE_WIRE_CONTRACT_URI,
+        uri=WIRE_CONTRACT_URI,
         required=False,
         protocol_version="0.3.0",
         preferred_transport="HTTP+JSON",
@@ -506,7 +506,7 @@ def _wire_contract_extension_fixture(
         ),
         conditionally_available_methods=conditional_methods or {},
         extension_uris=(
-            SHARED_SESSION_QUERY_URI,
+            SESSION_QUERY_URI,
             PROVIDER_DISCOVERY_URI,
         ),
         all_jsonrpc_methods=all_jsonrpc_methods,
@@ -582,7 +582,7 @@ __all__ = [
     "INTERRUPT_RECOVERY_URI",
     "INVOKE_METADATA_URI",
     "JsonRpcInterface",
-    "OPENCODE_WIRE_CONTRACT_URI",
+    "WIRE_CONTRACT_URI",
     "PROVIDER_DISCOVERY_URI",
     "ResolvedCompatibilityProfileExtension",
     "ResolvedConditionalMethodAvailability",
@@ -590,11 +590,11 @@ __all__ = [
     "ResolvedInterruptCallbackExtension",
     "ResolvedInterruptRecoveryExtension",
     "ResultEnvelopeMapping",
-    "SHARED_INTERRUPT_CALLBACK_URI",
+    "INTERRUPT_CALLBACK_URI",
     "SHARED_INVOKE_FIELD",
-    "SHARED_SESSION_BINDING_URI",
+    "SESSION_BINDING_URI",
     "SHARED_SESSION_ID_FIELD",
-    "SHARED_SESSION_QUERY_URI",
+    "SESSION_QUERY_URI",
     "SessionExtensionService",
     "SessionListFilterFieldContract",
     "SessionListFiltersContract",

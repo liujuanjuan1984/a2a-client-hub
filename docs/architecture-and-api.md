@@ -31,10 +31,10 @@ For the broader cross-cutting documentation map, see [`docs/README.md`](README.m
 
 ## Contract References
 
-For the Hub-consumed shared session query extension contract and reference payloads, see:
+For the Hub-consumed session query extension contract and reference payloads, see:
 
-- `docs/contracts/shared-session-query-canonical-contract.md`
-- `docs/contracts/shared-session-query-reference-payloads.json`
+- `docs/contracts/session-query-canonical-contract.md`
+- `docs/contracts/session-query-reference-payloads.json`
 
 ## API Base URL
 

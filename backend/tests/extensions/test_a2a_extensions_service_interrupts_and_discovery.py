@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from tests.extensions.a2a_extensions_service_support import (
+    INTERRUPT_CALLBACK_URI,
     INTERRUPT_RECOVERY_URI,
-    OPENCODE_WIRE_CONTRACT_URI,
     PROVIDER_DISCOVERY_URI,
-    SHARED_INTERRUPT_CALLBACK_URI,
-    SHARED_SESSION_QUERY_URI,
+    SESSION_QUERY_URI,
+    WIRE_CONTRACT_URI,
     A2AExtensionsService,
     DeclaredMethodCapabilitySnapshot,
     DeclaredMethodCollectionCapabilitySnapshot,
@@ -39,7 +39,7 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -105,7 +105,7 @@ async def test_reply_permission_interrupt_forwards_metadata(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -176,7 +176,7 @@ async def test_reject_question_interrupt_uses_request_id(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -248,7 +248,7 @@ async def test_reply_permission_interrupt_returns_method_not_supported_if_missin
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
+    assert result.meta == {"extension_uri": INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio
@@ -299,7 +299,7 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta["extension_uri"] == SHARED_INTERRUPT_CALLBACK_URI
+    assert result.meta["extension_uri"] == INTERRUPT_CALLBACK_URI
 
 
 @pytest.mark.asyncio
@@ -311,7 +311,7 @@ async def test_reply_permissions_interrupt_uses_request_id_permissions_and_scope
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -406,7 +406,7 @@ async def test_reply_permissions_interrupt_returns_method_not_supported_if_missi
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
+    assert result.meta == {"extension_uri": INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio
@@ -418,7 +418,7 @@ async def test_reply_elicitation_interrupt_uses_request_id_action_and_content_co
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -518,7 +518,7 @@ async def test_reply_elicitation_interrupt_returns_method_not_supported_if_missi
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
+    assert result.meta == {"extension_uri": INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio
@@ -610,7 +610,7 @@ async def test_list_model_providers_returns_method_not_supported_when_wire_contr
     assert result.source == "wire_contract"
     assert result.meta == {
         "extension_uri": PROVIDER_DISCOVERY_URI,
-        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "providers.list",
     }
@@ -780,8 +780,8 @@ async def test_read_upstream_plugin_returns_method_not_supported_when_wire_contr
     assert result.success is False
     assert result.error_code == "method_not_supported"
     assert result.meta == {
-        "extension_uri": OPENCODE_WIRE_CONTRACT_URI,
-        "wire_contract_uri": OPENCODE_WIRE_CONTRACT_URI,
+        "extension_uri": WIRE_CONTRACT_URI,
+        "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "codex.discovery.plugins.read",
     }
@@ -806,7 +806,7 @@ async def test_provider_and_interrupt_share_single_card_fetch(
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_QUERY_URI,
+                    uri=SESSION_QUERY_URI,
                     required=False,
                     params={
                         "provider": "opencode",
@@ -834,7 +834,7 @@ async def test_provider_and_interrupt_share_single_card_fetch(
                     },
                 ),
                 SimpleNamespace(
-                    uri=SHARED_INTERRUPT_CALLBACK_URI,
+                    uri=INTERRUPT_CALLBACK_URI,
                     required=False,
                     params={
                         "methods": {
@@ -1041,7 +1041,7 @@ async def test_recover_interrupts_supports_single_list_method_and_properties_pay
     service = A2AExtensionsService()
     runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
     ext = ResolvedInterruptRecoveryExtension(
-        uri="urn:codex-a2a:codex-interrupt-recovery/v1",
+        uri="urn:codex-a2a:extension:interrupt-recovery:v1",
         required=False,
         provider_key="codex",
         jsonrpc=JsonRpcInterface(

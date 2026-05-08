@@ -263,8 +263,8 @@ The current examples in this section use OpenCode-flavored contracts because tha
 
 Contract references:
 
-- Canonical contract: [`docs/contracts/shared-session-query-canonical-contract.md`](../docs/contracts/shared-session-query-canonical-contract.md)
-- Reference payloads: [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
+- Canonical contract: [`docs/contracts/session-query-canonical-contract.md`](../docs/contracts/session-query-canonical-contract.md)
+- Reference payloads: [`docs/contracts/session-query-reference-payloads.json`](../docs/contracts/session-query-reference-payloads.json)
 - Consumer baseline and negotiation model: [`docs/a2a-consumer-baseline.md`](../docs/a2a-consumer-baseline.md)
 - Hub recognizes the newer opencode public HTTPS alias `#opencode-session-management-v1` and negotiates declared extensions per request instead of treating them as static global contracts.
 - Hub also accepts the Codex compatibility URI `urn:codex-a2a:codex-session-query/v1` when its declared pagination and control semantics remain safely consumable without redefining overall A2A interoperability.

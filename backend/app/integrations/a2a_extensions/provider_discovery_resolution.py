@@ -16,22 +16,11 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    OPENCODE_PROVIDER_DISCOVERY_URI,
     PROVIDER_DISCOVERY_URI,
     SUPPORTED_PROVIDER_DISCOVERY_URIS,
     is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
-
-
-def _resolve_metadata_namespace(extension_uri: str) -> str:
-    """Map supported provider-discovery families to the adapter metadata namespace."""
-
-    if extension_uri == OPENCODE_PROVIDER_DISCOVERY_URI:
-        return "opencode"
-    if extension_uri == PROVIDER_DISCOVERY_URI:
-        return "opencode"
-    raise A2AExtensionNotSupportedError("Provider discovery extension not found")
 
 
 def resolve_provider_discovery_extension(
@@ -75,7 +64,7 @@ def resolve_provider_discovery_extension(
         uri=resolved_uri,
         required=required,
         provider_key="opencode",
-        metadata_namespace=_resolve_metadata_namespace(resolved_uri),
+        metadata_namespace="opencode",
         jsonrpc=resolve_jsonrpc_interface(card),
         methods={
             "list_providers": list_providers_method,

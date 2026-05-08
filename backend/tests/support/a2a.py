@@ -7,7 +7,7 @@ from typing import Any, Final
 from a2a.types import AgentCard
 
 from app.integrations.a2a_client.protobuf import parse_agent_card as _parse_agent_card
-from app.integrations.a2a_extensions.shared_contract import SHARED_SESSION_QUERY_URI
+from app.integrations.a2a_extensions.shared_contract import SESSION_QUERY_URI
 
 _OMIT: Final = object()
 
@@ -46,7 +46,7 @@ def build_agent_card_payload(
 
 def build_session_query_extension_payload(
     *,
-    uri: str = SHARED_SESSION_QUERY_URI,
+    uri: str = SESSION_QUERY_URI,
     provider: str = "opencode",
     methods: Mapping[str, str] | None = None,
     pagination: Mapping[str, Any] | None = None,
@@ -56,7 +56,7 @@ def build_session_query_extension_payload(
     errors: Mapping[str, Any] | None = None,
     required: bool | None = None,
 ) -> dict[str, Any]:
-    """Build a shared session-query extension payload for test fixtures."""
+    """Build a session-query extension payload for test fixtures."""
 
     extension: dict[str, Any] = {
         "uri": uri,

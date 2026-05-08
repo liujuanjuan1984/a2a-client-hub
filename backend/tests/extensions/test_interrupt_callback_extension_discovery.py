@@ -9,8 +9,9 @@ from app.integrations.a2a_extensions.interrupt_callback import (
     resolve_interrupt_callback,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    CODEX_INTERRUPT_CALLBACK_URI,
+    INTERRUPT_CALLBACK_URI,
     OPENCODE_INTERRUPT_CALLBACK_URI,
-    SHARED_INTERRUPT_CALLBACK_URI,
 )
 from tests.support.a2a import parse_agent_card
 
@@ -44,7 +45,7 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "provider": "OpenCode",
@@ -89,7 +90,7 @@ def test_resolve_accepts_missing_interrupt_method_fields() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -113,7 +114,7 @@ def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -141,7 +142,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "methods": {
@@ -154,6 +155,30 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     card = parse_agent_card(payload)
     resolved = resolve_interrupt_callback(card)
     assert resolved.provider_key == "opencode"
+
+
+def test_resolve_infers_codex_provider_from_current_interrupt_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": CODEX_INTERRUPT_CALLBACK_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "reply_permission": "a2a.interrupt.permission.reply",
+                    "reply_permissions": "a2a.interrupt.permissions.reply",
+                    "reply_elicitation": "a2a.interrupt.elicitation.reply",
+                },
+            },
+        }
+    ]
+
+    card = parse_agent_card(payload)
+    resolved = resolve_interrupt_callback(card)
+
+    assert resolved.uri == CODEX_INTERRUPT_CALLBACK_URI
+    assert resolved.provider_key == "codex"
+    assert resolved.methods["reply_elicitation"] == "a2a.interrupt.elicitation.reply"
 
 
 def test_resolve_accepts_current_opencode_interrupt_uri() -> None:
