@@ -1,4 +1,4 @@
-"""Shared interrupt callback extension resolver and helpers."""
+"""Interrupt callback extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -30,9 +30,7 @@ def resolve_interrupt_callback(
             ext = candidate
             break
     if ext is None:
-        raise A2AExtensionNotSupportedError(
-            "Shared interrupt callback extension not found"
-        )
+        raise A2AExtensionNotSupportedError("Interrupt callback extension not found")
 
     required = bool(getattr(ext, "required", False))
     params = contract_utils.as_dict(getattr(ext, "params", None))

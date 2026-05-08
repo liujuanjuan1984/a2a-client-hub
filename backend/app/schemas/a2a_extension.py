@@ -369,7 +369,7 @@ class A2ASessionAppendCapabilitiesResponse(BaseModel):
         ...,
         alias="requiresStreamIdentity",
         description=(
-            "Whether append requires a shared stream identity "
+            "Whether append requires a stable stream identity "
             "(thread_id + turn_id) to be present in session metadata."
         ),
     )
@@ -771,7 +771,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         ...,
         alias="streamHints",
         description=(
-            "Declared shared stream-hints contract consumed by the Hub invoke "
+            "Declared stream-hints contract consumed by the Hub invoke "
             "runtime for stream block and usage metadata diagnostics."
         ),
     )

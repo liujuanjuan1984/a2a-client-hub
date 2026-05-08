@@ -1,4 +1,4 @@
-"""Shared model-selection extension resolver and helpers."""
+"""Model-selection extension resolver and helpers."""
 
 from __future__ import annotations
 

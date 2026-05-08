@@ -1,4 +1,4 @@
-"""Shared stream-hints extension resolver and helpers."""
+"""Stream-hints extension resolver and helpers."""
 
 from __future__ import annotations
 

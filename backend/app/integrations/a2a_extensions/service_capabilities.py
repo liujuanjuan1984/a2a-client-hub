@@ -225,10 +225,10 @@ class A2AExtensionCapabilityService:
             return snapshot.ext, snapshot.jsonrpc_url
         if snapshot.status == "invalid":
             raise A2AExtensionContractError(
-                snapshot.error or "Shared interrupt callback contract is invalid"
+                snapshot.error or "Interrupt callback contract is invalid"
             )
         raise A2AExtensionNotSupportedError(
-            snapshot.error or "Shared interrupt callback extension not found"
+            snapshot.error or "Interrupt callback extension not found"
         )
 
     @staticmethod
