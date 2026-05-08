@@ -36,7 +36,7 @@ These peers are the best fit for the current product surface:
 
 - standard A2A Agent Card support
 - invoke and streaming support
-- shared session continuity / query support consumed by the Hub
+- session continuity / query support consumed by the Hub
 - shared interrupt callback / recovery support consumed by the Hub
 
 This tier is where the repository currently spends most of its compatibility effort.

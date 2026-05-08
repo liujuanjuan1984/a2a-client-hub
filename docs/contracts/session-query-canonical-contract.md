@@ -1,6 +1,6 @@
-# Shared Session Query Hub-Normalized Contract
+# Session Query Hub-Normalized Contract
 
-This document defines the Hub-private normalized contract consumed for shared session query handling.
+This document defines the Hub-private normalized contract consumed for session query handling.
 
 It is intentionally scoped to the runtime contract that `a2a-client-hub` parses and consumes. It does not attempt to document every provider-private metadata field or method-level descriptive annotation that an upstream server may choose to publish.
 
@@ -167,7 +167,7 @@ At onboarding time, Hub emits:
 
 At runtime, Hub does not rely on a long-lived provider family branch. Instead it:
 
-- consumes the declared shared session query contract directly
+- consumes the declared session query contract directly
 - attaches runtime negotiation hints when compatibility adaptations were required
 - treats provider-private compatibility details as advisory diagnostics
 - fast-fails only for unsupported / invalid contracts
@@ -176,6 +176,6 @@ At runtime, Hub does not rely on a long-lived provider family branch. Instead it
 
 Reference payload assets live in:
 
-- `docs/contracts/shared-session-query-reference-payloads.json`
+- `docs/contracts/session-query-reference-payloads.json`
 
 They are intended to be copied into upstream contract tests, interoperability fixtures, or future third-party peer reviews.

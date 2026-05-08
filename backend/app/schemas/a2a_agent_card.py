@@ -28,11 +28,11 @@ class A2AAgentCardProxyRequest(BaseModel):
     extra_headers: Dict[str, str] = Field(default_factory=dict)
 
 
-class SharedSessionQueryDiagnostic(BaseModel):
+class SessionQueryDiagnostic(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     declared: bool = Field(
-        ..., description="Whether the card declares a shared session query extension"
+        ..., description="Whether the card declares a session query extension"
     )
     status: Literal["supported", "unsupported", "invalid"] = Field(
         ...,
@@ -77,9 +77,9 @@ class A2AAgentCardValidationResponse(BaseModel):
         alias="extensionCapabilities",
         description="Hub capability summary derived from declared extension contracts.",
     )
-    shared_session_query: Optional[SharedSessionQueryDiagnostic] = Field(
+    session_query: Optional[SessionQueryDiagnostic] = Field(
         default=None,
-        description="Shared session query extension compatibility diagnostics",
+        description="Session query extension compatibility diagnostics",
     )
     compatibility_profile: Optional[A2ACompatibilityProfileDiagnostic] = Field(
         default=None,

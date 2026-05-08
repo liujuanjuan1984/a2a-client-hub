@@ -96,12 +96,10 @@ class A2AExtensionsService:
             return snapshot.session_binding.ext
         if snapshot.session_binding.status == "invalid":
             raise A2AExtensionContractError(
-                snapshot.session_binding.error
-                or "Shared session binding contract is invalid"
+                snapshot.session_binding.error or "Session binding contract is invalid"
             )
         raise A2AExtensionNotSupportedError(
-            snapshot.session_binding.error
-            or "Shared session binding extension not found"
+            snapshot.session_binding.error or "Session binding extension not found"
         )
 
     @staticmethod

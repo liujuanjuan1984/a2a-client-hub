@@ -138,7 +138,7 @@ async def fetch_and_validate_agent_card(
             )
     if session_query and session_query.status == "invalid" and session_query.error:
         extension_warnings.append(
-            f"Shared session query contract is invalid: {session_query.error}"
+            f"Session query contract is invalid: {session_query.error}"
         )
     elif (
         session_query
@@ -146,8 +146,7 @@ async def fetch_and_validate_agent_card(
         and session_query.declared
     ):
         extension_warnings.append(
-            session_query.error
-            or "Shared session query extension is not supported by Hub"
+            session_query.error or "Session query extension is not supported by Hub"
         )
     if (
         compatibility_profile
@@ -175,7 +174,7 @@ async def fetch_and_validate_agent_card(
         "card_description": card_payload.get("description"),
         "card": card_payload,
         "extensionCapabilities": extension_capabilities,
-        "shared_session_query": session_query,
+        "session_query": session_query,
         "compatibility_profile": compatibility_profile,
     }
     if validation_warnings:

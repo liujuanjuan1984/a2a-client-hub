@@ -10,8 +10,8 @@ from app.integrations.a2a_extensions.interrupt_callback import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_INTERRUPT_CALLBACK_URI,
+    INTERRUPT_CALLBACK_URI,
     OPENCODE_INTERRUPT_CALLBACK_URI,
-    SHARED_INTERRUPT_CALLBACK_URI,
 )
 from tests.support.a2a import parse_agent_card
 
@@ -45,7 +45,7 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "provider": "OpenCode",
@@ -90,7 +90,7 @@ def test_resolve_accepts_missing_interrupt_method_fields() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -114,7 +114,7 @@ def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -142,7 +142,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "uri": INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
                 "methods": {

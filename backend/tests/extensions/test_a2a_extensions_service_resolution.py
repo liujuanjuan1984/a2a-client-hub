@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from tests.extensions.a2a_extensions_service_support import (
+    INTERRUPT_CALLBACK_URI,
     INVOKE_METADATA_URI,
-    SHARED_INTERRUPT_CALLBACK_URI,
+    SESSION_BINDING_URI,
+    SESSION_QUERY_URI,
     SHARED_INVOKE_FIELD,
-    SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
-    SHARED_SESSION_QUERY_URI,
     A2AExtensionContractError,
     A2AExtensionsService,
     A2AExtensionSupport,
@@ -39,7 +39,7 @@ async def test_resolve_session_binding_fetches_card_and_returns_contract(
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_BINDING_URI,
+                    uri=SESSION_BINDING_URI,
                     required=False,
                     params={
                         "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -57,7 +57,7 @@ async def test_resolve_session_binding_fetches_card_and_returns_contract(
 
     resolved = await service.resolve_session_binding(runtime=runtime)
 
-    assert resolved.uri == SHARED_SESSION_BINDING_URI
+    assert resolved.uri == SESSION_BINDING_URI
     assert resolved.metadata_field == SHARED_SESSION_ID_FIELD
     assert resolved.behavior == "prefer_metadata_binding_else_create_session"
 
@@ -77,7 +77,7 @@ async def test_resolve_session_binding_uses_cache_for_repeated_runtime(
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_BINDING_URI,
+                    uri=SESSION_BINDING_URI,
                     required=False,
                     params={
                         "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -118,7 +118,7 @@ async def test_resolve_session_binding_refreshes_cache_after_ttl(
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_BINDING_URI,
+                    uri=SESSION_BINDING_URI,
                     required=False,
                     params={
                         "metadata_field": SHARED_SESSION_ID_FIELD,
@@ -254,7 +254,7 @@ def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:
 
 def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -310,7 +310,7 @@ async def test_continue_session_returns_canonical_binding_metadata(
                 status="supported",
                 meta={
                     "session_binding_declared": True,
-                    "session_binding_uri": SHARED_SESSION_BINDING_URI,
+                    "session_binding_uri": SESSION_BINDING_URI,
                     "session_binding_mode": "declared_contract",
                     "session_binding_fallback_used": False,
                 },
@@ -420,7 +420,7 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_QUERY_URI,
+                    uri=SESSION_QUERY_URI,
                     required=False,
                     params={
                         "provider": "opencode",
@@ -442,7 +442,7 @@ async def test_continue_session_fetches_card_once_for_query_and_binding(
                     },
                 ),
                 SimpleNamespace(
-                    uri=SHARED_SESSION_BINDING_URI,
+                    uri=SESSION_BINDING_URI,
                     required=False,
                     params={
                         "provider": "opencode",

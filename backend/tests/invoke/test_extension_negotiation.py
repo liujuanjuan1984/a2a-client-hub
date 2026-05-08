@@ -15,12 +15,12 @@ from app.integrations.a2a_extensions.capability_snapshot import (
     StreamHintsCapabilitySnapshot,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_SHARED_SESSION_BINDING_URI,
+    CODEX_SESSION_BINDING_URI,
     CODEX_STREAM_HINTS_URI,
     INVOKE_METADATA_URI,
     MODEL_SELECTION_URI,
+    SESSION_BINDING_URI,
     SHARED_MODEL_FIELD,
-    SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
 )
 from app.integrations.a2a_extensions.types import (
@@ -47,7 +47,7 @@ async def test_resolve_core_invoke_requested_extensions_collects_relevant_uris()
         session_query=_session_query_snapshot(session_query_ext),
         session_binding=_binding_snapshot(
             ext=ResolvedSessionBindingExtension(
-                uri=SHARED_SESSION_BINDING_URI,
+                uri=SESSION_BINDING_URI,
                 required=False,
                 provider_key="example_provider",
                 metadata_field=SHARED_SESSION_ID_FIELD,
@@ -144,7 +144,7 @@ async def test_resolve_core_invoke_requested_extensions_uses_codex_current_uris(
         session_query=_session_query_snapshot(_resolved_extension()),
         session_binding=_binding_snapshot(
             ext=ResolvedSessionBindingExtension(
-                uri=CODEX_SHARED_SESSION_BINDING_URI,
+                uri=CODEX_SESSION_BINDING_URI,
                 required=False,
                 provider_key="codex",
                 metadata_field=SHARED_SESSION_ID_FIELD,
@@ -186,7 +186,7 @@ async def test_resolve_core_invoke_requested_extensions_uses_codex_current_uris(
     )
 
     assert requested == (
-        CODEX_SHARED_SESSION_BINDING_URI,
+        CODEX_SESSION_BINDING_URI,
         CODEX_STREAM_HINTS_URI,
     )
 

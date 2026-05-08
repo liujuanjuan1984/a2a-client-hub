@@ -7,23 +7,21 @@ intentionally unsupported.
 
 from __future__ import annotations
 
-SHARED_SESSION_BINDING_URI = "urn:a2a:session-binding/v1"
-OPENCODE_SHARED_SESSION_BINDING_URI = "urn:opencode-a2a:extension:session-binding:v1"
-CODEX_SHARED_SESSION_BINDING_URI = "urn:codex-a2a:extension:session-binding:v1"
+SESSION_BINDING_URI = "urn:a2a:session-binding/v1"
+OPENCODE_SESSION_BINDING_URI = "urn:opencode-a2a:extension:session-binding:v1"
+CODEX_SESSION_BINDING_URI = "urn:codex-a2a:extension:session-binding:v1"
 SUPPORTED_SESSION_BINDING_URIS = (
-    SHARED_SESSION_BINDING_URI,
-    OPENCODE_SHARED_SESSION_BINDING_URI,
-    CODEX_SHARED_SESSION_BINDING_URI,
+    SESSION_BINDING_URI,
+    OPENCODE_SESSION_BINDING_URI,
+    CODEX_SESSION_BINDING_URI,
 )
 
-OPENCODE_SHARED_SESSION_MANAGEMENT_URI = (
-    "urn:opencode-a2a:extension:session-management:v1"
-)
-SHARED_SESSION_QUERY_URI = OPENCODE_SHARED_SESSION_MANAGEMENT_URI
-CODEX_SHARED_SESSION_QUERY_URI = "urn:codex-a2a:extension:session-query:v1"
+OPENCODE_SESSION_MANAGEMENT_URI = "urn:opencode-a2a:extension:session-management:v1"
+SESSION_QUERY_URI = OPENCODE_SESSION_MANAGEMENT_URI
+CODEX_SESSION_QUERY_URI = "urn:codex-a2a:extension:session-query:v1"
 SUPPORTED_SESSION_QUERY_URIS = (
-    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
-    CODEX_SHARED_SESSION_QUERY_URI,
+    OPENCODE_SESSION_MANAGEMENT_URI,
+    CODEX_SESSION_QUERY_URI,
 )
 
 INVOKE_METADATA_URI = "urn:a2a:invoke-metadata/v1"
@@ -56,11 +54,11 @@ SUPPORTED_INTERRUPT_RECOVERY_URIS = (
     CODEX_INTERRUPT_RECOVERY_URI,
 )
 
-SHARED_INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
+INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
 OPENCODE_INTERRUPT_CALLBACK_URI = "urn:opencode-a2a:extension:interactive-interrupt:v1"
 CODEX_INTERRUPT_CALLBACK_URI = "urn:codex-a2a:extension:interactive-interrupt:v1"
 SUPPORTED_INTERRUPT_CALLBACK_URIS = (
-    SHARED_INTERRUPT_CALLBACK_URI,
+    INTERRUPT_CALLBACK_URI,
     OPENCODE_INTERRUPT_CALLBACK_URI,
     CODEX_INTERRUPT_CALLBACK_URI,
 )

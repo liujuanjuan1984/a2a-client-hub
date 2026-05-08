@@ -211,10 +211,10 @@ class A2AExtensionCapabilityService:
             return snapshot.capability
         if snapshot.status == "invalid":
             raise A2AExtensionContractError(
-                snapshot.error or "Shared session query contract is invalid"
+                snapshot.error or "Session query contract is invalid"
             )
         raise A2AExtensionNotSupportedError(
-            snapshot.error or "Shared session query extension not supported by Hub"
+            snapshot.error or "Session query extension not supported by Hub"
         )
 
     @staticmethod

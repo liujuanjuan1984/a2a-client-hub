@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from tests.extensions.a2a_extensions_service_support import (
-    SHARED_SESSION_QUERY_URI,
+    SESSION_QUERY_URI,
     WIRE_CONTRACT_URI,
     A2AExtensionsService,
     Any,
@@ -132,7 +132,7 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     assert result.success is False
     assert result.error_code == "method_not_supported"
     assert result.meta == {
-        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "extension_uri": SESSION_QUERY_URI,
         "session_query_negotiation_mode": "declared_contract",
         "session_query_compatibility_hints_applied": False,
     }
@@ -197,7 +197,7 @@ async def test_prompt_session_async_returns_method_disabled_when_wire_contract_m
         "toggle": "A2A_ENABLE_SESSION_PROMPT_ASYNC",
     }
     assert result.meta == {
-        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "extension_uri": SESSION_QUERY_URI,
         "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "conditionally_available",
         "method_name": "shared.sessions.prompt_async",
@@ -570,7 +570,7 @@ async def test_command_session_returns_method_not_supported_if_missing(
     assert result.success is False
     assert result.error_code == "method_not_supported"
     assert result.meta == {
-        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "extension_uri": SESSION_QUERY_URI,
         "session_query_negotiation_mode": "declared_contract",
         "session_query_compatibility_hints_applied": False,
     }
@@ -634,7 +634,7 @@ async def test_command_session_returns_method_not_supported_when_wire_contract_d
         "protocol_version": "0.3.0",
     }
     assert result.meta == {
-        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "extension_uri": SESSION_QUERY_URI,
         "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "shared.sessions.command",
@@ -956,7 +956,7 @@ async def test_get_session_returns_method_not_supported_when_wire_contract_disal
     assert result.error_code == "method_not_supported"
     assert result.source == "wire_contract"
     assert result.meta == {
-        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "extension_uri": SESSION_QUERY_URI,
         "wire_contract_uri": WIRE_CONTRACT_URI,
         "wire_contract_preflight": "unsupported_method",
         "method_name": "shared.sessions.get",

@@ -7,7 +7,7 @@ from a2a.types import AgentCard
 from app.integrations.a2a_extensions import contract_utils
 from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
 from app.integrations.a2a_extensions.shared_contract import (
-    SHARED_INTERRUPT_CALLBACK_URI,
+    INTERRUPT_CALLBACK_URI,
     SUPPORTED_INTERRUPT_CALLBACK_URIS,
     infer_provider_key_from_extension_uri,
 )
@@ -36,7 +36,7 @@ def resolve_interrupt_callback(
 
     required = bool(getattr(ext, "required", False))
     params = contract_utils.as_dict(getattr(ext, "params", None))
-    resolved_uri = str(getattr(ext, "uri", SHARED_INTERRUPT_CALLBACK_URI))
+    resolved_uri = str(getattr(ext, "uri", INTERRUPT_CALLBACK_URI))
     raw_provider = params.get("provider")
     if raw_provider is None:
         provider = infer_provider_key_from_extension_uri(resolved_uri)

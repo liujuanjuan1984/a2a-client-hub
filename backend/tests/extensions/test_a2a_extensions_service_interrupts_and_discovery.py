@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from tests.extensions.a2a_extensions_service_support import (
+    INTERRUPT_CALLBACK_URI,
     INTERRUPT_RECOVERY_URI,
     PROVIDER_DISCOVERY_URI,
-    SHARED_INTERRUPT_CALLBACK_URI,
-    SHARED_SESSION_QUERY_URI,
+    SESSION_QUERY_URI,
     WIRE_CONTRACT_URI,
     A2AExtensionsService,
     DeclaredMethodCapabilitySnapshot,
@@ -39,7 +39,7 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -105,7 +105,7 @@ async def test_reply_permission_interrupt_forwards_metadata(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -176,7 +176,7 @@ async def test_reject_question_interrupt_uses_request_id(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -248,7 +248,7 @@ async def test_reply_permission_interrupt_returns_method_not_supported_if_missin
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
+    assert result.meta == {"extension_uri": INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio
@@ -299,7 +299,7 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta["extension_uri"] == SHARED_INTERRUPT_CALLBACK_URI
+    assert result.meta["extension_uri"] == INTERRUPT_CALLBACK_URI
 
 
 @pytest.mark.asyncio
@@ -311,7 +311,7 @@ async def test_reply_permissions_interrupt_uses_request_id_permissions_and_scope
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -406,7 +406,7 @@ async def test_reply_permissions_interrupt_returns_method_not_supported_if_missi
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
+    assert result.meta == {"extension_uri": INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio
@@ -418,7 +418,7 @@ async def test_reply_elicitation_interrupt_uses_request_id_action_and_content_co
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     ext = ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=INTERRUPT_CALLBACK_URI,
         required=False,
         provider_key="opencode",
         jsonrpc=JsonRpcInterface(
@@ -518,7 +518,7 @@ async def test_reply_elicitation_interrupt_returns_method_not_supported_if_missi
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
+    assert result.meta == {"extension_uri": INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio
@@ -806,7 +806,7 @@ async def test_provider_and_interrupt_share_single_card_fetch(
         capabilities=SimpleNamespace(
             extensions=[
                 SimpleNamespace(
-                    uri=SHARED_SESSION_QUERY_URI,
+                    uri=SESSION_QUERY_URI,
                     required=False,
                     params={
                         "provider": "opencode",
@@ -834,7 +834,7 @@ async def test_provider_and_interrupt_share_single_card_fetch(
                     },
                 ),
                 SimpleNamespace(
-                    uri=SHARED_INTERRUPT_CALLBACK_URI,
+                    uri=INTERRUPT_CALLBACK_URI,
                     required=False,
                     params={
                         "methods": {

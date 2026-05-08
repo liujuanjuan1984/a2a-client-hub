@@ -1,4 +1,4 @@
-"""Runtime selection for shared session query capability handling."""
+"""Runtime selection for session query capability handling."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from app.integrations.a2a_extensions.session_query_diagnostics import (
     diagnose_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_SHARED_SESSION_QUERY_URI,
+    CODEX_SESSION_QUERY_URI,
 )
 from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
@@ -47,15 +47,15 @@ def resolve_runtime_session_query(
         return ResolvedSessionQueryRuntimeCapability(
             ext=ext,
             negotiation_mode="declared_contract",
-            compatibility_hints_applied=ext.uri == CODEX_SHARED_SESSION_QUERY_URI,
+            compatibility_hints_applied=ext.uri == CODEX_SESSION_QUERY_URI,
             control_methods=resolve_session_query_control_methods(card, ext=ext),
         )
 
     if diagnostic.status == "invalid":
         raise A2AExtensionContractError(
-            diagnostic.error or "Shared session query contract is invalid"
+            diagnostic.error or "Session query contract is invalid"
         )
 
     raise A2AExtensionNotSupportedError(
-        diagnostic.error or "Shared session query extension not supported by Hub"
+        diagnostic.error or "Session query extension not supported by Hub"
     )

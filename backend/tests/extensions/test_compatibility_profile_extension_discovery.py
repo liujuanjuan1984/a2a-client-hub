@@ -13,8 +13,8 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.shared_contract import (
     CODEX_COMPATIBILITY_PROFILE_URI,
     COMPATIBILITY_PROFILE_URI,
-    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
-    SHARED_SESSION_QUERY_URI,
+    OPENCODE_SESSION_MANAGEMENT_URI,
+    SESSION_QUERY_URI,
 )
 from tests.support.a2a import parse_agent_card
 
@@ -47,7 +47,7 @@ def test_resolve_compatibility_profile_supports_declared_profile() -> None:
             "required": False,
             "params": {
                 "extension_retention": {
-                    SHARED_SESSION_QUERY_URI: {
+                    SESSION_QUERY_URI: {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -58,7 +58,7 @@ def test_resolve_compatibility_profile_supports_declared_profile() -> None:
                         "surface": "extension",
                         "availability": "disabled",
                         "retention": "deployment-conditional",
-                        "extension_uri": SHARED_SESSION_QUERY_URI,
+                        "extension_uri": SESSION_QUERY_URI,
                         "toggle": "A2A_ENABLE_SESSION_SHELL",
                     }
                 },
@@ -164,7 +164,7 @@ def test_resolve_compatibility_profile_accepts_current_opencode_uri() -> None:
             "required": False,
             "params": {
                 "extension_retention": {
-                    OPENCODE_SHARED_SESSION_MANAGEMENT_URI: {
+                    OPENCODE_SESSION_MANAGEMENT_URI: {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -175,7 +175,7 @@ def test_resolve_compatibility_profile_accepts_current_opencode_uri() -> None:
                         "surface": "extension",
                         "availability": "disabled",
                         "retention": "deployment-conditional",
-                        "extension_uri": OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
+                        "extension_uri": OPENCODE_SESSION_MANAGEMENT_URI,
                     }
                 },
                 "service_behaviors": {
@@ -190,10 +190,10 @@ def test_resolve_compatibility_profile_accepts_current_opencode_uri() -> None:
     resolved = resolve_compatibility_profile(card)
 
     assert resolved.uri == COMPATIBILITY_PROFILE_URI
-    assert SHARED_SESSION_QUERY_URI in resolved.extension_retention
+    assert SESSION_QUERY_URI in resolved.extension_retention
     assert (
         resolved.method_retention["opencode.sessions.shell"].extension_uri
-        == SHARED_SESSION_QUERY_URI
+        == SESSION_QUERY_URI
     )
 
 
@@ -206,7 +206,7 @@ def test_resolve_compatibility_profile_normalizes_current_opencode_retention_uri
             "required": False,
             "params": {
                 "extension_retention": {
-                    OPENCODE_SHARED_SESSION_MANAGEMENT_URI: {
+                    OPENCODE_SESSION_MANAGEMENT_URI: {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -225,7 +225,7 @@ def test_resolve_compatibility_profile_normalizes_current_opencode_retention_uri
     resolved = resolve_compatibility_profile(card)
 
     assert resolved.uri == COMPATIBILITY_PROFILE_URI
-    assert SHARED_SESSION_QUERY_URI in resolved.extension_retention
+    assert SESSION_QUERY_URI in resolved.extension_retention
 
 
 def test_resolve_compatibility_profile_accepts_current_codex_uri() -> None:

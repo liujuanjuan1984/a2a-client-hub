@@ -11,9 +11,9 @@ from app.integrations.a2a_extensions.session_query import (
     resolve_session_query_control_methods,
 )
 from app.integrations.a2a_extensions.shared_contract import (
-    CODEX_SHARED_SESSION_QUERY_URI,
-    OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
-    SHARED_SESSION_QUERY_URI,
+    CODEX_SESSION_QUERY_URI,
+    OPENCODE_SESSION_MANAGEMENT_URI,
+    SESSION_QUERY_URI,
 )
 from app.integrations.a2a_extensions.types import ResultEnvelopeMapping
 from tests.support.a2a import parse_agent_card
@@ -48,7 +48,7 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SHARED_SESSION_MANAGEMENT_URI,
+            "uri": OPENCODE_SESSION_MANAGEMENT_URI,
             "required": False,
             "params": {
                 "provider": "OpenCode",
@@ -89,7 +89,7 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
 
-    assert resolved.uri == OPENCODE_SHARED_SESSION_MANAGEMENT_URI
+    assert resolved.uri == OPENCODE_SESSION_MANAGEMENT_URI
     assert resolved.provider_key == "opencode"
     assert resolved.methods["list_sessions"] == "opencode.sessions.list"
     assert resolved.methods["get_session_messages"] == "opencode.sessions.messages.list"
@@ -126,7 +126,7 @@ def test_resolve_requires_jsonrpc_interface_when_missing() -> None:
     ]
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -152,7 +152,7 @@ def test_resolve_rejects_missing_pagination() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -172,7 +172,7 @@ def test_resolve_accepts_limit_mode_with_default_limit_keys() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -203,7 +203,7 @@ def test_resolve_accepts_limit_mode_with_offset_param() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -232,7 +232,7 @@ def test_resolve_extracts_message_cursor_pagination_contract() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -266,7 +266,7 @@ def test_resolve_accepts_codex_session_query_contract() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": CODEX_SHARED_SESSION_QUERY_URI,
+            "uri": CODEX_SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "methods": {
@@ -313,7 +313,7 @@ def test_resolve_accepts_codex_session_query_contract() -> None:
     card = parse_agent_card(payload)
     resolved = resolve_session_query(card)
 
-    assert resolved.uri == CODEX_SHARED_SESSION_QUERY_URI
+    assert resolved.uri == CODEX_SESSION_QUERY_URI
     assert resolved.provider_key == "codex"
     assert resolved.pagination.mode == "limit"
     assert resolved.pagination.params == ("limit",)
@@ -324,7 +324,7 @@ def test_resolve_rejects_codex_offset_pagination() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": CODEX_SHARED_SESSION_QUERY_URI,
+            "uri": CODEX_SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "codex",
@@ -356,7 +356,7 @@ def test_resolve_rejects_codex_command_requiring_arguments() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": CODEX_SHARED_SESSION_QUERY_URI,
+            "uri": CODEX_SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "codex",
@@ -399,7 +399,7 @@ def test_resolve_accepts_limit_and_optional_cursor_mode() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -438,7 +438,7 @@ def test_resolve_extracts_session_list_filter_contract() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -487,7 +487,7 @@ def test_resolve_accepts_result_envelope_field_aliases() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -523,7 +523,7 @@ def test_resolve_rejects_result_envelope_unknown_keys() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",
@@ -554,7 +554,7 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "methods": {
@@ -608,7 +608,7 @@ def test_resolve_defaults_result_envelope_when_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": SHARED_SESSION_QUERY_URI,
+            "uri": SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "provider": "opencode",

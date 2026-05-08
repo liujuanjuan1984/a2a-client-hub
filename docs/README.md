@@ -24,8 +24,8 @@ Use this index to find the right document instead of repeating the same guidance
 ## Contract References
 
 - A2A error and runtime status contract: [`contracts/a2a-error-and-runtime-status-contract.md`](contracts/a2a-error-and-runtime-status-contract.md)
-- Shared session query canonical contract: [`contracts/shared-session-query-canonical-contract.md`](contracts/shared-session-query-canonical-contract.md)
-- Shared session query reference payloads: [`contracts/shared-session-query-reference-payloads.json`](contracts/shared-session-query-reference-payloads.json)
+- Session query canonical contract: [`contracts/session-query-canonical-contract.md`](contracts/session-query-canonical-contract.md)
+- Session query reference payloads: [`contracts/session-query-reference-payloads.json`](contracts/session-query-reference-payloads.json)
 - Interrupt lifecycle reference cases: [`contracts/interrupt-lifecycle-message-cases.json`](contracts/interrupt-lifecycle-message-cases.json)
 - Structured block serialization cases: [`contracts/structured-block-stable-serialization-cases.json`](contracts/structured-block-stable-serialization-cases.json)
 - Stream block operation contract: [`contracts/stream-block-operation-contract.md`](contracts/stream-block-operation-contract.md)
