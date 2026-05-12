@@ -198,6 +198,7 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   const provider = pickString(sessionMeta, ["provider"]) ?? undefined;
   const externalSessionId =
     pickString(sessionMeta, ["externalSessionId"]) ?? undefined;
+  const taskId = pickString(sessionMeta, ["taskId"]) ?? undefined;
   const streamThreadId =
     pickString(sessionMeta, ["streamThreadId"]) ?? undefined;
   const streamTurnId = pickString(sessionMeta, ["streamTurnId"]) ?? undefined;
@@ -208,6 +209,7 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   return {
     provider,
     externalSessionId,
+    taskId,
     streamThreadId,
     streamTurnId,
     transport,

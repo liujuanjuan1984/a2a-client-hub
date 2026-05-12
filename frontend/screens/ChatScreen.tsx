@@ -96,6 +96,8 @@ export function ChatScreen({
         onLoadEarlierHistory={controller.loadEarlierHistory}
         historyLoading={controller.historyLoading}
         historyError={controller.historyError}
+        recoverableStatusMessage={controller.recoverableStatusMessage}
+        recoverableStatusBusy={controller.recoverableStatusBusy}
         onCaptureContentSizeAnchor={controller.captureContentSizeAnchor}
         onLoadBlockContent={controller.handleLoadBlockContent}
         onRetry={controller.handleRetry}

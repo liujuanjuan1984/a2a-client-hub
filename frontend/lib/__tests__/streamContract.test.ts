@@ -1730,10 +1730,12 @@ describe("block-based stream parser and reducer", () => {
       sessionMeta: {
         provider: "opencode",
         externalSessionId: "ses_upstream_1",
+        taskId: "task-upstream-1",
       },
     });
     expect(meta.provider).toBe("opencode");
     expect(meta.externalSessionId).toBe("ses_upstream_1");
+    expect(meta.taskId).toBe("task-upstream-1");
   });
 
   it("requires shared interrupt metadata on canonical status-update payloads", () => {

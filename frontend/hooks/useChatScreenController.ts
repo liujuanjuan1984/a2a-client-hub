@@ -29,8 +29,13 @@ import {
   recoverInterrupts,
 } from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
+import {
+  DEFAULT_RUNTIME_STATUS_CONTRACT,
+  normalizeRuntimeState,
+} from "@/lib/api/chatRuntimeStatus";
+import { asRecord, pickString } from "@/lib/api/chatUtilsShared";
 import { isHubAssistant } from "@/lib/api/hubAssistant";
-import { continueSession } from "@/lib/api/sessions";
+import { continueSession, getSessionUpstreamTask } from "@/lib/api/sessions";
 import {
   getPendingInterrupt,
   getPendingInterruptQueue,
@@ -52,6 +57,19 @@ import { useChatStore } from "@/store/chat";
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const INTERRUPT_RECOVERY_THROTTLE_MS = 5_000;
+
+const resolveUpstreamTaskRuntimeState = (
+  task: Record<string, unknown> | null | undefined,
+): string | null => {
+  const taskRecord = asRecord(task);
+  const status = asRecord(taskRecord?.status);
+  const rawState =
+    pickString(status, ["state"]) ?? pickString(taskRecord, ["state"]);
+  if (!rawState) {
+    return null;
+  }
+  return normalizeRuntimeState(rawState, DEFAULT_RUNTIME_STATUS_CONTRACT);
+};
 
 export function useChatScreenController({
   routeAgentId,
@@ -161,6 +179,16 @@ export function useChatScreenController({
   const runtimeStatusContract = isHubAssistantAgent
     ? undefined
     : (extensionCapabilitiesQuery.runtimeStatusContract ?? undefined);
+  const [recoverableUpstreamTaskState, setRecoverableUpstreamTaskState] =
+    useState<{
+      loading: boolean;
+      error: boolean;
+      task: Record<string, unknown> | null;
+    }>({
+      loading: false,
+      error: false,
+      task: null,
+    });
   const modelSelectionStatus: GenericCapabilityStatus = isHubAssistantAgent
     ? "unsupported"
     : !activeAgentId || !agent?.source
@@ -244,6 +272,114 @@ export function useChatScreenController({
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
       : 0;
+  useEffect(() => {
+    if (
+      session?.streamState !== "recoverable" ||
+      !conversationId ||
+      !session.upstreamTaskId
+    ) {
+      setRecoverableUpstreamTaskState({
+        loading: false,
+        error: false,
+        task: null,
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setRecoverableUpstreamTaskState((current) => ({
+      loading: true,
+      error: false,
+      task: current.task,
+    }));
+
+    getSessionUpstreamTask(conversationId, session.upstreamTaskId, {
+      historyLength: 1,
+    })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setRecoverableUpstreamTaskState({
+          loading: false,
+          error: false,
+          task: result.task,
+        });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setRecoverableUpstreamTaskState({
+          loading: false,
+          error: true,
+          task: null,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, session?.streamState, session?.upstreamTaskId]);
+  const recoverableTaskState = useMemo(
+    () => resolveUpstreamTaskRuntimeState(recoverableUpstreamTaskState.task),
+    [recoverableUpstreamTaskState.task],
+  );
+  const recoverableStatusMessage = useMemo(() => {
+    if (session?.streamState !== "recoverable") {
+      return null;
+    }
+    if (!session.upstreamTaskId) {
+      return "Connection lost. Trying to recover the stream...";
+    }
+    if (recoverableUpstreamTaskState.loading) {
+      return "Connection lost. Inspecting upstream task status...";
+    }
+    if (recoverableUpstreamTaskState.error) {
+      return "Connection lost. Trying to recover the stream. Upstream task diagnostics are unavailable right now.";
+    }
+    if (recoverableTaskState === "completed") {
+      return "Connection lost after upstream completion. Retry will backfill any missing final chunks.";
+    }
+    if (
+      recoverableTaskState === "failed" ||
+      recoverableTaskState === "cancelled"
+    ) {
+      return `Stream interrupted, and the upstream task already ended as ${recoverableTaskState}. Retry will fetch final diagnostics.`;
+    }
+    if (recoverableTaskState) {
+      return `Connection lost. Upstream task is still ${recoverableTaskState}. Trying to recover the stream...`;
+    }
+    return "Connection lost. Trying to recover the stream...";
+  }, [
+    recoverableTaskState,
+    recoverableUpstreamTaskState.error,
+    recoverableUpstreamTaskState.loading,
+    session?.streamState,
+    session?.upstreamTaskId,
+  ]);
+  const recoverableStatusBusy = useMemo(() => {
+    if (session?.streamState !== "recoverable") {
+      return false;
+    }
+    if (!session.upstreamTaskId) {
+      return true;
+    }
+    if (recoverableUpstreamTaskState.loading) {
+      return true;
+    }
+    return (
+      recoverableTaskState === null ||
+      recoverableTaskState === "working" ||
+      recoverableTaskState === "input-required" ||
+      recoverableTaskState === "auth-required"
+    );
+  }, [
+    recoverableTaskState,
+    recoverableUpstreamTaskState.loading,
+    session?.streamState,
+    session?.upstreamTaskId,
+  ]);
   const clearScrollSettleTimer = useCallback(() => {
     if (scrollSettleTimerRef.current) {
       clearTimeout(scrollSettleTimerRef.current);
@@ -968,6 +1104,8 @@ export function useChatScreenController({
     historyNextPage,
     historyPaused,
     historyError,
+    recoverableStatusMessage,
+    recoverableStatusBusy,
     pendingInterrupt,
     pendingInterruptCount,
     streamSendHint,

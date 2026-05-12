@@ -372,6 +372,7 @@ def _build_session_meta(payload: dict[str, Any]) -> dict[str, Any] | None:
     provider, external_session_id = extract_provider_and_external_session_id(
         {"metadata": analysis.binding_metadata or {}}
     )
+    task_id = analysis.upstream_task_id
 
     stream_thread_id = pick_first_non_empty_str(
         (properties, envelope.shared_stream, body),
@@ -393,6 +394,7 @@ def _build_session_meta(payload: dict[str, Any]) -> dict[str, Any] | None:
     session_meta = {
         "provider": provider,
         "externalSessionId": external_session_id,
+        "taskId": task_id,
         "streamThreadId": stream_thread_id,
         "streamTurnId": stream_turn_id,
         "transport": transport if isinstance(transport, str) else None,

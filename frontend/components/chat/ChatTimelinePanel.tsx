@@ -34,6 +34,8 @@ export function ChatTimelinePanel({
   onLoadEarlierHistory,
   historyLoading,
   historyError,
+  recoverableStatusMessage,
+  recoverableStatusBusy,
   onCaptureContentSizeAnchor,
   onLoadBlockContent,
   onRetry,
@@ -63,6 +65,8 @@ export function ChatTimelinePanel({
   onLoadEarlierHistory: () => void;
   historyLoading: boolean;
   historyError: string | null;
+  recoverableStatusMessage?: string | null;
+  recoverableStatusBusy?: boolean;
   onCaptureContentSizeAnchor: () => void;
   onLoadBlockContent: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
@@ -177,9 +181,12 @@ export function ChatTimelinePanel({
     <>
       {session?.streamState === "recoverable" ? (
         <View className="mx-2 sm:mx-6 mt-3 flex-row items-center rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2">
-          <ActivityIndicator size="small" color="#fcd34d" className="mr-2" />
+          {recoverableStatusBusy !== false ? (
+            <ActivityIndicator size="small" color="#fcd34d" className="mr-2" />
+          ) : null}
           <Text className="text-xs text-yellow-300">
-            Connection lost. Trying to recover the stream...
+            {recoverableStatusMessage ??
+              "Connection lost. Trying to recover the stream..."}
           </Text>
         </View>
       ) : null}

@@ -96,6 +96,62 @@ async def test_get_preferred_dialects_always_uses_sdk_even_with_stale_cache() ->
     assert dialects == [client_module.SDK_DIALECT]
 
 
+def test_build_transport_selection_audit_marks_selected_and_rejected_interfaces():
+    card = _build_card(
+        supported_interfaces=[
+            _build_interface("JSONRPC", "http://example-agent.internal:24020/jsonrpc"),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/jsonrpc-vnext",
+                protocol_version="1.1",
+            ),
+            _build_interface(
+                "HTTP+JSON",
+                "http://example-agent.internal:24020/http-json",
+            ),
+            _build_interface(
+                "JSONRPC",
+                "http://example-agent.internal:24020/legacy",
+                protocol_version="0.3.0",
+            ),
+        ]
+    )
+
+    audit = client_module.build_transport_selection_audit(
+        card=card,
+        selected_transport="JSONRPC",
+        selected_url="http://example-agent.internal:24020/jsonrpc-vnext",
+        supported_transports=["JSONRPC", "HTTP+JSON"],
+    )
+
+    assert audit == [
+        {
+            "transport": "JSONRPC",
+            "url": "http://example-agent.internal:24020/jsonrpc",
+            "protocol_version": "1.0",
+            "decision": "rejected_lower_priority_candidate",
+        },
+        {
+            "transport": "JSONRPC",
+            "url": "http://example-agent.internal:24020/jsonrpc-vnext",
+            "protocol_version": "1.1",
+            "decision": "selected",
+        },
+        {
+            "transport": "HTTP+JSON",
+            "url": "http://example-agent.internal:24020/http-json",
+            "protocol_version": "1.0",
+            "decision": "rejected_lower_priority_candidate",
+        },
+        {
+            "transport": "JSONRPC",
+            "url": "http://example-agent.internal:24020/legacy",
+            "protocol_version": "0.3.0",
+            "decision": "rejected_unsupported_protocol_version",
+        },
+    ]
+
+
 @pytest.mark.asyncio
 async def test_get_agent_card_ignores_incompatible_non_http_interfaces(
     monkeypatch: pytest.MonkeyPatch,

@@ -65,6 +65,47 @@ def build_peer_descriptor(
     )
 
 
+def build_transport_selection_audit(
+    *,
+    card: AgentCard,
+    selected_transport: str | None,
+    selected_url: str | None,
+    supported_transports: Iterable[str],
+) -> list[dict[str, str]]:
+    normalized_selected_transport = normalize_transport_label(selected_transport)
+    normalized_selected_url = (selected_url or "").strip().rstrip("/")
+    normalized_supported = {
+        normalize_transport_label(value) for value in supported_transports if value
+    }
+    audit_entries: list[dict[str, str]] = []
+
+    for iface in getattr(card, "supported_interfaces", None) or []:
+        transport = normalize_transport_label(getattr(iface, "protocol_binding", None))
+        url = (getattr(iface, "url", "") or "").strip().rstrip("/")
+        protocol_version = (getattr(iface, "protocol_version", None) or "").strip()
+
+        reason = "rejected_incompatible_transport"
+        if not url:
+            reason = "rejected_missing_url"
+        elif protocol_version.startswith("0.3"):
+            reason = "rejected_unsupported_protocol_version"
+        elif transport == normalized_selected_transport and url == normalized_selected_url:
+            reason = "selected"
+        elif transport in normalized_supported:
+            reason = "rejected_lower_priority_candidate"
+
+        audit_entries.append(
+            {
+                "transport": transport,
+                "url": url,
+                "protocol_version": protocol_version,
+                "decision": reason,
+            }
+        )
+
+    return audit_entries
+
+
 def build_a2a_message(request: A2AMessageRequest) -> Message:
     resolved_context_id = request.context_id or str(uuid4())
     parts: list[Part] = [Part(text=request.query)]
