@@ -58,8 +58,8 @@ from app.integrations.a2a_client.protobuf import (
     to_protojson_object,
 )
 from app.integrations.a2a_client.selection import (
-    build_transport_selection_audit,
     build_peer_descriptor,
+    build_transport_selection_audit,
     normalize_transport_label,
 )
 from app.integrations.a2a_error_contract import (
