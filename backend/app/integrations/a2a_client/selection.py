@@ -89,7 +89,10 @@ def build_transport_selection_audit(
             reason = "rejected_missing_url"
         elif protocol_version.startswith("0.3"):
             reason = "rejected_unsupported_protocol_version"
-        elif transport == normalized_selected_transport and url == normalized_selected_url:
+        elif (
+            transport == normalized_selected_transport
+            and url == normalized_selected_url
+        ):
             reason = "selected"
         elif transport in normalized_supported:
             reason = "rejected_lower_priority_candidate"
