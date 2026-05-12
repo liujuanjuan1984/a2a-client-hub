@@ -65,7 +65,7 @@ def stream_sse(
         stream_failed = False
         client_disconnected = False
         started_at = time.monotonic()
-        last_event_at = started_at
+        last_upstream_event_at = started_at
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
 
@@ -103,7 +103,6 @@ def stream_sse(
                 heartbeat_interval_seconds=heartbeat_interval_seconds,
             ):
                 if event is None:
-                    last_event_at = time.monotonic()
                     yield runtime._SSE_HEARTBEAT_FRAME
                     continue
                 serialized = runtime.serialize_stream_event(
@@ -156,7 +155,7 @@ def stream_sse(
                         cache_key, outbound_payload, seq_counter
                     )
                 stream_text_accumulator.consume(serialized, stream_block=stream_block)
-                last_event_at = time.monotonic()
+                last_upstream_event_at = time.monotonic()
                 yield f"data: {json_dumps(outbound_payload, ensure_ascii=False)}\n\n"
                 if runtime._is_terminal_status_event(serialized):
                     terminal_event_seen = True
@@ -170,7 +169,7 @@ def stream_sse(
                 error_message=None,
                 error_code=None,
                 elapsed_seconds=time.monotonic() - started_at,
-                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
                 terminal_event_seen=terminal_event_seen,
             )
             raise
@@ -185,7 +184,7 @@ def stream_sse(
                 error_message=runtime._STREAM_ERROR_MESSAGE,
                 error_code=error_payload.error_code,
                 elapsed_seconds=time.monotonic() - started_at,
-                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
                 terminal_event_seen=False,
                 source=error_payload.source,
                 jsonrpc_code=error_payload.jsonrpc_code,
@@ -211,7 +210,7 @@ def stream_sse(
                     error_message=None,
                     error_code=None,
                     elapsed_seconds=time.monotonic() - started_at,
-                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
                     terminal_event_seen=terminal_event_seen,
                 )
             finalization_event: dict[str, Any] | None = None
@@ -276,7 +275,7 @@ async def stream_ws(
     stream_text_accumulator = accumulator_factory()
     client_disconnected = False
     started_at = time.monotonic()
-    last_event_at = started_at
+    last_upstream_event_at = started_at
     terminal_event_seen = False
     final_outcome: StreamOutcome | None = None
 
@@ -314,7 +313,6 @@ async def stream_ws(
             heartbeat_interval_seconds=heartbeat_interval_seconds,
         ):
             if event is None:
-                last_event_at = time.monotonic()
                 await websocket.send_text(
                     json_dumps(runtime._WS_HEARTBEAT_EVENT, ensure_ascii=False)
                 )
@@ -369,7 +367,7 @@ async def stream_ws(
                     cache_key, outbound_payload, seq_counter
                 )
             stream_text_accumulator.consume(serialized, stream_block=stream_block)
-            last_event_at = time.monotonic()
+            last_upstream_event_at = time.monotonic()
             await websocket.send_text(json_dumps(outbound_payload, ensure_ascii=False))
             if runtime._is_terminal_status_event(serialized):
                 terminal_event_seen = True
@@ -384,7 +382,7 @@ async def stream_ws(
             error_message=None,
             error_code=None,
             elapsed_seconds=time.monotonic() - started_at,
-            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+            idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
             terminal_event_seen=terminal_event_seen,
         )
     except asyncio.CancelledError:
@@ -396,7 +394,7 @@ async def stream_ws(
             error_message=None,
             error_code=None,
             elapsed_seconds=time.monotonic() - started_at,
-            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+            idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
             terminal_event_seen=terminal_event_seen,
         )
         raise
@@ -411,7 +409,7 @@ async def stream_ws(
                 error_message=None,
                 error_code=None,
                 elapsed_seconds=time.monotonic() - started_at,
-                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
                 terminal_event_seen=terminal_event_seen,
             )
             return
@@ -424,7 +422,7 @@ async def stream_ws(
             error_message=runtime._STREAM_ERROR_MESSAGE,
             error_code=error_payload.error_code,
             elapsed_seconds=time.monotonic() - started_at,
-            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+            idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
             terminal_event_seen=False,
             source=error_payload.source,
             jsonrpc_code=error_payload.jsonrpc_code,

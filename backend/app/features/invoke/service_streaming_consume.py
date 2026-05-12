@@ -56,7 +56,7 @@ async def consume_stream(
     log_info = getattr(logger, "info", None)
     non_contract_drop_reasons: set[str] = set()
     started_at = time.monotonic()
-    last_event_at = started_at
+    last_upstream_event_at = started_at
 
     interval = float(settings.a2a_stream_heartbeat_interval)
     heartbeat_interval_seconds = interval if interval > 0 else 0.0
@@ -87,7 +87,12 @@ async def consume_stream(
     )
 
     def _resolve_wait_timeout(now: float) -> float | None:
-        wait_timeout = idle_timeout
+        wait_timeout: float | None = None
+        if idle_timeout is not None:
+            remaining_idle = idle_timeout - (now - last_upstream_event_at)
+            if remaining_idle <= 0:
+                return 0.0
+            wait_timeout = remaining_idle
         if total_timeout is not None:
             remaining_total = total_timeout - (now - started_at)
             if remaining_total <= 0:
@@ -113,7 +118,7 @@ async def consume_stream(
                     error_message=timeout_message,
                     error_code="timeout",
                     elapsed_seconds=time.monotonic() - started_at,
-                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
                     terminal_event_seen=False,
                     internal_error_message=timeout_message,
                 )
@@ -158,7 +163,7 @@ async def consume_stream(
                     error_message=timeout_message,
                     error_code="timeout",
                     elapsed_seconds=time.monotonic() - started_at,
-                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
                     terminal_event_seen=False,
                     internal_error_message=timeout_message,
                 )
@@ -176,7 +181,6 @@ async def consume_stream(
                 )
                 return outcome
             if event is None:
-                last_event_at = time.monotonic()
                 continue
 
             serialized = runtime.serialize_stream_event(
@@ -209,7 +213,7 @@ async def consume_stream(
                         extra=warning_payload,
                     )
                 continue
-            last_event_at = time.monotonic()
+            last_upstream_event_at = time.monotonic()
             await runtime._call_callback(on_event, serialized)
             runtime._ensure_outbound_stream_contract(
                 serialized, event_sequence=event_sequence
@@ -240,7 +244,7 @@ async def consume_stream(
             error_message=None,
             error_code=None,
             elapsed_seconds=time.monotonic() - started_at,
-            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+            idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
             terminal_event_seen=terminal_event_seen,
         )
         await runtime._call_callback_safely(
@@ -259,7 +263,7 @@ async def consume_stream(
             error_message=None,
             error_code=None,
             elapsed_seconds=time.monotonic() - started_at,
-            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+            idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
             terminal_event_seen=terminal_event_seen,
         )
         await runtime._call_callback_safely(
@@ -283,7 +287,7 @@ async def consume_stream(
             error_message=runtime._STREAM_ERROR_MESSAGE,
             error_code=error_payload.error_code,
             elapsed_seconds=time.monotonic() - started_at,
-            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+            idle_seconds=max(time.monotonic() - last_upstream_event_at, 0.0),
             terminal_event_seen=False,
             internal_error_message=runtime._extract_internal_error_message(exc),
             source=error_payload.source,
