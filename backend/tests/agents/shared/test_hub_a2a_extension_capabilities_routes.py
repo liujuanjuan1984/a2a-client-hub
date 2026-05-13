@@ -6,9 +6,9 @@ from tests.agents.shared.hub_a2a_extensions_routes_support import (
     SimpleNamespace,
     _create_allowlisted_hub_agent,
     _FakeExtensionsService,
+    build_hub_extension_router,
     create_test_client,
     extension_router_common,
-    hub_extension_router,
     pytest,
     runtime_status_contract_payload,
     settings,
@@ -322,14 +322,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             ),
         ),
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -753,14 +749,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         ),
         invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -971,14 +963,10 @@ async def test_hub_extension_capabilities_closes_read_only_transaction_before_up
         "resolve_capability_snapshot",
         fake_resolve_capability_snapshot,
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -1024,14 +1012,10 @@ async def test_hub_extension_capabilities_route_maps_upstream_timeout_to_structu
         "resolve_capability_snapshot",
         fake_resolve_capability_snapshot,
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -1107,14 +1091,10 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         ),
         invoke_metadata=SimpleNamespace(status="unsupported", ext=None),
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -1302,14 +1282,10 @@ async def test_hub_generic_model_discovery_routes_forward_working_directory(
     )
 
     fake_extensions = _FakeExtensionsService()
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -1365,14 +1341,10 @@ async def test_hub_upstream_discovery_routes_return_normalized_results(
     )
 
     fake_extensions = _FakeExtensionsService()
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,

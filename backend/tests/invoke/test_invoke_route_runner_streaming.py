@@ -59,7 +59,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
 
     client_user_message_id = str(uuid4())
     client_agent_message_id = str(uuid4())
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="scheduled",
         context_id=None,
@@ -170,7 +170,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
 
     local_session_id = uuid4()
     agent_message_id = uuid4()
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=local_session_id,
         local_source="manual",
         context_id=None,
@@ -313,7 +313,7 @@ async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
         fake_record_upstream_task_binding,
     )
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -405,7 +405,7 @@ async def test_bind_inflight_task_if_needed_records_deferred_preempt_history(
         fake_record_upstream_task_binding,
     )
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -461,7 +461,7 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -545,7 +545,7 @@ async def test_persist_stream_block_update_inferrs_canonical_artifact_text_witho
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -639,7 +639,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -745,7 +745,7 @@ async def test_persist_stream_block_update_preserves_canonical_message_events(
         "user_message_id": str(uuid4()),
         "agent_message_id": str(uuid4()),
     }
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -830,7 +830,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -938,7 +938,7 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
         "user_message_id": str(uuid4()),
         "agent_message_id": str(uuid4()),
     }
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -1055,7 +1055,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -1190,7 +1190,7 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -1250,7 +1250,7 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
             return None
 
     async def fake_prepare_state(**kwargs):
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
@@ -1295,7 +1295,9 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
 
         return StreamingResponse(_iterator(), media_type="text/event-stream")
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",
@@ -1354,7 +1356,7 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
             return None
 
     async def fake_prepare_state(**kwargs):
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
@@ -1394,7 +1396,9 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
             )
         )
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",

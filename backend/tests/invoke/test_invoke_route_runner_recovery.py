@@ -118,8 +118,8 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_validate_provider_aware_continue_session",
+        invoke_route_runner.invoke_recovery,
+        "validate_provider_aware_continue_session",
         fake_validate_provider_aware_continue_session,
     )
 
@@ -220,8 +220,8 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_validate_provider_aware_continue_session",
+        invoke_route_runner.invoke_recovery,
+        "validate_provider_aware_continue_session",
         fake_validate_provider_aware_continue_session,
     )
 
@@ -287,7 +287,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
                 ),
             }
         )
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
@@ -336,7 +336,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     async def fake_validate_provider_aware_continue_session(**kwargs):
         return "validated"
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_streaming_runtime,
         "stream_ws",
@@ -349,8 +351,8 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_validate_provider_aware_continue_session",
+        invoke_route_runner.invoke_recovery,
+        "validate_provider_aware_continue_session",
         fake_validate_provider_aware_continue_session,
     )
     monkeypatch.setattr(
@@ -435,7 +437,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
                 ),
             }
         )
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
@@ -485,7 +487,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     async def fake_validate_provider_aware_continue_session(**kwargs):
         return "validated"
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_streaming_runtime,
         "stream_ws",
@@ -498,8 +502,8 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_validate_provider_aware_continue_session",
+        invoke_route_runner.invoke_recovery,
+        "validate_provider_aware_continue_session",
         fake_validate_provider_aware_continue_session,
     )
     monkeypatch.setattr(
@@ -618,8 +622,8 @@ async def test_run_http_invoke_route_aborts_retry_when_provider_aware_recovery_f
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_validate_provider_aware_continue_session",
+        invoke_route_runner.invoke_recovery,
+        "validate_provider_aware_continue_session",
         fake_validate_provider_aware_continue_session,
     )
 
@@ -669,7 +673,7 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
     )
 
     async def fake_prepare_state(**kwargs):
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
@@ -716,7 +720,9 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
     async def fake_validate_provider_aware_continue_session(**kwargs):
         return "failed"
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_streaming_runtime,
         "stream_ws",
@@ -729,8 +735,8 @@ async def test_run_ws_invoke_route_reports_recovery_exhausted_when_provider_awar
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_validate_provider_aware_continue_session",
+        invoke_route_runner.invoke_recovery,
+        "validate_provider_aware_continue_session",
         fake_validate_provider_aware_continue_session,
     )
     monkeypatch.setattr(
@@ -1025,13 +1031,17 @@ async def test_finalize_outbound_invoke_payload_applies_declared_contract_from_s
         }
     )
 
-    finalized = await invoke_route_runner._finalize_outbound_invoke_payload(
-        payload=payload,
-        runtime=SimpleNamespace(
-            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
-        ),
-        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
-        log_extra={},
+    finalized = (
+        await invoke_route_runner.invoke_recovery.finalize_outbound_invoke_payload(
+            payload=payload,
+            runtime=SimpleNamespace(
+                resolved=SimpleNamespace(
+                    name="Demo Agent", url="https://example.com/a2a"
+                )
+            ),
+            logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+            log_extra={},
+        )
     )
 
     assert finalized.metadata == {
@@ -1065,13 +1075,17 @@ async def test_finalize_outbound_invoke_payload_normalizes_legacy_binding_metada
         }
     )
 
-    finalized = await invoke_route_runner._finalize_outbound_invoke_payload(
-        payload=payload,
-        runtime=SimpleNamespace(
-            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
-        ),
-        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
-        log_extra={},
+    finalized = (
+        await invoke_route_runner.invoke_recovery.finalize_outbound_invoke_payload(
+            payload=payload,
+            runtime=SimpleNamespace(
+                resolved=SimpleNamespace(
+                    name="Demo Agent", url="https://example.com/a2a"
+                )
+            ),
+            logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+            log_extra={},
+        )
     )
 
     assert finalized.metadata == {
@@ -1098,15 +1112,19 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_session_bind
 
     from app.features.invoke import recovery as invoke_recovery
 
+    original_finalize_outbound_invoke_payload = (
+        invoke_recovery.finalize_outbound_invoke_payload
+    )
+
     async def fake_finalize_outbound_invoke_payload_impl(**kwargs):
-        return await invoke_recovery.finalize_outbound_invoke_payload(
+        return await original_finalize_outbound_invoke_payload(
             **kwargs,
             extensions_service_getter=lambda: _UnsupportedInvokeMetadataService(),
         )
 
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload_impl",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         fake_finalize_outbound_invoke_payload_impl,
     )
 
@@ -1123,16 +1141,20 @@ async def test_finalize_outbound_invoke_payload_discards_incomplete_session_bind
         }
     )
 
-    finalized = await invoke_route_runner._finalize_outbound_invoke_payload(
-        payload=payload,
-        runtime=SimpleNamespace(
-            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
-        ),
-        logger=SimpleNamespace(
-            info=lambda *args, **kwargs: None,
-            warning=lambda message, *, extra: warnings.append((message, extra)),
-        ),
-        log_extra={"agent_id": "agent-1"},
+    finalized = (
+        await invoke_route_runner.invoke_recovery.finalize_outbound_invoke_payload(
+            payload=payload,
+            runtime=SimpleNamespace(
+                resolved=SimpleNamespace(
+                    name="Demo Agent", url="https://example.com/a2a"
+                )
+            ),
+            logger=SimpleNamespace(
+                info=lambda *args, **kwargs: None,
+                warning=lambda message, *, extra: warnings.append((message, extra)),
+            ),
+            log_extra={"agent_id": "agent-1"},
+        )
     )
 
     assert finalized.metadata == {"locale": "zh-CN"}
@@ -1267,7 +1289,7 @@ def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream
     None
 ):
     warnings: list[tuple[str, dict[str, object]]] = []
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=None,
         local_source=None,
         context_id=None,
@@ -1289,7 +1311,7 @@ def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream
         },
     }
 
-    invoke_route_runner._diagnose_stream_hints_contract_gap(
+    invoke_route_runner.route_runner_streaming.diagnose_stream_hints_contract_gap(
         state=state,
         event_payload=event_payload,
         logger=SimpleNamespace(
@@ -1298,7 +1320,7 @@ def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream
         ),
         log_extra={"agent_id": "agent-1"},
     )
-    invoke_route_runner._diagnose_stream_hints_contract_gap(
+    invoke_route_runner.route_runner_streaming.diagnose_stream_hints_contract_gap(
         state=state,
         event_payload=event_payload,
         logger=SimpleNamespace(
@@ -1348,7 +1370,7 @@ def test_log_stream_hints_invoke_request_reports_requested_extensions() -> None:
 
 def test_observe_stream_contract_event_once_logs_first_contract_summary() -> None:
     infos: list[tuple[str, dict[str, object]]] = []
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=None,
         local_source=None,
         context_id=None,

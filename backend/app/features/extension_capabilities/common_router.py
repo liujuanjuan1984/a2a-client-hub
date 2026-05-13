@@ -59,6 +59,7 @@ def create_extension_capability_router(
     runtime_validation_error: Type[Exception],
     runtime_validation_status_code: int,
     log_scope: str,
+    extensions_service_getter: Callable[[], Any] = get_a2a_extensions_service,
 ) -> StrictAPIRouter:
     router = StrictAPIRouter(prefix=prefix, tags=["a2a-extensions"])
 
@@ -87,7 +88,7 @@ def create_extension_capability_router(
         )
 
     def _extensions_service() -> Any:
-        return cast(Any, get_a2a_extensions_service())
+        return cast(Any, extensions_service_getter())
 
     @router.get(
         "/{agent_id}/extensions/capabilities",

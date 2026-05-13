@@ -67,7 +67,7 @@ async def test_prepare_state_reuses_persisted_context_id_when_payload_missing(
         }
     )
 
-    state = await invoke_route_runner._prepare_state(
+    state = await invoke_route_runner.route_runner_state.prepare_state(
         user_id=uuid4(),
         agent_id=uuid4(),
         agent_source="shared",
@@ -222,7 +222,7 @@ async def test_close_open_transaction_delegates_to_shared_helper(
 async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    invoke_route_runner._invoke_inflight_keys.clear()
+    invoke_route_runner.invoke_guard._invoke_inflight_keys.clear()
     started = asyncio.Event()
     release = asyncio.Event()
 
@@ -286,14 +286,14 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
 
     release.set()
     await asyncio.wait_for(consume_task, timeout=1.0)
-    assert invoke_route_runner._invoke_inflight_keys == {}
+    assert invoke_route_runner.invoke_guard._invoke_inflight_keys == {}
 
 
 @pytest.mark.asyncio
 async def test_run_http_invoke_route_stream_releases_inflight_guard_even_if_stream_consumer_is_cancelled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    invoke_route_runner._invoke_inflight_keys.clear()
+    invoke_route_runner.invoke_guard._invoke_inflight_keys.clear()
     stream_started = asyncio.Event()
 
     async def fake_run_http_invoke_with_session_recovery(**kwargs):
@@ -348,20 +348,20 @@ async def test_run_http_invoke_route_stream_releases_inflight_guard_even_if_stre
     first_chunk = await response.body_iterator.__anext__()
     assert first_chunk == "data: {}\n\n"
     await asyncio.wait_for(stream_started.wait(), timeout=1.0)
-    assert invoke_route_runner._invoke_inflight_keys
+    assert invoke_route_runner.invoke_guard._invoke_inflight_keys
 
     consume_task = asyncio.create_task(response.body_iterator.aclose())
     consume_task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await consume_task
-    assert invoke_route_runner._invoke_inflight_keys == {}
+    assert invoke_route_runner.invoke_guard._invoke_inflight_keys == {}
 
 
 @pytest.mark.asyncio
 async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    invoke_route_runner._invoke_inflight_keys.clear()
+    invoke_route_runner.invoke_guard._invoke_inflight_keys.clear()
 
     async def fake_run_http_invoke_with_session_recovery(**kwargs):
         raise ValueError("message_id_conflict")
@@ -409,14 +409,14 @@ async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "message_id_conflict"
-    assert invoke_route_runner._invoke_inflight_keys == {}
+    assert invoke_route_runner.invoke_guard._invoke_inflight_keys == {}
 
 
 @pytest.mark.asyncio
 async def test_run_http_invoke_route_stream_maps_interrupt_failure_to_http_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    invoke_route_runner._invoke_inflight_keys.clear()
+    invoke_route_runner.invoke_guard._invoke_inflight_keys.clear()
 
     async def fake_run_http_invoke_with_session_recovery(**kwargs):
         raise ValueError("invoke_interrupt_failed")
@@ -464,7 +464,7 @@ async def test_run_http_invoke_route_stream_maps_interrupt_failure_to_http_confl
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "invoke_interrupt_failed"
-    assert invoke_route_runner._invoke_inflight_keys == {}
+    assert invoke_route_runner.invoke_guard._invoke_inflight_keys == {}
 
 
 @pytest.mark.asyncio
@@ -479,7 +479,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
             return None
 
     async def fake_prepare_state(**kwargs):
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
@@ -500,7 +500,9 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     async def fake_commit_safely(db):
         return None
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",
@@ -596,7 +598,7 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
         )
 
     async def fake_prepare_state(**kwargs):
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=None,
             local_source=None,
             context_id="ctx-reused",
@@ -610,7 +612,9 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
         "consume_stream",
         fake_consume_stream,
     )
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner,
         "resolve_core_invoke_requested_extensions",
@@ -673,7 +677,7 @@ async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_c
             )
 
     async def fake_prepare_state(**kwargs):
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=None,
             local_source=None,
             context_id=None,
@@ -694,7 +698,9 @@ async def test_run_http_invoke_non_stream_accepts_blocking_message_payload_via_c
     async def fake_persist_local_outcome(**kwargs):
         return None
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
     monkeypatch.setattr(
         invoke_route_runner,
         "_persist_stream_block_update",
@@ -784,7 +790,7 @@ async def test_run_http_invoke_returns_structured_error_details(
     )
 
     async def fake_prepare_state(**kwargs):
-        return invoke_route_runner._InvokeState(
+        return invoke_route_runner.route_runner_state.InvokeState(
             local_session_id=None,
             local_source=None,
             context_id=None,
@@ -793,7 +799,9 @@ async def test_run_http_invoke_returns_structured_error_details(
             stream_usage={},
         )
 
-    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state, "prepare_state", fake_prepare_state
+    )
 
     payload = A2AAgentInvokeRequest.model_validate(
         {
@@ -851,15 +859,15 @@ def test_is_interrupt_requested_from_metadata_extensions() -> None:
         }
     )
 
-    assert invoke_route_runner._is_interrupt_requested(payload_interrupt) is True
-    assert invoke_route_runner._is_interrupt_requested(payload_normal) is False
+    assert invoke_route_runner.is_interrupt_requested(payload_interrupt) is True
+    assert invoke_route_runner.is_interrupt_requested(payload_normal) is False
 
 
 @pytest.mark.asyncio
 async def test_preempt_previous_invoke_only_when_interrupt_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    state = invoke_route_runner._InvokeState(
+    state = invoke_route_runner.route_runner_state.InvokeState(
         local_session_id=uuid4(),
         local_source="manual",
         context_id=None,
@@ -898,8 +906,8 @@ async def test_preempt_previous_invoke_only_when_interrupt_requested(
         fake_preempt_inflight_invoke_report,
     )
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_find_latest_agent_message_id",
+        invoke_route_runner.route_runner_state,
+        "find_latest_agent_message_id",
         lambda **_kwargs: asyncio.sleep(0, result=target_message_id),
     )
 
@@ -989,8 +997,8 @@ async def test_run_http_invoke_append_returns_ack_with_resolved_session_id(
         )
 
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
@@ -1045,8 +1053,8 @@ async def test_run_http_invoke_append_requires_bound_session(
         return kwargs["payload"]
 
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         fake_finalize_outbound_invoke_payload,
     )
 
@@ -1110,8 +1118,8 @@ async def test_run_http_invoke_append_turn_forbidden_returns_failed(
         )
 
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
@@ -1189,13 +1197,13 @@ async def test_run_http_invoke_preempt_only_returns_completed_session_control(
         recorded_events.append(kwargs["event"])
 
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_find_latest_agent_message_id",
+        invoke_route_runner.route_runner_state,
+        "find_latest_agent_message_id",
         fake_find_latest_agent_message_id,
     )
     monkeypatch.setattr(
@@ -1269,13 +1277,13 @@ async def test_run_http_invoke_preempt_only_returns_no_inflight_when_idle(
         )
 
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_find_latest_agent_message_id",
+        invoke_route_runner.route_runner_state,
+        "find_latest_agent_message_id",
         fake_find_latest_agent_message_id,
     )
     monkeypatch.setattr(

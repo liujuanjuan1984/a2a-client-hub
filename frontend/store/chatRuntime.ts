@@ -180,6 +180,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   const updateSessionMeta = (meta: {
     provider?: string | null;
     externalSessionId?: string | null;
+    taskId?: string | null;
     streamThreadId?: string | null;
     streamTurnId?: string | null;
     runtimeStatus?: string | null;
@@ -255,6 +256,9 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         meta.outputModes.join("|") !== current.outputModes.join("|")
       ) {
         nextPatch.outputModes = meta.outputModes;
+      }
+      if (meta.taskId !== undefined && meta.taskId !== current.upstreamTaskId) {
+        nextPatch.upstreamTaskId = meta.taskId;
       }
       if (meta.provider !== undefined || meta.externalSessionId !== undefined) {
         const mergedExternalSessionRef = mergeExternalSessionRef(
@@ -622,6 +626,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const hasSessionMetaEvent =
       meta.provider !== undefined ||
       meta.externalSessionId !== undefined ||
+      meta.taskId !== undefined ||
       meta.streamThreadId !== undefined ||
       meta.streamTurnId !== undefined ||
       meta.transport !== undefined ||
@@ -649,6 +654,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     if (
       meta.provider !== undefined ||
       meta.externalSessionId !== undefined ||
+      meta.taskId !== undefined ||
       meta.streamThreadId !== undefined ||
       meta.streamTurnId !== undefined ||
       meta.transport ||

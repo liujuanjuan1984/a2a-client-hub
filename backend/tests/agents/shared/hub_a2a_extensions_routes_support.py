@@ -24,6 +24,12 @@ from tests.support.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
+def build_hub_extension_router(extensions_service: Any):
+    return hub_extension_router.create_router(
+        extensions_service_getter=lambda: extensions_service
+    )
+
+
 def _valid_card_payload() -> Dict[str, Any]:
     return {
         "name": "Example Agent",
@@ -1138,6 +1144,7 @@ __all__ = [
     "_FakePermissionReplyErrorService",
     "_FakePermissionsReplyErrorService",
     "_create_allowlisted_hub_agent",
+    "build_hub_extension_router",
     "admin_router",
     "create_test_client",
     "create_user",

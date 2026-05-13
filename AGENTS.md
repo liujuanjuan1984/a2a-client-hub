@@ -36,6 +36,17 @@ Execution order (when both backend and frontend changed):
 2. frontend scoped checks
 3. rerun affected checks after fixes
 
+Pre-push gate (mandatory for every remote push, even when scoped checks already passed):
+
+- Run local full pre-commit before `git push`:
+  - `cd backend && uv run --locked pre-commit run --all-files --config ../.pre-commit-config.yaml`
+- If any pre-commit hook modifies files:
+  - inspect the resulting diff immediately
+  - decide whether the hook rewrite is correct and in-scope
+  - rerun affected checks
+  - commit the hook-induced changes before pushing
+- Do not assume scoped `--files` runs are sufficient for the final push. The remote branch must reflect the post-hook local state that already passed full pre-commit.
+
 ### 2.3 Full Regression Gate (On-Demand)
 
 Run full regressions on demand. Execute them when any condition below is met:
@@ -80,6 +91,8 @@ Notes:
   - Every commit must include at least one Issue ID (or a tracking Issue ID).
 - **Issue language**: Issue titles, descriptions, and comments must be written in **Simplified Chinese** (technical terms are allowed).
 - **gh CLI markdown**: when creating/editing issues/PRs with multi-line text, use `--body-file`. Do not embed `\n` in `--body`.
+- **GitHub write path**: never use the Codex GitHub connector for write operations. Any issue/PR/comment/label/review/merge edit must be performed via `gh` CLI only.
+- **Permission fallback**: if `gh` CLI lacks permission, authentication, or required capability for a GitHub write action, stop and ask the human to perform the action or grant access. Do not fall back to the Codex GitHub connector.
 - **Exemption**: documentation-only changes to collaboration/process docs (e.g. `AGENTS.md`) may skip creating an Issue.
 
 ## 5. Local Security and Config
@@ -135,6 +148,7 @@ Before starting any user-assigned task, the agent must:
 ### 6. Automated Verification and Self-Correction
 
 - **Verify before push**: run Section 2.2 serial low-load checks by default; escalate to Section 2.3 full regressions when trigger conditions are met.
+- **Verify final state before push**: after all intended edits are complete and immediately before every `git push`, run the Section 2.2 pre-push full pre-commit gate and inspect any hook-written changes before deciding whether another commit is required.
 - **Self-correction loop**: if lint/tests fail, fix them autonomously before reporting.
 
 ### 7. Documentation and Verification Evidence

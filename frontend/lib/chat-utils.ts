@@ -41,6 +41,7 @@ export type AgentSession = {
   transport: string;
   inputModes: string[];
   outputModes: string[];
+  upstreamTaskId?: string | null;
   metadata: Record<string, unknown>;
   workingDirectory?: string | null;
   externalSessionRef?: ExternalSessionRef | null;
@@ -65,6 +66,7 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   transport: "http_json",
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
+  upstreamTaskId: null,
   metadata: {},
   workingDirectory: null,
   externalSessionRef: null,
@@ -300,6 +302,7 @@ const normalizeSessionForPersistence = (
     transport: "http_json",
     inputModes: ["text/plain"],
     outputModes: ["text/plain"],
+    upstreamTaskId: null,
     metadata: persistedMetadata,
     workingDirectory: normalizeWorkingDirectory(session.workingDirectory),
     externalSessionRef: null,

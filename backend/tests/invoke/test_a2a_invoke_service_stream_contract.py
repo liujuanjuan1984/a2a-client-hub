@@ -562,6 +562,25 @@ def test_ensure_outbound_stream_contract_attaches_hub_status_contract_only():
     assert payload["runtimeStatus"]["seq"] == 5
 
 
+def test_ensure_outbound_stream_contract_attaches_task_id_to_session_meta():
+    payload = {
+        "artifactUpdate": {
+            "taskId": "task-session-meta-1",
+            "artifact": {
+                "artifactId": "task-session-meta-1:stream:text",
+                "parts": [{"text": "hello"}],
+            },
+        }
+    }
+
+    a2a_invoke_service._ensure_outbound_stream_contract(
+        payload,
+        event_sequence=6,
+    )
+
+    assert payload["sessionMeta"]["taskId"] == "task-session-meta-1"
+
+
 def test_ensure_outbound_stream_contract_exposes_fallback_message_identity_in_hub():
     payload = {
         "artifactUpdate": {

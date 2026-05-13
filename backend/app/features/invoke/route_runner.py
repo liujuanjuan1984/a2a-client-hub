@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, prepare_for_external_call
 from app.features.invoke import guard as invoke_guard
+from app.features.invoke import recovery as invoke_recovery
 from app.features.invoke import (
     route_runner_routes,
+    route_runner_state,
     route_runner_streaming,
     route_runner_ws_ticket,
 )
@@ -21,17 +23,9 @@ from app.features.invoke import session_binding as invoke_session_binding
 from app.features.invoke.extension_negotiation import (
     resolve_core_invoke_requested_extensions,
 )
-from app.features.invoke.guard import (
-    build_invoke_guard_key,
-    guard_inflight_invoke,
-    release_invoke_guard,
-    try_acquire_invoke_guard,
-)
 from app.features.invoke.recovery import (
     InvokeMetadataBindingRequiredError,
     build_rebound_invoke_payload,
-    finalize_outbound_invoke_payload,
-    validate_provider_aware_continue_session,
 )
 from app.features.invoke.route_runner_session_control import (
     run_append_session_control,
@@ -40,14 +34,6 @@ from app.features.invoke.route_runner_session_control import (
 from app.features.invoke.route_runner_state import (
     AgentSource,
     InvokeState,
-    bind_inflight_task_if_needed,
-    find_latest_agent_message_id,
-    preempt_previous_invoke_if_requested,
-    prepare_state,
-    record_preempt_history_event,
-    record_upstream_task_binding,
-    register_inflight_invoke,
-    unregister_inflight_invoke,
 )
 from app.features.invoke.service_streaming import (
     a2a_invoke_streaming_runtime,
@@ -83,20 +69,6 @@ from app.schemas.ws_ticket import WsTicketResponse
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
 from app.utils.payload_extract import extract_provider_and_external_session_id
 
-_invoke_inflight_keys = invoke_guard._invoke_inflight_keys
-_InvokeState = InvokeState
-_prepare_state = prepare_state
-_register_inflight_invoke = register_inflight_invoke
-_validate_provider_aware_continue_session = validate_provider_aware_continue_session
-_is_interrupt_requested = is_interrupt_requested
-_find_latest_agent_message_id = find_latest_agent_message_id
-_try_acquire_invoke_guard = try_acquire_invoke_guard
-_release_invoke_guard = release_invoke_guard
-_finalize_outbound_invoke_payload_impl = finalize_outbound_invoke_payload
-_diagnose_stream_hints_contract_gap = (
-    route_runner_streaming.diagnose_stream_hints_contract_gap
-)
-
 _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
@@ -105,12 +77,6 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
 
 async def _close_open_transaction(db: AsyncSession) -> None:
     await prepare_for_external_call(db)
-
-
-async def _finalize_outbound_invoke_payload(
-    **kwargs: Any,
-) -> A2AAgentInvokeRequest:
-    return await _finalize_outbound_invoke_payload_impl(**kwargs)
 
 
 def _adapt_invoke_metadata_for_upstream(
@@ -159,7 +125,7 @@ async def _recover_rebound_invoke_payload(
         user_id=user_id,
         conversation_id=payload.conversation_id,
     )
-    validation_result = await _validate_provider_aware_continue_session(
+    validation_result = await invoke_recovery.validate_provider_aware_continue_session(
         runtime=runtime,
         continue_payload=continue_binding,
         logger=logger,
@@ -180,7 +146,7 @@ async def _record_preempt_history_event(
     user_id: UUID,
     event: dict[str, Any],
 ) -> None:
-    await record_preempt_history_event(
+    await route_runner_state.record_preempt_history_event(
         state=state,
         user_id=user_id,
         event=event,
@@ -196,7 +162,7 @@ async def _record_upstream_task_binding(
     user_id: UUID,
     task_id: str,
 ) -> None:
-    await record_upstream_task_binding(
+    await route_runner_state.record_upstream_task_binding(
         state=state,
         user_id=user_id,
         task_id=task_id,
@@ -212,12 +178,12 @@ async def _preempt_previous_invoke_if_requested(
     payload: A2AAgentInvokeRequest,
     user_id: UUID,
 ) -> None:
-    await preempt_previous_invoke_if_requested(
+    await route_runner_state.preempt_previous_invoke_if_requested(
         state=state,
         payload=payload,
         user_id=user_id,
-        find_latest_agent_message_id_fn=_find_latest_agent_message_id,
-        is_interrupt_requested_fn=_is_interrupt_requested,
+        find_latest_agent_message_id_fn=route_runner_state.find_latest_agent_message_id,
+        is_interrupt_requested_fn=is_interrupt_requested,
         record_preempt_history_event_fn=_record_preempt_history_event,
     )
 
@@ -227,7 +193,7 @@ async def _bind_inflight_task_if_needed(
     state: InvokeState,
     user_id: UUID,
 ) -> None:
-    await bind_inflight_task_if_needed(
+    await route_runner_state.bind_inflight_task_if_needed(
         state=state,
         user_id=user_id,
         record_preempt_history_event_fn=_record_preempt_history_event,
@@ -240,7 +206,7 @@ async def _unregister_inflight_invoke(
     state: InvokeState,
     user_id: UUID,
 ) -> None:
-    await unregister_inflight_invoke(
+    await route_runner_state.unregister_inflight_invoke(
         state=state,
         user_id=user_id,
     )
@@ -345,7 +311,9 @@ def _build_consume_stream_callbacks(
         request=request,
         logger=logger,
         log_extra=log_extra,
-        diagnose_stream_hints_contract_gap_fn=_diagnose_stream_hints_contract_gap,
+        diagnose_stream_hints_contract_gap_fn=(
+            route_runner_streaming.diagnose_stream_hints_contract_gap
+        ),
         collect_stream_hints_fn=route_runner_streaming.collect_stream_hints,
         bind_inflight_task_if_needed_fn=_bind_inflight_task_if_needed,
         persist_stream_block_update_fn=_persist_stream_block_update,
@@ -369,7 +337,7 @@ async def _run_preempt_session_control(
         runtime=runtime,
         payload=payload,
         user_id=user_id,
-        find_latest_agent_message_id_fn=_find_latest_agent_message_id,
+        find_latest_agent_message_id_fn=route_runner_state.find_latest_agent_message_id,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
     )
@@ -446,7 +414,7 @@ async def run_http_invoke(
     log_extra: dict[str, Any],
 ) -> A2AAgentInvokeResponse | StreamingResponse:
     try:
-        payload = await _finalize_outbound_invoke_payload(
+        payload = await invoke_recovery.finalize_outbound_invoke_payload(
             payload=payload,
             runtime=runtime,
             logger=logger,
@@ -469,7 +437,7 @@ async def run_http_invoke(
             payload=payload,
             user_id=user_id,
         )
-    state = await _prepare_state(
+    state = await route_runner_state.prepare_state(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -481,7 +449,7 @@ async def run_http_invoke(
         payload=payload,
         user_id=user_id,
     )
-    await _register_inflight_invoke(
+    await route_runner_state.register_inflight_invoke(
         state=state,
         user_id=user_id,
         gateway=gateway,
@@ -611,7 +579,7 @@ async def run_background_invoke(
     idle_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     try:
-        payload = await _finalize_outbound_invoke_payload(
+        payload = await invoke_recovery.finalize_outbound_invoke_payload(
             payload=payload,
             runtime=runtime,
             logger=logger,
@@ -633,7 +601,7 @@ async def run_background_invoke(
             "message_refs": {},
             "context_id": None,
         }
-    state = await _prepare_state(
+    state = await route_runner_state.prepare_state(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -645,7 +613,7 @@ async def run_background_invoke(
         payload=payload,
         user_id=user_id,
     )
-    await _register_inflight_invoke(
+    await route_runner_state.register_inflight_invoke(
         state=state,
         user_id=user_id,
         gateway=gateway,
@@ -749,7 +717,7 @@ async def run_ws_invoke(
     send_stream_end: bool = True,
 ) -> None:
     try:
-        payload = await _finalize_outbound_invoke_payload(
+        payload = await invoke_recovery.finalize_outbound_invoke_payload(
             payload=payload,
             runtime=runtime,
             logger=logger,
@@ -780,7 +748,7 @@ async def run_ws_invoke(
         if send_stream_end:
             await a2a_invoke_streaming_runtime.send_ws_stream_end(websocket)
         return
-    state = await _prepare_state(
+    state = await route_runner_state.prepare_state(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -792,7 +760,7 @@ async def run_ws_invoke(
         payload=payload,
         user_id=user_id,
     )
-    await _register_inflight_invoke(
+    await route_runner_state.register_inflight_invoke(
         state=state,
         user_id=user_id,
         gateway=gateway,
@@ -982,11 +950,11 @@ async def run_ws_invoke_route(
         invoke_log_extra_builder=invoke_log_extra_builder,
         unexpected_log_message=unexpected_log_message,
         close_open_transaction_fn=_close_open_transaction,
-        build_invoke_guard_key_fn=build_invoke_guard_key,
+        build_invoke_guard_key_fn=invoke_guard.build_invoke_guard_key,
         run_ws_invoke_with_session_recovery_fn=run_ws_invoke_with_session_recovery,
         await_cancel_safe_fn=await_cancel_safe,
         await_cancel_safe_suppressed_fn=await_cancel_safe_suppressed,
-        guard_inflight_invoke_fn=guard_inflight_invoke,
+        guard_inflight_invoke_fn=invoke_guard.guard_inflight_invoke,
         session_not_found_retry_limit=_SESSION_NOT_FOUND_RETRY_LIMIT,
     )
 
@@ -1032,11 +1000,11 @@ async def run_http_invoke_route(
         invoke_log_message=invoke_log_message,
         invoke_log_extra_builder=invoke_log_extra_builder,
         close_open_transaction_fn=_close_open_transaction,
-        build_invoke_guard_key_fn=build_invoke_guard_key,
-        try_acquire_invoke_guard_fn=_try_acquire_invoke_guard,
-        release_invoke_guard_fn=_release_invoke_guard,
+        build_invoke_guard_key_fn=invoke_guard.build_invoke_guard_key,
+        try_acquire_invoke_guard_fn=invoke_guard.try_acquire_invoke_guard,
+        release_invoke_guard_fn=invoke_guard.release_invoke_guard,
         run_http_invoke_with_session_recovery_fn=run_http_invoke_with_session_recovery,
-        guard_inflight_invoke_fn=guard_inflight_invoke,
+        guard_inflight_invoke_fn=invoke_guard.guard_inflight_invoke,
         session_not_found_retry_limit=_SESSION_NOT_FOUND_RETRY_LIMIT,
     )
 

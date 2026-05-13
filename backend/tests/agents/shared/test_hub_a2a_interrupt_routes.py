@@ -11,9 +11,8 @@ from tests.agents.shared.hub_a2a_extensions_routes_support import (
     _FakeExtensionsService,
     _FakePermissionReplyErrorService,
     _FakePermissionsReplyErrorService,
+    build_hub_extension_router,
     create_test_client,
-    extension_router_common,
-    hub_extension_router,
     pytest,
     settings,
 )
@@ -36,14 +35,10 @@ async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
     )
 
     fake_extensions = _FakeExtensionsService()
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -72,14 +67,10 @@ async def test_hub_interrupt_reply_rejects_invalid_elicitation_content_for_decli
     )
 
     fake_extensions = _FakeExtensionsService()
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -116,14 +107,10 @@ async def test_hub_opencode_permission_reply_accepts_supported_reply_values(
     )
 
     fake_extensions = _FakeExtensionsService()
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -184,14 +171,10 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
         error_code=error_code,
         message=message,
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -229,14 +212,10 @@ async def test_hub_opencode_session_continue_preserves_structured_error_details(
         jsonrpc_code=-32602,
         missing_params=[{"name": "project_id", "required": True}],
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -289,14 +268,10 @@ async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status
         error_code=error_code,
         message=message,
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -349,14 +324,10 @@ async def test_hub_opencode_permissions_reply_maps_extension_error_to_http_statu
         error_code=error_code,
         message=message,
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -410,14 +381,10 @@ async def test_hub_opencode_elicitation_reply_maps_extension_error_to_http_statu
         error_code=error_code,
         message=message,
     )
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
@@ -471,14 +438,10 @@ async def test_hub_opencode_session_continue_contract_or_support_errors_use_4xx(
     )
 
     fake_extensions = _FakeExtensionsExceptionService(exception)
-    monkeypatch.setattr(
-        extension_router_common,
-        "get_a2a_extensions_service",
-        lambda: fake_extensions,
-    )
+    test_router = build_hub_extension_router(fake_extensions)
 
     async with create_test_client(
-        hub_extension_router.router,
+        test_router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,

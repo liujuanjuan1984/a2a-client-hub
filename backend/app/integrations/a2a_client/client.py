@@ -59,6 +59,7 @@ from app.integrations.a2a_client.protobuf import (
 )
 from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
+    build_transport_selection_audit,
     normalize_transport_label,
 )
 from app.integrations.a2a_error_contract import (
@@ -634,10 +635,26 @@ class A2AClient:
                 selected_transport=selected_transport_label,
                 selected_url=selected_url,
             )
+            selection_audit = build_transport_selection_audit(
+                card=card,
+                selected_transport=selected_transport_label,
+                selected_url=selected_url,
+                supported_transports=[
+                    value.value if isinstance(value, TransportProtocol) else str(value)
+                    for value in self._supported_transports
+                ],
+            )
             logger.info(
                 "Fetched agent card for %s (name=%s)",
                 redact_url_for_logging(self.agent_url),
                 getattr(card, "name", "unknown"),
+                extra={
+                    "selected_transport": normalize_transport_label(
+                        selected_transport_label
+                    ),
+                    "selected_url": selected_url.rstrip("/"),
+                    "transport_selection_audit": selection_audit,
+                },
             )
             return card
 

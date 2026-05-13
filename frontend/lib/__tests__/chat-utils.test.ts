@@ -22,6 +22,7 @@ describe("chat store utils", () => {
     expect(session.transport).toBe("http_json");
     expect(session.inputModes).toEqual(["text/plain"]);
     expect(session.outputModes).toEqual(["text/plain"]);
+    expect(session.upstreamTaskId).toBeNull();
   });
 
   it("merges external session refs with fallback semantics", () => {
@@ -425,6 +426,7 @@ describe("chat store utils", () => {
     expect(persisted.newest.pendingInterrupt).toBeNull();
     expect(persisted.newest.lastResolvedInterrupt).toBeNull();
     expect(persisted.newest.transport).toBe("http_json");
+    expect(persisted.newest.upstreamTaskId).toBeNull();
     expect(persisted.newest.source).toBeNull();
     expect(persisted.newest.workingDirectory).toBe("/workspace/app");
     expect(persisted.newest.metadata).toEqual({
