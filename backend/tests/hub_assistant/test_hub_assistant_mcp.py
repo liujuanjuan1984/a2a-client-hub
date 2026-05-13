@@ -793,8 +793,8 @@ async def test_execute_hub_assistant_mcp_operation_persists_delegated_session_se
         lambda: SimpleNamespace(gateway=object()),
     )
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         _fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
@@ -802,7 +802,11 @@ async def test_execute_hub_assistant_mcp_operation_persists_delegated_session_se
         "_preempt_previous_invoke_if_requested",
         _fake_noop,
     )
-    monkeypatch.setattr(invoke_route_runner, "_register_inflight_invoke", _fake_noop)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state,
+        "register_inflight_invoke",
+        _fake_noop,
+    )
     monkeypatch.setattr(invoke_route_runner, "_unregister_inflight_invoke", _fake_noop)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_streaming_runtime,
@@ -1000,8 +1004,8 @@ async def test_execute_hub_assistant_mcp_operation_persists_delegated_agent_star
         lambda: SimpleNamespace(gateway=object()),
     )
     monkeypatch.setattr(
-        invoke_route_runner,
-        "_finalize_outbound_invoke_payload",
+        invoke_route_runner.invoke_recovery,
+        "finalize_outbound_invoke_payload",
         _fake_finalize_outbound_invoke_payload,
     )
     monkeypatch.setattr(
@@ -1009,7 +1013,11 @@ async def test_execute_hub_assistant_mcp_operation_persists_delegated_agent_star
         "_preempt_previous_invoke_if_requested",
         _fake_noop,
     )
-    monkeypatch.setattr(invoke_route_runner, "_register_inflight_invoke", _fake_noop)
+    monkeypatch.setattr(
+        invoke_route_runner.route_runner_state,
+        "register_inflight_invoke",
+        _fake_noop,
+    )
     monkeypatch.setattr(invoke_route_runner, "_unregister_inflight_invoke", _fake_noop)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_streaming_runtime,
