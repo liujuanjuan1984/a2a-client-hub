@@ -37,6 +37,9 @@ ERROR_DATA_TYPE_TO_ERROR_CODE: dict[str, str] = {
     "invalid_pagination_mode": "invalid_params",
 }
 
+_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo"
+_BAD_REQUEST_TYPE = "type.googleapis.com/google.rpc.BadRequest"
+
 _MISSING_PARAM_MESSAGE_PATTERNS = (
     re.compile(
         r"(?P<names>[A-Za-z][A-Za-z0-9_]*(?:\s*[/,]\s*[A-Za-z][A-Za-z0-9_]*)*)\s+required\b",
@@ -50,7 +53,12 @@ _MISSING_PARAM_MESSAGE_PATTERNS = (
 
 _SAFE_UPSTREAM_DATA_KEYS = frozenset(
     {
+        "@type",
+        "description",
+        "domain",
         "type",
+        "metadata",
+        "fieldViolations",
         "field",
         "fields",
         "param",
@@ -61,9 +69,9 @@ _SAFE_UPSTREAM_DATA_KEYS = frozenset(
         "missing_fields",
         "missing_params",
         "missingParams",
+        "reason",
         "required",
         "required_fields",
-        "reason",
         "hint",
         "details",
     }
@@ -125,9 +133,28 @@ def normalize_error_data_type(error: Mapping[str, Any] | Any) -> str | None:
     data = (
         error.get("data") if isinstance(error, Mapping) and "data" in error else error
     )
-    if not isinstance(data, Mapping):
+    if isinstance(data, Mapping):
+        return normalize_error_token(data.get("type"))
+    if not isinstance(data, list):
         return None
-    return normalize_error_token(data.get("type"))
+
+    for item in data:
+        if not isinstance(item, Mapping):
+            continue
+        if item.get("@type") == _ERROR_INFO_TYPE:
+            reason = normalize_error_token(item.get("reason"))
+            if reason:
+                return reason
+            metadata = item.get("metadata")
+            if isinstance(metadata, Mapping):
+                metadata_type = normalize_error_token(metadata.get("type"))
+                if metadata_type:
+                    return metadata_type
+            continue
+        item_type = normalize_error_token(item.get("type"))
+        if item_type:
+            return item_type
+    return None
 
 
 def map_upstream_error_code(
@@ -233,6 +260,31 @@ def _coerce_missing_params(value: Any) -> list[dict[str, Any]]:
     return items
 
 
+def _coerce_missing_params_from_field_violations(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    items: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        field_name = item.get("field")
+        if not isinstance(field_name, str) or not field_name.strip():
+            continue
+        description = item.get("description")
+        if isinstance(description, str):
+            lowered = description.strip().lower()
+            if "missing" not in lowered and "required" not in lowered:
+                continue
+        normalized_name = field_name.strip()
+        if normalized_name in seen_names:
+            continue
+        seen_names.add(normalized_name)
+        items.append({"name": normalized_name, "required": True})
+    return items
+
+
 def extract_missing_params(*, data: Any, message: str | None) -> list[dict[str, Any]]:
     if isinstance(data, Mapping):
         for key in (
@@ -250,6 +302,24 @@ def extract_missing_params(*, data: Any, message: str | None) -> list[dict[str, 
             resolved = _coerce_missing_params(data.get(key))
             if resolved:
                 return resolved
+    elif isinstance(data, list):
+        for item in data:
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("@type") == _ERROR_INFO_TYPE:
+                metadata = item.get("metadata")
+                resolved = extract_missing_params(data=metadata, message=None)
+                if resolved:
+                    return resolved
+            if item.get("@type") == _BAD_REQUEST_TYPE:
+                resolved = _coerce_missing_params_from_field_violations(
+                    item.get("fieldViolations")
+                )
+                if resolved:
+                    return resolved
+            resolved = extract_missing_params(data=item, message=None)
+            if resolved:
+                return resolved
 
     if not message:
         return []
@@ -262,10 +332,10 @@ def extract_missing_params(*, data: Any, message: str | None) -> list[dict[str, 
 
 
 def sanitize_upstream_error_data(value: Any, *, depth: int = 0) -> Any:
-    if depth >= 3:
-        return None
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
+    if depth >= 4:
+        return None
     if isinstance(value, list):
         sanitized_items = [
             sanitize_upstream_error_data(item, depth=depth + 1) for item in value
