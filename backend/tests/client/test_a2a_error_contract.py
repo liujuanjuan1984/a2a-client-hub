@@ -55,6 +55,28 @@ def test_build_protocol_error_from_jsonrpc_error_normalizes_uppercase_wire_types
     assert error.code == -32003
 
 
+def test_build_protocol_error_from_jsonrpc_error_reads_typed_details_reason() -> None:
+    error = build_protocol_error_from_jsonrpc_error(
+        {
+            "code": -32001,
+            "message": "Session is missing",
+            "data": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "SESSION_NOT_FOUND",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {},
+                }
+            ],
+        },
+        fallback_message="fallback",
+        http_status=404,
+    )
+
+    assert error.error_code == "session_not_found"
+    assert error.code == -32001
+
+
 def test_map_upstream_error_code_normalizes_uppercase_fine_grained_wire_types() -> None:
     assert (
         map_upstream_error_code(
@@ -95,6 +117,50 @@ def test_build_upstream_error_details_from_protocol_error_extracts_missing_param
     assert details.upstream_error == {
         "message": "project_id/channel_id required",
         "data": {"missing_params": ["project_id", "channel_id"]},
+    }
+
+
+def test_build_upstream_error_details_from_protocol_error_extracts_typed_details_missing_params() -> (
+    None
+):
+    details = build_upstream_error_details_from_protocol_error(
+        A2APeerProtocolError(
+            "project_id/channel_id required",
+            error_code="peer_protocol_error",
+            rpc_code=-32602,
+            data=[
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INVALID_PARAMS",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {
+                        "missing_params": ["project_id", "channel_id"],
+                    },
+                }
+            ],
+        ),
+        default_error_code="upstream_stream_error",
+    )
+
+    assert details.error_code == "invalid_params"
+    assert details.source == "upstream_a2a"
+    assert details.jsonrpc_code == -32602
+    assert details.missing_params == (
+        {"name": "project_id", "required": True},
+        {"name": "channel_id", "required": True},
+    )
+    assert details.upstream_error == {
+        "message": "project_id/channel_id required",
+        "data": [
+            {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "INVALID_PARAMS",
+                "domain": "a2a-protocol.org",
+                "metadata": {
+                    "missing_params": ["project_id", "channel_id"],
+                },
+            }
+        ],
     }
 
 
