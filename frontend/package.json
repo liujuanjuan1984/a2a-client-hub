@@ -83,6 +83,9 @@
   },
   "overrides": {
     "markdown-it": "^12.3.2",
-    "postcss": "8.5.13"
+    "postcss": "8.5.13",
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   }
 }
