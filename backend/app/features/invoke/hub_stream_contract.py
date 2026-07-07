@@ -65,16 +65,6 @@ def _infer_task_id_from_artifact_id(artifact_id: str | None) -> str | None:
     return task_id or None
 
 
-def _infer_task_id_from_message_id(message_id: str | None) -> str | None:
-    if not isinstance(message_id, str):
-        return None
-    normalized = message_id.strip()
-    if not normalized.startswith("task:"):
-        return None
-    task_id = normalized[len("task:") :].strip()
-    return task_id or None
-
-
 def _build_fallback_event_id(
     *,
     message_id: str,

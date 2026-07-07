@@ -513,15 +513,6 @@ class A2ADeclaredMethodCollectionCapabilitiesResponse(BaseModel):
     diagnostic_note: Optional[str] = Field(default=None, alias="diagnosticNote")
 
 
-class A2ADeclaredSingleMethodCapabilitiesResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    declared: bool
-    consumed_by_hub: bool = Field(..., alias="consumedByHub")
-    status: Literal["unsupported", "unsupported_by_design"]
-    method: Optional[str] = None
-
-
 class A2AUpstreamMethodFamiliesResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

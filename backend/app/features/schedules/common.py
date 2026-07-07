@@ -103,4 +103,3 @@ def map_retryable_db_errors(
 
 
 A2A_SCHEDULE_SOURCE = "scheduled"
-A2A_MANUAL_SOURCE = "manual"

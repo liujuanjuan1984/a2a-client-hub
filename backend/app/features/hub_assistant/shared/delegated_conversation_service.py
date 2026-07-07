@@ -56,9 +56,6 @@ class HubAssistantDelegatedConversationService:
     def set_task_run_requester(self, requester: Callable[[], None]) -> None:
         self._task_run_requester = requester
 
-    def clear_task_run_requester(self) -> None:
-        self._task_run_requester = None
-
     def _request_task_run_if_configured(self) -> None:
         if self._task_run_requester is None:
             return
