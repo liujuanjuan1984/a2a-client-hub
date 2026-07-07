@@ -22,7 +22,6 @@ from app.schemas.a2a_compatibility_profile import (
 from app.schemas.a2a_extension import (
     A2ADeclaredMethodCapabilityResponse,
     A2ADeclaredMethodCollectionCapabilitiesResponse,
-    A2ADeclaredSingleMethodCapabilitiesResponse,
     A2AExtensionCapabilitiesResponse,
     A2AExtensionResponse,
     A2AInterruptRecoveryCapabilitiesResponse,
@@ -267,21 +266,6 @@ def build_declared_method_collection_response(
         declarationConfidence=getattr(capability, "declaration_confidence", None),
         negotiationState=getattr(capability, "negotiation_state", None),
         diagnosticNote=getattr(capability, "diagnostic_note", None),
-    )
-
-
-def build_declared_single_method_response(
-    capability: Any,
-) -> A2ADeclaredSingleMethodCapabilitiesResponse:
-    status_value = cast(
-        Literal["unsupported", "unsupported_by_design"],
-        getattr(capability, "status", "unsupported"),
-    )
-    return A2ADeclaredSingleMethodCapabilitiesResponse(
-        declared=bool(getattr(capability, "declared", False)),
-        consumedByHub=bool(getattr(capability, "consumed_by_hub", False)),
-        status=status_value,
-        method=getattr(capability, "method", None),
     )
 
 

@@ -31,9 +31,6 @@ class ExternalSessionDirectoryRegistry:
             return None
         return registered.service
 
-    def provider_keys(self) -> tuple[str, ...]:
-        return tuple(sorted(self._providers))
-
 
 external_session_directory_registry = ExternalSessionDirectoryRegistry(
     providers=[
