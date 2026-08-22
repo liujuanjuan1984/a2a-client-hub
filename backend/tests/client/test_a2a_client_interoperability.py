@@ -410,7 +410,7 @@ def test_build_card_resolver_uses_root_base_for_standard_http_extended_card_path
     )
 
     assert resolver.base_url == "http://example-agent.internal:24020"
-    assert resolver.agent_card_path == "v1/card"
+    assert resolver.agent_card_path == "extendedAgentCard"
 
 
 def test_build_card_resolver_rebases_standard_http_extended_card_path_from_well_known_card_url() -> (
@@ -426,7 +426,7 @@ def test_build_card_resolver_rebases_standard_http_extended_card_path_from_well_
     )
 
     assert resolver.base_url == "http://example-agent.internal:24020"
-    assert resolver.agent_card_path == "v1/card"
+    assert resolver.agent_card_path == "extendedAgentCard"
 
 
 def test_resolve_negotiated_transport_target_prefers_exact_v1_interface_within_transport() -> (

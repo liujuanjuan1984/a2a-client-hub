@@ -48,7 +48,7 @@ def test_resolve_wire_contract_supports_declared_contract() -> None:
                 "additional_transports": ["JSON-RPC"],
                 "core": {
                     "jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
-                    "http_endpoints": ["GET /v1/tasks"],
+                    "http_endpoints": ["GET /tasks"],
                 },
                 "extensions": {
                     "jsonrpc_methods": ["providers.list", "models.list"],
@@ -105,7 +105,7 @@ def test_resolve_wire_contract_accepts_current_opencode_uri() -> None:
                 "additional_transports": ["JSON-RPC"],
                 "core": {
                     "jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
-                    "http_endpoints": ["GET /v1/tasks"],
+                    "http_endpoints": ["GET /tasks"],
                 },
                 "extensions": {
                     "jsonrpc_methods": [],
@@ -145,7 +145,7 @@ def test_resolve_wire_contract_accepts_current_opencode_wire_contract_uri() -> N
                 "additional_transports": ["JSON-RPC"],
                 "core": {
                     "jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
-                    "http_endpoints": ["GET /v1/tasks"],
+                    "http_endpoints": ["GET /tasks"],
                 },
                 "extensions": {
                     "jsonrpc_methods": [],
@@ -185,7 +185,7 @@ def test_resolve_wire_contract_accepts_current_codex_uri() -> None:
                 "additional_transports": ["JSON-RPC"],
                 "core": {
                     "jsonrpc_methods": ["tasks/get"],
-                    "http_endpoints": ["POST /v1/message:send"],
+                    "http_endpoints": ["POST /message:send"],
                 },
                 "extensions": {
                     "jsonrpc_methods": ["codex.sessions.list"],
@@ -220,7 +220,7 @@ def test_resolve_wire_contract_rejects_invalid_conditional_map() -> None:
                 "additional_transports": ["JSON-RPC"],
                 "core": {
                     "jsonrpc_methods": ["agent/getAuthenticatedExtendedCard"],
-                    "http_endpoints": ["GET /v1/tasks"],
+                    "http_endpoints": ["GET /tasks"],
                 },
                 "extensions": {
                     "jsonrpc_methods": ["providers.list"],
