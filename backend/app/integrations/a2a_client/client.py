@@ -78,7 +78,7 @@ from app.utils.outbound_url import (
 
 logger = get_logger(__name__)
 
-AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH = "/v1/card"
+AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH = "/extendedAgentCard"
 _TEXT_PAYLOAD_KEYS = (
     "content",
     "message",

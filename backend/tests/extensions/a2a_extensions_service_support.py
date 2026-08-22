@@ -484,7 +484,7 @@ def _wire_contract_extension_fixture(
             "agent/getAuthenticatedExtendedCard",
             "tasks/pushNotificationConfig/get",
         ),
-        core_http_endpoints=("GET /v1/tasks",),
+        core_http_endpoints=("GET /tasks",),
         extension_jsonrpc_methods=(
             "shared.sessions.list",
             "shared.sessions.get",
