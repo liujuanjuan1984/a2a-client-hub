@@ -71,6 +71,7 @@ dev = [
     "black>=26.5.1",
     "isort==8.0.1",
     "mypy>=2.1.0",
+    # Pin bootstrap pip so `pip-audit` does not flag the venv's bundled pip.
     "pip>=26.2",
     "pip-audit>=2.10.1",
     "pre-commit>=3.0.0",
