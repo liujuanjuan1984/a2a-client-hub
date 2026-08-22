@@ -52,7 +52,7 @@
     "nativewind": "^4.0.37",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "react-native": "0.83.6",
+    "react-native": "0.83.10",
     "react-native-gesture-handler": "~2.30.0",
     "react-native-markdown-display": "^7.0.2",
     "react-native-mmkv": "^2.12.2",
@@ -84,7 +84,7 @@
   "overrides": {
     "linkify-it": "^5.0.2",
     "markdown-it": "^14.3.0",
-    "postcss": "8.5.13",
+    "postcss": "8.5.26",
     "xcode": {
       "uuid": "11.1.1"
     }
