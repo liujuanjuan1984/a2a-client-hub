@@ -78,6 +78,9 @@ from app.utils.outbound_url import (
 
 logger = get_logger(__name__)
 
+# A2A 1.0 resolves HTTP+JSON REST paths from the advertised interface URL;
+# protocol version is negotiated via the A2A-Version header, so the
+# authenticated extended agent card lives at the service root.
 AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH = "/extendedAgentCard"
 _TEXT_PAYLOAD_KEYS = (
     "content",
