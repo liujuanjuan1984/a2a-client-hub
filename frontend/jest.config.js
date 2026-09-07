@@ -1,5 +1,6 @@
 module.exports = {
   preset: "jest-expo",
+  globalSetup: "<rootDir>/jest.global-setup.js",
   coverageProvider: "v8",
   testMatch: ["**/?(*.)+(spec|test).[tj]s?(x)"],
   collectCoverage: true,
