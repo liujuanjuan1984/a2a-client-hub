@@ -82,6 +82,7 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
+    "browserslist": "4.28.9",
     "linkify-it": "^5.0.2",
     "markdown-it": "^14.3.0",
     "postcss": "8.5.26",
