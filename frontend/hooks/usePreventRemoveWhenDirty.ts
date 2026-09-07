@@ -1,7 +1,9 @@
-import { usePreventRemove } from "@react-navigation/core";
-import { useNavigation, type ParamListBase } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { NavigationAction } from "@react-navigation/routers";
+import { useNavigation, type NativeStackNavigationProp } from "expo-router";
+import { usePreventRemove } from "expo-router/react-navigation";
+import type {
+  NavigationAction,
+  ParamListBase,
+} from "expo-router/react-navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { confirmAction } from "@/lib/confirm";

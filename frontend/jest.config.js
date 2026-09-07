@@ -13,7 +13,10 @@ module.exports = {
       statements: 30,
     },
   },
-  setupFiles: ["<rootDir>/jest.preload.ts"],
+  setupFiles: [
+    require.resolve("@react-native/jest-preset/jest/setup.js"),
+    "<rootDir>/jest.preload.ts",
+  ],
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   transformIgnorePatterns: [
     "/node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)",
