@@ -13,6 +13,8 @@ module.exports = {
       statements: 30,
     },
   },
+  // RN 0.86 moved the Jest environment to @react-native/jest-preset; it mocks
+  // InitializeCore/nativeFabricUIManager before our custom preload runs.
   setupFiles: [
     require.resolve("@react-native/jest-preset/jest/setup.js"),
     "<rootDir>/jest.preload.ts",
