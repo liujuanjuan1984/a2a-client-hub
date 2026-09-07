@@ -1,6 +1,8 @@
 (globalThis as any).__DEV__ = true;
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 (globalThis as any).IS_REACT_NATIVE_TEST_ENVIRONMENT = true;
+(globalThis as any).nativeFabricUIManager =
+  (globalThis as any).nativeFabricUIManager ?? {};
 (globalThis as any).__fbBatchedBridgeConfig = (globalThis as any)
   .__fbBatchedBridgeConfig ?? {
   remoteModuleConfig: [],
