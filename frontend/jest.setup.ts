@@ -25,12 +25,6 @@ const ensureBase64 = () => {
 
 ensureBase64();
 
-jest.mock("expo-constants", () => ({
-  appOwnership: "standalone",
-  expoConfig: {},
-  manifest: {},
-}));
-
 jest.mock("react-native-mmkv", () => {
   class MockMMKV {
     private store = new Map<string, string>();
@@ -61,34 +55,6 @@ jest.mock("expo-clipboard", () => ({
 
 jest.mock("@expo/vector-icons/Ionicons", () => {
   return () => null;
-});
-
-jest.mock("react-native/Libraries/AppState/AppState", () => ({
-  AppState: {
-    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-    currentState: "active",
-  },
-}));
-
-jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
-  const dimensions = {
-    window: { width: 375, height: 812, scale: 2, fontScale: 2 },
-    screen: { width: 375, height: 812, scale: 2, fontScale: 2 },
-  };
-  const dimensionsModule = {
-    get: (key: "window" | "screen") => dimensions[key],
-    set: jest.fn(),
-    addEventListener: () => ({
-      remove: jest.fn(),
-    }),
-    removeEventListener: jest.fn(),
-  };
-
-  return {
-    __esModule: true,
-    default: dimensionsModule,
-    ...dimensionsModule,
-  };
 });
 
 afterEach(async () => {

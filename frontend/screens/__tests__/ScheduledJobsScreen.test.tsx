@@ -54,10 +54,6 @@ jest.mock("expo-router", () => ({
   }),
 }));
 
-jest.mock("@react-navigation/native", () => ({
-  useFocusEffect: (cb: any) => cb(),
-}));
-
 jest.mock("react-native", () => {
   const React = jest.requireActual("react");
   const actual = jest.requireActual("react-native");

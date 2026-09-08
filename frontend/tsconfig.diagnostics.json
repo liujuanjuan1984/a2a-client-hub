@@ -20,7 +20,6 @@
     "theme/**/*.ts",
     "theme/**/*.tsx",
     "index.ts",
-    "jest.preload.ts",
     "jest.setup.ts",
     "expo-env.d.ts",
     "nativewind-env.d.ts"

@@ -69,7 +69,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "black>=26.5.1",
-    "isort==8.0.1",
+    "isort==9.0.1",
     "mypy>=2.1.0",
     # Pin bootstrap pip so `pip-audit` does not flag the venv's bundled pip.
     "pip>=26.2",
