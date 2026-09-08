@@ -12,4 +12,3 @@ index d45e67d..2b4cb41 100644
 +	: decodeComponentModule.default;
  const splitOnFirst = require('split-on-first');
  const filterObject = require('filter-obj');
- 
