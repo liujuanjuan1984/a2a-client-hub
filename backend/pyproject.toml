@@ -62,7 +62,7 @@ dependencies = [
     "pyasn1>=0.6.4",
     "argon2-cffi==25.1.0",
     "cryptography>=50.0.0",
-    "fastmcp>=3.4.3,<4",
+    "fastmcp>=3.4.3,<5",
     "Pygments>=2.20.0",
 ]
 
@@ -86,7 +86,8 @@ dev = [
 # carry known vulnerabilities (pip-audit findings).
 override-dependencies = [
     "click>=8.3.3",
-    "mcp>=1.28.1,<2",
+    # fastmcp 4 requires mcp>=2,<3; keep a security floor while allowing v4.
+    "mcp>=2.0.0,<3",
 ]
 
 [project.urls]
