@@ -42,7 +42,7 @@ dependencies = [
     # Scheduling
     "APScheduler>=3.10.4",
     # Database dependencies
-    "sqlalchemy>=2.0.51",
+    "sqlalchemy[asyncio]>=2.0.51",
     "alembic>=1.18.5",
     "psycopg2-binary>=2.9.9",
     "asyncpg>=0.29.0",
