@@ -38,11 +38,14 @@ dependencies = [
     # Core FastAPI dependencies
     "fastapi>=0.139.0",
     "uvicorn[standard]>=0.50.2",
-    "a2a-sdk==1.1.2",
+    "a2a-sdk==1.1.5",
     # Scheduling
     "APScheduler>=3.10.4",
     # Database dependencies
-    "sqlalchemy>=2.0.51",
+    # Hold SQLAlchemy at 2.0.x: 2.1 switches the default PostgreSQL DBAPI to
+    # psycopg (v3) and introduces mypy regressions (see issue #959). The
+    # asyncio extra guarantees greenlet is available for async engines.
+    "sqlalchemy[asyncio]>=2.0.51,<2.1",
     "alembic>=1.18.5",
     "psycopg2-binary>=2.9.9",
     "asyncpg>=0.29.0",
@@ -52,12 +55,14 @@ dependencies = [
     # HTTP client and utilities
     "httpx>=0.25.0",
     "requests>=2.34.2",
-    "urllib3>=2.7.0",
+    # Security floor: urllib3 2.8.0 fixes PYSEC-2026-4175/4176/4177.
+    "urllib3>=2.8.0",
     # Environment and configuration
     "python-dotenv>=1.0.0",
     # JSON handling
     # JWT handling
-    "PyJWT>=2.13.0",
+    # Security floor: PyJWT 2.15.0 fixes PYSEC-2026-4141.
+    "PyJWT>=2.15.0",
     "authlib>=1.7.2",
     "pyasn1>=0.6.4",
     "argon2-cffi==25.1.0",
@@ -86,6 +91,8 @@ dev = [
 # carry known vulnerabilities (pip-audit findings).
 override-dependencies = [
     "click>=8.3.3",
+    # Security floor: anyio 4.14.2 fixes PYSEC-2026-4024/4025.
+    "anyio>=4.14.2",
     # fastmcp 4 requires mcp>=2,<3; keep a security floor while allowing v4.
     "mcp>=2.0.0,<3",
 ]

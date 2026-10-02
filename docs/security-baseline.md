@@ -41,8 +41,10 @@ When `APP_ENV=production`, the backend enforces:
 
 - Blocking CI checks audit backend runtime dependencies exported from `uv.lock`.
 - Development-only dependencies are audited in a separate scheduled or manually triggered workflow so they remain visible without blocking unrelated product changes.
-- Treat runtime dependency findings as release-blocking until fixed or explicitly triaged.
+- Treat backend runtime dependency findings as release-blocking until fixed.
 - Treat development dependency findings as maintenance work unless they affect production execution paths.
+- The frontend production audit runs on every check but is advisory: it re-reports high/critical findings as warnings on every run so they stay visible, instead of being hidden behind an allowlist.
+- Do not add suppression lists for frontend findings. A finding that has no upstream fix is an accepted, temporary state that must stay visible; track it in an issue and upgrade as soon as a fixed version is available.
 
 ## Client Network Policy
 
