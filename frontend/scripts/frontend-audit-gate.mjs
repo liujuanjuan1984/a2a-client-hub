@@ -14,6 +14,7 @@ const BLOCKING_SEVERITIES = new Set(["high", "critical"]);
 const ALLOWLIST_PATH = fileURLToPath(
   new URL("../audit-allowlist.json", import.meta.url),
 );
+const NPM_COMMAND = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function loadAllowlist() {
   const parsed = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
@@ -21,19 +22,45 @@ function loadAllowlist() {
 
   return new Map(
     entries.map((entry) => {
-      if (!entry.package || !entry.advisory) {
+      for (const field of [
+        "package",
+        "advisory",
+        "reason",
+        "trackingIssue",
+        "reviewBy",
+      ]) {
+        if (!entry[field]) {
+          throw new Error(
+            `Invalid audit allowlist entry, missing "${field}": ${JSON.stringify(entry)}`,
+          );
+        }
+      }
+
+      const reviewBy = new Date(entry.reviewBy);
+      if (Number.isNaN(reviewBy.getTime())) {
         throw new Error(
-          `Invalid audit allowlist entry, expected package and advisory: ${JSON.stringify(entry)}`,
+          `Invalid audit allowlist reviewBy date for ${entry.package}: ${entry.reviewBy}`,
         );
       }
-      return [`${entry.package}:${entry.advisory.toUpperCase()}`, entry];
+      if (reviewBy < new Date()) {
+        console.log(
+          `::warning title=Expired frontend audit allowlist entry::` +
+            `${entry.package} ${entry.advisory} passed its review-by date ` +
+            `(${entry.reviewBy}); re-review or remove it (${entry.trackingIssue}).`,
+        );
+      }
+
+      return [
+        `${entry.package}:${entry.advisory.toUpperCase()}`,
+        { ...entry, reviewBy: reviewBy.toISOString().slice(0, 10) },
+      ];
     }),
   );
 }
 
 function runAudit() {
   try {
-    return execFileSync("npm", ["audit", "--omit=dev", "--json"], {
+    return execFileSync(NPM_COMMAND, ["audit", "--omit=dev", "--json"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -44,6 +71,32 @@ function runAudit() {
     }
     throw error;
   }
+}
+
+function parseReport(raw) {
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch {
+    throw new Error("`npm audit` did not return valid JSON.");
+  }
+
+  // Guard against false passes: a failed audit (for example, an unreachable
+  // registry) returns an `error` object instead of a vulnerability report.
+  if (
+    !report ||
+    typeof report !== "object" ||
+    typeof report.vulnerabilities !== "object" ||
+    report.vulnerabilities === null
+  ) {
+    const summary = report?.error?.summary ?? report?.error?.code ?? "";
+    throw new Error(
+      "`npm audit` did not return a vulnerability report" +
+        (summary ? ` (${summary}).` : "."),
+    );
+  }
+
+  return report;
 }
 
 function advisoryIdFromVia(via) {
@@ -62,6 +115,8 @@ function classify(report, allowlist) {
     const severity = vulnerability.severity;
     if (!BLOCKING_SEVERITIES.has(severity)) continue;
 
+    // Only direct advisories at the blocking severities are decision inputs.
+    // Lower-severity advisories on the same package stay informational.
     const directAdvisories = (vulnerability.via ?? [])
       .filter((via) => via && typeof via === "object")
       .map((via) => ({
@@ -69,10 +124,13 @@ function classify(report, allowlist) {
         title: via.title ?? "",
         severity: via.severity ?? severity,
       }))
-      .filter((advisory) => advisory.advisory);
+      .filter(
+        (advisory) =>
+          advisory.advisory && BLOCKING_SEVERITIES.has(advisory.severity),
+      );
 
     // Packages that are only vulnerable because they depend on a vulnerable
-    // package (string-only `via` entries) are resolved through that package.
+    // package are resolved through that package.
     if (directAdvisories.length === 0) continue;
 
     const unresolved = directAdvisories.filter(
@@ -91,7 +149,16 @@ function classify(report, allowlist) {
 
 function main() {
   const allowlist = loadAllowlist();
-  const { blocking, triaged } = classify(JSON.parse(runAudit()), allowlist);
+  const report = parseReport(runAudit());
+  const { blocking, triaged } = classify(report, allowlist);
+
+  const totals = report.metadata?.vulnerabilities ?? {};
+  console.log(
+    `Frontend production audit: ${totals.total ?? 0} total ` +
+      `(critical ${totals.critical ?? 0}, high ${totals.high ?? 0}, ` +
+      `moderate ${totals.moderate ?? 0}, low ${totals.low ?? 0}).`,
+  );
+  console.log("");
 
   if (triaged.length > 0) {
     console.log("Triaged frontend production advisories:");
@@ -125,4 +192,11 @@ function main() {
   console.log("No blocking frontend production dependency findings.");
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  console.error(
+    `Frontend production dependency audit gate failed to run: ${error.message}`,
+  );
+  process.exit(1);
+}
