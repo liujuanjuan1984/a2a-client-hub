@@ -43,6 +43,8 @@ When `APP_ENV=production`, the backend enforces:
 - Development-only dependencies are audited in a separate scheduled or manually triggered workflow so they remain visible without blocking unrelated product changes.
 - Treat runtime dependency findings as release-blocking until fixed or explicitly triaged.
 - Treat development dependency findings as maintenance work unless they affect production execution paths.
+- The frontend production gate (`node scripts/frontend-audit-gate.mjs`) blocks high/critical findings and only lets explicitly triaged advisories through. Triaged entries live in `frontend/audit-allowlist.json` and must record the advisory ID, a rationale, a tracking issue, and a review-by date.
+- Keep allowlist entries short-lived: remove them once an upstream fix is available, and re-review them before the recorded review-by date.
 
 ## Client Network Policy
 

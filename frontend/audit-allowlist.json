@@ -1,0 +1,11 @@
+{
+  "allowlist": [
+    {
+      "package": "node-forge",
+      "advisory": "GHSA-86w9-cpqp-85rv",
+      "reason": "node-forge <= 1.4.0 has no upstream fix yet. It is reachable only through expo -> @expo/cli -> @expo/code-signing-certificates build-time code-signing tooling, not through shipped app runtime code paths.",
+      "trackingIssue": "https://github.com/liujuanjuan1984/a2a-client-hub/issues/958",
+      "reviewBy": "2027-01-31"
+    }
+  ]
+}

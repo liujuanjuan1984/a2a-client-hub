@@ -110,7 +110,7 @@ jobs:
         run: npm install
 
       - name: Run frontend production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/frontend-audit-gate.mjs
 
       - name: Run frontend lint
         run: npm run lint
